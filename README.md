@@ -25,7 +25,9 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
 
 ## Use
 
-- Choose a real-space DM4 from the STA or ST folders. ST1221 opens by default.
+- Choose a real-space DM4 from the STA or ST folders; it opens as soon as you select it. ST1221 opens by default.
+- Click **☆ Favourite open image** to add it to the separate **Favourites** dropdown. Choosing a favourite opens it immediately; click the star again to remove it. The shortlist is remembered in this browser for this TEM folder.
+- **Colour overlay intensity** adjusts the grid fill over the real-space reference image from 0–100%. It does not rerun analysis; grid outlines remain visible. Use **Show grid** to hide the grid entirely.
 - Move the box; resize its lower-right handle. Coordinates and width are editable.
   Click the image, then arrow keys nudge ten pixels; Shift moves fifty. The FFT and candidate results update
   as computation completes. The timing line records the coordinates of the result
@@ -38,6 +40,7 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
   Subdivision stops when no such second pattern is supported, or another split
   would go below the selected minimum (at least 5 nm). Phase uncertainty alone
   does not trigger subdivision. Click a map cell to calculate its detailed FFT.
+- **Grid results** shows current map-region counts and area percentages for every candidate label. Areas are weighted by tile size; subdivided parents are excluded. Running or cancelled grids also show uncovered image area. These are candidate-labelled areas, not confirmed phase fractions.
 - Cancel retains a partial result and clearly marks it cancelled. Completed and
   partial grids can be saved. A partial adaptive tree may have pending children.
 - **Save region / Save grid results** writes JSON to the configured results folder
@@ -48,10 +51,19 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
 ## Calibration and interpretation
 
 The default is the stored DM4 calibration, shared scale 1.000. HCP references use
-a = 0.295 nm and c = 0.468 nm; BCC defaults to a = 0.330 nm. The peak threshold is editable; the selected calibration view sets BCC a. The saved ST1221 pixel hash unlocks its previous
-model-estimated scale of 0.950. This multiplies both structures' predicted
-reciprocal vectors and is applied uniformly across each grid; measured FFT axes
-stay in the stored calibration. It is not an independent instrument calibration.
+a = 0.295 nm and c = 0.468 nm; BCC defaults to a = 0.330 nm. The peak threshold is editable. **Scale comparison** is available for every real-space image:
+
+- **Stored scale** uses a model multiplier of 1.000.
+- **Comparison scale ×0.950** reproduces the previous ST1221 model estimate. On other images it is an exploratory comparison, not a calibration measured for that image.
+- **Custom comparison scale** enables **Model size ×**, from 0.850 to 1.150.
+- **1222 BCC reference** uses the provisional BCC parameter described below with a shared multiplier of 0.950.
+
+The selection is remembered per source pixel hash in this browser. New images start
+at stored scale. The multiplier applies to both structures' predicted reciprocal
+vectors and stays fixed across a grid; measured FFT axes and reported d spacings
+retain the stored DM4 calibration. A better fit after adjusting model size does not
+measure strain, independently calibrate the microscope, or confirm a phase. The
+current matcher still checks absolute distances, not only ratios and angles.
 
 `analysis_core.py` contains the numerical functions from the existing ST1221
 analysis. Their source hashes and limitations are in `engine_provenance.json`.
@@ -82,3 +94,7 @@ the local session token returned by the configuration endpoint. Server paths are
 limited to configured source files, explicit static assets, and the results folder.
 
 This is a local research tool, not an internet-facing server.
+
+## License
+
+[MIT](LICENSE). Copyright (c) 2026 pKai3.

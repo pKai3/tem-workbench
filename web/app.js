@@ -4,12 +4,46 @@ const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
 const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'HCP / BCC ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
 let config, meta, roi={x:0,y:0,w:684,h:684}, fileId, result=null, fftRaw=null, grid=null, jobId=null;
-let chosenFits=new Set();
+let chosenFits=new Set(), favorites=new Set();
 let generation=0, busy=false, pending=false, timer=null, drag=null, sourceRequest=0, opened=false;
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error)}
 async function api(path,body){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,options);const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
-function settings(){return {scale:$('scenario').value==='1'?1:.95,bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value)}}
-function calibrationView(){const v=$('scenario').value;$('bcc-a').value=v==='reference'?.32452995:.330;$('calibration-note').textContent=v==='1'?'Shared scale 1.000 · BCC a = 0.330 nm · stored DM4 calibration.':v==='reference'?'Shared scale 0.950 · BCC a = 0.32453 nm from provisional diffraction 1222 interpretation.':'Shared scale 0.950 · BCC a = 0.330 nm · fitted across ST1221, not an independent calibration.';}
+function readPreference(key, fallback){try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}}
+function writePreference(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch{message('Browser storage is unavailable; these preferences will last until this page closes.',true)}}
+function favoriteKey(){return 'tem-favorites:'+config.data_root}
+function renderFavorites(){
+ const select=$('favorites'), rows=config.files.filter(f=>favorites.has(f.id));
+ select.replaceChildren(new Option(rows.length?'Choose a favourite…':'No favourites yet',''));
+ for(const f of rows)select.append(new Option(`${f.sample} · ${f.name}`,f.id));
+ select.disabled=!rows.length;select.value=opened&&favorites.has(fileId)?fileId:'';
+ $('favorite-count').textContent=`(${rows.length})`;
+ const active=opened&&favorites.has(fileId),button=$('favorite-toggle');
+ button.disabled=!opened;button.textContent=active?'★ Favourited':'☆ Favourite open image';
+ button.setAttribute('aria-pressed',String(active));
+ button.title=opened?`${active?'Remove from':'Add to'} favourites: ${meta.name}`:'Open an image to favourite it';
+}
+$('favorite-toggle').onclick=()=>{
+ if(!opened)return;
+ favorites.has(fileId)?favorites.delete(fileId):favorites.add(fileId);
+ writePreference(favoriteKey(),[...favorites]);renderFavorites();
+};
+$('favorites').onchange=()=>{const id=$('favorites').value;if(id){$('file').value=id;openFile()}};
+function settings(){return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value)}}
+function calibrationView(){
+ const v=$('scenario').value,field=$('model-scale');
+ if(v!=='custom')field.value=v==='1'?'1.000':'0.950';
+ field.readOnly=v!=='custom';$('bcc-a').value=v==='reference'?.32452995:.330;
+ const scale=Number(field.value).toFixed(3);
+ const explanation=v==='1'?'Nominal model sizes; stored DM4 calibration.':v==='reference'?'Provisional BCC a from diffraction 1222; a comparison, not a measured calibration.':v==='.95'?'This preset was estimated on ST1221; on other images it is a comparison only.':'Manual comparison; a better fit is not a measurement of calibration or strain.';
+ $('calibration-note').textContent=`Model size ×${scale} for both structures · BCC a = ${Number($('bcc-a').value).toFixed(5)} nm. ${explanation} Measured FFT axes stay unchanged.`;
+}
+function restoreCalibration(){
+ const saved=readPreference('tem-scale:'+meta.sha256_pixels,{});
+ const valid=saved&&['1','.95','reference','custom'].includes(saved.mode)&&Number.isFinite(saved.scale)&&saved.scale>=.85&&saved.scale<=1.15;
+ $('scenario').value=valid?saved.mode:'1';$('model-scale').value=valid?saved.scale:1;
+ calibrationView();
+}
+function rememberCalibration(){writePreference('tem-scale:'+meta.sha256_pixels,{mode:$('scenario').value,scale:Number($('model-scale').value)})}
 function requestBody(){return {file_id:fileId,roi:{...roi},settings:settings()}}
 function el(tag,attrs,text){const e=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e}
 function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
@@ -17,7 +51,7 @@ function updateBox(preserveHeight=false){if(!meta)return;const min=32,max=Math.m
 // Invalidate the old result immediately; never attach it to a newly moved region.
 function schedule(delay=120){generation++;pending=true;result=null;$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
 async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true;const version=generation,body=requestBody();try{const data=await api('analyze',body);if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}}catch(e){if(version===generation){message(e.message,true);$('phase-label').textContent='Analysis unavailable'}}finally{busy=false;if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20)}}
-async function openFile(){const version=++sourceRequest;generation++;pending=false;meta=null;result=null;opened=false;$('save-region').disabled=true;const id=$('file').value;message('Opening original DM4 pixels…');try{if(jobId&&grid?.state==='running')await api('cancel',{job_id:jobId});const info=await api('open',{file_id:id});if(version!==sourceRequest)return;meta=info;fileId=id;opened=true;grid=null;jobId=null;drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=false;$('grid-status').textContent='Adaptive splits only when a substantial second periodic pattern is supported.';$('prior-scenario').disabled=info.sha256_pixels!=='1211545c82cd4833e36da7c30d85b9e84ed397b06016efef6e71dc0d7d929ac2';$('reference-scenario').disabled=$('prior-scenario').disabled;$('scenario').value='1';calibrationView();$('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);$('source-image').setAttribute('width',info.width);$('source-image').setAttribute('height',info.height);$('source-image').setAttribute('href','/api/preview?id='+encodeURIComponent(id));$('metadata').textContent=`${info.width} × ${info.height} · ${info.pixel_x_nm.toFixed(5)} nm/px · ${info.device}`;const size=Math.min(info.width,info.height,Math.max(32,Math.round(20/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size};updateBox();schedule(0);message('Drag the box to inspect a region, or run an automatic grid.')}catch(e){if(version===sourceRequest)message(e.message,true)}}
+async function openFile(){const version=++sourceRequest;generation++;pending=false;meta=null;result=null;opened=false;renderFavorites();$('save-region').disabled=true;const id=$('file').value;message('Opening original DM4 pixels…');try{if(jobId&&grid?.state==='running')await api('cancel',{job_id:jobId});const info=await api('open',{file_id:id});if(version!==sourceRequest)return;meta=info;fileId=id;opened=true;grid=null;jobId=null;drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=false;$('grid-status').textContent='Adaptive splits only when a substantial second periodic pattern is supported.';restoreCalibration();renderFavorites();$('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);$('source-image').setAttribute('width',info.width);$('source-image').setAttribute('height',info.height);$('source-image').setAttribute('href','/api/preview?id='+encodeURIComponent(id));$('metadata').textContent=`${info.width} × ${info.height} · ${info.pixel_x_nm.toFixed(5)} nm/px · ${info.device}`;const size=Math.min(info.width,info.height,Math.max(32,Math.round(20/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size};updateBox();schedule(0);message('Drag the box to inspect a region, or run an automatic grid.')}catch(e){if(version===sourceRequest)message(e.message,true)}}
 function point(event){const pt=new DOMPoint(event.clientX,event.clientY);return pt.matrixTransform($('overview').getScreenCTM().inverse())}
 $('overview').addEventListener('pointerdown',e=>{if(!meta||e.button!==0)return;$('overview').focus({preventScroll:true});e.preventDefault();const cell=e.target.closest('.grid-cell');if(cell){const r=grid.regions.find(r=>r.id===cell.dataset.id);roi={...r.roi};updateBox(true);schedule(0);return}const p=point(e);const inside=p.x>=roi.x&&p.x<=roi.x+roi.w&&p.y>=roi.y&&p.y<=roi.y+roi.h;const resizing=e.target.id==='roi-handle';if(!inside&&!resizing){roi.x=p.x-roi.w/2;roi.y=p.y-roi.h/2;updateBox();schedule()}drag={mode:resizing?'resize':'move',x:p.x,y:p.y,roi:{...roi}};$('overview').setPointerCapture(e.pointerId);e.preventDefault()});
 $('overview').addEventListener('pointermove',e=>{if(!drag)return;const p=point(e);if(drag.mode==='resize'){roi.w=clamp(drag.roi.w+Math.max(p.x-drag.x,p.y-drag.y),32,Math.min(meta.width-drag.roi.x,meta.height-drag.roi.y))}else{roi.x=drag.roi.x+p.x-drag.x;roi.y=drag.roi.y+p.y-drag.y}updateBox();schedule(90)});
@@ -42,14 +76,60 @@ function renderFitChoices(data){
 }
 
 $('contrast').oninput=drawFFT;$('peak-marker').onchange=()=>{localStorage.setItem('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=localStorage.getItem('tem-peak-marker');if(['crosshair','circle','off'].includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{localStorage.setItem('tem-palette',$('palette').value);document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');drawFFT()};const savedPalette=localStorage.getItem('tem-palette');if(['gray','magma'].includes(savedPalette))$('palette').value=savedPalette;document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');
-function drawGrid(){const group=$('grid-map');group.replaceChildren();if(!grid||!$('show-grid').checked)return;for(const r of grid.regions){if(!r.leaf)continue;const e=el('rect',{x:r.roi.x,y:r.roi.y,width:r.roi.w,height:r.roi.h,fill:colors[r.label]||'#aaa',stroke:colors[r.label]||'#aaa',class:'grid-cell','data-id':r.id});e.append(el('title',{},labels[r.label]));group.append(e)}}
+function renderGridSummary(){
+ const container=$('grid-summary');container.replaceChildren();container.hidden=!grid;
+ if(!grid)return;
+ const totalArea=grid.source.width*grid.source.height,counts={};
+ for(const key of Object.keys(labels))counts[key]={count:0,area:0};
+ let regionCount=0,covered=0;
+ for(const region of grid.regions){
+  if(!region.leaf)continue;
+  const key=Object.hasOwn(counts,region.label)?region.label:'unresolved';
+  const area=region.roi.w*region.roi.h;counts[key].count++;counts[key].area+=area;
+  regionCount++;covered+=area;
+ }
+ const heading=document.createElement('h3');heading.textContent='Grid results';
+ const summary=document.createElement('p');summary.className='hint';
+ summary.textContent=`${regionCount} current map regions · ${(100*covered/totalArea).toFixed(1)}% image coverage · ${grid.state} · model size ×${grid.settings.scale.toFixed(3)}`;
+ const table=document.createElement('table'),head=document.createElement('thead'),header=document.createElement('tr');
+ for(const title of ['Result','Regions','Image area']){const cell=document.createElement('th');cell.scope='col';cell.textContent=title;header.append(cell)}
+ head.append(header);table.append(head);const body=document.createElement('tbody');
+ const add=(label,count,area,color)=>{const row=document.createElement('tr');for(const [index,value] of [label,count,`${(100*area/totalArea).toFixed(1)}%`].entries()){const cell=document.createElement('td');cell.textContent=value;if(index===0&&color)cell.style.color=color;row.append(cell)}body.append(row)};
+ for(const [key,value]of Object.entries(counts))add(labels[key],value.count,value.area,colors[key]);
+ if(covered<totalArea)add('Not yet covered','—',totalArea-covered);
+ table.append(body);const note=document.createElement('p');note.className='hint';
+ note.textContent='Area is weighted by region size. Counts include current map regions only, excluding subdivided parents. Candidate-labelled image area is not a confirmed phase fraction.';
+ container.append(heading,summary,table,note);
+}
+function drawGrid(){renderGridSummary();const group=$('grid-map');group.replaceChildren();if(!grid||!$('show-grid').checked)return;for(const r of grid.regions){if(!r.leaf)continue;const e=el('rect',{x:r.roi.x,y:r.roi.y,width:r.roi.w,height:r.roi.h,fill:colors[r.label]||'#aaa',stroke:colors[r.label]||'#aaa',class:'grid-cell','data-id':r.id,'fill-opacity':Number($('grid-opacity').value)/100});e.append(el('title',{},labels[r.label]));group.append(e)}}
 $('show-grid').onchange=drawGrid;
+function updateGridOpacity(){
+ const amount=Number($('grid-opacity').value);$('grid-opacity-value').textContent=amount+'%';
+ for(const cell of $('grid-map').children)cell.setAttribute('fill-opacity',amount/100);
+}
+$('grid-opacity').oninput=()=>{updateGridOpacity();writePreference('tem-grid-opacity',Number($('grid-opacity').value))};
+const savedOpacity=readPreference('tem-grid-opacity',12);
+if(Number.isFinite(savedOpacity))$('grid-opacity').value=clamp(savedOpacity,0,100);
+updateGridOpacity();
 async function poll(id){try{const status=await api('job?id='+encodeURIComponent(id));if(id!==jobId)return;grid=status;drawGrid();$('grid-status').textContent=`${status.processed} regions analysed · ${status.pending} pending · ${status.state}${status.error?' — '+status.error:''}`;if(status.state==='running')setTimeout(()=>poll(id),600);else{$('run-grid').disabled=false;$('cancel-grid').disabled=true;$('save-grid').disabled=false}}catch(e){message(e.message,true);$('run-grid').disabled=false;$('cancel-grid').disabled=true}}
 $('run-grid').onclick=async()=>{if(!meta)return;try{$('run-grid').disabled=true;const d=await api('grid',{...requestBody(),count:Number($('grid-count').value),adaptive:$('adaptive').checked,minimum_nm:Number($('grid-min').value)});jobId=d.id;$('cancel-grid').disabled=false;$('save-grid').disabled=true;poll(jobId)}catch(e){$('run-grid').disabled=false;message(e.message,true)}};
 $('cancel-grid').onclick=async()=>{try{await api('cancel',{job_id:jobId})}catch(e){message(e.message,true)}};
 async function save(body){try{const d=await api('save',body);message('Saved: '+d.path)}catch(e){message(e.message,true)}}
 $('save-region').onclick=()=>{if(result)save({file_id:fileId,roi:result.roi,settings:result.settings})};$('save-grid').onclick=()=>{if(jobId)save({job_id:jobId})};
-for(const id of ['scenario','bcc-a','threshold'])$(id).onchange=()=>{if(!meta)return;if(id==='scenario')calibrationView();if(jobId&&grid?.state==='running'){api('cancel',{job_id:jobId}).catch(e=>message(e.message,true))}jobId=null;grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=false;$('cancel-grid').disabled=true;$('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(0)};
-$('open').onclick=openFile;
-async function start(){try{config=await api('config');$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}if(config.default_file)$('file').value=config.default_file;if(!$('file').value&&config.files.length)$('file').value=config.files[0].id;if(config.files.length)await openFile();else message('No STA/ST DM4 files found. Check the configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+for(const id of ['scenario','model-scale','threshold'])$(id).onchange=()=>{
+ if(!meta)return;
+ if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
+  restoreCalibration();message('Use a model size between 0.850 and 1.150.',true);return;
+ }
+ if(id==='scenario'||id==='model-scale'){calibrationView();rememberCalibration()}
+ if(jobId&&grid?.state==='running')api('cancel',{job_id:jobId}).catch(e=>message(e.message,true));
+ jobId=null;grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=false;$('cancel-grid').disabled=true;
+ $('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(0);
+};
+$('model-scale').oninput=()=>{
+ const field=$('model-scale'),value=Number(field.value);
+ if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
+};
+$('file').onchange=openFile;
+async function start(){try{config=await api('config');const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}if(config.default_file)$('file').value=config.default_file;if(!$('file').value&&config.files.length)$('file').value=config.files[0].id;if(config.files.length)await openFile();else message('No STA/ST DM4 files found. Check the configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 start();
