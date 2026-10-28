@@ -1,6 +1,6 @@
 # TEM Workbench
 
-A local web application for exploring transmission electron microscopy images through movable-region FFTs, automatic peak detection, and HCP/BCC candidate fitting.
+A local web application for exploring transmission electron microscopy images through movable-region FFTs, direct diffraction spot analysis, automatic peak detection, and HCP/BCC candidate fitting.
 
 The interface pairs real-space images with reciprocal-space previews and supports uniform or adaptive grids for spatial comparison. Analysis runs locally in Python. The frontend uses plain HTML, CSS and JavaScript, with no build step.
 
@@ -19,7 +19,7 @@ The interface pairs real-space images with reciprocal-space previews and support
 - Choose data and output folders through the interface, with local directory links.
 - Save named, tagged regions linked to their source images and analysis settings.
 - Export region and grid results as JSON with source pixel hashes and engine provenance.
-- Explore a bundled, full-resolution ST1221 demonstration image without external data.
+- Explore bundled, full-resolution ST1221 imaging and ST1144 diffraction examples without external data.
 
 ## Quick start
 
@@ -72,7 +72,7 @@ For manual configuration, copy [tem-paths.example.json](tem-paths.example.json) 
 | `output_root` | Export directory, normally `./output`. |
 | `dm_reader` | Optional path to a compatible `ncempy.io.dm` module; otherwise uses installed ncempy. |
 | `python_executable` | Optional Python executable used by the launcher. |
-| `default_file` | Optional image path relative to `data_root`, or `demo/st1221`. |
+| `default_file` | Optional image path relative to `data_root`, or `demo/st1221` / `demo/st1144`. |
 
 ### Saved regions and results
 
@@ -80,17 +80,17 @@ Expand **Saved regions** below the image controls. Give a box a name, optional c
 
 Definitions live in the ignored `tem_workbench.project.json` beside the app. Each entry records the relative image path, pixel checksum, dimensions, calibration, coordinates, settings and annotations. Reopening checks the image identity and calibration before applying coordinates. The file is replaced atomically and remains available after restarting; stale concurrent edits are rejected until refreshed. There is no automatic backup history.
 
-**Export result** and **Export grid results** write numerical JSON files to `./output`, independently of the region definitions. Browser preferences, project definitions, folder settings and numerical exports serve separate purposes. Only app source and the bundled demo belong in Git.
+**Export result** and **Export grid results** write numerical JSON files to `./output`, independently of the region definitions. Browser preferences, project definitions, folder settings and numerical exports serve separate purposes. Only app source and the bundled demos belong in Git.
 
 ### Activity log
 
 The launcher’s **View log** shows image opens, region previews (limited to one entry per second), grid progress and completion, rescoring, saved regions, exports, folder changes and errors. A terminal-launched server writes the same activity to its terminal. Routine browser asset requests are omitted.
 
-### Bundled demo
+### Bundled demos
 
-ST1221 is a Grade 9 titanium image containing the original **4096 × 4096 float32 pixels** and stored calibration. The archive is losslessly compressed; loading verifies the reconstructed pixel checksum. It is an inspection example, not a labelled phase-identification standard. See [demo/README.md](demo/README.md) for format and provenance details.
+The **Demo** image group contains ST1221 for real-space FFT inspection and ST1144 for direct diffraction. Both Grade 9 titanium examples contain their original **4096 × 4096 float32 pixels** and stored calibration. The archives are losslessly compressed; loading verifies the reconstructed pixel checksums. They are inspection examples, not labelled phase-identification standards. See [demo/README.md](demo/README.md) for format and provenance details.
 
-Exports use the configured output directory, defaulting to `./output` beside the app. The demo is always available alongside configured external images.
+Exports use the configured output directory, defaulting to `./output` beside the app. Both demos are always available alongside configured external images and work without a DM4 reader.
 
 ## Workflow
 
@@ -100,7 +100,7 @@ Exports use the configured output directory, defaulting to `./output` beside the
 4. Choose FFT overlays. The default shows the best HCP and best BCC fits; individual-fit controls also expose rejected candidates. Click the FFT to enlarge it with the same axes, peaks and overlays; close with Escape, the × button or a click outside.
 5. Run a grid and click cells to inspect their detailed FFTs. Save results before stopping the server.
 
-FFT brightness, background, white point and colour are display controls. The reset icon beside the white-point field restores the background and white-point defaults. These controls do not alter detected peaks or fitted coordinates.
+FFT brightness, background, white point and colour are display controls. The reset icon beside the white-point field restores the background and white-point defaults. These controls do not alter detected peaks or fitted coordinates. White maxima markers can be crosshairs, open crosshairs, circles or off. Open crosshairs leave the spot centre uncovered and draw four outer alignment arms; the choice is remembered.
 
 The **FFT processing** row above Scale fitting controls **Hann window**, **Remove mean**, and the peak threshold. Windowing and mean removal default to on, preserving the original computation. Turning Hann off uses the rectangular crop. These affect the FFT and detected peaks, so changing them recalculates the selected region and clears the previous grid. Saved analyses record both choices. Display controls remain separate.
 
@@ -110,10 +110,11 @@ Window widths used for matching and weak-peak checks follow the selected window 
 
 Opening a DM4 with reciprocal-length calibration (for example `1/nm`) automatically switches to **Direct diffraction**. The recorded detector intensity is analysed directly, without an FFT, Hann window or mean removal. The first version supports spot patterns, not ring indexing. It uses the same limited HCP/BCC template library and **3–10 nm⁻¹** fitting band as FFT analysis.
 
-- **Beam centre:** an initial estimate clusters opposite-spot midpoints near the detector centre. The pair count and residual are shown; check the estimate visually. If pairs are inadequate, the detector midpoint is used and labelled as a fallback. Edit X/Y, or choose **Set beam centre** and click the detector. **Use estimated centre** restores the initial estimate.
+- **Beam centre:** an initial estimate clusters opposite-spot midpoints near the detector centre. When a clear dark beam-stop shadow is present centrally, it helps choose between repeated lattice inversion centres; its silhouette centroid is not treated as the direct beam. The pair count, residual and use of this shadow constraint are shown. Verify visually: neither spot symmetry nor a beam-stop shadow uniquely guarantees the correct origin. If pairs are inadequate, the detector midpoint is labelled as a fallback. Edit X/Y, or choose **Set beam centre**: a magnified native-pixel preview follows the cursor, with a clear-centred crosshair; click to place the centre. **Use estimated centre** restores the initial estimate. Previous manual choices remain saved until changed.
 - **Calibration:** X/Y values are reciprocal spacing per detector pixel in nm⁻¹. Both can be edited; **Stored calibration** restores the DM4 values. These values and the centre define measured reciprocal coordinates. Scale fitting separately moves the crystal predictions. Positive reciprocal y points upwards; detector y increases downwards.
 - **Exclusions:** set the central exclusion radius and draw rectangles over beam-stop or detector artefacts. Undo removes the last rectangle; Clear removes all rectangles. A predicted profile is unchecked when neither opposite position has a visible neighbourhood. One visible opposite remains assessable. Exclusions are shown on both views.
-- **Spot controls:** smoothing is in original detector pixels (default 2 px). The detector subtracts a broader Gaussian background and looks for local maxima above a broad-noise floor. Minimum spot contrast defaults to 6 robust local background spreads. Lowering it admits more faint features and noise. Subpixel centroids and spot widths are measured on the filtered field; templates do not guide detection.
+- **Spot controls:** smoothing sets the minimum detection size in original pixels (default 2 px). The detector checks progressively larger sizes (2, 4, 8, 16 and 32 px at the default), selecting maxima across position and size. Each feature uses a background annulus sized outside its core, so broad reflections are not rejected as their own background. Contrast must exceed the cutoff in both the background-subtracted filter response and the smoothed detector intensity. **Minimum spot contrast** defaults to 9 robust local background spreads; its slider and number field update the detection and fits. Lower values admit more faint features and noise. Existing per-image choices are retained. The last detector measurements are cached in memory so cutoff or fitting changes do not repeat the filters; changing centre, masks, calibration or smoothing recomputes them.
+- **Duplicate spots:** native-pixel centroid refinement is followed by a separate duplicate check, keeping the strongest blob response within three-quarters of the larger measured spot width (at least 1.5 times the minimum smoothing). Opposite observations are paired afterwards and remain separate markers. Distinct same-side observations are not folded into one profile by the opposite-pairing step. This is a spot-footprint heuristic, not deconvolution of overlapping reflections. Detection and deduplication do not use crystal predictions.
 - **Evidence:** opposite observations share one profile; the plot marks only spots actually detected. Profile weights use `log(1 + local contrast)`, capped at 1–6. Additional maxima above local contrast 3 can supply weak evidence, separately from the strong threshold. The estimated spot width is bounded to 0.30 nm⁻¹; matching uses that width with a 0.10 nm⁻¹ floor. These are exploratory choices, not calibrated confidence levels.
 - **Persistence:** centre, calibration, detector settings and exclusions are remembered per image in browser storage. **Save region** stores a named whole-pattern analysis in the local project, with tags and notes; **Export result** writes numerical results and provenance to the output folder.
 

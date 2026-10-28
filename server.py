@@ -52,7 +52,7 @@ class Workbench:
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
-                'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v1', 'phase_comparison': 'shared-evidence-v1',
+                'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -327,7 +327,8 @@ def make_handler(app):
                 elif url.path == '/api/preview':
                     with app.lock:
                         item=app.engine.load(query['id'][0])
-                    self.send(item['preview'], 'image/png')
+                        preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
+                    self.send(preview, 'image/png')
                 else:
                     path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/style.css': ROOT/'web/style.css'}.get(url.path)
                     if not path:
@@ -400,7 +401,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s · %(levelname)s · %(message)s', datefmt='%H:%M:%S')
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, help='Optional settings for external TEM data')
-    parser.add_argument('--demo', action='store_true', help='Use only the bundled ST1221 demo, without local data settings')
+    parser.add_argument('--demo', action='store_true', help='Use only the bundled TEM and diffraction demos, without local data settings')
     parser.add_argument('--port', type=int, default=8767)
     parser.add_argument('--open', action='store_true')
     parser.add_argument('--fallback-port', action='store_true', help='Use the next free local port if the default is occupied')

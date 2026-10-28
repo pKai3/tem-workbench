@@ -5,11 +5,11 @@ Coordinates are nm^-1 with x right and y up; detector coordinates are x right,
 y down. Opposite observations share a profile but remain separate on display.
 """
 import numpy as np
-from scipy.ndimage import gaussian_filter, maximum_filter, map_coordinates
+from scipy.ndimage import gaussian_filter, maximum_filter, map_coordinates, label, distance_transform_edt
 from scipy.spatial import cKDTree
 import analysis_core as core
 
-VERSION = 'direct-spots-v1'
+VERSION = 'direct-spots-v2'
 BAND = (3., 10.)
 
 
@@ -25,8 +25,9 @@ def reciprocal_factor(unit):
 def estimate_center(array):
     """Cluster opposite-spot midpoints near the detector centre, then refine.
 
-    A central prior disambiguates lattice-equivalent inversion centres. Return
-    the detector centre when pairs are inadequate; never call that a fit.
+    A central prior and, when visible, the beam-stop shadow disambiguate
+    lattice-equivalent inversion centres. The shadow constrains the choice;
+    opposite spots still measure the centre. Fall back when pairs are inadequate.
     """
     h, w = array.shape
     fallback = {'x': (w-1)/2, 'y': (h-1)/2, 'pairs': 0,
@@ -65,6 +66,22 @@ def estimate_center(array):
     groups = tree.query_ball_point(mid, 3.5)
     # A weak central prior selects among repeated inversion centres.
     merit = np.array([len(g) for g in groups])*np.exp(-.5*(np.linalg.norm(mid-origin, axis=1)/(.05*min(hh, ww)))**2)
+    # A lattice can have several inversion centres. Prefer one under a clearly
+    # dark central obstruction, rather than equating the silhouette centroid
+    # (which includes the shaft) with the direct beam.
+    smoothed = gaussian_filter(a, 2.)
+    near = radius < .12*min(hh, ww)
+    background = float(np.median(smoothed[near]))
+    components, _ = label(near & (smoothed < .12*background))
+    counts = np.bincount(components.ravel())
+    ids = [i for i in np.unique(components[radius < .08*min(hh, ww)]) if i and counts[i] >= 12]
+    shadow = np.isin(components, ids)
+    use_shadow = background > 0 and bool(ids) and shadow.sum() < .20*near.sum()
+    if use_shadow:
+        distance = distance_transform_edt(~shadow)
+        indices = np.round(mid).astype(int)
+        outside = distance[indices[:, 1], indices[:, 0]]
+        merit *= .01+.99*np.exp(-.5*(outside/max(2., .004*min(hh, ww)))**2)
     best = int(np.argmax(merit))
     if len(groups[best]) < 3:
         return fallback
@@ -80,14 +97,14 @@ def estimate_center(array):
     residual = np.array([np.linalg.norm(points[i]+points[j]-2*centre) for i, j in pairs])
     x, y = centre*binning+(binning-1)/2
     return {'x': float(x), 'y': float(y), 'pairs': len(pairs), 'method': 'opposite_spot_midpoints',
-            'residual_px': float(np.sqrt(np.mean(residual**2))*binning)}
+            'residual_px': float(np.sqrt(np.mean(residual**2))*binning), 'beamstop_prior': bool(use_shadow)}
 
 
 def defaults(info):
     centre = info['beam_center']
     return {'center_x': centre['x'], 'center_y': centre['y'],
             'pixel_x_nm_inv': info['pixel_x_nm_inv'], 'pixel_y_nm_inv': info['pixel_y_nm_inv'],
-            'exclude_radius_nm_inv': 2.5, 'spot_sigma_px': 2., 'spot_snr': 6., 'masks': []}
+            'exclude_radius_nm_inv': 2.5, 'spot_sigma_px': 2., 'spot_snr': 9., 'masks': []}
 
 
 def validate(info, supplied):
@@ -136,7 +153,12 @@ def _profiles(spots, radius):
     profiles = []
     for spot in sorted(spots, key=lambda p: p['local_contrast'], reverse=True):
         q = core.canonical(np.array([spot['q']]))[0]
-        group = next((p for p in profiles if min(np.linalg.norm(q-p['q']), np.linalg.norm(q+p['q'])) < radius), None)
+        # Duplicate signed detections are removed before pairing. Only opposite
+        # observations can join here; close resolved spots on the same side
+        # must not become one profile merely because the pairing radius is wide.
+        group = next((p for p in profiles
+                      if min(np.linalg.norm(q-p['q']), np.linalg.norm(q+p['q'])) < radius
+                      and all(np.dot(spot['q'], s['q']) < 0 for s in p['spots'])), None)
         if group is None:
             profiles.append({'q': q, 'spots': [spot]})
         else:
@@ -150,13 +172,100 @@ def _profiles(spots, radius):
     return profiles
 
 
-def spectrum(array, settings):
+def _spot_scales(minimum):
+    scales = [float(minimum)]
+    while scales[-1] < 32:
+        scales.append(scales[-1]*2)
+    return scales
+
+
+def _deduplicate_spots(spots, minimum):
+    """Suppress repeated signed centroids inside one measured spot footprint.
+
+    Process the strongest blob response first. This deliberately does not fold
+    opposite spots or depend on a predicted crystal structure.
+    """
+    kept = []
+    for spot in sorted(spots, key=lambda p: p['response'], reverse=True):
+        if any(np.hypot(spot['x_px']-p['x_px'], spot['y_px']-p['y_px']) <
+               max(1.5*minimum, .75*max(spot['width_px'], p['width_px'])) for p in kept):
+            continue
+        kept.append(spot)
+    return kept
+
+
+def _spot_candidates(raw, valid, band, scales):
+    # Compare blob responses across sizes. A small annulus inside a broad spot
+    # mistakes the spot itself for noisy background; each size gets its own
+    # background annulus outside that feature. No crystal predictions enter here.
+    def blur(width):
+        return gaussian_filter(raw*valid, width)/np.maximum(gaussian_filter(valid.astype(np.float32), width), 1e-6)
+    smooth = blur(scales[0])
+    previous = smooth
+    fields = []
+    for scale in scales:
+        following = blur(2*scale)
+        fields.append(previous-following)
+        previous = following
+    spots = []
+    for k, (scale, field) in enumerate(zip(scales, fields)):
+        noise = max(1e-6, 1.4826*float(np.median(abs(field[band]-np.median(field[band]))))) if band.any() else 1.
+        maxima = band & (field > 2*noise) & (field == maximum_filter(field, 2*max(1, int(round(scale)))+1))
+        if k:
+            maxima &= field > fields[k-1]
+        if k+1 < len(fields):
+            maxima &= field >= fields[k+1]
+        ys, xs = np.where(maxima)
+        order = np.argsort(field[ys, xs])[::-1][:250]
+        outer = int(np.ceil(8*scale))
+        gy, gx = np.mgrid[-outer:outer+1, -outer:outer+1]
+        distance = np.hypot(gx, gy)
+        annulus_mask = (distance >= 4*scale) & (distance <= 8*scale)
+        core_mask = distance <= 3*scale
+        for i in order:
+            y, x = int(ys[i]), int(xs[i])
+            if min(x, y, raw.shape[1]-1-x, raw.shape[0]-1-y) < outer:
+                continue
+            sl = np.s_[y-outer:y+outer+1, x-outer:x+outer+1]
+            ring = annulus_mask & valid[sl]
+            if ring.sum() < 24 or not valid[y-max(1,int(scale)):y+max(1,int(scale))+1,
+                                                     x-max(1,int(scale)):x+max(1,int(scale))+1].all():
+                continue
+            background = float(np.median(field[sl][ring]))
+            spread = max(.25*noise, 1.4826*float(np.median(abs(field[sl][ring]-background))), 1e-6)
+            contrast = float((field[y, x]-background)/spread)
+            if contrast < 2.:
+                continue
+            # Refine on native pixels at the user's minimum smoothing, using a
+            # neighbourhood sized to this blob. Keep one centre for a broad core.
+            patch = smooth[sl]
+            bg = float(np.median(patch[ring]))
+            # A blob must also rise above the background in the smoothed
+            # detector intensity, not just in the difference-of-Gaussians field.
+            native_spread = max(.25*noise, 1.4826*float(np.median(abs(patch[ring]-bg))), 1e-6)
+            contrast = min(contrast, float((smooth[y, x]-bg)/native_spread))
+            if contrast < 2.:
+                continue
+            weights = np.maximum(patch-(bg+.2*max(0., float(smooth[y, x])-bg)), 0)*valid[sl]*core_mask
+            total = float(weights.sum())
+            if not total:
+                continue
+            dx, dy = float((weights*gx).sum()/total), float((weights*gy).sum()/total)
+            vx = float((weights*(gx-dx)**2).sum()/total)
+            vy = float((weights*(gy-dy)**2).sum()/total)
+            spots.append({'x_px': x+dx, 'y_px': y+dy, 'local_contrast': contrast,
+                          'response': float(field[y, x]), 'width_px': 2.355*np.sqrt((vx+vy)/2),
+                          'variance_x': vx, 'variance_y': vy, 'detection_sigma_px': scale})
+    return spots
+
+
+def _prepare_detector(array, settings):
     h, w = array.shape
     sx, sy = settings['pixel_x_nm_inv'], settings['pixel_y_nm_inv']
     cx, cy = settings['center_x'], settings['center_y']
-    # Work on original detector pixels within the displayed band plus filter margin.
     sigma = settings['spot_sigma_px']
-    pad = int(np.ceil(24*sigma))
+    scales = _spot_scales(sigma)
+    pad = int(np.ceil(8*scales[-1]))
     x0, x1 = max(0, int(cx-10.5/sx)-pad), min(w, int(np.ceil(cx+10.5/sx))+pad+1)
     y0, y1 = max(0, int(cy-10.5/sy)-pad), min(h, int(np.ceil(cy+10.5/sy))+pad+1)
     raw = array[y0:y1, x0:x1].astype(np.float32)
@@ -164,53 +273,48 @@ def spectrum(array, settings):
     qx, qy = (xx+x0-cx)*sx, (cy-yy-y0)*sy
     g = np.hypot(qx, qy)
     valid = visible(np.c_[qx.ravel(), qy.ravel()], settings, array.shape).reshape(raw.shape)
-    # Normalised filtering avoids turning a manually masked beamstop edge into a peak.
-    def blur(width):
-        return gaussian_filter(raw*valid, width)/np.maximum(gaussian_filter(valid.astype(np.float32), width), 1e-6)
-    residual = blur(sigma)-blur(6*sigma)
     band = valid & (g >= BAND[0]) & (g <= BAND[1])
-    noise = max(1e-6, 1.4826*float(np.median(abs(residual[band]-np.median(residual[band]))))) if band.any() else 1.
-    size = max(3, int(4*sigma)//2*2+1)
-    mask = band & (residual == maximum_filter(residual, size)) & (residual > 2*noise)
-    ys, xs = np.where(mask)
-    order = np.argsort(residual[ys, xs])[::-1][:500]
+    candidates = _spot_candidates(raw, valid, band, scales)
+    deduplicated = _deduplicate_spots(candidates, sigma)
     spots = []
-    outer = max(6, int(np.ceil(8*sigma)))
-    inner = max(2, int(np.ceil(3*sigma)))
-    weak_cutoff = min(3., settings['spot_snr'])
-    for i in order:
-        y, x = int(ys[i]), int(xs[i])
-        if min(x, y, raw.shape[1]-1-x, raw.shape[0]-1-y) < outer:
+    for spot in deduplicated:
+        px, py = spot['x_px']+x0, spot['y_px']+y0
+        q = np.array([(px-cx)*sx, (cy-py)*sy])
+        if not BAND[0] <= np.linalg.norm(q) <= BAND[1] or not visible([q], settings, array.shape)[0]:
             continue
-        q = np.array([qx[y, x], qy[y, x]])
-        if not visible([q], settings, array.shape, margin=2*sigma*max(sx, sy))[0]:
-            continue
-        distance = np.hypot(xx[y-outer:y+outer+1, x-outer:x+outer+1]-x,
-                            yy[y-outer:y+outer+1, x-outer:x+outer+1]-y)
-        patch = residual[y-outer:y+outer+1, x-outer:x+outer+1]
-        annulus = patch[(distance >= 4*sigma) & (distance <= 8*sigma) & valid[y-outer:y+outer+1, x-outer:x+outer+1]]
-        if len(annulus) < 24:
-            continue
-        bg = float(np.median(annulus))
-        spread = max(noise*.25, 1.4826*float(np.median(abs(annulus-bg))), 1e-6)
-        contrast = (float(residual[y, x])-bg)/spread
-        if contrast < weak_cutoff:
-            continue
-        peak = residual[y-inner:y+inner+1, x-inner:x+inner+1]
-        weights = np.maximum(peak-max(bg, .2*float(residual[y, x])), 0)
-        total = float(weights.sum())
-        if not total:
-            continue
-        gy, gx = np.indices(weights.shape)
-        dx, dy = float((weights*(gx-inner)).sum()/total), float((weights*(gy-inner)).sum()/total)
-        px, py = x+x0+dx, y+y0+dy
-        refined_q = np.array([(px-cx)*sx, (cy-py)*sy])
-        if not BAND[0] <= np.linalg.norm(refined_q) <= BAND[1]:
-            continue
-        width = 2.355*np.sqrt(float((weights*((gx-inner-dx)**2*sx*sx+(gy-inner-dy)**2*sy*sy)).sum()/total)/2)
-        spots.append({'q': [(px-cx)*sx, (cy-py)*sy], 'x_px': px, 'y_px': py,
-                      'local_contrast': float(contrast), 'enrichment': float(np.log1p(contrast)),
-                      'width_nm_inv': float(width), 'intensity': float(array[int(round(py)), int(round(px))])})
+        spot.update(q=q.tolist(), x_px=px, y_px=py,
+                    enrichment=float(np.log1p(spot['local_contrast'])),
+                    width_nm_inv=float(2.355*np.sqrt((spot['variance_x']*sx*sx+spot['variance_y']*sy*sy)/2)),
+                    intensity=float(array[int(round(py)), int(round(px))]))
+        spots.append(spot)
+    # Display resampling is separate from the native-pixel detector and fitting.
+    axis = np.linspace(-10.5, 10.5, 768)
+    ax, ay = np.meshgrid(axis, axis[::-1])
+    image = map_coordinates(array, [cy-ay/sy, cx+ax/sx], order=1, mode='constant', cval=0., prefilter=False)
+    log = np.log1p(np.maximum(image, 0))
+    return {'spots': spots, 'log': log, 'scales': scales, 'can_index': bool(band.any()),
+            'duplicate_count': len(candidates)-len(deduplicated)}
+
+
+def spectrum(array, settings, cache=None):
+    """Analyze native detector spots; an optional one-image cache avoids refiltering
+    when only the contrast cutoff or phase-fitting controls change.
+    """
+    h, w = array.shape
+    sx, sy = settings['pixel_x_nm_inv'], settings['pixel_y_nm_inv']
+    cx, cy = settings['center_x'], settings['center_y']
+    sigma = settings['spot_sigma_px']
+    key = (array.__array_interface__['data'][0], array.shape, array.strides,
+           cx, cy, sx, sy, sigma, settings['exclude_radius_nm_inv'],
+           tuple(tuple(r[k] for k in ('x', 'y', 'w', 'h')) for r in settings['masks']))
+    if cache is not None and cache.get('key') == key:
+        prepared = cache['prepared']
+    else:
+        prepared = _prepare_detector(array, settings)
+        if cache is not None:
+            cache.clear()
+            cache.update(key=key, prepared=prepared)
+    spots = [p for p in prepared['spots'] if p['local_contrast'] >= min(3., settings['spot_snr'])]
     strong = [p for p in spots if p['local_contrast'] >= settings['spot_snr']]
     width = float(np.median([p['width_nm_inv'] for p in strong])) if strong else 2.355*sigma*max(sx, sy)
     width = float(np.clip(width, 2*max(sx, sy), .30))
@@ -233,20 +337,16 @@ def spectrum(array, settings):
                        'observed_spots': [s['q'] for s in p['spots']],
                        'strength': min(.5, (strongest['local_contrast']-1)/6),
                        'local_contrast': strongest['local_contrast'], 'enrichment': strongest['enrichment']})
-    # Display resampling is separate from the native-pixel detector and fitting.
-    axis = np.linspace(-10.5, 10.5, 768)
-    ax, ay = np.meshgrid(axis, axis[::-1])
-    image = map_coordinates(array, [cy-ay/sy, cx+ax/sx], order=1, mode='constant', cval=0., prefilter=False)
-    log = np.log1p(np.maximum(image, 0))
     context = {'maxima': maxima, 'radius': radius, 'x_limit': max(cx, w-1-cx)*sx,
                'y_limit': max(cy, h-1-cy)*sy,
                'visible': lambda q: visible(q, settings, array.shape, radius) | visible(-q, settings, array.shape, radius)}
     complete_band = min(cx*sx, (w-1-cx)*sx, cy*sy, (h-1-cy)*sy) >= BAND[1]
-    result = {'kind': 'diffraction', 'log': log, 'extent': [-10.5, 10.5, -10.5, 10.5],
+    result = {'kind': 'diffraction', 'log': prepared['log'], 'extent': [-10.5, 10.5, -10.5, 10.5],
               'peaks': peaks, 'df': max(sx, sy), 'peak_width_nm_inv': width,
               'weak_maxima': maxima, 'profile_threshold': settings['spot_snr'],
               'observed_spot_count': sum(len(p['observed_spots']) for p in peaks),
               'beam_center_px': [cx, cy], 'reciprocal_pixel_size': [sx, sy],
-              'full_band_on_detector': complete_band, 'can_index': bool(band.any()),
-              'mask_count': len(settings['masks']), 'detector': VERSION}
+              'full_band_on_detector': complete_band, 'can_index': prepared['can_index'],
+              'mask_count': len(settings['masks']), 'detector': VERSION,
+              'detection_scales_px': prepared['scales'], 'duplicate_count': prepared['duplicate_count']}
     return result, context

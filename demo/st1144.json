@@ -1,0 +1,19 @@
+{
+  "width": 4096,
+  "height": 4096,
+  "pixel_x_nm_inv": 0.011518612504005432,
+  "pixel_y_nm_inv": 0.011518612504005432,
+  "sha256_pixels": "8f8b2af63cb7dc75fdb29a700030c324f9cbc01fe7ee1b001b0630881327f08b",
+  "date": "10/27/2026",
+  "time": "12:14:47 PM",
+  "device": "OneView",
+  "image_kind": "diffraction",
+  "schema_version": 1,
+  "name": "400X_OneView_ST_1144",
+  "specimen": "Grade 9 titanium, solution treated (ST)",
+  "source_filename": "400X_OneView_ST_1144.dm4",
+  "dtype": "float32",
+  "encoding": "float32-le-byte-planes-v1",
+  "archive_sha256": "6cfca2bf8b08ac3334be45a218bdb58e29e1e084e5e91f95a231ebeb184eb77e",
+  "description": "Full-resolution, lossless recorded diffraction intensities and stored reciprocal calibration. No confirmed phase labels are supplied."
+}

@@ -52,7 +52,7 @@ class Engine:
         self.loaded = {}
 
     def catalog(self):
-        rows = [demo_data.catalog_entry()]
+        rows = demo_data.catalog_entries()
         self.files = {}
         if self.settings.get('demo_only'):
             return rows
@@ -74,10 +74,10 @@ class Engine:
     def load(self, file_id):
         if file_id in self.loaded:
             return self.loaded[file_id]
-        is_demo = file_id == demo_data.ID
+        is_demo = file_id in demo_data.DEMOS
         if is_demo:
-            array, meta = demo_data.load()
-            name = demo_data.NAME
+            array, meta = demo_data.load(file_id)
+            name = demo_data.DEMOS[file_id]['name']
         else:
             path = self.files.get(file_id)
             if not path or not path.resolve().is_relative_to(self.data_root):
@@ -138,6 +138,14 @@ class Engine:
         self.loaded[file_id] = item
         return item
 
+    def native_preview(self, item):
+        """Lazy native-pixel display for the centre-placement magnifier."""
+        if item['info'].get('image_kind') != 'diffraction':
+            return item['preview']
+        if 'native_preview' not in item:
+            item['native_preview'] = png(np.log1p(np.maximum(item['array'], 0)))
+        return item['native_preview']
+
     def validate(self, item, roi, settings):
         try:
             x, y, w, h = [int(roi[k]) for k in ['x', 'y', 'w', 'h']]
@@ -175,7 +183,7 @@ class Engine:
         direct = info.get('image_kind') == 'diffraction'
         crop = item['array'][y:y+h, x:x+w]
         if direct:
-            s, context = diffraction.spectrum(crop, settings['diffraction'])
+            s, context = diffraction.spectrum(crop, settings['diffraction'], cache=item.setdefault('_diffraction_cache', {}))
             width_nm = height_nm = None
             can_index = s['can_index']
         else:

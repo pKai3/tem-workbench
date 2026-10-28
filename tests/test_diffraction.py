@@ -61,6 +61,44 @@ class DiffractionChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'full detector'):
             engine.validate(item,dict(x=0,y=0,w=128,h=128),{})
 
+    def test_broad_spots_are_found_once_and_cutoff_reuses_detection(self):
+        _, info, observed = pattern()
+        yy, xx = np.indices((768, 768));rng = np.random.default_rng(11)
+        array = 100+rng.normal(0, .4, yy.shape)
+        for q in observed:
+            x = info['beam_center']['x']+q[0]/info['pixel_x_nm_inv']
+            y = info['beam_center']['y']-q[1]/info['pixel_y_nm_inv']
+            # Broad cores with small shoulders used to fail the small annulus
+            # contrast test or produce several local maxima for one reflection.
+            array += 250*np.exp(-((xx-x)**2+(yy-y)**2)/(2*12**2))
+            array += 18*np.exp(-((xx-x-5)**2+(yy-y+3)**2)/(2*1.5**2))
+        array = array.astype(np.float32);settings = diffraction.defaults(info);cache = {}
+        spectrum, _ = diffraction.spectrum(array, settings, cache)
+        self.assertEqual(spectrum['observed_spot_count'], len(observed))
+        measured = np.array([q for p in spectrum['peaks'] for q in p['observed_spots']])
+        self.assertLess(np.linalg.norm(observed[:, None]-measured[None], axis=2).min(axis=1).max(), .03)
+        with patch('diffraction._prepare_detector', side_effect=AssertionError('Unexpected refilter')):
+            changed, _ = diffraction.spectrum(array, {**settings, 'spot_snr': 30.}, cache)
+        self.assertLessEqual(changed['observed_spot_count'], len(observed))
+        # Distinct observations on the same side must not be folded together.
+        profiles = diffraction._profiles([{'q':[4.,.01],'local_contrast':10.},
+                                          {'q':[4.06,.01],'local_contrast':9.}], .1)
+        self.assertEqual(len(profiles), 2)
+
+    def test_beam_stop_disambiguates_dense_lattice_inversion_centres(self):
+        yy, xx = np.indices((768, 768));array = np.full(xx.shape, 100., np.float32)
+        centre = np.array([400., 350.])
+        for i in range(-5, 6):
+            for j in range(-5, 6):
+                if i == j == 0:
+                    continue
+                x, y = centre+i*np.array([80., 0])+j*np.array([30., 60.])
+                array += 250*np.exp(-((xx-x)**2+(yy-y)**2)/(2*2.2**2))
+        array[((xx-400)**2+(yy-350)**2 < 14**2) | ((xx > 400) & (abs(yy-350) < 4))] = 0
+        found = diffraction.estimate_center(array)
+        self.assertTrue(found['beamstop_prior'])
+        self.assertLess(np.linalg.norm(np.array([found['x'], found['y']])-centre), .5)
+
     def test_opposite_spots_near_horizontal_axis_stay_one_profile(self):
         spots=[{'q':[4.,.01],'local_contrast':10.},
                {'q':[-4.,.01],'local_contrast':9.}]
