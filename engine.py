@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image
 import analysis_core as core
 import scale_fitting
+import phase_comparison
 
 ROOT = Path(__file__).resolve().parent
 
@@ -44,7 +45,7 @@ class Engine:
                 t[key] = np.array(t[key])
         self.auto_templates = scale_fitting.prepare_templates(self.templates)
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'scale_fitting.py', 'engine.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'scale_fitting.py', 'phase_comparison.py', 'engine.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
 
@@ -141,11 +142,11 @@ class Engine:
         else:
             models = scale_fitting.search(s['peaks'], self.auto_templates, tol,
                                           settings['scale_mode'], bcc_a=settings['bcc_a'])
-        classification = core.classify(s['peaks'], models, s['df'])
+        classification = phase_comparison.classify(s['peaks'], models, s['df'])
         if settings['scale_mode'] != 'fixed':
             classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the stored image calibration.')
             if settings['scale_mode'] == 'auto_hcp_ac':
-                classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scores are not corrected for this added flexibility; compare with single-scale mode.')
+                classification['flags'].append('HCP has an extra fitting parameter where c is visible. The positional score is not corrected for this flexibility; phase selection separately checks for competing models that explain the same peaks.')
             primary = classification.get('primary_model')
             if primary and primary.get('scale_at_bound'):
                 classification['flags'].append('The leading fit reaches an automatic scale limit.')
