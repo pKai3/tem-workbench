@@ -40,16 +40,17 @@ function calibrationView(){
  if(automatic){field.value='1.000';field.readOnly=true;$('bcc-a').value=.330;
   $('calibration-note').textContent=(v==='auto_uniform'?'Each region fits one prediction scale separately for HCP and BCC; HCP c/a stays fixed.':'Each region fits one BCC prediction scale and independent HCP a/c scales where visible.')+' Range ×0.85–1.15 relative to nominal dimensions. Measured FFT axes stay unchanged. Candidate model dimensions are shown below.';return}
 
- if(v!=='custom')field.value=v==='1'?'1.000':'0.950';
- field.readOnly=v!=='custom';$('bcc-a').value=v==='reference'?.32452995:.330;
+ if(v!=='custom')field.value='1.000';
+ field.readOnly=v!=='custom';$('bcc-a').value=.330;
  const scale=Number(field.value).toFixed(3);
- const explanation=v==='1'?'Nominal model sizes; stored DM4 calibration.':v==='reference'?'Provisional BCC a from diffraction 1222; a comparison, not a measured calibration.':v==='.95'?'This preset was estimated on ST1221; on other images it is a comparison only.':'Manual comparison; a better fit is not a measurement of calibration or strain.';
+ const explanation=v==='1'?'Nominal model sizes; stored DM4 calibration.':'Manual comparison; a better fit is not a measurement of calibration or strain.';
  $('calibration-note').textContent=`Model size ×${scale} for both structures · BCC a = ${Number($('bcc-a').value).toFixed(5)} nm. ${explanation} Measured FFT axes stay unchanged.`;
 }
 function restoreCalibration(){
  const saved=readPreference('tem-scale:'+meta.sha256_pixels,{});
- const valid=saved&&['1','.95','reference','custom','auto_uniform','auto_hcp_ac'].includes(saved.mode)&&(!saved.mode.startsWith('auto_')||config.scale_modes?.includes(saved.mode))&&Number.isFinite(saved.scale)&&saved.scale>=.85&&saved.scale<=1.15;
- $('scenario').value=valid?saved.mode:'1';$('model-scale').value=valid?saved.scale:1;
+ const valid=saved&&['1','custom','auto_uniform','auto_hcp_ac'].includes(saved.mode)&&(!saved.mode.startsWith('auto_')||config.scale_modes?.includes(saved.mode))&&Number.isFinite(saved.scale)&&saved.scale>=.85&&saved.scale<=1.15;
+ const defaultMode=config.scale_modes?.includes('auto_hcp_ac')?'auto_hcp_ac':'1';
+ $('scenario').value=valid?saved.mode:defaultMode;$('model-scale').value=valid?saved.scale:1;
  calibrationView();
 }
 function rememberCalibration(){writePreference('tem-scale:'+meta.sha256_pixels,{mode:$('scenario').value,scale:Number($('model-scale').value)})}
@@ -129,12 +130,18 @@ function evidenceDescription(model){
  return `${e.detected_count} strong + ${e.weak_count} weak; ${e.unsupported_count} unsupported; ${e.unassessable_count} unchecked. Search radius ${e.search_radius_nm_inv.toFixed(3)} nm⁻¹. Weak maxima do not count toward the initial screen.`;
 }
 function rankDescription(m){return `Position ${(m.position_score??m.score).toFixed(3)} − scale ${(m.scale_penalty??0).toFixed(3)} + weak ${(m.weak_peak_bonus??0).toFixed(3)} − missing ${(m.missing_peak_penalty??0).toFixed(3)} = rank ${m.score.toFixed(3)}`}
+function compareRank(a,b){
+ if(!a)return b?1:0;
+ if(!b)return -1;
+ return b.score-a.score||b.coverage-a.coverage;
+}
+const COVERAGE_HELP='Weighted share of original detected peak profiles matched by this fit. Peak weights use height above the radial background, capped at 1–6. Extra weak maxima are excluded. Not an intensity fraction or phase probability.';
 function renderEvidence(data){
  const container=$('evidence-table');container.replaceChildren();$('evidence-details').hidden=!data.models.some(m=>m.peak_evidence);
  const table=document.createElement('table'),header=document.createElement('tr'),head=document.createElement('thead'),body=document.createElement('tbody');
  for(const label of ['Candidate / zone','Strong','Weak','No peak','Unchecked','+ Bonus','− Missing']){const th=document.createElement('th');th.textContent=label;header.append(th)}
  head.append(header);table.append(head,body);container.append(table);
- for(const m of [...data.models].sort((a,b)=>b.coverage-a.coverage||b.score-a.score)){
+ for(const m of [...data.models].sort(compareRank)){
   const e=m.peak_evidence;if(!e)continue;const row=document.createElement('tr');row.title=rankDescription(m)+' · '+evidenceDescription(m);
   for(const value of [`${m.phase} ${zoneLabel(m)}`,e.detected_count,e.weak_count,e.unsupported_count,e.unassessable_count,m.weak_peak_bonus.toFixed(3),m.missing_peak_penalty.toFixed(3)]){const td=document.createElement('td');td.textContent=value;row.append(td)}
   body.append(row);
@@ -145,7 +152,7 @@ function screenReasons(m){
  const reasons=[];
  if(m.matched_profile_count<4)reasons.push(`${m.matched_profile_count}/4 strong profiles`);
  if(m.nonparallel_spread_sine<=.5)reasons.push('limited directions');
- if(m.coverage<=.30)reasons.push('support ≤ 30%');
+ if(m.coverage<=.30)reasons.push('peak coverage ≤ 30%');
  if((m.position_score??m.score)<=.20)reasons.push('position ≤ 0.20');
  if(m.score<=.20)reasons.push('rank ≤ 0.20');
  return reasons;
@@ -154,14 +161,14 @@ function screenLabel(m){return m.valid?'Pass':'Below: '+(screenReasons(m)[0]||'f
 function bestModel(data,phase){return data.models.find(m=>m.phase===phase&&m.valid)??data.models.find(m=>m.phase===phase)}
 function renderModels(data){
  $('models').replaceChildren();
- const ranked=['HCP','BCC'].map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>(b.m?.coverage??-1)-(a.m?.coverage??-1));
+ const ranked=['HCP','BCC'].map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>compareRank(a.m,b.m));
  for(const {phase,m} of ranked){
   const row=document.createElement('tr');
   const values=m?[`${phase} ${zoneLabel(m)}`,predictionCounts(m),`${(100*m.coverage).toFixed(0)}%`,(m.position_score??m.score).toFixed(3),(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),fittedDimensions(m).replace(' / ','\n'),scalePercentages(m).replace(' / ','\n'),m.rms_nm_inv.toFixed(3),screenLabel(m)]:[phase,'—','—','—','—','—','—','—','—','No fit'];
-  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(m&&(i===6||i===7))td.title=scaleDetails(m)+(i===7?' · change from the reference prediction coordinates: 100 × (multiplier − 1). Model lattice dimensions change inversely.':'');if(m&&i===1)td.title=evidenceDescription(m);if(m&&i===5)td.title=rankDescription(m);if(m&&i===9)td.title=screenReasons(m).join('; ')||'Passes the screen';row.append(td)});
+  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(m&&(i===6||i===7))td.title=scaleDetails(m)+(i===7?' · change from the reference prediction coordinates: 100 × (multiplier − 1). Model lattice dimensions change inversely.':'');if(m&&i===1)td.title=evidenceDescription(m);if(m&&i===2)td.title=COVERAGE_HELP;if(m&&i===5)td.title=rankDescription(m);if(m&&i===9)td.title=screenReasons(m).join('; ')||'Passes the screen';row.append(td)});
   $('models').append(row);
  }
- $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank = position − scale cost + weak-peak bonus − missing-prediction cost. S+W separates strong profiles from weak maxima; support still uses only the original detected profiles. Prediction-site evidence below shows the separate adjustments. Model dimensions assume the stored calibration; these scores are not phase probabilities.';
+ $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank = position − scale cost + weak-peak bonus − missing-prediction cost. S+W separates strong profiles from weak maxima; peak coverage is the weighted share of original detected profiles matched by the candidate. Prediction-site evidence below shows the separate adjustments. Model dimensions assume the stored calibration; these scores are not phase probabilities.';
 }
 async function renderResult(data,version,body){$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · ROI ${data.roi.x}, ${data.roi.y}`;$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Geometry check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.');renderModels(data);renderEvidence(data);$('result-detail').textContent=`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const img=new Image();const precise=Boolean(data.images.fft_log16);img.src=data.images.fft_log16||data.images.fft;await img.decode();if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;fftRaw={canvas,pixels,precise,histogram,maximum,limits:data.images.fft_log_limits||[0,1]};drawFFT();document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
 function drawFFT(){
@@ -207,21 +214,26 @@ function renderFitChoices(data){
  chosenFits=new Set();$('fit-list').replaceChildren();
  const table=document.createElement('table');table.className='fit-table';
  const head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
- const headings=[['Show','Toggle this overlay'],['Candidate\nZone axis','Candidate structure and zone axis; rotation is shown below'],['Peaks\nS+W / all','Strong profiles + additional weak maxima / prediction positions; weak maxima do not count toward the screen'],['Support ↓','Share of detected Fourier evidence'],['RMS\nnm⁻¹','Root-mean-square positional residual'],['a / c\nnm','Fitted model lattice parameters'],['Scale Δ\n%','Reciprocal prediction scale changes; HCP shows a* and c*'],['Scale cost','Scale penalty subtracted from the position score'],['Rank','Position − scale + weak-peak bonus − missing-prediction cost'],['Screen','Candidate acceptance screen; hover for rejection reasons']];
- for(const [title,help]of headings){const th=document.createElement('th');th.scope='col';th.textContent=title;th.title=help;header.append(th)}
+ const headings=[['Show','Toggle this overlay'],['Candidate\nZone axis','Candidate structure and zone axis; rotation is shown below'],['Peaks\nS+W / all','Strong profiles + additional weak maxima / prediction positions; weak maxima do not count toward the screen'],['Peak\ncoverage',COVERAGE_HELP],['RMS\nnm⁻¹','Root-mean-square positional residual'],['a / c\nnm','Fitted model lattice parameters'],['Scale Δ\n%','Reciprocal prediction scale changes; HCP shows a* and c*'],['Scale cost','Scale penalty subtracted from the position score'],['Rank ↓','Position − scale + weak-peak bonus − missing-prediction cost; highest first'],['Screen','Candidate acceptance screen; hover for rejection reasons']];
+ for(const [title,help]of headings){const th=document.createElement('th');th.scope='col';th.textContent=title;th.title=help;if(title==='Rank ↓')th.setAttribute('aria-sort','descending');header.append(th)}
  head.append(header);table.append(head,body);$('fit-list').append(table);
- const add=(key,m,name,geometry=false)=>{
+ const add=(key,m,name,geometry=false,target=body)=>{
   const row=document.createElement('tr'),toggle=document.createElement('td'),box=document.createElement('input');
   box.type='checkbox';box.dataset.fit=key;box.setAttribute('aria-label','Overlay '+name);
   box.addEventListener('change',()=>{box.checked?chosenFits.add(key):chosenFits.delete(key);$('overlay').value='custom';drawFFT()});toggle.append(box);row.append(toggle);
   const why=geometry?[]:screenReasons(m);
   const values=[name+(geometry?'':`\n${m.rotation_deg.toFixed(1)}°`),geometry?m.matched_profile_count+' peaks':predictionCounts(m),`${(m.coverage*100).toFixed(0)}%`,m.rms_nm_inv.toFixed(3),geometry?'—':fittedDimensions(m).replace(' / ','\n'),geometry?'—':scalePercentages(m).replace(' / ','\n'),geometry?'—':(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),geometry?(m.valid?'Pass':'Below'):screenLabel(m)];
-  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===0)td.className=geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc';if(!geometry&&(i===4||i===5))td.title=scaleDetails(m);if(!geometry&&i===1)td.title=evidenceDescription(m);if(i===7)td.title=geometry?'Geometry-only score':rankDescription(m);if(i===8)td.title=m.valid?'Passes the screen':'Below threshold'+(why.length?' · '+why.join('; '):'');row.append(td)});
-  body.append(row);
+  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===0)td.className=geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc';if(!geometry&&(i===4||i===5))td.title=scaleDetails(m);if(!geometry&&i===1)td.title=evidenceDescription(m);if(i===2)td.title=COVERAGE_HELP;if(i===7)td.title=geometry?'Geometry-only score':rankDescription(m);if(i===8)td.title=m.valid?'Passes the screen':'Below threshold'+(why.length?' · '+why.join('; '):'');row.append(td)});
+  target.append(row);
  };
- data.models.map((m,i)=>({m,i})).sort((a,b)=>b.m.coverage-a.m.coverage||b.m.score-a.m.score).forEach(({m,i})=>add('phase-'+i,m,`${m.phase} ${zoneLabel(m)}`));
- for(const [key,name]of [['primary_lattice','Primary geometry'],['secondary_lattice','Secondary geometry']])if(data.periodicity[key])add(key,data.periodicity[key],name,true);
- if(!body.children.length)$('fit-list').textContent='No retained candidate fits in this region.';
+ data.models.map((m,i)=>({m,i})).sort((a,b)=>compareRank(a.m,b.m)).forEach(({m,i})=>add('phase-'+i,m,`${m.phase} ${zoneLabel(m)}`));
+ const geometryEntries=[['primary_lattice','Primary geometry'],['secondary_lattice','Secondary geometry']].filter(([key])=>data.periodicity[key]);
+ if(geometryEntries.length){
+  const geometryBody=document.createElement('tbody'),heading=document.createElement('tr'),cell=document.createElement('td');
+  heading.className='fit-section';cell.colSpan=10;cell.textContent='Geometry-only checks · separate score';heading.append(cell);geometryBody.append(heading);table.append(geometryBody);
+  geometryEntries.sort(([a],[b])=>compareRank(data.periodicity[a],data.periodicity[b])).forEach(([key,name])=>add(key,data.periodicity[key],name,true,geometryBody));
+ }
+ if(!body.children.length&&!geometryEntries.length)$('fit-list').textContent='No retained candidate fits in this region.';
 }
 
 function rememberFFTDisplay(){writePreference('tem-fft-display',{curve:$('fft-curve').value,background:Number($('contrast').value),white:Number($('fft-white').value)})}

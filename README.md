@@ -88,7 +88,7 @@ With a data configuration, all results use `output_root`. In demo-only mode, res
 
 1. Select an image. Favourites provide a shorter image list.
 2. Drag the region box or resize its corner. Arrow keys move it by 10 pixels; Shift+arrow moves it by 50.
-3. Select a scale-fitting mode and inspect candidate support, residuals, model dimensions and prediction-scale changes.
+3. Select a scale-fitting mode and inspect candidate rank, peak coverage, residuals, model dimensions and prediction-scale changes. Candidate tables are sorted by rank, highest first; geometry-only checks have a separate score group.
 4. Choose FFT overlays. The default shows the best HCP and best BCC fits; individual-fit controls also expose rejected candidates.
 5. Run a grid and click cells to inspect their detailed FFTs. Save results before stopping the server.
 
@@ -108,7 +108,7 @@ The colour legend and zone-symbol legends appear below the image. Blue symbols i
 
 ### Scale fitting and rescoring
 
-The reference lattice dimensions are HCP **a = 0.295 nm, c = 0.468 nm** and BCC **a = 0.330 nm**. Available modes include fixed comparisons, automatic uniform scaling for each structure, and automatic BCC uniform / HCP independent a-and-c scaling. Dataset-specific comparison presets are illustrative, not transferable microscope calibrations.
+The reference lattice dimensions are HCP **a = 0.295 nm, c = 0.468 nm** and BCC **a = 0.330 nm**. The default is automatic BCC uniform / HCP independent a-and-c scaling. Automatic uniform scaling for both structures, stored scale and custom comparison scale are also available. Valid per-image choices are remembered; removed preset choices fall back to the automatic default.
 
 Automatic reciprocal-scale multipliers are bounded to **0.85–1.15**. Scaling moves predicted reflections; measured FFT axes remain tied to the stored image calibration. Model lattice dimensions change inversely with reciprocal scale. Zones without c-sensitive reflections cannot determine HCP c.
 
@@ -144,7 +144,7 @@ These adjustments do not simulate reflection intensities, thickness, defocus or 
 
 - The library contains **46 HCP/BCC templates**, including mirror variants, from a limited set of zone axes. Other structures and untested orientations can affect results.
 - Peak detection and matching currently use the **3–10 nm⁻¹** band. The inner cutoff is a heuristic; longer-period signals outside that band are excluded.
-- Support measures weighted detected Fourier evidence. Neither support nor rank score is a phase probability or phase fraction.
+- Peak coverage is the sum of weights of matched original detected peak profiles divided by the weight of all original detected profiles. Weights use height above the radial background, capped at 1–6; additional weak maxima are excluded. Neither peak coverage nor rank score is an intensity fraction, phase probability or phase fraction.
 - The scale penalty is a preference for smaller adjustments, not a calibrated strain prior. Calibration errors can change candidate rankings.
 - Independent HCP a/c fitting adds flexibility. The penalty is not a statistical correction for the number of fitted parameters.
 - Additional weak maxima and unsupported prediction positions contribute optional heuristic ranking adjustments. HRTEM contrast transfer can suppress allowed reflections; a missing peak is not proof that a structure is absent.

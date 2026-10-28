@@ -26,3 +26,5 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 .orientations{color:#64d6bb}.ambiguous{color:#df9da6}.legend .unresolved{color:#a4adba}.insufficient{color:#596778}
 
 #evidence-table table{table-layout:fixed;font-size:11px}#evidence-table th,#evidence-table td{padding:5px 3px;overflow-wrap:anywhere}#evidence-table th:first-child{width:28%}#evidence-table th:not(:first-child),#evidence-table td:not(:first-child){text-align:right}
+
+.fit-table .fit-section td{padding-top:10px;color:var(--muted);font-size:10px;font-weight:500;text-align:left}
