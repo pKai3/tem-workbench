@@ -57,8 +57,42 @@ function rememberRegionSize(){
 }
 function lastImageKey(){return 'tem-last-image:'+config.data_root}
 function favoriteKey(){return 'tem-favorites:'+config.data_root}
+let fileSort=readPreference('tem-file-sort','name');
+if(!['name','acquisition'].includes(fileSort))fileSort='name';
+function acquisitionNumber(file){
+ const name=file.name.replace(/\.(?:dm[34]|tiff?|jpe?g|png)$/i,'');
+ // Prefer the acquisition after ST/STA, ignoring magnification and suffix references.
+ const tagged=name.match(/(?:^|[_\s-])(?:STA|ST)[_\s-]*(\d+)(?=$|[_\s·-])/i);
+ const numbers=[...name.matchAll(/(?:^|[_\s-])(\d+)(?=$|[_\s-])/g)];
+ const value=tagged?.[1]??numbers.at(-1)?.[1],number=value===undefined?null:Number(value);
+ return Number.isSafeInteger(number)?number:null;
+}
+function sortedFiles(files){
+ return [...files].sort((a,b)=>{
+  if(fileSort==='acquisition'){
+   const an=acquisitionNumber(a),bn=acquisitionNumber(b);
+   if(an!==bn){if(an===null)return 1;if(bn===null)return -1;return an-bn}
+  }
+  return a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'})||a.id.localeCompare(b.id);
+ });
+}
+function renderFileList(){
+ const select=$('file'),selected=select.value;
+ select.replaceChildren();
+ for(const sample of new Set(config.files.map(f=>f.sample))){
+  const group=document.createElement('optgroup');group.label=sample;
+  for(const f of sortedFiles(config.files.filter(f=>f.sample===sample)))group.append(new Option(f.name,f.id));
+  select.append(group);
+ }
+ if(config.files.some(f=>f.id===selected))select.value=selected;
+}
+$('file-sort').value=fileSort;
+$('file-sort').onchange=()=>{
+ fileSort=$('file-sort').value;writePreference('tem-file-sort',fileSort);
+ if(config){renderFileList();renderFavorites()}
+};
 function renderFavorites(){
- const select=$('favorites'), rows=config.files.filter(f=>favorites.has(f.id));
+ const select=$('favorites'), rows=sortedFiles(config.files.filter(f=>favorites.has(f.id)));
  select.replaceChildren(new Option(rows.length?'Choose a favourite…':'No favourites yet',''));
  for(const f of rows)select.append(new Option(`${f.sample} · ${f.name}`,f.id));
  select.disabled=!rows.length;select.value=opened&&favorites.has(fileId)?fileId:'';
@@ -606,7 +640,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2');for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();$('file').replaceChildren();for(const sample of [...new Set(config.files.map(f=>f.sample))]){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2');for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 function syncFFTZoom(){

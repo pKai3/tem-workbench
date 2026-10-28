@@ -56,3 +56,5 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 #centre-loupe-view{display:block;width:100%;aspect-ratio:1;background:#000}
 #centre-loupe-image{image-rendering:pixelated}
 #centre-loupe-cross{stroke:#69ffeb;stroke-width:1;vector-effect:non-scaling-stroke;fill:none}
+
+.file-sort-label{flex:0 0 auto;min-width:150px}.file-sort-label select{width:100%}

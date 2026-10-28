@@ -94,7 +94,7 @@ Exports use the configured output directory, defaulting to `./output` beside the
 
 ## Workflow
 
-1. Select an image. Favourites provide a shorter image list.
+1. Select an image. Favourites provide a shorter image list. **Sort by** switches between filename order and acquisition number (ascending), within each sample group and in Favourites. Acquisition numbers are read from filenames, including descriptive suffixes such as `_Diffraction`; unnumbered images appear last. The sort choice is remembered across restarts.
 2. Drag the region box or resize its corner. Arrow keys move it by 10 pixels; Shift+arrow moves it by 50.
 3. Select a scale-fitting mode and inspect candidate rank, peak coverage, residuals, model dimensions and prediction-scale changes. Candidate tables are sorted by rank, highest first; geometry-only checks have a separate score group.
 4. Choose FFT overlays. The default shows the best HCP and best BCC fits; individual-fit controls also expose rejected candidates. Click the FFT to enlarge it with the same axes, peaks and overlays; close with Escape, the × button or a click outside.
