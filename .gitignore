@@ -12,3 +12,8 @@ outputs/
 *.tiff
 *.log
 
+/data
+/output
+/tem_workbench.project.json
+/.*-link-*
+/.*.tmp

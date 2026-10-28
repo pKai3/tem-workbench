@@ -5,6 +5,8 @@ const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',co
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
 let config, meta, roi={x:0,y:0,w:684,h:684}, fileId, result=null, fftRaw=null, grid=null, jobId=null;
 let chosenFits=new Set(), favorites=new Set();
+let regionProject={revision:0,regions:[]},selectedRegionId=null,regionRequest=0;
+let folderTarget=null,folderListing=null,folderBrowseVersion=0;
 let rescoreTimer=null, rescoreBusy=false, rescorePending=false, rescoreRevision=0, scalePenalty=.10, peakEvidenceWeight=.10;
 let zoneJob=null, zoneSymbols={HCP:new Map(),BCC:new Map()};
 const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢','◀','▶','✦','✳','◉','⊞','⊠','✧'];
@@ -119,7 +121,7 @@ function updateBox(preserveHeight=false){if(!meta)return;const min=32,max=Math.m
 // Invalidate the old result immediately; never attach it to a newly moved region.
 function schedule(delay=120){generation++;pending=true;result=null;$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
 async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true;const version=generation,body=requestBody();try{const data=await api('analyze',body);if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}}catch(e){if(version===generation){message(e.message,true);$('phase-label').textContent='Analysis unavailable'}}finally{busy=false;if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20)}}
-async function openFile(){rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);const version=++sourceRequest;generation++;pending=false;meta=null;result=null;opened=false;renderFavorites();$('save-region').disabled=true;const id=$('file').value;message('Opening source image…');try{if(isGridRunning())await api('cancel',{job_id:jobId});const info=await api('open',{file_id:id});if(version!==sourceRequest)return;meta=info;fileId=id;opened=true;writePreference(lastImageKey(),id);grid=null;jobId=null;drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=false;$('grid-status').textContent='Adaptive subdivides unresolved or ambiguous regions, two candidate structures, and substantial second patterns.';restoreCalibration();renderFavorites();updateGridSizeNote();$('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);$('source-image').setAttribute('width',info.width);$('source-image').setAttribute('height',info.height);$('source-image').setAttribute('href','/api/preview?id='+encodeURIComponent(id));$('metadata').textContent=`${info.width} × ${info.height} · ${info.pixel_x_nm.toFixed(5)} nm/px · ${info.device}${info.is_demo?' · bundled demo':''}`;const size=Math.min(info.width,info.height,Math.max(32,Math.round(preferredRegionNm/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size};updateBox();schedule(0);message('Drag the box to inspect a region, or run an automatic grid.')}catch(e){if(version===sourceRequest)message(e.message,true)}}
+async function openFile(){rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);const version=++sourceRequest;generation++;pending=false;meta=null;result=null;opened=false;resetRegionEditor();renderFavorites();$('save-region').disabled=true;const id=$('file').value;message('Opening source image…');try{if(isGridRunning())await api('cancel',{job_id:jobId});const info=await api('open',{file_id:id});if(version!==sourceRequest)return;meta=info;fileId=id;opened=true;writePreference(lastImageKey(),id);grid=null;jobId=null;drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=false;$('grid-status').textContent='Adaptive subdivides unresolved or ambiguous regions, two candidate structures, and substantial second patterns.';restoreCalibration();renderFavorites();updateGridSizeNote();$('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);$('source-image').setAttribute('width',info.width);$('source-image').setAttribute('height',info.height);$('source-image').setAttribute('href','/api/preview?id='+encodeURIComponent(id));$('metadata').textContent=`${info.width} × ${info.height} · ${info.pixel_x_nm.toFixed(5)} nm/px · ${info.device}${info.is_demo?' · bundled demo':''}`;const size=Math.min(info.width,info.height,Math.max(32,Math.round(preferredRegionNm/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size};updateBox();renderSavedRegions();schedule(0);message('Drag the box to inspect a region, or run an automatic grid.')}catch(e){if(version===sourceRequest)message(e.message,true)}}
 function point(event){const pt=new DOMPoint(event.clientX,event.clientY);return pt.matrixTransform($('overview').getScreenCTM().inverse())}
 $('overview').addEventListener('pointerdown',e=>{if(!meta||e.button!==0)return;$('overview').focus({preventScroll:true});e.preventDefault();const cell=e.target.closest('.grid-cell');if(cell){const r=grid.regions.find(r=>r.id===cell.dataset.id);roi={...r.roi};updateBox(true);schedule(0);return}const p=point(e);const inside=p.x>=roi.x&&p.x<=roi.x+roi.w&&p.y>=roi.y&&p.y<=roi.y+roi.h;const resizing=e.target.id==='roi-handle';if(!inside&&!resizing){roi.x=p.x-roi.w/2;roi.y=p.y-roi.h/2;updateBox();schedule()}drag={mode:resizing?'resize':'move',x:p.x,y:p.y,roi:{...roi}};$('overview').setPointerCapture(e.pointerId);e.preventDefault()});
 $('overview').addEventListener('pointermove',e=>{if(!drag)return;const p=point(e);if(drag.mode==='resize'){roi.w=clamp(drag.roi.w+Math.max(p.x-drag.x,p.y-drag.y),32,Math.min(meta.width-drag.roi.x,meta.height-drag.roi.y))}else{roi.x=drag.roi.x+p.x-drag.x;roi.y=drag.roi.y+p.y-drag.y}updateBox();schedule(90)});
@@ -332,7 +334,7 @@ function updateGridSizeNote(){
   note.textContent+=`The next split would be about ${(start/2).toFixed(2)} nm, below ${half<32?'32 pixels':minimum+' nm'}. Use fewer regions per side to allow subdivision.`;
  }else{
   note.textContent+=`Unresolved, insufficient or ambiguous regions, two candidate structures, and substantial second patterns split into four; each child must remain at least ${minimum} nm and 32 pixels wide.`;
-  if($('check-passing').checked)note.textContent+=' Passing regions also trial four children; the parent stays unless a child supports a different phase/zone or a separate pattern.';
+  if($('check-passing').checked)note.textContent+=' Passing regions also trial four children; keep the children when they reveal different phases/zones, a separate pattern, or a mix of passing and unresolved assignments.';
  }
 }
 for(const id of ['grid-count','grid-min','adaptive','check-passing'])$(id).addEventListener('input',updateGridSizeNote);
@@ -571,7 +573,109 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['Demo','STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();$('file').replaceChildren();for(const sample of [...new Set(config.files.map(f=>f.sample))]){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+
+function setupFolderControls(){
+ for(const id of ['browse-data','browse-output','apply-folders','refresh-files'])$(id).disabled=!config.folder_picker;
+ $('folder-data').value=config.data_root;$('folder-output').value=config.output_root;
+ if(!config.folder_picker)$('folders-note').textContent='Restart TEM Workbench to enable folder selection.';
+}
+async function browseFolder(path){
+ const version=++folderBrowseVersion;$('folder-use').disabled=true;$('folder-status').textContent='Loading folders…';
+ try{
+  const listing=await api('browse-folders',{path});
+  if(version!==folderBrowseVersion)return;
+  folderListing=listing;$('folder-path').value=listing.path;$('folder-list').replaceChildren();
+  for(const folder of listing.directories){
+   const button=document.createElement('button');button.type='button';button.textContent='▸ '+folder.name;button.title=folder.path;
+   button.onclick=()=>browseFolder(folder.path);$('folder-list').append(button);
+  }
+  $('folder-up').disabled=listing.path===listing.parent;$('folder-use').disabled=false;
+  $('folder-status').textContent=listing.directories.length?listing.directories.length+' subfolders':'No subfolders. You can select this folder.';
+ }catch(e){if(version===folderBrowseVersion)$('folder-status').textContent=e.message}
+}
+function chooseFolder(target){
+ if(!config?.folder_picker)return;
+ folderTarget=target;$('folder-picker-title').textContent=target==='folder-data'?'Choose data folder':'Choose output folder';
+ $('folder-picker').showModal();browseFolder($(target).value);
+}
+$('browse-data').onclick=()=>chooseFolder('folder-data');$('browse-output').onclick=()=>chooseFolder('folder-output');
+for(const id of ['folder-close','folder-cancel'])$(id).onclick=()=>{$('folder-picker').close();folderBrowseVersion++};
+$('folder-up').onclick=()=>browseFolder(folderListing?.parent);
+$('folder-home').onclick=()=>browseFolder(folderListing?.home);
+$('folder-go').onclick=()=>browseFolder($('folder-path').value);
+$('folder-path').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();browseFolder($('folder-path').value)}};
+$('folder-use').onclick=()=>{if(folderListing&&folderTarget){$(folderTarget).value=folderListing.path;$('folder-picker').close();folderBrowseVersion++}};
+$('apply-folders').onclick=async()=>{
+ $('apply-folders').disabled=true;
+ try{
+  await api('folders',{data_root:$('folder-data').value,output_root:$('folder-output').value});
+  await start();message('Folders linked and image collection refreshed.');
+ }catch(e){message(e.message,true)}
+ finally{$('apply-folders').disabled=!config?.folder_picker}
+};
+$('refresh-files').onclick=async()=>{if(isGridRunning()){message('Finish or cancel the grid before refreshing images.',true);return}await start()};
+
+function resetRegionEditor(){
+ selectedRegionId=null;$('region-name').value='';$('region-tags').value='';$('region-notes').value='';
+ $('store-region').textContent='Save region';
+}
+function renderSavedRegions(){
+ const select=$('saved-region-select'),all=$('saved-region-all').checked;
+ const entries=regionProject.regions.filter(r=>all||r.source.sha256_pixels===meta?.sha256_pixels);
+ select.replaceChildren(new Option('New region…',''));
+ for(const region of [...entries].sort((a,b)=>a.source.name.localeCompare(b.source.name)||a.name.localeCompare(b.name))){
+  const label=(all?region.source.name+' · ':'')+region.name+(region.tags.length?' ['+region.tags.join(', ')+']':'');
+  select.append(new Option(label,region.id));
+ }
+ select.value=selectedRegionId||'';
+ $('saved-region-count').textContent='('+entries.length+')';
+ $('store-region').disabled=!meta||!config?.saved_regions;$('copy-region').disabled=!meta||!selectedRegionId||!config?.saved_regions;
+ $('reload-regions').disabled=!config?.saved_regions;
+}
+async function loadSavedRegions(){
+ if(!config.saved_regions){$('saved-region-note').textContent='Restart TEM Workbench to enable saved regions.';renderSavedRegions();return}
+ try{regionProject=await api('regions');renderSavedRegions()}
+ catch(e){$('saved-region-note').textContent=e.message;$('store-region').disabled=true;$('copy-region').disabled=true}
+}
+function applyRegionSettings(saved){
+ $('scenario').value=saved.scale_mode==='fixed'?(saved.scale===1?'1':'custom'):saved.scale_mode;
+ $('model-scale').value=saved.scale??1;$('threshold').value=saved.threshold??.35;
+ $('fft-hann').checked=(saved.fft_window??'hann')==='hann';$('fft-mean').checked=saved.remove_mean!==false;
+ scalePenalty=saved.scale_penalty_strength??.1;peakEvidenceWeight=saved.peak_evidence_weight??.1;
+ $('scale-penalty').value=scalePenalty;$('scale-penalty-slider').value=scalePenalty;$('peak-evidence-weight').value=peakEvidenceWeight;
+ calibrationView();rememberCalibration();rememberBasicControls();
+ writePreference('tem-scale-penalty',scalePenalty);writePreference('tem-peak-evidence-weight',peakEvidenceWeight);
+}
+$('saved-region-all').onchange=renderSavedRegions;
+$('reload-regions').onclick=loadSavedRegions;
+$('new-region').onclick=()=>{resetRegionEditor();renderSavedRegions()};
+$('saved-region-select').onchange=async()=>{
+ const request=++regionRequest,imageRequest=sourceRequest;
+ const id=$('saved-region-select').value;if(!id){resetRegionEditor();renderSavedRegions();return}
+ try{
+  const saved=await api('regions/open',{id});if(request!==regionRequest||imageRequest!==sourceRequest)return;
+  $('file').value=saved.source.id;await openFile();
+  if(request!==regionRequest||sourceRequest!==imageRequest+1||!meta||fileId!==saved.source.id)return;
+  // The server checks the pixel hash, dimensions and calibration before applying.
+  selectedRegionId=id;$('region-name').value=saved.name;$('region-tags').value=saved.tags.join(', ');$('region-notes').value=saved.notes;
+  $('store-region').textContent='Update region';applyRegionSettings(saved.settings);
+  roi={...saved.roi};updateBox(true);renderSavedRegions();schedule(0);
+  message('Restored region and analysis settings: '+saved.name);
+ }catch(e){message(e.message,true);renderSavedRegions()}
+};
+async function storeRegion(asNew=false){
+ if(!meta)return;
+ try{
+  const request={...requestBody(),source_hash:meta.sha256_pixels,id:asNew?null:selectedRegionId,revision:regionProject.revision,
+   name:$('region-name').value,tags:$('region-tags').value.split(',').map(s=>s.trim()).filter(Boolean),notes:$('region-notes').value};
+  const current=sourceRequest,saved=await api('regions/save',request);regionProject=saved.project;
+  if(current===sourceRequest){selectedRegionId=saved.region.id;$('store-region').textContent='Update region'}
+  renderSavedRegions();message('Region saved: '+saved.region.name);
+ }catch(e){message(e.message,true)}
+}
+$('store-region').onclick=()=>storeRegion();$('copy-region').onclick=()=>storeRegion(true);
+
 restoreBasicControls();
 for(const id of [...Object.keys(BASIC_NUMBERS),...BASIC_FLAGS,'overlay']){
  $(id).addEventListener('input',rememberBasicControls);

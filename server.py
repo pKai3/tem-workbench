@@ -4,13 +4,11 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
-from zoneinfo import ZoneInfo
 import argparse
 import errno
 import json
+import logging
 import mimetypes
-import os
-import sys
 import time
 import secrets
 import threading
@@ -21,31 +19,78 @@ import numpy as np
 from engine import Engine
 import demo_data
 import adaptive_refinement
+import folder_paths
+from workbench_project import Project
 
 ROOT = Path(__file__).resolve().parent
+LOG = logging.getLogger('tem_workbench')
 
 
-def demo_config():
-    """Fresh installations can run the demo without paths to research data."""
-    if sys.platform == 'darwin':
-        folder = Path.home() / 'Library/Application Support/TEM Workbench/Demo'
-    elif os.name == 'nt':
-        folder = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData/Local')) / 'TEM Workbench/Demo'
-    else:
-        folder = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'tem-workbench/demo'
-    return {'data_root': str(folder), 'output_root': str(folder / 'Analysis/tem_workbench'),
-            'default_file': demo_data.ID}
+def demo_config(demo_only=False):
+    """The bundled demo is always available alongside locally chosen folders."""
+    return {**folder_paths.DEFAULTS, 'default_file': demo_data.ID, 'demo_only': demo_only}
 
 
 class Workbench:
-    def __init__(self, config):
-        self.config = config
-        self.engine = Engine(config)
+    def __init__(self, config, root=ROOT, config_path=None):
+        self.root = Path(root).resolve()
+        self.config_path = Path(config_path or self.root/'.tem-paths.json')
+        self.config = folder_paths.resolve_config(config, self.root)
+        self.engine = Engine(self.config)
+        self.project = Project(self.root)
+        self.last_preview_log = 0.
         self.token = secrets.token_urlsafe(24)
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.jobs = {}
         self.job_lock = threading.RLock()
         self.engine.catalog()
+
+
+    def config_info(self):
+        return {'token': self.token, 'data_root': str(self.engine.data_root),
+                'output_root': self.config['output_root'], 'app_root': str(self.root),
+                'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
+                'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
+                'engine': self.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
+                'fft_log16': True, 'fft_processing': True, 'phase_comparison': 'shared-evidence-v1',
+                'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
+                'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
+
+    def set_folders(self, data, output):
+        with self.lock, self.job_lock:
+            if any(j['state'] == 'running' for j in self.jobs.values()):
+                raise ValueError('Finish or cancel the running grid before changing folders.')
+            saved = folder_paths.save_locations(self.config_path, self.root, self.config, data, output)
+            self.config = folder_paths.resolve_config(saved, self.root)
+            self.engine = Engine(self.config)
+            self.jobs.clear()
+            LOG.info('Folders changed: data=%s; output=%s', self.config['data_root'], self.config['output_root'])
+            return self.config_info()
+
+    def saved_region(self, region_id):
+        region = next((r for r in self.project.read()['regions'] if r['id'] == region_id), None)
+        if region is None:
+            raise ValueError('That saved region is unavailable.')
+        with self.lock:
+            item = self.engine.load(region['source']['id'])
+            source = region['source']
+            current = item['info']
+            identity = ('sha256_pixels', 'width', 'height', 'pixel_x_nm', 'pixel_y_nm')
+            if any(source.get(k) != current.get(k) for k in identity):
+                raise ValueError('This image or its calibration differs from the saved region. The saved coordinates have not been applied.')
+            self.engine.validate(item, region['roi'], region['settings'])
+        LOG.info('Reopened saved region %s on %s', region['name'], source['name'])
+        return region
+
+    def store_region(self, body):
+        with self.lock:
+            item = self.engine.load(body['file_id'])
+            if body.get('source_hash') != item['info']['sha256_pixels']:
+                raise ValueError('The source image changed. Reopen it before saving this region.')
+            roi, settings = self.engine.validate(item, body['roi'], body.get('settings', {}))
+            saved = self.project.save_region(body, item['info'], roi, settings)
+        LOG.info('Saved region %s on %s', saved['region']['name'], item['info']['name'])
+        return saved
 
     def grid(self, item, settings, count, adaptive, minimum, check_passing=False):
         if not item['info']['can_index']:
@@ -61,7 +106,7 @@ class Workbench:
         job = {'id': uuid.uuid4().hex, 'state': 'running', 'source': item['info'],
                'settings': settings.copy(), 'initial_settings': settings.copy(), 'grid': {'count': count, 'adaptive': adaptive, 'minimum_nm': minimum,
                                              'check_passing': check_passing,
-                                             'refinement_policy': 'passing_children_v1' if check_passing else 'unresolved_or_multiple_patterns' if adaptive else 'uniform'},
+                                             'refinement_policy': adaptive_refinement.VERSION if check_passing else 'unresolved_or_multiple_patterns' if adaptive else 'uniform'},
                'lookahead': {'checked': 0, 'refined': 0, 'retained': 0},
                'regions': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False}
         with self.job_lock:
@@ -69,7 +114,10 @@ class Workbench:
                 raise ValueError('Cancel or finish the current grid first.')
             self.jobs = {job['id']: job}
 
+        LOG.info("Grid %s started: %s; %s×%s; adaptive=%s; stop=%.3g nm", job["id"][:8], item["info"].get("name", "image"), count, count, adaptive, minimum)
+
         def work():
+            progress_at = time.monotonic()
             queue = deque(({'x': int(bounds[c]), 'y': int(bounds[r]), 'w': int(bounds[c+1]-bounds[c]), 'h': int(bounds[r+1]-bounds[r])}, 0, None, None) for r in range(count) for c in range(count))
             probes = {}
 
@@ -123,7 +171,7 @@ class Workbench:
                                 retain = decision['retain_children']
                                 job['lookahead']['refined' if retain else 'retained'] += 1
                                 owner['leaf'] = not retain
-                                owner['stop_reason'] = ('Subdivided after child checks found a resolved alternative phase/zone or separate strong pattern.' if retain else 'Parent retained: four child checks found no credible alternative phase/zone or separate strong pattern.')
+                                owner['stop_reason'] = ('Subdivided: ' if retain else 'Parent retained: ') + decision['reason']
                                 for child in group['children']:
                                     child.update(leaf=retain, trial_only=not retain)
                                     if retain:
@@ -136,6 +184,9 @@ class Workbench:
                         else:
                             result['stop_reason'] = 'Cancelled after this region; no further refinement.'
                         job['pending'] = len(queue)
+                    if time.monotonic()-progress_at >= 5:
+                        LOG.info('Grid %s: %s regions analysed; %s pending', job['id'][:8], job['processed'], job['pending'])
+                        progress_at = time.monotonic()
             except Exception as exc:
                 with self.job_lock:
                     job['error'] = str(exc)
@@ -148,6 +199,7 @@ class Workbench:
                         for child in group['children']:
                             child['stop_reason'] = 'Trial only; incomplete child checks.'
                     job['state'] = 'error' if job['error'] else 'cancelled' if job['cancel'] else 'complete'
+                    LOG.info('Grid %s %s: %s analysed; %s map regions', job['id'][:8], job['state'], job['processed'], sum(r['leaf'] for r in job['regions']))
         threading.Thread(target=work, daemon=True).start()
         return {'id': job['id']}
 
@@ -196,10 +248,16 @@ class Workbench:
             job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight},
                        rescore={'strength': strength, 'peak_evidence_weight': evidence_weight, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                                 'region_count': len(regions), 'reused_fits': True, 'boundaries_unchanged': True,
-                                'at': datetime.now(ZoneInfo('Australia/Brisbane')).isoformat()})
+                                'at': datetime.now().astimezone().isoformat()})
+            LOG.info('Grid %s reweighted: scale penalty %.3f; peak evidence %.3f', job_id[:8], strength, evidence_weight)
             return self.status(job_id)
 
     def save(self, body):
+        # A folder change must not redirect an export partway through analysis.
+        with self.lock:
+            return self._save(body)
+
+    def _save(self, body):
         if body.get('job_id'):
             if self.jobs.get(body['job_id'], {}).get('state') == 'running':
                 raise ValueError('Finish or cancel the grid before saving.')
@@ -211,16 +269,15 @@ class Workbench:
                 result = {'source': item['info'], 'result': self.engine.analyze(item, body['roi'], body.get('settings', {}), images=False)}
             kind = 'region'
         output = Path(self.config['output_root']).expanduser().resolve()
-        if not output.is_relative_to(self.engine.data_root):
-            raise ValueError('Set output_root inside the TEM data folder.')
         output.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(ZoneInfo('Australia/Brisbane')).strftime('%Y%m%d_%H%M%S')
+        stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
         target = output/f'{stamp}_{kind}_{uuid.uuid4().hex[:6]}.json'
-        result['saved_at'] = datetime.now(ZoneInfo('Australia/Brisbane')).isoformat()
+        result['saved_at'] = datetime.now().astimezone().isoformat()
         result['engine_sha256'] = self.engine.version
         result['limits'] = json.loads((ROOT/'engine_provenance.json').read_text())['limits']
         with target.open('x') as f:
             json.dump(result, f, indent=2, allow_nan=False)
+        LOG.info('Exported %s results: %s', kind, target)
         return {'path': str(target)}
 
 
@@ -257,7 +314,10 @@ def make_handler(app):
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
                 if url.path == '/api/config':
-                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True, 'fft_processing': True, 'phase_comparison': 'shared-evidence-v1', 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'bundled_demo': demo_data.ID})
+                    with app.lock:
+                        self.send(app.config_info())
+                elif url.path == '/api/regions':
+                    self.send(app.project.read())
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
                 elif url.path == '/api/preview':
@@ -270,6 +330,7 @@ def make_handler(app):
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
             except Exception as exc:
+                LOG.warning('Request %s failed: %s', self.path.split('?')[0], exc)
                 self.send({'error': str(exc)}, status=400)
 
         def do_POST(self):
@@ -281,30 +342,45 @@ def make_handler(app):
                 if size <= 0 or size > 65536 or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                     raise ValueError('Expected a small JSON request.')
                 body=json.loads(self.rfile.read(size))
-                if self.path == '/api/open':
+                if self.path == '/api/browse-folders':
+                    self.send(folder_paths.browse(body.get('path'), app.root))
+                elif self.path == '/api/folders':
+                    self.send(app.set_folders(body['data_root'], body['output_root']))
+                elif self.path == '/api/regions/save':
+                    self.send(app.store_region(body))
+                elif self.path == '/api/regions/open':
+                    self.send(app.saved_region(body['id']))
+                elif self.path == '/api/open':
                     with app.lock:
                         item=app.engine.load(body['file_id'])
+                    LOG.info('Opened image: %s (%s×%s)', item['info']['name'], item['info']['width'], item['info']['height'])
                     self.send(item['info'])
                 elif self.path == '/api/analyze':
                     with app.lock:
                         item=app.engine.load(body['file_id'])
                         result=app.engine.analyze(item, body['roi'], body.get('settings', {}))
+                    if time.monotonic()-app.last_preview_log >= 1:
+                        app.last_preview_log = time.monotonic()
+                        LOG.info('Region %s at %s,%s (%s px): %s; %.0f ms', item['info']['name'], result['roi']['x'], result['roi']['y'], result['roi']['w'], result['classification']['label'], result['elapsed_ms'])
                     self.send(result)
                 elif self.path == '/api/grid':
                     with app.lock:
                         item=app.engine.load(body['file_id'])
                         _, settings=app.engine.validate(item, body['roi'], body.get('settings', {}))
-                    self.send(app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False))))
+                        started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)))
+                    self.send(started)
                 elif self.path == '/api/rescore-grid':
                     self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight')))
                 elif self.path == '/api/cancel':
                     app.jobs[body['job_id']]['cancel']=True
+                    LOG.info('Grid %s cancellation requested', body['job_id'][:8])
                     self.send({'ok':True})
                 elif self.path == '/api/save':
                     self.send(app.save(body))
                 else:
                     self.send({'error':'Not found'}, status=404)
             except (ValueError, KeyError, TypeError) as exc:
+                LOG.warning('Request %s failed: %s', self.path, exc)
                 self.send({'error': str(exc)}, status=400)
             except Exception as exc:
                 traceback.print_exc()
@@ -313,6 +389,7 @@ def make_handler(app):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s · %(levelname)s · %(message)s', datefmt='%H:%M:%S')
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, help='Optional settings for external TEM data')
     parser.add_argument('--demo', action='store_true', help='Use only the bundled ST1221 demo, without local data settings')
@@ -323,8 +400,8 @@ def main():
     config_path = args.config or ROOT/'.tem-paths.json'
     if args.config and not config_path.is_file() and not args.demo:
         parser.error('The specified configuration file does not exist.')
-    config = demo_config() if args.demo or not config_path.is_file() else json.loads(config_path.read_text())
-    app=Workbench(config)
+    config = demo_config(demo_only=args.demo) if args.demo or not config_path.is_file() else json.loads(config_path.read_text())
+    app=Workbench(config, config_path=config_path)
     ports = range(args.port, min(args.port+20, 65536)) if args.fallback_port and args.port else [args.port]
     server = None
     for port in ports:
@@ -339,6 +416,7 @@ def main():
     url=f'http://127.0.0.1:{server.server_port}/'
     print(f'TEM Workbench: {url}', flush=True)
     print(f'Data: {app.engine.data_root}', flush=True)
+    LOG.info('Output: %s; engine %s', app.config['output_root'], app.engine.version[:12])
     if args.open:
         webbrowser.open(url)
     try:
@@ -346,6 +424,7 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        LOG.info('TEM Workbench stopped')
         server.server_close()
 
 

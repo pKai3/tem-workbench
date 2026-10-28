@@ -3,9 +3,12 @@ from pathlib import Path
 from io import BytesIO
 import base64
 import hashlib
+import importlib
 import importlib.util
 import json
 import time
+import os
+import folder_paths
 import zlib
 import numpy as np
 from PIL import Image
@@ -35,7 +38,7 @@ def data_url(data):
 class Engine:
     def __init__(self, settings):
         self.settings = settings
-        self.data_root = Path(settings['data_root']).expanduser().resolve()
+        self.data_root = folder_paths.resolve_folder(settings.get('data_root', './data'), ROOT)
         self.reader = None  # Load the optional DM4 reader only for external DM4 files.
         self.templates = json.loads((ROOT/'templates.json').read_text())
         for t in self.templates:
@@ -49,11 +52,22 @@ class Engine:
 
     def catalog(self):
         rows = [demo_data.catalog_entry()]
-        for sample in ['STA', 'ST']:
-            for path in sorted((self.data_root/sample).rglob('*.dm4')):
-                relative = path.relative_to(self.data_root).as_posix()
-                self.files[relative] = path
-                rows.append({'id': relative, 'name': path.stem, 'sample': sample})
+        self.files = {}
+        if self.settings.get('demo_only'):
+            return rows
+        output = folder_paths.resolve_folder(self.settings.get('output_root', './output'), ROOT)
+        for directory, folders, names in os.walk(self.data_root, followlinks=False):
+            folders[:] = sorted(name for name in folders if not name.startswith('.') and (Path(directory)/name).resolve() != output)
+            for name in sorted(names):
+                path = Path(directory)/name
+                if path.suffix.lower() != '.dm4' or not path.resolve().is_relative_to(self.data_root):
+                    continue
+                relative = path.relative_to(self.data_root)
+                file_id = relative.as_posix()
+                sample = next((part for part in relative.parts[:-1] if part in ('STA', 'ST')),
+                              relative.parts[0] if len(relative.parts) > 1 else 'Images')
+                self.files[file_id] = path
+                rows.append({'id': file_id, 'name': path.stem, 'sample': sample})
         return rows
 
     def load(self, file_id):
@@ -68,12 +82,18 @@ class Engine:
             if not path or not path.resolve().is_relative_to(self.data_root):
                 raise ValueError('Choose the bundled demo or a DM4 from the configured TEM folder.')
             if self.reader is None:
-                reader = Path(self.settings.get('dm_reader', '')).expanduser().resolve()
-                if not reader.is_file():
-                    raise ValueError('Set dm_reader in .tem-paths.json to open external DM4 files. The bundled ST1221 demo works without it.')
-                spec = importlib.util.spec_from_file_location('workbench_dm_reader', reader)
-                self.reader = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(self.reader)
+                if self.settings.get('dm_reader'):
+                    reader = Path(self.settings['dm_reader']).expanduser().resolve()
+                    if not reader.is_file():
+                        raise ValueError('The configured DM4 reader is unavailable. Update dm_reader in .tem-paths.json, or remove it to use installed ncempy.')
+                    spec = importlib.util.spec_from_file_location('workbench_dm_reader', reader)
+                    self.reader = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(self.reader)
+                else:
+                    try:
+                        self.reader = importlib.import_module('ncempy.io.dm')
+                    except ImportError as exc:
+                        raise ValueError('Install ncempy in the app Python environment to open DM4 files, or configure dm_reader in .tem-paths.json. The bundled demo works without it.') from exc
             with self.reader.fileDM(path, on_memory=False) as f:
                 meta = f.getMetadata(0)
                 array = np.asarray(f.getDataset(0)['data'])
@@ -94,7 +114,7 @@ class Engine:
             raise ValueError('Unequal x/y pixel calibration needs an additional fitting check; this first version supports square pixels.')
         sx, sy = scales
         h, w = array.shape
-        info = {'id': file_id, 'name': name, 'is_demo': is_demo, 'width': w, 'height': h,
+        info = {'id': file_id, 'name': name, 'is_demo': is_demo, 'image_kind': 'real_space', 'width': w, 'height': h,
                 'pixel_x_nm': sx, 'pixel_y_nm': sy, 'field_nm': [w*sx, h*sy],
                 'sha256_pixels': hashlib.sha256(array.tobytes()).hexdigest(),
                 'date': str(meta.get('DataBar Acquisition Date', '')),

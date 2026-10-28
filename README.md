@@ -15,7 +15,9 @@ The interface pairs real-space images with reciprocal-space previews and support
 - Map candidate labels and zone axes, with separate HCP/BCC symbols and legends.
 - Run uniform or adaptive grids and inspect area-weighted result summaries.
 - Adjust FFT colour, brightness and contrast independently of numerical analysis.
-- Save region and grid results as JSON with settings, source pixel hashes and engine provenance.
+- Choose data and output folders through the interface, with local directory links.
+- Save named, tagged regions linked to their source images and analysis settings.
+- Export region and grid results as JSON with source pixel hashes and engine provenance.
 - Explore a bundled, full-resolution ST1221 demonstration image without external data.
 
 ## Quick start
@@ -35,7 +37,7 @@ On Windows, create the environment with `py -m venv .venv` and activate it with 
 
 The server normally listens at **http://127.0.0.1:8767**. Use `--port 8768` to select another port. Stop a terminal-launched server with Ctrl+C. This application is intended for local use, not public web hosting.
 
-Without `.tem-paths.json`, the application starts with the bundled demo. `--demo` explicitly selects demo-only mode even when a configuration file exists.
+Without `.tem-paths.json`, the application starts with the bundled demo and defaults to `./data` and `./output`. `--demo` hides external images until folders are applied, even when a configuration file exists.
 
 ### macOS launcher
 
@@ -47,42 +49,47 @@ The launcher provides **Start/Stop**, **Open Workbench** and **View log** contro
 
 ## Opening DM4 images
 
-Copy [tem-paths.example.json](tem-paths.example.json) to `.tem-paths.json` and set the following fields. The local configuration is excluded from Git.
+Expand **Folders** at the top of the page. Browse to a data folder and an output folder, then select **Apply folders**. The picker browses the local filesystem; it does not upload or copy images. **Refresh images** rescans after new files arrive.
 
-| Field | Purpose |
-| --- | --- |
-| `data_root` | Absolute path to the TEM data directory. |
-| `output_root` | Results directory, which must be inside `data_root`. |
-| `dm_reader` | Absolute path to a compatible `ncempy.io.dm` Python module. |
-| `python_executable` | Python executable used by the launcher. |
-| `default_file` | Optional image path relative to `data_root`, or `demo/st1221`. |
+The app maintains `./data` and `./output` directory links to those locations (symlinks on macOS/Linux, directory junctions on Windows). Existing nonempty real directories are never replaced. Relative paths resolve from the application directory. The choices are saved in the ignored `.tem-paths.json`, preserving other configuration fields. Changing folders clears the in-memory grid; finish or cancel any running grid and export results first.
 
-The current catalog scans `.dm4` files recursively under `STA` and `ST` subdirectories:
+The catalog finds `.dm4` files recursively beneath the selected data folder, including files at its root. `STA` and `ST` folders retain their sample grouping; other folders also work. The selected output directory is skipped during scanning. Output may be outside the data directory.
 
-```text
-TEM/
-├── STA/
-│   └── example.dm4
-├── ST/
-│   └── example.dm4
-└── Analysis/
-    └── tem_workbench/
-```
-
-External DM4 loading uses the [openNCEM DM reader](https://openncem.readthedocs.io/en/latest/ncempy.io.dm.html). To install ncempy in the active environment and locate its reader module:
+External DM4 loading uses the [openNCEM DM reader](https://openncem.readthedocs.io/en/latest/ncempy.io.dm.html). Install it in the app's Python environment:
 
 ```sh
 python -m pip install ncempy
-python -c "import ncempy.io.dm as dm; print(dm.__file__)"
 ```
 
-Set `dm_reader` to the printed path, then start with `python server.py --open`. The bundled demo does not require ncempy. Source microscope files are read only.
+An installed reader is detected automatically. A specific reader module can instead be set through `dm_reader` in `.tem-paths.json`. The bundled demo does not require ncempy. Source microscope files are read only.
+
+For manual configuration, copy [tem-paths.example.json](tem-paths.example.json) to `.tem-paths.json`:
+
+| Field | Purpose |
+| --- | --- |
+| `data_root` | Data directory, normally `./data`; absolute paths also work. |
+| `output_root` | Export directory, normally `./output`. |
+| `dm_reader` | Optional path to a compatible `ncempy.io.dm` module; otherwise uses installed ncempy. |
+| `python_executable` | Optional Python executable used by the launcher. |
+| `default_file` | Optional image path relative to `data_root`, or `demo/st1221`. |
+
+### Saved regions and results
+
+Expand **Saved regions** below the image controls. Give a box a name, optional comma-separated tags, and notes, then **Save region**. Choose a saved entry to reopen its source image, box and analysis settings. **All images** exposes entries for other photos. **Update region** changes that definition; **Save as new** keeps the original.
+
+Definitions live in the ignored `tem_workbench.project.json` beside the app. Each entry records the relative image path, pixel checksum, dimensions, calibration, coordinates, settings and annotations. Reopening checks the image identity and calibration before applying coordinates. The file is replaced atomically and remains available after restarting; stale concurrent edits are rejected until refreshed. There is no automatic backup history.
+
+**Export result** and **Export grid results** write numerical JSON files to `./output`, independently of the region definitions. Browser preferences, project definitions, folder settings and numerical exports serve separate purposes. Only app source and the bundled demo belong in Git.
+
+### Activity log
+
+The launcher’s **View log** shows image opens, region previews (limited to one entry per second), grid progress and completion, rescoring, saved regions, exports, folder changes and errors. A terminal-launched server writes the same activity to its terminal. Routine browser asset requests are omitted.
 
 ### Bundled demo
 
 ST1221 is a Grade 9 titanium image containing the original **4096 × 4096 float32 pixels** and stored calibration. The archive is losslessly compressed; loading verifies the reconstructed pixel checksum. It is an inspection example, not a labelled phase-identification standard. See [demo/README.md](demo/README.md) for format and provenance details.
 
-With a data configuration, all results use `output_root`. In demo-only mode, results go to the user's application-data directory under `TEM Workbench/Demo/Analysis/tem_workbench` on macOS and Windows, or `tem-workbench/demo/Analysis/tem_workbench` on Linux.
+Exports use the configured output directory, defaulting to `./output` beside the app. The demo is always available alongside configured external images.
 
 ## Workflow
 
@@ -102,13 +109,15 @@ Window widths used for matching and weak-peak checks follow the selected window 
 
 Basic preferences are saved automatically in browser local storage: the last image, region width, scale-fitting mode and custom scale, ranking weights, FFT processing and peak threshold, grid size and stopping limit, adaptive options, grid visibility, and FFT display/overlay controls. Analysis controls carry across images; a new image opens with a centred region at the remembered physical width, limited to the image size. Existing display preferences and favourites are retained.
 
-These preferences survive browser and app restarts at the same address in the same browser profile. Clearing site data resets them. This stores settings only: grids, analysis results and individual candidate-overlay selections are not restored. Use **Save region** or **Save grid results** for analysis output.
+These preferences survive browser and app restarts at the same address in the same browser profile. Clearing site data resets them. This stores settings only: grids, analysis results and individual candidate-overlay selections are not restored. Use **Save region** for a reusable box definition, and **Export result** or **Export grid results** for numerical output.
 
 ### Grid analysis
 
 The initial grid defaults to **20 × 20** cells. Adaptive mode subdivides unresolved or ambiguous cells, cells supporting two candidate structures, and cells with substantial secondary periodicity. Subdivision stops when the next children would fall below the selected physical size or the 32-pixel minimum. The default physical stopping limit is 5 nm; it is adjustable.
 
-Optional **Check passing regions** trials four children even when a parent has a supported single-phase candidate. A child must support a different phase/zone, or separate strong evidence for another pattern. The alternative is compared against the parent’s phase/zone fitted to **that same child**, using the complete retained hypothesis pool. It must pass when that family fails, or beat its passing fit by at least 0.08 ranking score. Raw parent and child scores are never compared. Children that merely become weaker, ambiguous, or keep the same phase/zone do not replace the parent. Accepted children can be checked again down to the stopping limit. This is a heuristic check within the limited template library, not a global optimum.
+Optional **Check passing regions** trials four children even when a parent has a supported single-phase candidate. Keep the children when they reveal a different phase/zone, separate strong evidence for another pattern, **or a mix of passing and unresolved phase assignments**. For example, two passing HCP children and two unresolved/insufficient children replace the parent, exposing the spatial loss of phase evidence. Ambiguous children also count as unassigned in this mixed case. If all four simply lose evidence, retain the parent; uniformly weaker children alone do not justify a split.
+
+A different phase/zone is compared against the parent’s family fitted to **that same child**, using the complete retained hypothesis pool. It must pass when that family fails, or beat its passing fit by at least 0.08 ranking score. Raw parent and child scores are never compared. Accepted children can be checked again down to the stopping limit. These are heuristic checks within the limited template library; an unresolved child does not establish a different phase or absence of crystallinity.
 
 The parent stays visible until all four trial children finish. Rejected trial subdivisions are retained in saved results but excluded from map counts and area. Cancellation during a trial retains its parent. The grid summary reports parents retained and subdivided after these checks.
 
@@ -171,7 +180,8 @@ Supported input is finite, two-dimensional real-space data with equal x/y pixel 
 | `scale_fitting.py` | Bounded automatic scale fitting, candidate ranking and cached reranking. |
 | `phase_comparison.py` | Prediction counts and shared-evidence ambiguity checks. |
 | `peak_evidence.py` | Independent weak-maxima detection, prediction-site audits and ranking adjustments. |
-| `adaptive_refinement.py` | Same-child comparisons for optional refinement of passing parents. |
+| `adaptive_refinement.py` | Same-child comparisons and mixed assignability checks for passing parents. |
+| `folder_paths.py`, `workbench_project.py` | Local directory links and reusable region definitions. |
 | `engine.py` | Image loading, region analysis, previews and fit caches. |
 | `server.py` | Local HTTP endpoints, grid jobs and JSON exports. |
 | `web/` | Buildless browser interface. |
@@ -184,7 +194,7 @@ Run the focused numerical checks with:
 python -m unittest discover -s tests
 ```
 
-The local API provides `/api/config`, `/api/open`, `/api/analyze`, `/api/grid`, `/api/job`, `/api/rescore-grid`, `/api/cancel` and `/api/save`. POST requests require the session token returned by `/api/config`.
+The local API provides `/api/config`, `/api/open`, `/api/analyze`, `/api/grid`, `/api/job`, `/api/rescore-grid`, `/api/cancel`, `/api/save`, `/api/browse-folders`, `/api/folders`, `/api/regions`, `/api/regions/save` and `/api/regions/open`. POST requests require the session token returned by `/api/config`.
 
 After updating Python source, save active results, restart the server and reload the page. Previously saved results retain the engine hash and settings used to produce them.
 

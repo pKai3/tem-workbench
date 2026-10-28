@@ -1,9 +1,10 @@
 """Optional child checks after a parent passes; compare fits on the same pixels."""
 import math
 
-VERSION = 'passing-children-v1'
+VERSION = 'passing-children-v2'
 MARGIN = .08
 PASSING = {'hcp_compatible', 'bcc_compatible'}
+UNASSIGNED = {'unresolved', 'insufficient', 'ambiguous'}
 
 
 def family(model):
@@ -44,5 +45,22 @@ def review(parent, children, engine):
         else:
             row['reason'] = 'No resolved alternative phase/zone or separate strong pattern.'
         checks.append(row)
+    # A passing parent can hide a spatial loss of phase evidence. Keep this
+    # contrast even without a new phase/zone; do not split on uniform loss alone.
+    resolved = sum(c['classification']['label'] in PASSING
+                   and bool((c['classification'].get('primary_model') or {}).get('valid'))
+                   for c in children)
+    unassigned = sum(c['classification']['label'] in UNASSIGNED for c in children)
+    heterogeneous = len(children) == 4 and resolved > 0 and unassigned > 0
+    alternative = any(c['retain_children'] for c in checks)
+    if heterogeneous:
+        for row in checks:
+            if row['label'] in UNASSIGNED:
+                row.update(retain_children=True,
+                           reason='Phase evidence is unresolved here while another child retains a passing assignment.')
+    reason = ('Children contain both passing phase assignments and unresolved phase evidence.' if heterogeneous else
+              'Child checks found a resolved alternative phase/zone or separate strong pattern.' if alternative else
+              'Children showed neither a credible alternative pattern nor mixed phase assignability.')
     return {'version': VERSION, 'state': 'complete', 'margin': MARGIN,
-            'retain_children': any(c['retain_children'] for c in checks), 'checks': checks}
+            'retain_children': alternative or heterogeneous, 'reason': reason,
+            'passing_children': resolved, 'unassigned_children': unassigned, 'checks': checks}
