@@ -7,6 +7,31 @@ import analysis_core as core
 
 BOUNDS = (.85, 1.15)
 MODES = ('fixed', 'auto_uniform', 'auto_hcp_ac')
+DEFAULT_SCALE_PENALTY = .10
+
+
+def scale_cost(scale_a, scale_c=None, strength=DEFAULT_SCALE_PENALTY):
+    """Exploratory quadratic preference for small reciprocal-scale adjustments.
+
+    A uniform 5% adjustment costs strength; 10% costs four times strength.
+    Average independent HCP axes so a uniform change is not charged twice.
+    This is a tunable ranking preference, not a calibrated strain prior.
+    """
+    cost = ((np.asarray(scale_a)-1.)/.05)**2
+    if scale_c is not None:
+        cost = (cost+((np.asarray(scale_c)-1.)/.05)**2)/2
+    return strength*cost
+
+
+def penalize(result, scale_a, scale_c, strength):
+    if result is None:
+        return None
+    cost = float(scale_cost(scale_a, scale_c, strength))
+    result.update(position_score=result['score'], position_valid=result['valid'],
+                  scale_penalty=cost, scale_penalty_strength=strength)
+    result['score'] -= cost
+    result['valid'] = bool(result['position_valid'] and result['score'] > .20)
+    return result
 
 
 def reciprocal(hkl, phase):
@@ -112,7 +137,7 @@ def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weight
     return selected
 
 
-def _refine(peaks, template, seed, tol, bcc_a, double):
+def _refine(peaks, template, seed, tol, bcc_a, double, strength):
     _, angle, sa, sc = seed
     low, high = BOUNDS
 
@@ -162,12 +187,17 @@ def _refine(peaks, template, seed, tol, bcc_a, double):
                    'scale_parameter_count': 2 if double else 1,
                    'c_axis_visible': c_visible,
                    'scale_at_bound': any(min(abs(v-low), abs(v-high)) < .001 for v in ([sa, sc] if double else [sa]))})
-    return result
+    # Keep fitted coordinates inspectable and unaltered by the ranking preference.
+    # Apply cost to every fitted hypothesis BEFORE deduplication/zone selection.
+    return penalize(result, sa, sc if double else None, strength)
 
 
-def search(peaks, templates, tol, mode, bcc_a=.330, topn=5):
+def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY):
     if mode not in ('auto_uniform', 'auto_hcp_ac'):
         raise ValueError('Unknown automatic scale mode.')
+    strength = float(scale_penalty_strength)
+    if not np.isfinite(strength) or not 0 <= strength <= .5:
+        raise ValueError('Scale penalty must be between 0 and 0.5.')
     if len(peaks) < 4:
         return []
     observed = np.array([[p['qx'], p['qy']] for p in peaks])
@@ -179,7 +209,7 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5):
                   float(template['c_direction'] @ template['c_direction']) > 1e-10)
         seeds = _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights)
         for seed in seeds:
-            result = _refine(peaks, template, seed, tol, bcc_a, double)
+            result = _refine(peaks, template, seed, tol, bcc_a, double, strength)
             if result:
                 result['scale_mode'] = mode
                 if mode == 'auto_hcp_ac' and template['phase'] == 'HCP' and not double:
@@ -190,6 +220,7 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5):
     for candidate in sorted(candidates, key=lambda m: m['score'], reverse=True):
         ids = {m['profile_id'] for m in candidate['matches']}
         if any(candidate['phase'] == other['phase'] and
+               candidate['zone_3index'] == other['zone_3index'] and
                len(ids & {m['profile_id'] for m in other['matches']}) /
                max(len(ids | {m['profile_id'] for m in other['matches']}), 1) > .8 for other in retained):
             continue

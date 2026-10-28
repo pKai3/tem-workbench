@@ -28,7 +28,7 @@ $('favorite-toggle').onclick=()=>{
  writePreference(favoriteKey(),[...favorites]);renderFavorites();
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){$('file').value=id;openFile()}};
-function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_mode:mode.startsWith('auto_')?mode:'fixed'}}
+function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?Number($('scale-penalty').value):0,scale_mode:mode.startsWith('auto_')?mode:'fixed'}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  field.closest('.scale-input').style.display=automatic?'none':'';
@@ -87,14 +87,15 @@ function patternExplanation(data){
  const label=data.classification.label;
  if(label==='coexisting_candidates')return 'Separate peak sets support HCP and BCC candidates; their proportions are unknown.';
  if(label==='multiple_orientations')return 'Separate peak sets support multiple orientations of the same candidate structure.';
- if(data.classification.ambiguity_reason==='shared_peaks_model_tradeoff')return 'Both structures explain the same detected peaks. The better positional fit also uses extra flexibility or more unsupported predictions; the phase remains ambiguous.';
+ if(data.classification.ambiguity_reason==='shared_peaks_model_tradeoff')return 'Both structures explain the same detected peaks. The leading fit also uses extra flexibility or more unsupported predictions; the phase remains ambiguous.';
  if(label==='ambiguous')return 'HCP and BCC fit overlapping evidence; the phase assignment remains ambiguous.';
  if(data.periodicity.status==='multiple_periodic_patterns')return 'Additional periodicity is supported, but a second phase assignment remains unresolved.';
  if(data.periodicity.status==='predominantly_one_periodic_pattern')return ['hcp_compatible','bcc_compatible'].includes(label)?'One periodic pattern predominates in the geometry check.':'A periodic pattern is supported, but its phase remains unresolved.';
  return 'The geometry check could not resolve the number of periodic patterns.';
 }
 function scaleSummary(settings){
- return settings.scale_mode==='auto_uniform'?'automatic single scale per candidate and region':settings.scale_mode==='auto_hcp_ac'?'automatic BCC single / HCP a+c per region':`fixed prediction scale ×${settings.scale.toFixed(3)}`;
+ const label=settings.scale_mode==='auto_uniform'?'automatic single scale per candidate and region':settings.scale_mode==='auto_hcp_ac'?'automatic BCC single / HCP a+c per region':`fixed prediction scale ×${settings.scale.toFixed(3)}`;
+ return label+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'');
 }
 function fittedDimensions(model){
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
@@ -117,16 +118,17 @@ function predictionCounts(model){
  const total=model.predicted_nodes?.length??model.predicted_visible_band_node_count;
  return `${model.matched_prediction_count??model.matched_profile_count} / ${total??'—'}`;
 }
+function bestModel(data,phase){return data.models.find(m=>m.phase===phase&&m.valid)??data.models.find(m=>m.phase===phase)}
 function renderModels(data){
  $('models').replaceChildren();
- const ranked=['HCP','BCC'].map(phase=>({phase,m:data.models.find(m=>m.phase===phase)})).sort((a,b)=>(b.m?.coverage??-1)-(a.m?.coverage??-1));
+ const ranked=['HCP','BCC'].map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>(b.m?.coverage??-1)-(a.m?.coverage??-1));
  for(const {phase,m} of ranked){
   const row=document.createElement('tr');
-  const values=m?[`${phase} ${zoneLabel(m)}`,predictionCounts(m),`${(100*m.coverage).toFixed(0)}%`,m.score.toFixed(3),fittedDimensions(m),scalePercentages(m),m.rms_nm_inv.toFixed(3),m.valid?'Pass':'Below threshold']:[phase,'—','—','—','—','—','—','No fit'];
-  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(m&&(i===4||i===5))td.title=scaleDetails(m)+(i===5?' · change from the reference prediction coordinates: 100 × (multiplier − 1). Model lattice dimensions change inversely.':'');if(m&&i===1)td.title='Matched detected profiles / allowed prediction positions in the 3–10 nm⁻¹ fitting band. Opposite spots count once.';row.append(td)});
+  const values=m?[`${phase} ${zoneLabel(m)}`,predictionCounts(m),`${(100*m.coverage).toFixed(0)}%`,(m.position_score??m.score).toFixed(3),(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),fittedDimensions(m),scalePercentages(m),m.rms_nm_inv.toFixed(3),m.valid?'Pass':'Below threshold']:[phase,'—','—','—','—','—','—','—','—','No fit'];
+  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(m&&(i===6||i===7))td.title=scaleDetails(m)+(i===7?' · change from the reference prediction coordinates: 100 × (multiplier − 1). Model lattice dimensions change inversely.':'');if(m&&i===1)td.title='Matched detected profiles / allowed prediction positions in the 3–10 nm⁻¹ fitting band. Opposite spots count once.';row.append(td)});
   $('models').append(row);
  }
- $('fit-summary').textContent=scaleSummary(data.settings)+'. Position score measures agreement with detected peaks; it is not a phase probability. Matches / predictions also exposes unsupported positions. Prediction scale Δ is the percentage change from reference reciprocal coordinates; model a/c changes inversely and assumes the stored DM4 calibration.';
+ $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank score = position score − scale penalty. Scale penalty ranks automatic fits before choosing the best zone axis, including HCP alternatives. Position score measures agreement with detected peaks; it is not a phase probability. Matches / predictions also exposes unsupported positions. Prediction scale Δ is the percentage change from reference reciprocal coordinates; model a/c changes inversely and assumes the stored DM4 calibration.';
 }
 async function renderResult(data,version,body){$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · ROI ${data.roi.x}, ${data.roi.y}`;$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Separate geometry-only check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.')+' This check uses freely fitted reciprocal grids, not HCP/BCC assignments; its acceptance rules differ from the phase-fit check.';renderModels(data);$('result-detail').textContent=`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const img=new Image();const precise=Boolean(data.images.fft_log16);img.src=data.images.fft_log16||data.images.fft;await img.decode();if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;fftRaw={canvas,pixels,precise,histogram,maximum,limits:data.images.fft_log_limits||[0,1]};drawFFT();document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
 function drawFFT(){
@@ -145,7 +147,7 @@ function drawFFT(){
  for(let i=0;i<out.data.length;i+=4){const code=precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i];out.data[i]=lookup[code*3];out.data[i+1]=lookup[code*3+1];out.data[i+2]=lookup[code*3+2];out.data[i+3]=255}
  ctx.putImageData(out,0,0);$('fft-image').setAttribute('href',canvas.toDataURL());$('contrast-value').textContent=$('contrast').value+'%';
  const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();for(const q of [-10,-5,0,5,10]){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off')for(const p of result.spectrum.peaks){for(const sign of [1,-1]){const[x,y]=qp(sign*p.qx,sign*p.qy);const attrs={stroke:'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id};const shape=marker==='crosshair'?el('path',{...attrs,d:`M${x-4},${y}h8M${x},${y-4}v8`}):el('circle',{...attrs,cx:x,cy:y,r:3});shape.append(el('title',{},`Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} nm⁻¹`));$('fft-overlay').append(shape)}}const fits=[];
-if(['HCP','BCC','both'].includes(overlay)){for(const phase of overlay==='both'?['HCP','BCC']:[overlay]){const m=result.models.find(m=>m.phase===phase);if(m)fits.push({model:m,color:phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}}
+if(['HCP','BCC','both'].includes(overlay)){for(const phase of overlay==='both'?['HCP','BCC']:[overlay]){const m=bestModel(result,phase);if(m)fits.push({model:m,color:phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}}
 if(overlay==='geometry'){for(const [key,color,name]of [['primary_lattice','#df92ef','Primary geometry'],['secondary_lattice','#64d6bb','Secondary geometry']]){const m=result.periodicity[key];if(m)fits.push({model:m,color,geometry:true,name})}}
 if(overlay==='custom'){
  for(const key of chosenFits){if(key.startsWith('phase-')){const m=result.models[Number(key.slice(6))];if(m)fits.push({model:m,color:m.phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}else{const m=result.periodicity[key];if(m)fits.push({model:m,color:key==='primary_lattice'?'#df92ef':'#64d6bb',geometry:true,name:key==='primary_lattice'?'Primary geometry':'Secondary geometry'})}}
@@ -154,10 +156,23 @@ for(const f of fits){const matched=new Set(f.model.matches.map(m=>m.node_index))
 }
 function renderFitChoices(data){
  chosenFits=new Set();$('fit-list').replaceChildren();
- const add=(key,m,name,geometry=false)=>{const label=document.createElement('label');label.className='fit-choice';const box=document.createElement('input');box.type='checkbox';box.dataset.fit=key;box.addEventListener('change',()=>{box.checked?chosenFits.add(key):chosenFits.delete(key);$('overlay').value='custom';drawFFT()});const text=document.createElement('span');const passed=m.valid?'Pass':'Rejected / below threshold';let reason='';if(!geometry&&!m.valid){const why=[];if(m.matched_profile_count<4)why.push('fewer than 4 profiles');if(m.nonparallel_spread_sine<=.5)why.push('limited directions');if(m.score<=.20)why.push('score ≤ 0.20');if(m.coverage<=.30)why.push('support ≤ 30%');reason=why.length?' · '+why.join(', '):''}text.textContent=`${name}${geometry?'':' · '+scaleDetails(m)+' · model a/c '+fittedDimensions(m)+' nm'} · ${passed} · ${geometry?m.matched_profile_count+' peaks':predictionCounts(m)+' predictions matched'} · RMS ${m.rms_nm_inv.toFixed(3)} nm⁻¹ · support ${(m.coverage*100).toFixed(0)}%${reason}`;label.append(box,text);$('fit-list').append(label)};
- data.models.map((m,i)=>({m,i})).sort((a,b)=>b.m.coverage-a.m.coverage||b.m.score-a.m.score).forEach(({m,i})=>add('phase-'+i,m,`${m.phase} ${zoneLabel(m)} · ${m.rotation_deg.toFixed(1)}°`));
+ const table=document.createElement('table');table.className='fit-table';
+ const head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
+ for(const title of ['Show','Candidate / zone axis','Matches / predictions','Support ↓','RMS, nm⁻¹','Model a / c, nm','Prediction scale Δ, %','Scale penalty','Rank score','Screen']){const th=document.createElement('th');th.scope='col';th.textContent=title;header.append(th)}
+ head.append(header);table.append(head,body);$('fit-list').append(table);
+ const add=(key,m,name,geometry=false)=>{
+  const row=document.createElement('tr'),toggle=document.createElement('td'),box=document.createElement('input');
+  box.type='checkbox';box.dataset.fit=key;box.setAttribute('aria-label','Overlay '+name);
+  box.addEventListener('change',()=>{box.checked?chosenFits.add(key):chosenFits.delete(key);$('overlay').value='custom';drawFFT()});toggle.append(box);row.append(toggle);
+  const why=[];
+  if(!geometry&&!m.valid){if(m.matched_profile_count<4)why.push('fewer than 4 profiles');if(m.nonparallel_spread_sine<=.5)why.push('limited directions');if(m.score<=.20)why.push('rank score ≤ 0.20');if(m.coverage<=.30)why.push('support ≤ 30%')}
+  const values=[name+(geometry?'':`\n${m.rotation_deg.toFixed(1)}°`),geometry?m.matched_profile_count+' peaks':predictionCounts(m),`${(m.coverage*100).toFixed(0)}%`,m.rms_nm_inv.toFixed(3),geometry?'—':fittedDimensions(m).replace(' / ','\n'),geometry?'—':scalePercentages(m).replace(' / ','\n'),geometry?'—':(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),m.valid?'Pass':'Below threshold'];
+  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===0)td.className=geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc';if(!geometry&&(i===4||i===5))td.title=scaleDetails(m);if(i===7)td.title=geometry?'Geometry-only score':`Position ${(m.position_score??m.score).toFixed(3)} − scale penalty ${(m.scale_penalty??0).toFixed(3)} = rank ${m.score.toFixed(3)}`;if(i===8)td.title=why.join('; ');row.append(td)});
+  body.append(row);
+ };
+ data.models.map((m,i)=>({m,i})).sort((a,b)=>b.m.coverage-a.m.coverage||b.m.score-a.m.score).forEach(({m,i})=>add('phase-'+i,m,`${m.phase} ${zoneLabel(m)}`));
  for(const [key,name]of [['primary_lattice','Primary geometry-only grid'],['secondary_lattice','Secondary geometry-only grid']])if(data.periodicity[key])add(key,data.periodicity[key],name,true);
- if(!$('fit-list').children.length)$('fit-list').textContent='No retained candidate fits in this region.';
+ if(!body.children.length)$('fit-list').textContent='No retained candidate fits in this region.';
 }
 
 function rememberFFTDisplay(){writePreference('tem-fft-display',{curve:$('fft-curve').value,background:Number($('contrast').value),white:Number($('fft-white').value)})}
@@ -224,11 +239,14 @@ $('run-grid').onclick=async()=>{if(!meta)return;try{$('run-grid').disabled=true;
 $('cancel-grid').onclick=async()=>{try{await api('cancel',{job_id:jobId})}catch(e){message(e.message,true)}};
 async function save(body){try{const d=await api('save',body);message('Saved: '+d.path)}catch(e){message(e.message,true)}}
 $('save-region').onclick=()=>{if(result)save({file_id:fileId,roi:result.roi,settings:result.settings})};$('save-grid').onclick=()=>{if(jobId)save({job_id:jobId})};
-for(const id of ['scenario','model-scale','threshold'])$(id).onchange=()=>{
+const savedPenalty=readPreference('tem-scale-penalty',.10);
+if(Number.isFinite(savedPenalty)&&savedPenalty>=0&&savedPenalty<=.5)$('scale-penalty').value=savedPenalty;
+for(const id of ['scenario','model-scale','threshold','scale-penalty'])$(id).onchange=()=>{
  if(!meta)return;
  if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
   restoreCalibration();message('Use a model size between 0.850 and 1.150.',true);return;
  }
+ if(id==='scale-penalty'){const value=Number($('scale-penalty').value);if(!Number.isFinite(value)||value<0||value>.5){message('Use a scale penalty from 0 to 0.5.',true);return}writePreference('tem-scale-penalty',value)}
  if(id==='scenario'||id==='model-scale'){calibrationView();rememberCalibration()}
  if(jobId&&grid?.state==='running')api('cancel',{job_id:jobId}).catch(e=>message(e.message,true));
  jobId=null;grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=false;$('cancel-grid').disabled=true;
@@ -239,5 +257,5 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('engine-note').hidden=config.phase_comparison==='shared-evidence-v1';for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}if(config.default_file)$('file').value=config.default_file;if(!$('file').value&&config.files.length)$('file').value=config.files[0].id;if(config.files.length)await openFile();else message('No STA/ST DM4 files found. Check the configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('engine-note').hidden=config.phase_comparison==='shared-evidence-v1'&&Boolean(config.scale_penalty);$('scale-penalty').disabled=!config.scale_penalty;for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}if(config.default_file)$('file').value=config.default_file;if(!$('file').value&&config.files.length)$('file').value=config.files[0].id;if(config.files.length)await openFile();else message('No STA/ST DM4 files found. Check the configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 start();

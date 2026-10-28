@@ -24,7 +24,7 @@ def classify(peaks, models, df):
     describe_predictions(models)
     result = core.classify(peaks, models, df)
     result['comparison_version'] = VERSION
-    result['position_only_label'] = result['label']
+    result['score_only_label'] = result['label']
     # Keep separate-pattern evidence and the original near-tied ambiguity rule.
     if result['label'] not in ('hcp_compatible', 'bcc_compatible'):
         return result
@@ -53,7 +53,7 @@ def classify(peaks, models, df):
             f"Both accepted candidates match the same {len(ids)} measured profiles. "
             f"{leading['phase']} matches {leading['matched_prediction_count']}/{len(leading['predicted_nodes'])} "
             f"predicted positions; {other['phase']} matches {other['matched_prediction_count']}/{len(other['predicted_nodes'])}. "
-            f"The better positional fit uses {' and '.join(reason)}, so the phase remains ambiguous.")
+            f"The leading scored fit uses {' and '.join(reason)}, so the phase remains ambiguous.")
         result['flags'].append(
             'An unsupported prediction is not proof of an absent reflection: HRTEM contrast transfer can suppress spots. '
             'These counts are a model check, not a phase fraction or an intensity simulation.')

@@ -1,5 +1,5 @@
 {
-  "description": "Original ST1221 numerical functions remain unchanged in analysis_core.py. Optional bounded per-region scale fitting is implemented in scale_fitting.py. phase_comparison.py conservatively withholds phase labels when identical detected evidence supports competing models and the positional leader needs more scale parameters or unsupported predictions. FFT processing and peak detection are unchanged.",
+  "description": "Original ST1221 numerical functions remain unchanged in analysis_core.py. Optional bounded per-region scale fitting and an adjustable scale-magnitude ranking penalty are implemented in scale_fitting.py. phase_comparison.py conservatively withholds phase labels for competing fits of identical detected evidence. FFT processing and peak detection are unchanged.",
   "sources": {
     "adaptive.py": "8bae8b1f69d3a08f29328e2ecfe4d5fd1986495efdb94252f5804e526d6c6af5",
     "purity.py": "1c7095c338adbba60b89997cc102d874973ad9f007541010e572b00885dc41fb"
@@ -20,12 +20,13 @@
     "No independent absolute calibration standard.",
     "Fourier support is not phase fraction.",
     "Automatic searches are bounded and not guaranteed global optima.",
-    "Two-scale HCP fits have more flexibility; scores are not corrected for the additional parameter.",
+    "Two-scale HCP fits have more flexibility. The scale-magnitude penalty is not a statistical correction for the number of fitting parameters.",
     "A zone containing no c-sensitive reflections cannot determine HCP c.",
-    "The shared-evidence ambiguity guard is conservative and heuristic; it is not calibrated statistical model selection."
+    "The shared-evidence ambiguity guard is conservative and heuristic; it is not calibrated statistical model selection.",
+    "Scale penalty is an adjustable quadratic preference relative to reference dimensions, not a measured strain limit; calibration offsets can affect ranking."
   ],
   "extensions": {
-    "scale_fitting.py": "Automatic uniform scale for HCP/BCC, or independent HCP basal/c reciprocal scales. Same bounded zone library with a wider reflection band for resizing. Automatic bounds 0.85\u20131.15; fitting is local and affects prediction points only.",
-    "phase_comparison.py": "shared-evidence-v1: reports matched/unsupported prediction counts and adds an exact-shared-profile ambiguity guard. Does not adjust positional scores, simulate intensities, assume allowed reflections must be present, or automatically prefer the sparser model."
+    "scale_fitting.py": "Automatic uniform HCP/BCC or independent HCP basal/c reciprocal scales. Same bounded zones, wider reflection band, scale bounds 0.85\u20131.15. Each fitted hypothesis receives an optional mean squared scale-deviation penalty before ranking and zone selection. Default strength 0.10 per 5% adjustment, zero disables; fitted positions are unchanged by the ranking cost. Distinct zone hypotheses can be retained for the same observed profile set.",
+    "phase_comparison.py": "shared-evidence-v1: reports matched/unsupported prediction counts and adds an exact-shared-profile ambiguity guard. Operates on the rank score supplied by fitting; does not adjust positional scores, simulate intensities, assume allowed reflections must be present, or automatically prefer the sparser model."
   }
 }

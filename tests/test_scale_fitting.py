@@ -24,7 +24,7 @@ class ScaleFits(unittest.TestCase):
         q = q[(np.linalg.norm(q, axis=1) >= 3) & (np.linalg.norm(q, axis=1) <= 10)]
         peaks = [dict(profile_id=i+1, qx=float(p[0]), qy=float(p[1]), weight=4., log_radial_enrichment=6.)
                  for i, p in enumerate(q)]
-        result = fitting.search(peaks, [template], .10, mode)[0]
+        result = fitting.search(peaks, [template], .10, mode, scale_penalty_strength=0)[0]
         self.assertTrue(result['valid'])
         self.assertLess(result['rms_nm_inv'], .001)
         return result
@@ -52,6 +52,36 @@ class ScaleFits(unittest.TestCase):
         self.assertAlmostEqual(result['scale_a'], 1.027, places=3)
         self.assertIsNone(result['scale_c'])
         self.assertIsNone(result['fitted_c_nm'])
+
+    def test_scale_penalty_is_quadratic_and_uniform_hcp_is_not_double_charged(self):
+        self.assertAlmostEqual(float(fitting.scale_cost(1.05, strength=.1)), .1)
+        self.assertAlmostEqual(float(fitting.scale_cost(.90, strength=.1)), .4)
+        self.assertAlmostEqual(float(fitting.scale_cost(.95, .95, .1)), .1)
+        self.assertAlmostEqual(float(fitting.scale_cost(.90, 1., .1)), .2)
+        self.assertEqual(float(fitting.scale_cost(.85, 1.15, 0)), 0.)
+
+    def test_larger_adjustment_can_lose_between_two_hcp_orientations(self):
+        # A slightly better positional fit need not be the better ranked HCP fit.
+        small = fitting.penalize(dict(phase='HCP', zone_3index=[1, -1, 0], score=.80, valid=True), 1.01, .99, .1)
+        large = fitting.penalize(dict(phase='HCP', zone_3index=[1, -1, -2], score=.85, valid=True), 1.10, .90, .1)
+        self.assertGreater(large['position_score'], small['position_score'])
+        self.assertGreater(small['score'], large['score'])
+        self.assertTrue(small['valid'])
+        self.assertTrue(large['valid'])
+
+    def test_penalty_changes_ranking_without_moving_fitted_points(self):
+        template = self.template('HCP', [1, -1, -2])
+        q = core.canonical(core.rotation(fitting.prediction_points(template, .96, 1.035), .47))
+        q = q[(np.linalg.norm(q, axis=1) >= 3) & (np.linalg.norm(q, axis=1) <= 10)]
+        peaks = [dict(profile_id=i+1, qx=float(p[0]), qy=float(p[1]), weight=4., log_radial_enrichment=6.) for i, p in enumerate(q)]
+        before = fitting.search(peaks, [template], .10, 'auto_hcp_ac', scale_penalty_strength=0)[0]
+        after = fitting.search(peaks, [template], .10, 'auto_hcp_ac', scale_penalty_strength=.1)[0]
+        np.testing.assert_allclose([n['q'] for n in before['predicted_nodes']],
+                                   [n['q'] for n in after['predicted_nodes']], atol=1e-8, rtol=0)
+        self.assertEqual([(m['profile_id'], m['hkl']) for m in before['matches']],
+                         [(m['profile_id'], m['hkl']) for m in after['matches']])
+        self.assertAlmostEqual(after['score'], before['score']-after['scale_penalty'])
+
 
 
 if __name__ == '__main__':

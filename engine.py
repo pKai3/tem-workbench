@@ -104,10 +104,10 @@ class Engine:
         ih, iw = item['array'].shape
         if min(w, h) < 32 or x < 0 or y < 0 or x+w > iw or y+h > ih or abs(w-h) > 1:
             raise ValueError('Choose a square region within the image, at least 32 pixels wide.')
-        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('bcc_a', .330), ('threshold', .35)]}
+        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('bcc_a', .330), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY)]}
         if not all(np.isfinite(v) for v in values.values()):
             raise ValueError('Analysis settings must be finite numbers.')
-        if not (.85 <= values['scale'] <= 1.15 and .30 <= values['bcc_a'] <= .37 and .15 <= values['threshold'] <= .7):
+        if not (.85 <= values['scale'] <= 1.15 and .30 <= values['bcc_a'] <= .37 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5):
             raise ValueError('Analysis settings are outside the supported range.')
         mode = settings.get('scale_mode', 'fixed')
         if mode not in scale_fitting.MODES:
@@ -138,15 +138,22 @@ class Engine:
                               'scale_c': settings['scale'] if model['phase'] == 'HCP' else None,
                               'fitted_a_nm': model['nominal_a_nm']/settings['scale'],
                               'fitted_c_nm': model['nominal_c_nm']/settings['scale'] if model['phase'] == 'HCP' else None,
-                              'scale_parameter_count': 0})
+                              'scale_parameter_count': 0, 'position_score': model['score'],
+                              'position_valid': model['valid'], 'scale_penalty': 0.,
+                              'scale_penalty_strength': 0.})
         else:
             models = scale_fitting.search(s['peaks'], self.auto_templates, tol,
-                                          settings['scale_mode'], bcc_a=settings['bcc_a'])
+                                          settings['scale_mode'], bcc_a=settings['bcc_a'],
+                                          scale_penalty_strength=settings['scale_penalty_strength'])
         classification = phase_comparison.classify(s['peaks'], models, s['df'])
         if settings['scale_mode'] != 'fixed':
             classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the stored image calibration.')
             if settings['scale_mode'] == 'auto_hcp_ac':
-                classification['flags'].append('HCP has an extra fitting parameter where c is visible. The positional score is not corrected for this flexibility; phase selection separately checks for competing models that explain the same peaks.')
+                classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scale penalties discourage large adjustments; the separate shared-evidence check retains unresolved model tradeoffs.')
+            if settings['scale_penalty_strength']:
+                classification['flags'].append(
+                    f"Scale penalty strength {settings['scale_penalty_strength']:.3f}: ranking score = position score minus "
+                    'the mean squared reciprocal-scale deviation, normalized to 5%. This is an adjustable preference, not a measured strain limit.')
             primary = classification.get('primary_model')
             if primary and primary.get('scale_at_bound'):
                 classification['flags'].append('The leading fit reaches an automatic scale limit.')
