@@ -9,6 +9,7 @@ The interface pairs real-space images with reciprocal-space previews and support
 ## Features
 
 - Move and resize a region to inspect its FFT, detected maxima and fitted crystal patterns.
+- Open calibrated direct-diffraction DM4 spot patterns, with editable beam centre, reciprocal calibration and exclusions.
 - Compare HCP and BCC candidates, including rejected fits and phase-independent geometry fits.
 - Fit a uniform prediction scale, or independent HCP basal and c-axis scales.
 - Adjust a scale penalty and reweight a completed grid from cached fits.
@@ -105,6 +106,21 @@ The **FFT processing** row above Scale fitting controls **Hann window**, **Remov
 
 Window widths used for matching and weak-peak checks follow the selected window (approximately 1.44 FFT bins for Hann or 0.886 for a rectangular crop, with existing minimum tolerances). Windowing suppresses side lobes at the cost of a wider central peak; see the [SciPy spectral-analysis guide](https://docs.scipy.org/doc/scipy/tutorial/signal.html#spectral-analysis).
 
+### Direct diffraction (experimental)
+
+Opening a DM4 with reciprocal-length calibration (for example `1/nm`) automatically switches to **Direct diffraction**. The recorded detector intensity is analysed directly, without an FFT, Hann window or mean removal. The first version supports spot patterns, not ring indexing. It uses the same limited HCP/BCC template library and **3–10 nm⁻¹** fitting band as FFT analysis.
+
+- **Beam centre:** an initial estimate clusters opposite-spot midpoints near the detector centre. The pair count and residual are shown; check the estimate visually. If pairs are inadequate, the detector midpoint is used and labelled as a fallback. Edit X/Y, or choose **Set beam centre** and click the detector. **Use estimated centre** restores the initial estimate.
+- **Calibration:** X/Y values are reciprocal spacing per detector pixel in nm⁻¹. Both can be edited; **Stored calibration** restores the DM4 values. These values and the centre define measured reciprocal coordinates. Scale fitting separately moves the crystal predictions. Positive reciprocal y points upwards; detector y increases downwards.
+- **Exclusions:** set the central exclusion radius and draw rectangles over beam-stop or detector artefacts. Undo removes the last rectangle; Clear removes all rectangles. A predicted profile is unchecked when neither opposite position has a visible neighbourhood. One visible opposite remains assessable. Exclusions are shown on both views.
+- **Spot controls:** smoothing is in original detector pixels (default 2 px). The detector subtracts a broader Gaussian background and looks for local maxima above a broad-noise floor. Minimum spot contrast defaults to 6 robust local background spreads. Lowering it admits more faint features and noise. Subpixel centroids and spot widths are measured on the filtered field; templates do not guide detection.
+- **Evidence:** opposite observations share one profile; the plot marks only spots actually detected. Profile weights use `log(1 + local contrast)`, capped at 1–6. Additional maxima above local contrast 3 can supply weak evidence, separately from the strong threshold. The estimated spot width is bounded to 0.30 nm⁻¹; matching uses that width with a 0.10 nm⁻¹ floor. These are exploratory choices, not calibrated confidence levels.
+- **Persistence:** centre, calibration, detector settings and exclusions are remembered per image in browser storage. **Save region** stores a named whole-pattern analysis in the local project, with tags and notes; **Export result** writes numerical results and provenance to the output folder.
+
+The left view shows the full detector; the right view shows the ±10.5 nm⁻¹ field and can be enlarged by clicking it. Display resampling and brightness controls do not change detected coordinates. Different x/y reciprocal calibrations and rectangular detector images are supported. Automatic real-space grids are hidden and disabled for diffraction: subdividing a detector pattern does not map locations in the specimen.
+
+Centre estimation can choose a different lattice inversion centre, and masks or noise can affect spot detection. Diffraction intensities also depend on excitation and thickness, so a missing allowed spot is not definitive evidence against a structure. This mode retains candidate/ambiguous labels rather than treating an overlay as confirmation. General beam-centre and masking methods are documented in [pyxem](https://pyxem.readthedocs.io/en/stable/reference/generated/pyxem.signals.Diffraction2D.html); this app uses its own small implementation and does not require pyxem.
+
 ### Remembered settings
 
 Basic preferences are saved automatically in browser local storage: the last image, region width, scale-fitting mode and custom scale, ranking weights, FFT processing and peak threshold, grid size and stopping limit, adaptive options, grid visibility, and FFT display/overlay controls. Analysis controls carry across images; a new image opens with a centred region at the remembered physical width, limited to the image size. Existing display preferences and favourites are retained.
@@ -129,7 +145,7 @@ The colour legend and zone-symbol legends appear below the image. Blue symbols i
 
 The reference lattice dimensions are HCP **a = 0.295 nm, c = 0.468 nm** and BCC **a = 0.330 nm**. The default is automatic BCC uniform / HCP independent a-and-c scaling. Automatic uniform scaling for both structures, stored scale and custom comparison scale are also available. The last-used mode carries across images and restarts; removed preset choices fall back to the automatic default.
 
-Automatic reciprocal-scale multipliers are bounded to **0.85–1.15**. Scaling moves predicted reflections; measured FFT axes remain tied to the stored image calibration. Model lattice dimensions change inversely with reciprocal scale. Zones without c-sensitive reflections cannot determine HCP c.
+Automatic reciprocal-scale multipliers are bounded to **0.85–1.15**. Scaling moves predicted reflections; measured reciprocal axes remain tied to the image calibration used. Model lattice dimensions change inversely with reciprocal scale. Zones without c-sensitive reflections cannot determine HCP c.
 
 The adjustable scale penalty is:
 
@@ -163,20 +179,21 @@ These adjustments do not simulate reflection intensities, thickness, defocus or 
 
 - The library contains **46 HCP/BCC templates**, including mirror variants, from a limited set of zone axes. Other structures and untested orientations can affect results.
 - Peak detection and matching currently use the **3–10 nm⁻¹** band. The inner cutoff is a heuristic; longer-period signals outside that band are excluded.
-- Peak coverage is the sum of weights of matched original detected peak profiles divided by the weight of all original detected profiles. Weights use height above the radial background, capped at 1–6; additional weak maxima are excluded. Neither peak coverage nor rank score is an intensity fraction, phase probability or phase fraction.
+- Peak coverage is the sum of weights of matched original detected peak profiles divided by the weight of all original detected profiles. FFT weights use height above the radial background; direct spots use log(1 + local contrast). Both are capped at 1–6; additional weak maxima are excluded. Neither peak coverage nor rank score is an intensity fraction, phase probability or phase fraction.
 - The scale penalty is a preference for smaller adjustments, not a calibrated strain prior. Calibration errors can change candidate rankings.
 - Independent HCP a/c fitting adds flexibility. The penalty is not a statistical correction for the number of fitted parameters.
 - Additional weak maxima and unsupported prediction positions contribute optional heuristic ranking adjustments. HRTEM contrast transfer can suppress allowed reflections; a missing peak is not proof that a structure is absent.
 - A conservative shared-evidence check retains ambiguity when competing structures explain the same detected profiles and the leading fit requires additional flexibility or unsupported predictions.
 - Small regions broaden FFT peaks, limiting separation of nearby reflections. Image-calibrated fits alone do not establish lattice strain.
 
-Supported input is finite, two-dimensional real-space data with equal x/y pixel calibration. Automatic grids currently require square images. Direct diffraction analysis and arbitrary region masks are not supported by this interface.
+Supported input is finite, two-dimensional DM4 data with length or reciprocal-length calibration. Real-space FFTs require equal x/y pixel calibration; automatic grids require square real-space images. Direct diffraction supports rectangular detector exclusions. Ring indexing and arbitrary real-space region shapes are not implemented.
 
 ## Development
 
 | Component | Responsibility |
 | --- | --- |
 | `analysis_core.py` | FFT processing, peak detection, fixed-scale matching and geometry checks. |
+| `diffraction.py` | Reciprocal calibration, beam-centre estimation, direct spot detection and detector exclusions. |
 | `scale_fitting.py` | Bounded automatic scale fitting, candidate ranking and cached reranking. |
 | `phase_comparison.py` | Prediction counts and shared-evidence ambiguity checks. |
 | `peak_evidence.py` | Independent weak-maxima detection, prediction-site audits and ranking adjustments. |

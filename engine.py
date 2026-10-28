@@ -17,6 +17,7 @@ import scale_fitting
 import phase_comparison
 import demo_data
 import peak_evidence
+import diffraction
 
 ROOT = Path(__file__).resolve().parent
 
@@ -46,7 +47,7 @@ class Engine:
                 t[key] = np.array(t[key])
         self.auto_templates = scale_fitting.prepare_templates(self.templates)
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'engine.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'engine.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
 
@@ -98,31 +99,41 @@ class Engine:
                 meta = f.getMetadata(0)
                 array = np.asarray(f.getDataset(0)['data'])
             name = path.stem
-        if array.ndim != 2 or not np.isfinite(array).all():
-            raise ValueError('This first version supports finite, two-dimensional images.')
+        if array.ndim != 2 or min(array.shape) < 32 or not np.isfinite(array).all():
+            raise ValueError('Choose a finite two-dimensional image at least 32 pixels per side.')
         factors = {'nm': 1., 'µm': 1000., 'μm': 1000., 'um': 1000., 'm': 1e9, 'A': .1, 'Å': .1}
+        units = [str(meta.get(f'Calibrations Dimension {d} Units', '')).strip() for d in (1, 2)]
+        reciprocal = [diffraction.reciprocal_factor(unit) for unit in units]
+        is_diffraction = all(factor is not None for factor in reciprocal)
         scales = []
-        for dim in [1, 2]:
-            unit = str(meta.get(f'Calibrations Dimension {dim} Units', '')).strip()
-            if unit not in factors:
-                raise ValueError('Choose a real-space image calibrated in length units. Direct diffraction is not supported by this FFT view yet.')
-            scale = float(meta[f'Calibrations Dimension {dim} Scale'])*factors[unit]
+        for dim, unit in enumerate(units, 1):
+            factor = reciprocal[dim-1] if is_diffraction else factors.get(unit)
+            if factor is None:
+                raise ValueError('DM4 must have length calibration for an image or reciprocal-length calibration for diffraction on both axes.')
+            scale = float(meta[f'Calibrations Dimension {dim} Scale'])*factor
             if not np.isfinite(scale) or scale <= 0:
                 raise ValueError('Image calibration is invalid.')
             scales.append(scale)
-        if abs(scales[0]/scales[1]-1) > 1e-4:
-            raise ValueError('Unequal x/y pixel calibration needs an additional fitting check; this first version supports square pixels.')
+        if not is_diffraction and abs(scales[0]/scales[1]-1) > 1e-4:
+            raise ValueError('Real-space FFT analysis currently requires equal x/y pixel calibration.')
         sx, sy = scales
         h, w = array.shape
-        info = {'id': file_id, 'name': name, 'is_demo': is_demo, 'image_kind': 'real_space', 'width': w, 'height': h,
-                'pixel_x_nm': sx, 'pixel_y_nm': sy, 'field_nm': [w*sx, h*sy],
+        info = {'id': file_id, 'name': name, 'is_demo': is_demo,
+                'image_kind': 'diffraction' if is_diffraction else 'real_space', 'width': w, 'height': h,
                 'sha256_pixels': hashlib.sha256(array.tobytes()).hexdigest(),
                 'date': str(meta.get('DataBar Acquisition Date', '')),
                 'time': str(meta.get('DataBar Acquisition Time', '')),
-                'device': str(meta.get('Acquisition Device Name', '')),
-                'can_index': min(.5/sx, .5/sy) >= 10.}
+                'device': str(meta.get('Acquisition Device Name', ''))}
         limits = np.percentile(array, [.3, 99.7])
-        item = {'array': array, 'info': info, 'limits': limits, 'preview': png(array, limits, 1400)}
+        if is_diffraction:
+            info.update(pixel_x_nm_inv=sx, pixel_y_nm_inv=sy, field_nm_inv=[w*sx, h*sy],
+                        beam_center=diffraction.estimate_center(array), can_index=True)
+            preview = png(np.log1p(np.maximum(array, 0)), max_size=1400)
+        else:
+            info.update(pixel_x_nm=sx, pixel_y_nm=sy, field_nm=[w*sx, h*sy],
+                        can_index=min(.5/sx, .5/sy) >= 10.)
+            preview = png(array, limits, 1400)
+        item = {'array': array, 'info': info, 'limits': limits, 'preview': preview}
         self.loaded.clear()  # Keep one source in memory; running grid jobs retain their own reference.
         self.loaded[file_id] = item
         return item
@@ -133,7 +144,10 @@ class Engine:
         except (TypeError, ValueError, KeyError):
             raise ValueError('Region must have integer x, y, w and h values.')
         ih, iw = item['array'].shape
-        if min(w, h) < 32 or x < 0 or y < 0 or x+w > iw or y+h > ih or abs(w-h) > 1:
+        direct = item['info'].get('image_kind') == 'diffraction'
+        if direct and (x, y, w, h) != (0, 0, iw, ih):
+            raise ValueError('Direct diffraction analyses use the full detector image; use exclusion masks for unwanted areas.')
+        if min(w, h) < 32 or x < 0 or y < 0 or x+w > iw or y+h > ih or (not direct and abs(w-h) > 1):
             raise ValueError('Choose a square region within the image, at least 32 pixels wide.')
         values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('bcc_a', .330), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT)]}
         if not all(np.isfinite(v) for v in values.values()):
@@ -149,19 +163,30 @@ class Engine:
         if window not in ('hann', 'none') or not isinstance(remove_mean, bool):
             raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
         values.update(fft_window=window, remove_mean=remove_mean)
+        if direct:
+            values['diffraction'] = diffraction.validate(item['info'], settings.get('diffraction', {}))
         return {'x': x, 'y': y, 'w': w, 'h': h}, values
 
     def analyze(self, item, roi, settings, images=True, cache_candidates=False):
         roi, settings = self.validate(item, roi, settings)
         started = time.perf_counter()
         x, y, w, h = [roi[k] for k in ['x', 'y', 'w', 'h']]
-        info = item['info']; sx, sy = info['pixel_x_nm'], info['pixel_y_nm']
+        info = item['info']
+        direct = info.get('image_kind') == 'diffraction'
         crop = item['array'][y:y+h, x:x+w]
-        s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'],
-                          window=settings['fft_window'], remove_mean=settings['remove_mean'])
+        if direct:
+            s, context = diffraction.spectrum(crop, settings['diffraction'])
+            width_nm = height_nm = None
+            can_index = s['can_index']
+        else:
+            sx, sy = info['pixel_x_nm'], info['pixel_y_nm']
+            width_nm, height_nm = w*sx, h*sy
+            s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'],
+                              window=settings['fft_window'], remove_mean=settings['remove_mean'])
+            can_index = info['can_index']
         tol = max(.10, core.peak_width(s))
         candidates = []
-        if not info['can_index']:
+        if not can_index:
             models = []
         elif settings['scale_mode'] == 'fixed':
             models = core.search(s['peaks'], self.templates, settings['scale'], tol, bcc_a=settings['bcc_a'], candidate_sink=candidates)
@@ -178,15 +203,16 @@ class Engine:
                                           settings['scale_mode'], bcc_a=settings['bcc_a'],
                                           scale_penalty_strength=settings['scale_penalty_strength'],
                                           candidate_sink=candidates)
-        if info['can_index']:
-            context = peak_evidence.prepare(s, crop.shape, sx, sy)
+        if can_index:
+            if not direct:
+                context = peak_evidence.prepare(s, crop.shape, sx, sy)
             s['weak_maxima'] = context['maxima']
             for model in candidates:
                 peak_evidence.inspect(model, context)
                 peak_evidence.apply(model, settings['peak_evidence_weight'])
             models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
-        classification = self.classify(s, models, settings, w*sx, h*sy, info['can_index'])
-        periodicity = core.purity(s['peaks'], tol) if info['can_index'] else {'status': 'unresolved_pattern', 'substantial_second_pattern': False}
+        classification = self.classify(s, models, settings, width_nm, height_nm, can_index)
+        periodicity = core.purity(s['peaks'], tol) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False}
         log = s.pop('log')
         # Return an encoded log-power field; display contrast is adjusted in the browser only.
         if images:
@@ -194,7 +220,9 @@ class Engine:
             display = Image.fromarray(np.uint8(np.clip((log-lo)/max(hi-lo,1e-12),0,1)*255))
             display.thumbnail((768,768), Image.Resampling.NEAREST)
             stream=BytesIO(); display.save(stream,format='PNG')
-            encoded = {'fft': data_url(stream.getvalue()), 'crop': data_url(png(crop, item['limits'], 768))}
+            encoded = {'fft': data_url(stream.getvalue())}
+            if not direct:
+                encoded['crop'] = data_url(png(crop, item['limits'], 768))
             # Carry a precise log field for reversible display curves. The original
             # FFT and peak fitting above are unchanged. RGB stores high/low bytes.
             precise = Image.fromarray(np.uint16(np.clip((log-lo)/max(hi-lo, 1e-12), 0, 1)*65535))
@@ -207,7 +235,8 @@ class Engine:
             encoded.update({'fft_log16': data_url(stream.getvalue()), 'fft_log_limits': [lo, hi]})
         else:
             encoded = {}
-        result = {'roi': roi, 'width_nm': w*sx, 'height_nm': h*sy, 'settings': settings,
+        result = {'roi': roi, 'image_kind': info.get('image_kind', 'real_space'),
+                'width_nm': width_nm, 'height_nm': height_nm, 'settings': settings,
                 'spectrum': s, 'models': models, 'classification': classification,
                 'periodicity': periodicity, 'images': encoded,
                 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
@@ -220,7 +249,7 @@ class Engine:
     def classify(self, s, models, settings, width_nm, height_nm, can_index=True):
         classification = phase_comparison.classify(s['peaks'], models, s['df'])
         if settings['scale_mode'] != 'fixed':
-            classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the stored image calibration.')
+            classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the image calibration used.')
             if settings['scale_mode'] == 'auto_hcp_ac':
                 classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scale penalties discourage large adjustments; the separate shared-evidence check retains unresolved model tradeoffs.')
             if settings['scale_penalty_strength']:
@@ -236,9 +265,19 @@ class Engine:
             classification['flags'].append('Prediction-site evidence is an exploratory ranking adjustment. Weak maxima are checked against local background and rotated controls; they do not count toward the initial fit screen or separate-pattern criteria. Missing spots are not proof of an absent reflection.')
         if not can_index:
             classification['label'] = 'insufficient'
-            classification['flags'].append('The stored sampling does not cover the full 3–10 nm⁻¹ fitting band; phase fitting is disabled.')
+            classification['flags'].append('No usable sampling in the phase-fitting band.' if s.get('kind') == 'diffraction' else 'The stored sampling does not cover the full 3–10 nm⁻¹ fitting band; phase fitting is disabled.')
         # Report the actual window broadening rather than the original fixed 5 nm example.
         classification['flags'] = [f for f in classification['flags'] if not f.startswith('At ~5nm, Hann broadening')]
+        if s.get('kind') == 'diffraction':
+            classification['flags'] = [f.replace('HRTEM contrast transfer can suppress spots',
+                'diffraction intensities depend on excitation and thickness') for f in classification['flags']]
+            classification['flags'].append('Direct detector spots, without an FFT. Verify the beam centre and reciprocal calibration; fitting uses the 3–10 nm⁻¹ band.')
+            classification['flags'].append(f"Matching radius {max(.10, core.peak_width(s)):.3f} nm⁻¹ uses the estimated spot width with a 0.10 nm⁻¹ floor. Opposite spots are grouped once; only observed spots are marked.")
+            if not s['full_band_on_detector']:
+                classification['flags'].append('The detector does not cover the entire fitting band. Predictions outside the detector or inside exclusions are unchecked.')
+            if s['mask_count']:
+                classification['flags'].append('Manual exclusion rectangles remove spots from detection and leave obscured prediction profiles unchecked when neither opposite position is visible.')
+            return classification
         window = settings.get('fft_window', 'hann')
         if s['df'] > .15:
             window_name = 'Hann' if window == 'hann' else 'rectangular'

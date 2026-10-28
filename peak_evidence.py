@@ -87,6 +87,8 @@ def inspect(model, context):
                   (abs(points[:, 0])+radius <= context['x_limit']) &
                   (abs(points[:, 1])+radius <= context['y_limit']) &
                   (separations.min(axis=1) >= radius))
+    if 'visible' in context:
+        assessable &= context['visible'](points)
     quality, distance = qualities(points, maxima, radius)
     eligible = assessable.copy()
     for i in assigned:
@@ -105,6 +107,8 @@ def inspect(model, context):
             record.update(weak_id=peak['weak_id'], observed_q=peak['q'],
                           local_contrast=peak['local_contrast'], enrichment=peak['enrichment'],
                           offset_nm_inv=float(distance[i, j]), quality=float(quality[i, j]))
+            if 'observed_spots' in peak:
+                record['observed_spots'] = peak['observed_spots']
         nodes.append(record)
     # Same radii, different angles: subtract average chance weak-spot support.
     controls = []
@@ -112,6 +116,8 @@ def inspect(model, context):
         rotated = core.rotation(points, np.radians(angle))
         control, _ = qualities(rotated, maxima, radius)
         control[~eligible] = 0
+        if 'visible' in context:
+            control[~context['visible'](rotated)] = 0
         control[(abs(rotated[:, 0])+radius > context['x_limit']) |
                 (abs(rotated[:, 1])+radius > context['y_limit'])] = 0
         rows, cols = linear_sum_assignment(np.c_[-control, np.zeros((n, n))])

@@ -52,7 +52,7 @@ class Workbench:
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
-                'fft_log16': True, 'fft_processing': True, 'phase_comparison': 'shared-evidence-v1',
+                'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -75,7 +75,9 @@ class Workbench:
             item = self.engine.load(region['source']['id'])
             source = region['source']
             current = item['info']
-            identity = ('sha256_pixels', 'width', 'height', 'pixel_x_nm', 'pixel_y_nm')
+            identity = ('sha256_pixels', 'width', 'height', 'pixel_x_nm', 'pixel_y_nm', 'pixel_x_nm_inv', 'pixel_y_nm_inv')
+            if source.get('image_kind', 'real_space') != current.get('image_kind', 'real_space'):
+                raise ValueError('The image type differs from the saved analysis.')
             if any(source.get(k) != current.get(k) for k in identity):
                 raise ValueError('This image or its calibration differs from the saved region. The saved coordinates have not been applied.')
             self.engine.validate(item, region['roi'], region['settings'])
@@ -93,6 +95,8 @@ class Workbench:
         return saved
 
     def grid(self, item, settings, count, adaptive, minimum, check_passing=False):
+        if item['info'].get('image_kind') == 'diffraction':
+            raise ValueError('A detector diffraction pattern is not a real-space phase map. Use whole-pattern analysis with exclusions.')
         if not item['info']['can_index']:
             raise ValueError('This image does not sample the full phase-fitting band.')
         if item['info']['width'] != item['info']['height']:
@@ -267,7 +271,7 @@ class Workbench:
             with self.lock:
                 item = self.engine.load(body['file_id'])
                 result = {'source': item['info'], 'result': self.engine.analyze(item, body['roi'], body.get('settings', {}), images=False)}
-            kind = 'region'
+            kind = 'diffraction' if item['info'].get('image_kind') == 'diffraction' else 'region'
         output = Path(self.config['output_root']).expanduser().resolve()
         output.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
@@ -361,7 +365,11 @@ def make_handler(app):
                         result=app.engine.analyze(item, body['roi'], body.get('settings', {}))
                     if time.monotonic()-app.last_preview_log >= 1:
                         app.last_preview_log = time.monotonic()
-                        LOG.info('Region %s at %s,%s (%s px): %s; %.0f ms', item['info']['name'], result['roi']['x'], result['roi']['y'], result['roi']['w'], result['classification']['label'], result['elapsed_ms'])
+                        if result.get('image_kind') == 'diffraction':
+                            d=result['settings']['diffraction']
+                            LOG.info('Diffraction %s: centre %.1f,%.1f px; %s profiles; %s exclusions; %s; %.0f ms', item['info']['name'], d['center_x'], d['center_y'], len(result['spectrum']['peaks']), len(d['masks']), result['classification']['label'], result['elapsed_ms'])
+                        else:
+                            LOG.info('Region %s at %s,%s (%s px): %s; %.0f ms', item['info']['name'], result['roi']['x'], result['roi']['y'], result['roi']['w'], result['classification']['label'], result['elapsed_ms'])
                     self.send(result)
                 elif self.path == '/api/grid':
                     with app.lock:
