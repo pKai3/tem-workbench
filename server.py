@@ -32,15 +32,16 @@ class Workbench:
             raise ValueError('This image does not sample the full phase-fitting band.')
         if item['info']['width'] != item['info']['height']:
             raise ValueError('Automatic grids currently require a square source image.')
-        if count not in range(2, 25) or not 5 <= minimum <= 100:
-            raise ValueError('Use a grid of 2–24 per side and a stopping size of at least 5 nm.')
+        if count not in range(2, 25) or not np.isfinite(minimum) or minimum <= 0:
+            raise ValueError('Use a grid of 2–24 per side and a positive stopping limit in nm.')
         if any(j['state'] == 'running' for j in self.jobs.values()):
             raise ValueError('Cancel or finish the current grid first.')
         bounds = np.round(np.linspace(0, item['info']['width'], count+1)).astype(int)
         if np.diff(bounds).min() < 32:
             raise ValueError('Grid regions would be smaller than 32 pixels.')
         job = {'id': uuid.uuid4().hex, 'state': 'running', 'source': item['info'],
-               'settings': settings, 'grid': {'count': count, 'adaptive': adaptive, 'minimum_nm': minimum},
+               'settings': settings, 'grid': {'count': count, 'adaptive': adaptive, 'minimum_nm': minimum,
+                                             'refinement_policy': 'unresolved_or_multiple_patterns' if adaptive else 'uniform'},
                'regions': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False}
         self.jobs = {job['id']: job}
 
@@ -55,14 +56,24 @@ class Workbench:
                     halfx, halfy = roi['w']//2, roi['h']//2
                     can_split = min(halfx, halfy) >= 32 and min(halfx*item['info']['pixel_x_nm'], halfy*item['info']['pixel_y_nm']) >= minimum
                     mixed = result['periodicity'].get('substantial_second_pattern', False)
-                    if adaptive and mixed and can_split:
+                    unresolved = result['classification']['label'] in {'unresolved', 'insufficient', 'ambiguous'}
+                    two_candidates = result['classification']['label'] == 'coexisting_candidates'
+                    needs_split = mixed or unresolved or two_candidates
+                    if adaptive and needs_split and can_split:
                         result['leaf'] = False
-                        result['stop_reason'] = 'Subdivided: substantial second periodic pattern.'
+                        reasons = []
+                        if unresolved:
+                            reasons.append('no resolved phase assignment')
+                        if two_candidates:
+                            reasons.append('two candidate structures')
+                        if mixed:
+                            reasons.append('substantial second periodic pattern')
+                        result['stop_reason'] = 'Subdivided: ' + '; '.join(reasons) + '.'
                         for dy, hh in [(0, halfy), (halfy, roi['h']-halfy)]:
                             for dx, ww in [(0, halfx), (halfx, roi['w']-halfx)]:
                                 queue.append(({'x': roi['x']+dx, 'y': roi['y']+dy, 'w': ww, 'h': hh}, depth+1, result['id']))
                     else:
-                        result['stop_reason'] = ('Uniform grid.' if not adaptive else 'Minimum region size reached.' if mixed and not can_split else 'No substantial second periodic pattern; phase uncertainty alone does not trigger subdivision.')
+                        result['stop_reason'] = ('Uniform grid.' if not adaptive else 'Further subdivision would fall below the stopping size or 32 pixels.' if needs_split and not can_split else 'Supported phase candidate with no substantial second periodic pattern.')
                     job['regions'].append(result)
                     job['processed'] += 1
                     job['pending'] = len(queue)

@@ -35,11 +35,7 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
 - Change **Background** to adjust FFT contrast without changing detected peaks. Choose colour (magma) or greyscale. Maxima markers can be white circles, white crosshairs, or hidden.
   Measured profiles and either candidate's matched predicted positions can be
   overlaid. Individual fit controls also expose every retained below-threshold candidate and both geometry-only grid fits. Dashed rings flag rejected candidates; displaying a fit does not accept it. Opposite spots represent one independent profile.
-- **Run grid** starts with a uniform grid, defaulting to 20 per side (400 regions). With **Adaptive** checked, regions with
-  a substantial second independently supported periodic pattern split into four.
-  Subdivision stops when no such second pattern is supported, or another split
-  would go below the selected minimum (at least 5 nm). Phase uncertainty alone
-  does not trigger subdivision. Click a map cell to calculate its detailed FFT.
+- **Run grid** starts with a uniform grid, defaulting to 20 per side (400 regions). With **Adaptive** checked, unresolved, insufficient, HCP/BCC-ambiguous or two-candidate-structure regions split into four, as do regions with a substantial second independently supported periodic pattern. The two-structure label triggers subdivision even if the separate geometry-only check finds one predominant pattern. This repeats until a supported phase candidate predominates or a further split would make children smaller than the chosen **Stopping limit, nm** (any positive value; default 5 nm) or 32 pixels. The grid-size hint explains when the starting grid is already too fine to subdivide. Limits below 5 nm are allowed; the FFT warning reports the actual Hann broadening at the selected region size. On ST1221, 20 per side starts at about 6 nm, so it cannot split again with a 5 nm stopping size; use a coarser starting grid for refinement. Click a map cell to calculate its detailed FFT. Saved grid settings record the refinement policy and every region records its stopping reason.
 - **Grid results** shows current map-region counts and area percentages for every candidate label. Areas are weighted by tile size; subdivided parents are excluded. Running or cancelled grids also show uncovered image area. These are candidate-labelled areas, not confirmed phase fractions.
 - Cancel retains a partial result and clearly marks it cancelled. Completed and
   partial grids can be saved. A partial adaptive tree may have pending children.

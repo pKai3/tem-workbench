@@ -127,8 +127,12 @@ class Engine:
         if not info['can_index']:
             classification['label'] = 'insufficient'
             classification['flags'].append('The stored sampling does not cover the full 3–10 nm⁻¹ fitting band; phase fitting is disabled.')
-        if min(w*sx, h*sy) < 5:
-            classification['flags'].append('Region is smaller than 5 nm; broad peaks limit identification.')
+        # Report the actual window broadening rather than the original fixed 5 nm example.
+        classification['flags'] = [f for f in classification['flags'] if not f.startswith('At ~5nm, Hann broadening')]
+        if s['df'] > .15:
+            classification['flags'].append(
+                f"This {min(w*sx, h*sy):.2f} nm region has Hann broadening of about "
+                f"{s['hann_power_fwhm_nm_inv']:.3f} nm⁻¹; closely spaced candidate reflections may not be distinguishable.")
         log = s.pop('log')
         # Return an encoded log-power field; display contrast is adjusted in the browser only.
         if images:
