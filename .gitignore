@@ -1,0 +1,14 @@
+.tem-paths.json
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+data/
+output/
+outputs/
+*.dm3
+*.dm4
+*.tif
+*.tiff
+*.log
+

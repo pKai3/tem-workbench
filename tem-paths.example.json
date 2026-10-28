@@ -1,0 +1,7 @@
+{
+  "data_root": "/absolute/path/to/TEM",
+  "output_root": "/absolute/path/to/TEM/Analysis/tem_workbench",
+  "dm_reader": "/absolute/path/to/saved/ncempy_dm.py",
+  "python_executable": "/absolute/path/to/python/environment/bin/python",
+  "default_file": "ST/Gatan/400kX_OneView_ST_1221.dm4"
+}

@@ -1,0 +1,23 @@
+{
+  "description": "Numerical functions copied without changes from the saved ST1221 analysis; full source paths configured locally. No fitting thresholds changed.",
+  "sources": {
+    "adaptive.py": "8bae8b1f69d3a08f29328e2ecfe4d5fd1986495efdb94252f5804e526d6c6af5",
+    "purity.py": "1c7095c338adbba60b89997cc102d874973ad9f007541010e572b00885dc41fb"
+  },
+  "functions": [
+    "canonical",
+    "classify",
+    "gridfit",
+    "purity",
+    "rotation",
+    "score_hypothesis",
+    "search",
+    "spectrum"
+  ],
+  "limits": [
+    "Bounded low-index HCP/BCC library; other structures are not tested.",
+    "Compatibility scores are not phase probabilities.",
+    "No independent absolute calibration standard.",
+    "Fourier support is not phase fraction."
+  ]
+}
