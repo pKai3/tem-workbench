@@ -5,7 +5,7 @@ const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',co
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
 let config, meta, roi={x:0,y:0,w:684,h:684}, fileId, result=null, fftRaw=null, grid=null, jobId=null;
 let chosenFits=new Set(), favorites=new Set();
-let rescoreTimer=null, rescoreBusy=false, rescorePending=false, rescoreRevision=0, scalePenalty=.10;
+let rescoreTimer=null, rescoreBusy=false, rescorePending=false, rescoreRevision=0, scalePenalty=.10, peakEvidenceWeight=.10;
 let zoneJob=null, zoneSymbols={HCP:new Map(),BCC:new Map()};
 const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢','◀','▶','✦','✳','◉','⊞','⊠','✧'];
 const phaseColors={HCP:colors.hcp_compatible,BCC:colors.bcc_compatible};
@@ -32,7 +32,7 @@ $('favorite-toggle').onclick=()=>{
  writePreference(favoriteKey(),[...favorites]);renderFavorites();
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){$('file').value=id;openFile()}};
-function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,scale_mode:mode.startsWith('auto_')?mode:'fixed'}}
+function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed'}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
@@ -100,7 +100,7 @@ function patternExplanation(data){
 }
 function scaleSummary(settings){
  const label=settings.scale_mode==='auto_uniform'?'automatic single scale per candidate and region':settings.scale_mode==='auto_hcp_ac'?'automatic BCC single / HCP a+c per region':`fixed prediction scale ×${settings.scale.toFixed(3)}`;
- return label+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'');
+ return label+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'')+` · peak evidence ${(settings.peak_evidence_weight??0).toFixed(2)}`;
 }
 function fittedDimensions(model){
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
@@ -121,21 +121,49 @@ function scalePercentages(model){
 }
 function predictionCounts(model){
  const total=model.predicted_nodes?.length??model.predicted_visible_band_node_count;
- return `${model.matched_prediction_count??model.matched_profile_count} / ${total??'—'}`;
+ const strong=model.matched_prediction_count??model.matched_profile_count;
+ return `${strong}${model.peak_evidence?'+'+model.peak_evidence.weak_count+'w':''} / ${total??'—'}`;
 }
+function evidenceDescription(model){
+ const e=model.peak_evidence;if(!e)return 'Original detected profiles / prediction positions.';
+ return `${e.detected_count} strong + ${e.weak_count} weak; ${e.unsupported_count} unsupported; ${e.unassessable_count} unchecked. Search radius ${e.search_radius_nm_inv.toFixed(3)} nm⁻¹. Weak maxima do not count toward the initial screen.`;
+}
+function rankDescription(m){return `Position ${(m.position_score??m.score).toFixed(3)} − scale ${(m.scale_penalty??0).toFixed(3)} + weak ${(m.weak_peak_bonus??0).toFixed(3)} − missing ${(m.missing_peak_penalty??0).toFixed(3)} = rank ${m.score.toFixed(3)}`}
+function renderEvidence(data){
+ const container=$('evidence-table');container.replaceChildren();$('evidence-details').hidden=!data.models.some(m=>m.peak_evidence);
+ const table=document.createElement('table'),header=document.createElement('tr'),head=document.createElement('thead'),body=document.createElement('tbody');
+ for(const label of ['Candidate / zone','Strong','Weak','No peak','Unchecked','+ Bonus','− Missing']){const th=document.createElement('th');th.textContent=label;header.append(th)}
+ head.append(header);table.append(head,body);container.append(table);
+ for(const m of [...data.models].sort((a,b)=>b.coverage-a.coverage||b.score-a.score)){
+  const e=m.peak_evidence;if(!e)continue;const row=document.createElement('tr');row.title=rankDescription(m)+' · '+evidenceDescription(m);
+  for(const value of [`${m.phase} ${zoneLabel(m)}`,e.detected_count,e.weak_count,e.unsupported_count,e.unassessable_count,m.weak_peak_bonus.toFixed(3),m.missing_peak_penalty.toFixed(3)]){const td=document.createElement('td');td.textContent=value;row.append(td)}
+  body.append(row);
+ }
+}
+function screenReasons(m){
+ if(m.valid)return [];
+ const reasons=[];
+ if(m.matched_profile_count<4)reasons.push(`${m.matched_profile_count}/4 strong profiles`);
+ if(m.nonparallel_spread_sine<=.5)reasons.push('limited directions');
+ if(m.coverage<=.30)reasons.push('support ≤ 30%');
+ if((m.position_score??m.score)<=.20)reasons.push('position ≤ 0.20');
+ if(m.score<=.20)reasons.push('rank ≤ 0.20');
+ return reasons;
+}
+function screenLabel(m){return m.valid?'Pass':'Below: '+(screenReasons(m)[0]||'fit screen')}
 function bestModel(data,phase){return data.models.find(m=>m.phase===phase&&m.valid)??data.models.find(m=>m.phase===phase)}
 function renderModels(data){
  $('models').replaceChildren();
  const ranked=['HCP','BCC'].map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>(b.m?.coverage??-1)-(a.m?.coverage??-1));
  for(const {phase,m} of ranked){
   const row=document.createElement('tr');
-  const values=m?[`${phase} ${zoneLabel(m)}`,predictionCounts(m),`${(100*m.coverage).toFixed(0)}%`,(m.position_score??m.score).toFixed(3),(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),fittedDimensions(m).replace(' / ','\n'),scalePercentages(m).replace(' / ','\n'),m.rms_nm_inv.toFixed(3),m.valid?'Pass':'Below threshold']:[phase,'—','—','—','—','—','—','—','—','No fit'];
-  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(m&&(i===6||i===7))td.title=scaleDetails(m)+(i===7?' · change from the reference prediction coordinates: 100 × (multiplier − 1). Model lattice dimensions change inversely.':'');if(m&&i===1)td.title='Matched detected profiles / allowed prediction positions in the 3–10 nm⁻¹ fitting band. Opposite spots count once.';row.append(td)});
+  const values=m?[`${phase} ${zoneLabel(m)}`,predictionCounts(m),`${(100*m.coverage).toFixed(0)}%`,(m.position_score??m.score).toFixed(3),(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),fittedDimensions(m).replace(' / ','\n'),scalePercentages(m).replace(' / ','\n'),m.rms_nm_inv.toFixed(3),screenLabel(m)]:[phase,'—','—','—','—','—','—','—','—','No fit'];
+  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(m&&(i===6||i===7))td.title=scaleDetails(m)+(i===7?' · change from the reference prediction coordinates: 100 × (multiplier − 1). Model lattice dimensions change inversely.':'');if(m&&i===1)td.title=evidenceDescription(m);if(m&&i===5)td.title=rankDescription(m);if(m&&i===9)td.title=screenReasons(m).join('; ')||'Passes the screen';row.append(td)});
   $('models').append(row);
  }
- $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank score = position score − scale penalty. Scale penalty ranks automatic fits before choosing the best zone axis, including HCP alternatives. Position score measures agreement with detected peaks; it is not a phase probability. Matches / predictions also exposes unsupported positions. Prediction scale Δ is the percentage change from reference reciprocal coordinates; model a/c changes inversely and assumes the stored DM4 calibration.';
+ $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank = position − scale cost + weak-peak bonus − missing-prediction cost. S+W separates strong profiles from weak maxima; support still uses only the original detected profiles. Prediction-site evidence below shows the separate adjustments. Model dimensions assume the stored calibration; these scores are not phase probabilities.';
 }
-async function renderResult(data,version,body){$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · ROI ${data.roi.x}, ${data.roi.y}`;$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Geometry check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.');renderModels(data);$('result-detail').textContent=`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const img=new Image();const precise=Boolean(data.images.fft_log16);img.src=data.images.fft_log16||data.images.fft;await img.decode();if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;fftRaw={canvas,pixels,precise,histogram,maximum,limits:data.images.fft_log_limits||[0,1]};drawFFT();document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
+async function renderResult(data,version,body){$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · ROI ${data.roi.x}, ${data.roi.y}`;$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Geometry check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.');renderModels(data);renderEvidence(data);$('result-detail').textContent=`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const img=new Image();const precise=Boolean(data.images.fft_log16);img.src=data.images.fft_log16||data.images.fft;await img.decode();if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;fftRaw={canvas,pixels,precise,histogram,maximum,limits:data.images.fft_log_limits||[0,1]};drawFFT();document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
 function drawFFT(){
  if(!result||!fftRaw)return;
  const {canvas,pixels,precise,histogram,maximum,limits}=fftRaw,ctx=canvas.getContext('2d');
@@ -157,23 +185,38 @@ if(overlay==='geometry'){for(const [key,color,name]of [['primary_lattice','#df92
 if(overlay==='custom'){
  for(const key of chosenFits){if(key.startsWith('phase-')){const m=result.models[Number(key.slice(6))];if(m)fits.push({model:m,color:m.phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}else{const m=result.periodicity[key];if(m)fits.push({model:m,color:key==='primary_lattice'?'#df92ef':'#64d6bb',geometry:true,name:key==='primary_lattice'?'Primary geometry':'Secondary geometry'})}}
 }
-for(const f of fits){const matched=new Set(f.model.matches.map(m=>m.node_index));for(const [nodeIndex,node] of f.model.predicted_nodes.entries()){const supported=f.geometry||matched.has(nodeIndex);for(const sign of [1,-1]){const[x,y]=qp(sign*node.q[0],sign*node.q[1]);if(x<0||x>420||y<0||y>420)continue;const attrs={stroke:f.color,'stroke-width':1.2,fill:'none'};if(!f.model.valid)attrs['stroke-dasharray']='5 3';else if(!supported)attrs['stroke-dasharray']='1 3';const shape=f.geometry?el('path',{...attrs,d:`M${x} ${y-7}L${x+7} ${y}L${x} ${y+7}L${x-7} ${y}Z`}):el('circle',{...attrs,cx:x,cy:y,r:7});shape.append(el('title',{},f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.model.phase} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${supported?'matched detected peak':'no detected peak assigned'}`));$('fft-overlay').append(shape)}}}
+for(const f of fits){
+ const matched=new Set(f.model.matches.map(m=>m.node_index));
+ for(const [nodeIndex,node] of f.model.predicted_nodes.entries()){
+  const evidence=f.model.peak_evidence?.nodes.find(n=>n.node_index===nodeIndex);
+  const supported=f.geometry||matched.has(nodeIndex),weak=evidence?.status==='weak';
+  for(const sign of [1,-1]){
+   const[x,y]=qp(sign*node.q[0],sign*node.q[1]);if(x<0||x>420||y<0||y>420)continue;
+   const attrs={stroke:f.color,'stroke-width':1.2,fill:'none'};
+   if(!f.model.valid)attrs['stroke-dasharray']='5 3';else if(weak)attrs['stroke-dasharray']='2 2';else if(!supported)attrs['stroke-dasharray']='1 3';
+   if(evidence?.status==='unassessable')attrs.opacity=.35;
+   const shape=f.geometry?el('path',{...attrs,d:`M${x} ${y-7}L${x+7} ${y}L${x} ${y+7}L${x-7} ${y}Z`}):el('circle',{...attrs,cx:x,cy:y,r:7});
+   const evidenceText=supported?'matched original detected profile':weak?`weak local maximum ${evidence.weak_id}, local contrast ${evidence.local_contrast.toFixed(1)}, offset ${evidence.offset_nm_inv.toFixed(3)} nm⁻¹`:evidence?.status==='unassessable'?'not reliably assessable':'no strong or qualifying weak maximum assigned';
+   shape.append(el('title',{},f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.model.phase} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${evidenceText}`));$('fft-overlay').append(shape);
+   if(weak&&marker!=='off'){const [wx,wy]=qp(sign*evidence.observed_q[0],sign*evidence.observed_q[1]);const dot=el('circle',{cx:wx,cy:wy,r:1.5,fill:'#fff',opacity:.8,'data-weak-profile':evidence.weak_id});dot.append(el('title',{},evidenceText));$('fft-overlay').append(dot)}
+  }
+ }
+}
 }
 function renderFitChoices(data){
  chosenFits=new Set();$('fit-list').replaceChildren();
  const table=document.createElement('table');table.className='fit-table';
  const head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
- const headings=[['Show','Toggle this overlay'],['Candidate\nZone axis','Candidate structure and zone axis; rotation is shown below'],['Peaks\nhit / all','Matched detected profiles / allowed prediction positions; opposite spots count once'],['Support ↓','Share of detected Fourier evidence'],['RMS\nnm⁻¹','Root-mean-square positional residual'],['a / c\nnm','Fitted model lattice parameters'],['Scale Δ\n%','Reciprocal prediction scale changes; HCP shows a* and c*'],['Penalty','Scale penalty subtracted from the position score'],['Rank','Position score minus scale penalty'],['Screen','Candidate acceptance screen; hover for rejection reasons']];
+ const headings=[['Show','Toggle this overlay'],['Candidate\nZone axis','Candidate structure and zone axis; rotation is shown below'],['Peaks\nS+W / all','Strong profiles + additional weak maxima / prediction positions; weak maxima do not count toward the screen'],['Support ↓','Share of detected Fourier evidence'],['RMS\nnm⁻¹','Root-mean-square positional residual'],['a / c\nnm','Fitted model lattice parameters'],['Scale Δ\n%','Reciprocal prediction scale changes; HCP shows a* and c*'],['Scale cost','Scale penalty subtracted from the position score'],['Rank','Position − scale + weak-peak bonus − missing-prediction cost'],['Screen','Candidate acceptance screen; hover for rejection reasons']];
  for(const [title,help]of headings){const th=document.createElement('th');th.scope='col';th.textContent=title;th.title=help;header.append(th)}
  head.append(header);table.append(head,body);$('fit-list').append(table);
  const add=(key,m,name,geometry=false)=>{
   const row=document.createElement('tr'),toggle=document.createElement('td'),box=document.createElement('input');
   box.type='checkbox';box.dataset.fit=key;box.setAttribute('aria-label','Overlay '+name);
   box.addEventListener('change',()=>{box.checked?chosenFits.add(key):chosenFits.delete(key);$('overlay').value='custom';drawFFT()});toggle.append(box);row.append(toggle);
-  const why=[];
-  if(!geometry&&!m.valid){if(m.matched_profile_count<4)why.push('fewer than 4 profiles');if(m.nonparallel_spread_sine<=.5)why.push('limited directions');if(m.score<=.20)why.push('rank score ≤ 0.20');if(m.coverage<=.30)why.push('support ≤ 30%')}
-  const values=[name+(geometry?'':`\n${m.rotation_deg.toFixed(1)}°`),geometry?m.matched_profile_count+' peaks':predictionCounts(m),`${(m.coverage*100).toFixed(0)}%`,m.rms_nm_inv.toFixed(3),geometry?'—':fittedDimensions(m).replace(' / ','\n'),geometry?'—':scalePercentages(m).replace(' / ','\n'),geometry?'—':(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),m.valid?'Pass':'Below'];
-  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===0)td.className=geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc';if(!geometry&&(i===4||i===5))td.title=scaleDetails(m);if(i===7)td.title=geometry?'Geometry-only score':`Position ${(m.position_score??m.score).toFixed(3)} − scale penalty ${(m.scale_penalty??0).toFixed(3)} = rank ${m.score.toFixed(3)}`;if(i===8)td.title=m.valid?'Passes the screen':'Below threshold'+(why.length?' · '+why.join('; '):'');row.append(td)});
+  const why=geometry?[]:screenReasons(m);
+  const values=[name+(geometry?'':`\n${m.rotation_deg.toFixed(1)}°`),geometry?m.matched_profile_count+' peaks':predictionCounts(m),`${(m.coverage*100).toFixed(0)}%`,m.rms_nm_inv.toFixed(3),geometry?'—':fittedDimensions(m).replace(' / ','\n'),geometry?'—':scalePercentages(m).replace(' / ','\n'),geometry?'—':(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),geometry?(m.valid?'Pass':'Below'):screenLabel(m)];
+  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===0)td.className=geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc';if(!geometry&&(i===4||i===5))td.title=scaleDetails(m);if(!geometry&&i===1)td.title=evidenceDescription(m);if(i===7)td.title=geometry?'Geometry-only score':rankDescription(m);if(i===8)td.title=m.valid?'Passes the screen':'Below threshold'+(why.length?' · '+why.join('; '):'');row.append(td)});
   body.append(row);
  };
  data.models.map((m,i)=>({m,i})).sort((a,b)=>b.m.coverage-a.m.coverage||b.m.score-a.m.score).forEach(({m,i})=>add('phase-'+i,m,`${m.phase} ${zoneLabel(m)}`));
@@ -191,6 +234,7 @@ if(Number.isFinite(displayPreference.background))$('contrast').value=clamp(displ
 if(Number.isFinite(displayPreference.white))$('fft-white').value=clamp(displayPreference.white,91,100);
 $('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{localStorage.setItem('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=localStorage.getItem('tem-peak-marker');if(['crosshair','circle','off'].includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{localStorage.setItem('tem-palette',$('palette').value);document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');drawFFT()};const savedPalette=localStorage.getItem('tem-palette');if(['gray','magma'].includes(savedPalette))$('palette').value=savedPalette;document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');
 function updateGridSizeNote(){
+ $('check-passing').disabled=!config?.check_passing||!$('adaptive').checked;
  const note=$('grid-size-note');if(!meta){note.textContent='';return}
  const count=Number($('grid-count').value),minimum=Number($('grid-min').value);
  if(!Number.isInteger(count)||count<2||count>24||!Number.isFinite(minimum)||minimum<=0){note.textContent='Choose 2–24 regions per side and a positive stopping limit in nm.';return}
@@ -202,9 +246,10 @@ function updateGridSizeNote(){
   note.textContent+=`The next split would be about ${(start/2).toFixed(2)} nm, below ${half<32?'32 pixels':minimum+' nm'}. Use fewer regions per side to allow subdivision.`;
  }else{
   note.textContent+=`Unresolved, insufficient or ambiguous regions, two candidate structures, and substantial second patterns split into four; each child must remain at least ${minimum} nm and 32 pixels wide.`;
+  if($('check-passing').checked)note.textContent+=' Passing regions also trial four children; the parent stays unless a child supports a different phase/zone or a separate pattern.';
  }
 }
-for(const id of ['grid-count','grid-min','adaptive'])$(id).addEventListener('input',updateGridSizeNote);
+for(const id of ['grid-count','grid-min','adaptive','check-passing'])$(id).addEventListener('input',updateGridSizeNote);
 function renderGridSummary(){
  const container=$('grid-summary');container.replaceChildren();container.hidden=!grid;
  if(!grid)return;
@@ -219,7 +264,7 @@ function renderGridSummary(){
  }
  const heading=document.createElement('h3');heading.textContent='Grid results';
  const summary=document.createElement('p');summary.className='hint';
- summary.textContent=`${regionCount} current map regions · ${(100*covered/totalArea).toFixed(1)}% image coverage · ${grid.state} · started ${grid.grid.count}×${grid.grid.count}, ${grid.grid.adaptive?'adaptive':'uniform'} · ${scaleSummary(grid.settings)}`;
+ summary.textContent=`${regionCount} current map regions · ${(100*covered/totalArea).toFixed(1)}% image coverage · ${grid.state} · started ${grid.grid.count}×${grid.grid.count}, ${grid.grid.adaptive?'adaptive'+(grid.grid.check_passing?' + passing-region checks':''):'uniform'} · ${scaleSummary(grid.settings)}`;
  const table=document.createElement('table'),head=document.createElement('thead'),header=document.createElement('tr');
  for(const title of ['Result','Regions','Image area']){const cell=document.createElement('th');cell.scope='col';cell.textContent=title;header.append(cell)}
  head.append(header);table.append(head);const body=document.createElement('tbody');
@@ -228,7 +273,8 @@ function renderGridSummary(){
  if(covered<totalArea)add('Not yet covered','—',totalArea-covered);
  table.append(body);const note=document.createElement('p');note.className='hint';
  note.textContent='Area is weighted by region size. Counts include current map regions only, excluding subdivided parents. Candidate-labelled image area is not a confirmed phase fraction.';
- if(grid.rescore&&grid.grid.adaptive)note.textContent+=` Labels have been reweighted within the existing cells. Subdivision decisions and stopping reasons remain from the original run (penalty ${grid.initial_settings.scale_penalty_strength.toFixed(3)}). Run a new grid to change its boundaries.`;
+ if(grid.rescore&&grid.grid.adaptive)note.textContent+=` Labels have been reweighted within the existing cells. Subdivision decisions and stopping reasons remain from the original run. Run a new grid to change its boundaries.`;
+ if(grid.lookahead?.checked)note.textContent+=` Child checks: ${grid.lookahead.refined} parents subdivided, ${grid.lookahead.retained} retained. Trial-only children are excluded from map totals.`;
  container.append(heading,summary,table,note);
 }
 function zoneKey(model){return zoneIndices(model).join(',')}
@@ -323,10 +369,10 @@ $('run-grid').onclick=async()=>{
  try{
   rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
   $('run-grid').disabled=true;$('clear-grid').disabled=true;$('cancel-grid').disabled=true;
-  const version=sourceRequest,expectedSettings=JSON.stringify(settings()),d=await api('grid',{...requestBody(),count:Number($('grid-count').value),adaptive:$('adaptive').checked,minimum_nm:Number($('grid-min').value)});
+  const version=sourceRequest,expectedSettings=JSON.stringify(settings()),d=await api('grid',{...requestBody(),count:Number($('grid-count').value),adaptive:$('adaptive').checked,minimum_nm:Number($('grid-min').value),check_passing:$('adaptive').checked&&$('check-passing').checked});
   if(version!==sourceRequest||JSON.stringify(settings())!==expectedSettings){await api('cancel',{job_id:d.id});$('run-grid').disabled=false;updatePenaltyControls();return}
   jobId=d.id;grid=null;drawGrid();$('cancel-grid').disabled=false;$('save-grid').disabled=true;
-  $('scale-penalty').disabled=true;$('scale-penalty-slider').disabled=true;poll(jobId);
+  $('scale-penalty').disabled=true;$('scale-penalty-slider').disabled=true;$('peak-evidence-weight').disabled=true;poll(jobId);
  }catch(e){$('run-grid').disabled=false;message(e.message,true);updatePenaltyControls()}
 };
 $('cancel-grid').onclick=async()=>{try{await api('cancel',{job_id:jobId})}catch(e){message(e.message,true)}};
@@ -344,33 +390,32 @@ function updatePenaltyControls(){
  const automatic=$('scenario').value.startsWith('auto_'),running=isGridRunning();
  const disabled=!config?.grid_rescore||!automatic||running;
  $('scale-penalty').disabled=disabled;$('scale-penalty-slider').disabled=disabled;
- const mismatch=Boolean(grid&&grid.settings.scale_mode!=='fixed'&&scalePenalty!==grid.settings.scale_penalty_strength);
+ $('peak-evidence-weight').disabled=!config?.peak_evidence||!config?.grid_rescore||running;
+ const mismatch=Boolean(grid&&((grid.settings.scale_mode!=='fixed'&&scalePenalty!==grid.settings.scale_penalty_strength)||(config?.peak_evidence&&peakEvidenceWeight!==grid.settings.peak_evidence_weight)));
  const updating=rescorePending||rescoreBusy;
  $('grid-map').classList.toggle('stale',updating||mismatch);
  $('save-grid').disabled=!grid||running||updating||mismatch;
  $('clear-grid').disabled=!grid&&!jobId;
  const note=$('penalty-note');
- note.textContent=!config?.grid_rescore?'Restart TEM Workbench and reload to enable cached grid rescoring.':!automatic?'Choose an automatic scale mode to apply a scaling penalty.':running?'Finish or cancel this grid to adjust its penalty.':updating?'Updating the map from cached fits…':mismatch?'This map still shows its previous penalty; adjust the control again to retry.':grid?'Updates labels, zone symbols and totals from cached fits. Existing cell boundaries stay fixed.':'Adjust the preference for smaller scale changes. Zero disables the penalty.';
+ note.textContent=!config?.peak_evidence?'Restart TEM Workbench and reload to enable prediction-site evidence.':running?'Finish or cancel this grid to adjust ranking weights.':updating?'Updating the map from cached fits…':mismatch?'This map still shows its previous weights; adjust a control again to retry.':grid?'Updates labels, symbols and totals from cached fits. Existing cell boundaries stay fixed.':automatic?'Zero disables a weight. Scale cost favours smaller adjustments; peak evidence checks weak and missing spots.':'Fixed scale has no scale penalty. Peak-evidence weight adjusts weak and missing spot contributions; zero disables it.';
 }
 function penaltyChanged(input){
  if(!input.value)return;
  const value=Number(input.value);
- if(!Number.isFinite(value)||value<0||value>.5){message('Use a scale penalty from 0 to 0.5.',true);return}
- scalePenalty=value;
- if(input.id==='scale-penalty-slider')$('scale-penalty').value=value;
- else $('scale-penalty-slider').value=value;
- writePreference('tem-scale-penalty',value);
+ if(!Number.isFinite(value)||value<0||value>.5){message('Use a ranking weight from 0 to 0.5.',true);return}
+ if(input.id==='peak-evidence-weight'){peakEvidenceWeight=value;writePreference('tem-peak-evidence-weight',value)}
+ else{scalePenalty=value;if(input.id==='scale-penalty-slider')$('scale-penalty').value=value;else $('scale-penalty-slider').value=value;writePreference('tem-scale-penalty',value)}
  rescoreRevision++;clearTimeout(rescoreTimer);
- rescorePending=Boolean(jobId&&grid?.can_rescore&&grid.settings.scale_mode!=='fixed');
+ rescorePending=Boolean(jobId&&grid?.can_rescore);
  updatePenaltyControls();if(meta)schedule(150);
  if(rescorePending)rescoreTimer=setTimeout(rescoreGrid,140);
 }
 async function rescoreGrid(){
  if(rescoreBusy||!rescorePending)return;
- const id=jobId,version=rescoreRevision,strength=scalePenalty;
+ const id=jobId,version=rescoreRevision,strength=scalePenalty,evidenceWeight=peakEvidenceWeight;
  rescoreBusy=true;rescorePending=false;updatePenaltyControls();
  try{
-  const status=await api('rescore-grid',{job_id:id,scale_penalty_strength:strength});
+  const status=await api('rescore-grid',{job_id:id,scale_penalty_strength:strength,peak_evidence_weight:evidenceWeight});
   if(id===jobId&&version===rescoreRevision){grid=status;drawGrid();gridStatus()}
  }catch(e){if(id===jobId&&version===rescoreRevision)message(e.message,true)}
  finally{
@@ -382,7 +427,11 @@ const savedPenalty=readPreference('tem-scale-penalty',.10);
 if(Number.isFinite(savedPenalty)&&savedPenalty>=0&&savedPenalty<=.5)scalePenalty=savedPenalty;
 $('scale-penalty').value=scalePenalty;
 $('scale-penalty-slider').value=$('scale-penalty').value;
-for(const id of ['scale-penalty','scale-penalty-slider'])$(id).oninput=()=>penaltyChanged($(id));
+const savedEvidenceWeight=readPreference('tem-peak-evidence-weight',.10);
+if(Number.isFinite(savedEvidenceWeight)&&savedEvidenceWeight>=0&&savedEvidenceWeight<=.5)peakEvidenceWeight=savedEvidenceWeight;
+$('peak-evidence-weight').value=peakEvidenceWeight;
+$('peak-evidence-weight').onblur=()=>{$('peak-evidence-weight').value=peakEvidenceWeight};
+for(const id of ['scale-penalty','scale-penalty-slider','peak-evidence-weight'])$(id).oninput=()=>penaltyChanged($(id));
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=scalePenalty};
 for(const id of ['scenario','model-scale','threshold'])$(id).onchange=()=>{
  if(!meta)return;
@@ -399,5 +448,5 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones);$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['Demo','STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}if(config.default_file)$('file').value=config.default_file;if(!$('file').value&&config.files.length)$('file').value=config.files[0].id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing);$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['Demo','STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}if(config.default_file)$('file').value=config.default_file;if(!$('file').value&&config.files.length)$('file').value=config.files[0].id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 start();

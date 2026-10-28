@@ -98,6 +98,10 @@ FFT brightness, background, white point and colour are display controls. The res
 
 The initial grid defaults to **20 × 20** cells. Adaptive mode subdivides unresolved or ambiguous cells, cells supporting two candidate structures, and cells with substantial secondary periodicity. Subdivision stops when the next children would fall below the selected physical size or the 32-pixel minimum. The default physical stopping limit is 5 nm; it is adjustable.
 
+Optional **Check passing regions** trials four children even when a parent has a supported single-phase candidate. A child must support a different phase/zone, or separate strong evidence for another pattern. The alternative is compared against the parent’s phase/zone fitted to **that same child**, using the complete retained hypothesis pool. It must pass when that family fails, or beat its passing fit by at least 0.08 ranking score. Raw parent and child scores are never compared. Children that merely become weaker, ambiguous, or keep the same phase/zone do not replace the parent. Accepted children can be checked again down to the stopping limit. This is a heuristic check within the limited template library, not a global optimum.
+
+The parent stays visible until all four trial children finish. Rejected trial subdivisions are retained in saved results but excluded from map counts and area. Cancellation during a trial retains its parent. The grid summary reports parents retained and subdivided after these checks.
+
 The colour legend and zone-symbol legends appear below the image. Blue symbols identify the best HCP zone and gold symbols identify the best BCC zone. Both structures reuse the same symbol set. Faded symbols indicate candidates below the acceptance threshold; showing both is not evidence of phase coexistence. HCP directions use four indices, BCC directions use three, and negative indices carry an overbar.
 
 **Cancel** retains a partial grid. **Clear grid** clears the displayed map and cancels an active run without deleting saved results. Area summaries use current leaf cells and exclude subdivided parents.
@@ -112,14 +116,29 @@ The adjustable scale penalty is:
 
 ```text
 penalty = strength × mean[((reciprocal multiplier − 1) / 0.05)²]
-rank score = position score − penalty
+rank score = position score − scale penalty + weak-peak bonus − missing-prediction cost
 ```
 
 At the default strength of 0.10, a uniform 5% adjustment costs 0.10 score and a 10% adjustment costs 0.40. Independent HCP a* and c* costs are averaged. Zero disables the penalty; fixed-scale modes are not penalized.
 
-Changing the penalty reweights completed or cancelled automatic-scale grids from cached hypotheses, including fits discarded from the displayed shortlist. It does not repeat the grid FFTs or coordinate fitting. Labels, totals and zone symbols update; **existing cell boundaries stay fixed**. Run a new adaptive grid to recompute subdivision under the new penalty.
+Changing the scale penalty or peak-evidence weight reweights completed or cancelled grids from cached hypotheses, including fits discarded from the displayed shortlist. The scale penalty applies only in automatic modes; peak-evidence weight also works with fixed scales. It does not repeat the grid FFTs or coordinate fitting. Labels, totals and zone symbols update; **existing cell boundaries stay fixed**. Run a new adaptive grid to recompute subdivision and passing-region checks under the new weights.
 
 Caches are held in memory and disappear when the server stops. Saved JSON records initial settings, current settings and rescoring metadata, but does not contain the internal candidate cache.
+
+### Weak and missing peaks
+
+Prediction-site evidence supplements the original strong-peak detector. It uses the existing FFT; neither image pixels nor the FFT coordinates are changed. The same procedure applies to both structures:
+
+1. Find additional local maxima without reference to any crystal template, using the radially background-subtracted, smoothed log-power field. Require enrichment of at least 1.8 and local contrast of at least 2 robust background spreads, measured in an annulus two to four search radii away.
+2. Exclude maxima within one search radius of an original strong profile and merge nearby weak maxima. Opposite spots count once. The search radius is the Hann power width, with a minimum of 0.10 nm⁻¹.
+3. Match remaining prediction positions one-to-one to weak maxima within that radius. Positions too near the 3–10 nm⁻¹ boundary or another prediction are left unchecked. Weak evidence is capped at half credit per maximum and decreases with positional error.
+4. Subtract average support at 11 rotated control patterns at the same radii from the weak-support bonus. This is a chance-match heuristic, not a statistical confidence test.
+
+**Peak-evidence weight** defaults to 0.10; zero disables both adjustments. The bonus is the weight times positive excess weak support per prediction. The missing-prediction cost is the weight times the fraction of assessable predictions with neither strong nor qualifying weak support. Both terms are shown separately under **Prediction-site evidence** and in rank tooltips. The main and individual-fit tables show original strong + weak counts separately.
+
+Weak maxima can change candidate ranking but **do not supply the four-profile acceptance requirement or the unique profiles required for two candidate structures**. The conservative shared-strong-evidence ambiguity check remains active. Short-dashed prediction rings and small white centre dots identify weak maxima; dotted rings have no assigned maximum, faint rings are unchecked, and long dashes indicate a rejected fit.
+
+These adjustments do not simulate reflection intensities, thickness, defocus or the contrast transfer function. Allowed reflections can be attenuated by [image contrast transfer](https://abtem.github.io/doc/user_guide/walkthrough/contrast_transfer_function.html). Unsupported predictions are therefore a modest ranking cost, not proof of absence; local-contrast thresholds and weights remain exploratory.
 
 ## Interpretation and limitations
 
@@ -128,7 +147,7 @@ Caches are held in memory and disappear when the server stops. Saved JSON record
 - Support measures weighted detected Fourier evidence. Neither support nor rank score is a phase probability or phase fraction.
 - The scale penalty is a preference for smaller adjustments, not a calibrated strain prior. Calibration errors can change candidate rankings.
 - Independent HCP a/c fitting adds flexibility. The penalty is not a statistical correction for the number of fitted parameters.
-- Matches/predictions exposes unsupported model positions. There is currently no explicit penalty per missing reflection and no second search that recovers weak peaks at predicted positions. HRTEM contrast transfer can suppress allowed reflections.
+- Additional weak maxima and unsupported prediction positions contribute optional heuristic ranking adjustments. HRTEM contrast transfer can suppress allowed reflections; a missing peak is not proof that a structure is absent.
 - A conservative shared-evidence check retains ambiguity when competing structures explain the same detected profiles and the leading fit requires additional flexibility or unsupported predictions.
 - Small regions broaden FFT peaks, limiting separation of nearby reflections. Image-calibrated fits alone do not establish lattice strain.
 
@@ -141,6 +160,8 @@ Supported input is finite, two-dimensional real-space data with equal x/y pixel 
 | `analysis_core.py` | FFT processing, peak detection, fixed-scale matching and geometry checks. |
 | `scale_fitting.py` | Bounded automatic scale fitting, candidate ranking and cached reranking. |
 | `phase_comparison.py` | Prediction counts and shared-evidence ambiguity checks. |
+| `peak_evidence.py` | Independent weak-maxima detection, prediction-site audits and ranking adjustments. |
+| `adaptive_refinement.py` | Same-child comparisons for optional refinement of passing parents. |
 | `engine.py` | Image loading, region analysis, previews and fit caches. |
 | `server.py` | Local HTTP endpoints, grid jobs and JSON exports. |
 | `web/` | Buildless browser interface. |

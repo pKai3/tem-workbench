@@ -24,3 +24,5 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 @container(max-width:430px){.display-controls{grid-template-columns:1fr 1fr}.fit-table{font-size:10.5px}.fit-table th{font-size:10px}}
 
 .orientations{color:#64d6bb}.ambiguous{color:#df9da6}.legend .unresolved{color:#a4adba}.insufficient{color:#596778}
+
+#evidence-table table{table-layout:fixed;font-size:11px}#evidence-table th,#evidence-table td{padding:5px 3px;overflow-wrap:anywhere}#evidence-table th:first-child{width:28%}#evidence-table th:not(:first-child),#evidence-table td:not(:first-child){text-align:right}

@@ -1,5 +1,6 @@
 """Local-only TEM workbench. Start with: python server.py --open"""
 from pathlib import Path
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
@@ -19,6 +20,7 @@ import webbrowser
 import numpy as np
 from engine import Engine
 import demo_data
+import adaptive_refinement
 
 ROOT = Path(__file__).resolve().parent
 
@@ -45,7 +47,7 @@ class Workbench:
         self.job_lock = threading.RLock()
         self.engine.catalog()
 
-    def grid(self, item, settings, count, adaptive, minimum):
+    def grid(self, item, settings, count, adaptive, minimum, check_passing=False):
         if not item['info']['can_index']:
             raise ValueError('This image does not sample the full phase-fitting band.')
         if item['info']['width'] != item['info']['height']:
@@ -55,9 +57,12 @@ class Workbench:
         bounds = np.round(np.linspace(0, item['info']['width'], count+1)).astype(int)
         if np.diff(bounds).min() < 32:
             raise ValueError('Grid regions would be smaller than 32 pixels.')
+        check_passing = bool(adaptive and check_passing)
         job = {'id': uuid.uuid4().hex, 'state': 'running', 'source': item['info'],
                'settings': settings.copy(), 'initial_settings': settings.copy(), 'grid': {'count': count, 'adaptive': adaptive, 'minimum_nm': minimum,
-                                             'refinement_policy': 'unresolved_or_multiple_patterns' if adaptive else 'uniform'},
+                                             'check_passing': check_passing,
+                                             'refinement_policy': 'passing_children_v1' if check_passing else 'unresolved_or_multiple_patterns' if adaptive else 'uniform'},
+               'lookahead': {'checked': 0, 'refined': 0, 'retained': 0},
                'regions': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False}
         with self.job_lock:
             if any(j['state'] == 'running' and not j['cancel'] for j in self.jobs.values()):
@@ -65,43 +70,84 @@ class Workbench:
             self.jobs = {job['id']: job}
 
         def work():
-            queue = [({'x': int(bounds[c]), 'y': int(bounds[r]), 'w': int(bounds[c+1]-bounds[c]), 'h': int(bounds[r+1]-bounds[r])}, 0, None) for r in range(count) for c in range(count)]
+            queue = deque(({'x': int(bounds[c]), 'y': int(bounds[r]), 'w': int(bounds[c+1]-bounds[c]), 'h': int(bounds[r+1]-bounds[r])}, 0, None, None) for r in range(count) for c in range(count))
+            probes = {}
+
+            def plan(region):
+                roi = region['roi']; halfx, halfy = roi['w']//2, roi['h']//2
+                can_split = min(halfx, halfy) >= 32 and min(halfx*item['info']['pixel_x_nm'], halfy*item['info']['pixel_y_nm']) >= minimum
+                mixed = region['periodicity'].get('substantial_second_pattern', False)
+                label = region['classification']['label']
+                unresolved = label in {'unresolved', 'insufficient', 'ambiguous'}
+                multiple = label in {'coexisting_candidates', 'multiple_orientations'}
+                needs_split = mixed or unresolved or multiple
+                review_pass = check_passing and label in adaptive_refinement.PASSING and not needs_split
+                if not adaptive:
+                    region['stop_reason'] = 'Uniform grid.'
+                    return
+                if not can_split:
+                    region['stop_reason'] = 'Further subdivision would fall below the stopping size or 32 pixels.'
+                    return
+                if not (needs_split or review_pass):
+                    region['stop_reason'] = 'Supported phase candidate with no substantial second periodic pattern.'
+                    return
+                probe_id = region['id'] if review_pass else None
+                if review_pass:
+                    probes[probe_id] = {'parent': region, 'children': []}
+                    region['lookahead'] = {'state': 'checking', 'version': adaptive_refinement.VERSION}
+                    region['stop_reason'] = 'Checking four children; parent remains on the map.'
+                else:
+                    region['leaf'] = False
+                    region['stop_reason'] = 'Subdivided: ' + ('no resolved phase assignment.' if unresolved else 'two candidate structures or orientations.' if multiple else 'substantial second periodic pattern.')
+                for dy, hh in [(0, halfy), (halfy, roi['h']-halfy)]:
+                    for dx, ww in [(0, halfx), (halfx, roi['w']-halfx)]:
+                        queue.append(({'x': roi['x']+dx, 'y': roi['y']+dy, 'w': ww, 'h': hh}, region['depth']+1, region['id'], probe_id))
+
             try:
                 while queue and not job['cancel']:
-                    roi, depth, parent = queue.pop(0)
+                    roi, depth, parent, probe_id = queue.popleft()
                     with self.lock:
                         result = self.engine.analyze(item, roi, settings, images=False, cache_candidates=True)
-                    result.update({'id': str(len(job['regions'])), 'depth': depth, 'parent': parent, 'leaf': True})
-                    halfx, halfy = roi['w']//2, roi['h']//2
-                    can_split = min(halfx, halfy) >= 32 and min(halfx*item['info']['pixel_x_nm'], halfy*item['info']['pixel_y_nm']) >= minimum
-                    mixed = result['periodicity'].get('substantial_second_pattern', False)
-                    unresolved = result['classification']['label'] in {'unresolved', 'insufficient', 'ambiguous'}
-                    two_candidates = result['classification']['label'] == 'coexisting_candidates'
-                    needs_split = mixed or unresolved or two_candidates
-                    if adaptive and needs_split and can_split:
-                        result['leaf'] = False
-                        reasons = []
-                        if unresolved:
-                            reasons.append('no resolved phase assignment')
-                        if two_candidates:
-                            reasons.append('two candidate structures')
-                        if mixed:
-                            reasons.append('substantial second periodic pattern')
-                        result['stop_reason'] = 'Subdivided: ' + '; '.join(reasons) + '.'
-                        for dy, hh in [(0, halfy), (halfy, roi['h']-halfy)]:
-                            for dx, ww in [(0, halfx), (halfx, roi['w']-halfx)]:
-                                queue.append(({'x': roi['x']+dx, 'y': roi['y']+dy, 'w': ww, 'h': hh}, depth+1, result['id']))
-                    else:
-                        result['stop_reason'] = ('Uniform grid.' if not adaptive else 'Further subdivision would fall below the stopping size or 32 pixels.' if needs_split and not can_split else 'Supported phase candidate with no substantial second periodic pattern.')
                     with self.job_lock:
+                        result.update({'id': str(len(job['regions'])), 'depth': depth, 'parent': parent,
+                                       'leaf': probe_id is None, 'trial_only': probe_id is not None})
                         job['regions'].append(result)
                         job['processed'] += 1
+                        if probe_id is not None:
+                            group = probes[probe_id]; group['children'].append(result)
+                            result['stop_reason'] = 'Trial child; parent retained pending comparison.'
+                            if len(group['children']) == 4 and not job['cancel']:
+                                decision = adaptive_refinement.review(group['parent'], group['children'], self.engine)
+                                owner = group['parent']; owner['lookahead'] = decision
+                                job['lookahead']['checked'] += 1
+                                retain = decision['retain_children']
+                                job['lookahead']['refined' if retain else 'retained'] += 1
+                                owner['leaf'] = not retain
+                                owner['stop_reason'] = ('Subdivided after child checks found a resolved alternative phase/zone or separate strong pattern.' if retain else 'Parent retained: four child checks found no credible alternative phase/zone or separate strong pattern.')
+                                for child in group['children']:
+                                    child.update(leaf=retain, trial_only=not retain)
+                                    if retain:
+                                        plan(child)
+                                    else:
+                                        child['stop_reason'] = 'Trial only; parent retained after child comparison.'
+                                del probes[probe_id]
+                        elif not job['cancel']:
+                            plan(result)
+                        else:
+                            result['stop_reason'] = 'Cancelled after this region; no further refinement.'
                         job['pending'] = len(queue)
-                job['state'] = 'cancelled' if job['cancel'] else 'complete'
             except Exception as exc:
-                job['error'] = str(exc)
-                job['state'] = 'error'
+                with self.job_lock:
+                    job['error'] = str(exc)
                 traceback.print_exc()
+            finally:
+                with self.job_lock:
+                    for group in probes.values():
+                        group['parent']['lookahead'].update(state='incomplete', children_checked=len(group['children']))
+                        group['parent']['stop_reason'] = 'Parent retained: child checks were interrupted.'
+                        for child in group['children']:
+                            child['stop_reason'] = 'Trial only; incomplete child checks.'
+                    job['state'] = 'error' if job['error'] else 'cancelled' if job['cancel'] else 'complete'
         threading.Thread(target=work, daemon=True).start()
         return {'id': job['id']}
 
@@ -123,7 +169,6 @@ class Workbench:
             result = {k: v for k, v in job.items() if k not in ['cancel', 'regions']}
             regions = list(job['regions'])
             result['can_rescore'] = (job['state'] != 'running' and
-                                     job['settings']['scale_mode'] != 'fixed' and
                                      all('_fit_cache' in r for r in regions))
             result['regions'] = ([{k: v for k, v in r.items() if not k.startswith('_')} for r in regions] if full else
                                  [{'id': r['id'], 'roi': r['roi'], 'label': r['classification']['label'],
@@ -131,7 +176,7 @@ class Workbench:
                                    'best_zones': self.best_zones(r)} for r in regions])
             return result
 
-    def rescore(self, job_id, strength):
+    def rescore(self, job_id, strength, evidence_weight=None):
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= .5:
             raise ValueError('Scale penalty must be between 0 and 0.5.')
@@ -141,14 +186,15 @@ class Workbench:
                 raise ValueError('This grid is no longer in memory.')
             if job['state'] == 'running':
                 raise ValueError('Finish or cancel the grid before adjusting its penalty.')
-            if job['settings']['scale_mode'] == 'fixed':
-                raise ValueError('Fixed comparison modes do not use a scale penalty.')
+            evidence_weight = float(job['settings'].get('peak_evidence_weight', .10) if evidence_weight is None else evidence_weight)
+            if not np.isfinite(evidence_weight) or not 0 <= evidence_weight <= .5:
+                raise ValueError('Peak evidence weight must be between 0 and 0.5.')
             started = time.perf_counter()
             # Build a replacement before publishing, so a failure cannot leave
             # half the map at the new penalty. Parent/child boundaries stay fixed.
-            regions = [self.engine.rescore(region, strength) for region in job['regions']]
-            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength},
-                       rescore={'strength': strength, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
+            regions = [self.engine.rescore(region, strength, evidence_weight) for region in job['regions']]
+            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight},
+                       rescore={'strength': strength, 'peak_evidence_weight': evidence_weight, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                                 'region_count': len(regions), 'reused_fits': True, 'boundaries_unchanged': True,
                                 'at': datetime.now(ZoneInfo('Australia/Brisbane')).isoformat()})
             return self.status(job_id)
@@ -211,7 +257,7 @@ def make_handler(app):
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
                 if url.path == '/api/config':
-                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True, 'phase_comparison': 'shared-evidence-v1', 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'bundled_demo': demo_data.ID})
+                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True, 'phase_comparison': 'shared-evidence-v1', 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'bundled_demo': demo_data.ID})
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
                 elif url.path == '/api/preview':
@@ -248,9 +294,9 @@ def make_handler(app):
                     with app.lock:
                         item=app.engine.load(body['file_id'])
                         _, settings=app.engine.validate(item, body['roi'], body.get('settings', {}))
-                    self.send(app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5))))
+                    self.send(app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False))))
                 elif self.path == '/api/rescore-grid':
-                    self.send(app.rescore(body['job_id'], body['scale_penalty_strength']))
+                    self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight')))
                 elif self.path == '/api/cancel':
                     app.jobs[body['job_id']]['cancel']=True
                     self.send({'ok':True})

@@ -13,6 +13,7 @@ import analysis_core as core
 import scale_fitting
 import phase_comparison
 import demo_data
+import peak_evidence
 
 ROOT = Path(__file__).resolve().parent
 
@@ -42,7 +43,7 @@ class Engine:
                 t[key] = np.array(t[key])
         self.auto_templates = scale_fitting.prepare_templates(self.templates)
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'scale_fitting.py', 'phase_comparison.py', 'demo_data.py', 'engine.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'engine.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
 
@@ -114,10 +115,10 @@ class Engine:
         ih, iw = item['array'].shape
         if min(w, h) < 32 or x < 0 or y < 0 or x+w > iw or y+h > ih or abs(w-h) > 1:
             raise ValueError('Choose a square region within the image, at least 32 pixels wide.')
-        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('bcc_a', .330), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY)]}
+        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('bcc_a', .330), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT)]}
         if not all(np.isfinite(v) for v in values.values()):
             raise ValueError('Analysis settings must be finite numbers.')
-        if not (.85 <= values['scale'] <= 1.15 and .30 <= values['bcc_a'] <= .37 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5):
+        if not (.85 <= values['scale'] <= 1.15 and .30 <= values['bcc_a'] <= .37 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
             raise ValueError('Analysis settings are outside the supported range.')
         mode = settings.get('scale_mode', 'fixed')
         if mode not in scale_fitting.MODES:
@@ -139,12 +140,12 @@ class Engine:
         else:
             s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'])
         tol = max(.10, s['hann_power_fwhm_nm_inv'])
-        candidates = [] if cache_candidates else None
+        candidates = []
         if not info['can_index']:
             models = []
         elif settings['scale_mode'] == 'fixed':
-            models = core.search(s['peaks'], self.templates, settings['scale'], tol, bcc_a=settings['bcc_a'])
-            for model in models:
+            models = core.search(s['peaks'], self.templates, settings['scale'], tol, bcc_a=settings['bcc_a'], candidate_sink=candidates)
+            for model in candidates:
                 model.update({'scale_mode': 'fixed', 'scale_a': settings['scale'],
                               'scale_c': settings['scale'] if model['phase'] == 'HCP' else None,
                               'fitted_a_nm': model['nominal_a_nm']/settings['scale'],
@@ -157,6 +158,13 @@ class Engine:
                                           settings['scale_mode'], bcc_a=settings['bcc_a'],
                                           scale_penalty_strength=settings['scale_penalty_strength'],
                                           candidate_sink=candidates)
+        if info['can_index']:
+            context = peak_evidence.prepare(s, crop.shape, sx, sy)
+            s['weak_maxima'] = context['maxima']
+            for model in candidates:
+                peak_evidence.inspect(model, context)
+                peak_evidence.apply(model, settings['peak_evidence_weight'])
+            models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
         classification = self.classify(s, models, settings, w*sx, h*sy, info['can_index'])
         periodicity = core.purity(s['peaks'], tol) if info['can_index'] else {'status': 'unresolved_pattern', 'substantial_second_pattern': False}
         log = s.pop('log')
@@ -184,7 +192,7 @@ class Engine:
                 'periodicity': periodicity, 'images': encoded,
                 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                 'engine_sha256': self.version}
-        if candidates is not None and settings['scale_mode'] != 'fixed':
+        if cache_candidates:
             # Internal, compressed pool: never serialize it into API/saved output.
             result['_fit_cache'] = zlib.compress(json.dumps(candidates, separators=(',', ':'), allow_nan=False).encode(), 1)
         return result
@@ -197,13 +205,15 @@ class Engine:
                 classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scale penalties discourage large adjustments; the separate shared-evidence check retains unresolved model tradeoffs.')
             if settings['scale_penalty_strength']:
                 classification['flags'].append(
-                    f"Scale penalty strength {settings['scale_penalty_strength']:.3f}: ranking score = position score minus "
+                    f"Scale penalty strength {settings['scale_penalty_strength']:.3f}: scale cost subtracts "
                     'the mean squared reciprocal-scale deviation, normalized to 5%. This is an adjustable preference, not a measured strain limit.')
             primary = classification.get('primary_model')
             if primary and primary.get('scale_at_bound'):
                 classification['flags'].append('The leading fit reaches an automatic scale limit.')
             if primary and primary.get('scale_note'):
                 classification['flags'].append(primary['scale_note'])
+        if settings.get('peak_evidence_weight', 0):
+            classification['flags'].append('Prediction-site evidence is an exploratory ranking adjustment. Weak maxima are checked against local background and rotated controls; they do not count toward the initial fit screen or separate-pattern criteria. Missing spots are not proof of an absent reflection.')
         if not can_index:
             classification['label'] = 'insufficient'
             classification['flags'].append('The stored sampling does not cover the full 3–10 nm⁻¹ fitting band; phase fitting is disabled.')
@@ -215,13 +225,27 @@ class Engine:
                 f"{s['hann_power_fwhm_nm_inv']:.3f} nm⁻¹; closely spaced candidate reflections may not be distinguishable.")
         return classification
 
-    def rescore(self, result, strength):
-        """Only ranking/classification changes; all measured evidence is reused."""
+    def cached_models(self, result, settings):
         if '_fit_cache' not in result:
-            raise ValueError('Run an automatic-scale grid once to enable cached rescoring.')
+            raise ValueError('Run a grid on the current engine to enable cached rescoring.')
         candidates = json.loads(zlib.decompress(result['_fit_cache']))
-        models = scale_fitting.rerank(candidates, strength)
-        settings = {**result['settings'], 'scale_penalty_strength': float(strength)}
+        for model in candidates:
+            if settings['scale_mode'] != 'fixed':
+                c = model.get('scale_c') if model.get('scale_parameter_count') == 2 else None
+                scale_fitting.penalize(model, model['scale_a'], c, settings['scale_penalty_strength'])
+            peak_evidence.apply(model, settings.get('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT))
+        return candidates
+
+    def rescore(self, result, strength, evidence_weight=None):
+        """Only ranking/classification changes; all measured evidence is reused."""
+        strength = float(strength)
+        if not np.isfinite(strength) or not 0 <= strength <= .5:
+            raise ValueError('Scale penalty must be between 0 and 0.5.')
+        settings = {**result['settings'], 'scale_penalty_strength': strength}
+        if evidence_weight is not None:
+            settings['peak_evidence_weight'] = float(evidence_weight)
+        candidates = self.cached_models(result, settings)
+        models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
         classification = self.classify(result['spectrum'], models, settings,
                                        result['width_nm'], result['height_nm'])
         return {**result, 'settings': settings, 'models': models, 'classification': classification}

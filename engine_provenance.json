@@ -1,5 +1,5 @@
 {
-  "description": "Original ST1221 numerical functions remain unchanged in analysis_core.py. Optional bounded per-region scale fitting and an adjustable scale-magnitude ranking penalty are implemented in scale_fitting.py. phase_comparison.py conservatively withholds phase labels for competing fits of identical detected evidence. FFT processing and peak detection are unchanged.",
+  "description": "Original ST1221 FFT, strong-peak and geometry routines are retained in analysis_core.py; fixed search now exposes its unpruned hypothesis pool. scale_fitting.py adds bounded local scale fitting and scale costs. peak_evidence.py separately audits weak/missing predictions. phase_comparison.py retains conservative shared-strong-evidence ambiguity. adaptive_refinement.py compares alternatives on the same child pixels.",
   "sources": {
     "adaptive.py": "8bae8b1f69d3a08f29328e2ecfe4d5fd1986495efdb94252f5804e526d6c6af5",
     "purity.py": "1c7095c338adbba60b89997cc102d874973ad9f007541010e572b00885dc41fb"
@@ -23,10 +23,14 @@
     "Two-scale HCP fits have more flexibility. The scale-magnitude penalty is not a statistical correction for the number of fitting parameters.",
     "A zone containing no c-sensitive reflections cannot determine HCP c.",
     "The shared-evidence ambiguity guard is conservative and heuristic; it is not calibrated statistical model selection.",
-    "Scale penalty is an adjustable quadratic preference relative to reference dimensions, not a measured strain limit; calibration offsets can affect ranking."
+    "Scale penalty is an adjustable quadratic preference relative to reference dimensions, not a measured strain limit; calibration offsets can affect ranking.",
+    "Weak/missing prediction checks and rotated controls are heuristic, not statistical significance or a physical contrast-transfer/intensity model.",
+    "Passing-parent child checks use a limited candidate search and heuristic margin; smaller windows may lose information, and hidden finer structures can remain undetected."
   ],
   "extensions": {
     "scale_fitting.py": "Automatic uniform HCP/BCC or independent HCP basal/c reciprocal scales. Same bounded zones, wider reflection band, scale bounds 0.85\u20131.15. Each fitted hypothesis receives an optional mean squared scale-deviation penalty before ranking and zone selection. Default strength 0.10 per 5% adjustment, zero disables; fitted positions are unchanged by the ranking cost. Distinct zone hypotheses can be retained for the same observed profile set.",
-    "phase_comparison.py": "shared-evidence-v1: reports matched/unsupported prediction counts and adds an exact-shared-profile ambiguity guard. Operates on the rank score supplied by fitting; does not adjust positional scores, simulate intensities, assume allowed reflections must be present, or automatically prefer the sparser model."
+    "phase_comparison.py": "shared-evidence-v1: reports matched/unsupported prediction counts and adds an exact-shared-profile ambiguity guard. Operates on the rank score supplied by fitting; does not adjust positional scores, simulate intensities, assume allowed reflections must be present, or automatically prefer the sparser model.",
+    "peak_evidence.py": "local-maxima-v1: phase-independent weak-maxima pool, one-to-one prediction matching within a Hann-width radius, local-background contrast and rotated controls. Default weight 0.10 adds weak support and a bounded unsupported-prediction cost. Does not promote weak maxima to strong profiles, change original peak positions or supply separate-pattern evidence.",
+    "adaptive_refinement.py": "passing-children-v1: optional four-child trial after a parent passes. Keep children for separate strong patterns or a resolved alternative beating the parent family on the same child by 0.08 (or passing when that family fails). Parent retained on interruption or absent useful evidence. Rescoring preserves boundaries and original refinement decisions."
   }
 }

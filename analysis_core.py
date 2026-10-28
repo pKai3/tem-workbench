@@ -55,7 +55,7 @@ def score_hypothesis(peaks,T,q,scale,ang,tol):
  angles=np.array([np.arctan2(x['observed_q'][1],x['observed_q'][0]) for x in matches]);spread=float(np.max(abs(np.sin(angles[:,None]-angles[None,:])))) if len(angles)>1 else 0
  return {'template_id':T['id'],'phase':T['phase'],'zone_3index':T['zone_3index'],'mirror':T['mirror'],'rotation_deg':float(np.degrees(ang)%180),'shared_scale':scale,'score':float(score),'coverage':float(coverage),'quality_coverage':float(quality),'chance_density_penalty':penalty,'matched_profile_count':len(matches),'predicted_visible_band_node_count':len(P),'nonparallel_spread_sine':spread,'rms_nm_inv':float(np.sqrt(np.mean([x['residual_nm_inv']**2 for x in matches]))),'matches':matches,'predicted_nodes':[{'q':v.tolist(),'hkl':h.tolist()} for v,h in zip(P,hi)],'valid':bool(len(matches)>=4 and spread>.5 and score>.20 and coverage>.30)}
 
-def search(peaks,templates,scale,tol,topn=5,bcc_a=.330):
+def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None):
  if len(peaks)<4:return []
  O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);og=np.linalg.norm(O,axis=1);oa=np.arctan2(O[:,1],O[:,0]);tree=cKDTree(np.r_[O,-O]);candidates=[]
  for T in templates:
@@ -78,6 +78,10 @@ def search(peaks,templates,scale,tol,topn=5,bcc_a=.330):
      if rr and rr['score']>=r['score']:r=rr;ang+=delta
      else:break
     r['nominal_a_nm']=bcc_a if T['phase']=='BCC' else .295;r['nominal_c_nm']=None if T['phase']=='BCC' else .468;candidates.append(r)
+ if candidate_sink is not None:candidate_sink.extend(candidates)
+ return retain(candidates,topn)
+
+def retain(candidates,topn=5):
  # Keep distinct support/orientation hypotheses; symmetry copies cannot inflate evidence.
  out=[]
  for c in sorted(candidates,key=lambda x:x['score'],reverse=True):
