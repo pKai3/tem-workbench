@@ -9,6 +9,7 @@ import time
 import numpy as np
 from PIL import Image
 import analysis_core as core
+import scale_fitting
 
 ROOT = Path(__file__).resolve().parent
 
@@ -41,7 +42,9 @@ class Engine:
         for t in self.templates:
             for key in ['q', 'hkl', 'g']:
                 t[key] = np.array(t[key])
-        self.version = hashlib.sha256((ROOT/'analysis_core.py').read_bytes()).hexdigest()
+        self.auto_templates = scale_fitting.prepare_templates(self.templates)
+        self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
+            ['analysis_core.py', 'scale_fitting.py', 'engine.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
 
@@ -105,6 +108,10 @@ class Engine:
             raise ValueError('Analysis settings must be finite numbers.')
         if not (.85 <= values['scale'] <= 1.15 and .30 <= values['bcc_a'] <= .37 and .15 <= values['threshold'] <= .7):
             raise ValueError('Analysis settings are outside the supported range.')
+        mode = settings.get('scale_mode', 'fixed')
+        if mode not in scale_fitting.MODES:
+            raise ValueError('Choose a supported scale fitting mode.')
+        values['scale_mode'] = mode
         return {'x': x, 'y': y, 'w': w, 'h': h}, values
 
     def analyze(self, item, roi, settings, images=True):
@@ -121,8 +128,29 @@ class Engine:
         else:
             s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'])
         tol = max(.10, s['hann_power_fwhm_nm_inv'])
-        models = core.search(s['peaks'], self.templates, settings['scale'], tol, bcc_a=settings['bcc_a']) if info['can_index'] else []
+        if not info['can_index']:
+            models = []
+        elif settings['scale_mode'] == 'fixed':
+            models = core.search(s['peaks'], self.templates, settings['scale'], tol, bcc_a=settings['bcc_a'])
+            for model in models:
+                model.update({'scale_mode': 'fixed', 'scale_a': settings['scale'],
+                              'scale_c': settings['scale'] if model['phase'] == 'HCP' else None,
+                              'fitted_a_nm': model['nominal_a_nm']/settings['scale'],
+                              'fitted_c_nm': model['nominal_c_nm']/settings['scale'] if model['phase'] == 'HCP' else None,
+                              'scale_parameter_count': 0})
+        else:
+            models = scale_fitting.search(s['peaks'], self.auto_templates, tol,
+                                          settings['scale_mode'], bcc_a=settings['bcc_a'])
         classification = core.classify(s['peaks'], models, s['df'])
+        if settings['scale_mode'] != 'fixed':
+            classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the stored image calibration.')
+            if settings['scale_mode'] == 'auto_hcp_ac':
+                classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scores are not corrected for this added flexibility; compare with single-scale mode.')
+            primary = classification.get('primary_model')
+            if primary and primary.get('scale_at_bound'):
+                classification['flags'].append('The leading fit reaches an automatic scale limit.')
+            if primary and primary.get('scale_note'):
+                classification['flags'].append(primary['scale_note'])
         periodicity = core.purity(s['peaks'], tol) if info['can_index'] else {'status': 'unresolved_pattern', 'substantial_second_pattern': False}
         if not info['can_index']:
             classification['label'] = 'insufficient'
@@ -141,6 +169,16 @@ class Engine:
             display.thumbnail((768,768), Image.Resampling.NEAREST)
             stream=BytesIO(); display.save(stream,format='PNG')
             encoded = {'fft': data_url(stream.getvalue()), 'crop': data_url(png(crop, item['limits'], 768))}
+            # Carry a precise log field for reversible display curves. The original
+            # FFT and peak fitting above are unchanged. RGB stores high/low bytes.
+            precise = Image.fromarray(np.uint16(np.clip((log-lo)/max(hi-lo, 1e-12), 0, 1)*65535))
+            precise.thumbnail((768, 768), Image.Resampling.NEAREST)
+            values = np.asarray(precise, dtype=np.uint16)
+            packed = np.zeros((*values.shape, 3), dtype=np.uint8)
+            packed[..., 0] = values >> 8
+            packed[..., 1] = values & 255
+            stream = BytesIO(); Image.fromarray(packed).save(stream, format='PNG')
+            encoded.update({'fft_log16': data_url(stream.getvalue()), 'fft_log_limits': [lo, hi]})
         else:
             encoded = {}
         return {'roi': roi, 'width_nm': w*sx, 'height_nm': h*sy, 'settings': settings,

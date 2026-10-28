@@ -11,3 +11,5 @@
 main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>label:first-child{flex:0 1 460px;min-width:240px;max-width:600px}main>.calibration-bar p{flex:1 1 300px}
 
 #grid-summary{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}#grid-summary h3{margin-bottom:4px}#grid-summary td:nth-child(n+2),#grid-summary th:nth-child(n+2){text-align:right}
+
+.candidate-table{overflow-x:auto}.candidate-table td{white-space:nowrap}#fft-white{width:85px}.display-controls #fft-white{min-width:70px;width:85px;padding:9px 11px}

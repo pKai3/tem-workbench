@@ -5,6 +5,7 @@ from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import argparse
+import errno
 import json
 import mimetypes
 import secrets
@@ -152,7 +153,7 @@ def make_handler(app):
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
                 if url.path == '/api/config':
-                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12]})
+                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True})
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
                 elif url.path == '/api/preview':
@@ -210,11 +211,22 @@ def main():
     parser.add_argument('--config', type=Path, default=ROOT/'.tem-paths.json')
     parser.add_argument('--port', type=int, default=8767)
     parser.add_argument('--open', action='store_true')
+    parser.add_argument('--fallback-port', action='store_true', help='Use the next free local port if the default is occupied')
     args=parser.parse_args()
     if not args.config.exists():
         parser.error('Create .tem-paths.json using tem-paths.example.json.')
     app=Workbench(json.loads(args.config.read_text()))
-    server=ThreadingHTTPServer(('127.0.0.1', args.port), make_handler(app))
+    ports = range(args.port, min(args.port+20, 65536)) if args.fallback_port and args.port else [args.port]
+    server = None
+    for port in ports:
+        try:
+            server = ThreadingHTTPServer(('127.0.0.1', port), make_handler(app))
+            break
+        except OSError as exc:
+            if exc.errno != errno.EADDRINUSE or not args.fallback_port:
+                raise
+    if server is None:
+        parser.error('No free local port in the supported range.')
     url=f'http://127.0.0.1:{server.server_port}/'
     print(f'TEM Workbench: {url}', flush=True)
     print(f'Data: {app.engine.data_root}', flush=True)

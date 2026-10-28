@@ -7,6 +7,11 @@ and Pillow. No JavaScript dependencies or build step.
 
 ## Start
 
+On macOS, double-click **Install TEM Workbench App.command** to build a small native app in `~/Applications/TEM Workbench.app`. It uses this checkout and its existing configured Python environment. No research data or Python environment is bundled. Apple Command Line Tools are needed to compile the launcher.
+
+The app has **Open Workbench**, **View log**, and **Start/Stop** controls. Closing its window leaves it in the Dock; quitting stops only the server it started. Save grid results before stopping. It tries port 8767 first and uses the next available local port if another session is already running. Click **Open Workbench** to open the page; the launcher does not take over an existing browser tab.
+
+
 Copy `tem-paths.example.json` to `.tem-paths.json` and fill in the local paths.
 The configured Python environment needs `requirements.txt`; the configured
 `dm_reader` is the saved ncempy reader from the existing TEM analysis. That
@@ -19,7 +24,7 @@ Double-click **Launch TEM Workbench.command**, or use:
 python server.py --open
 ```
 
-The server listens only on `127.0.0.1:8767`. Stop it with Control-C in its terminal.
+The server listens only on `127.0.0.1`, normally port 8767; the Dock app can choose the next free port. Stop a Terminal-launched server with Control-C.
 Use `--port 8768` if the default port is occupied. The launcher uses the Python
 environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
 
@@ -32,9 +37,8 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
   Click the image, then arrow keys nudge ten pixels; Shift moves fifty. The FFT and candidate results update
   as computation completes. The timing line records the coordinates of the result
   being shown; while dragging, these can briefly trail the moving box.
-- Change **Background** to adjust FFT contrast without changing detected peaks. Choose colour (magma) or greyscale. Maxima markers can be white circles, white crosshairs, or hidden.
-  Measured profiles and either candidate's matched predicted positions can be
-  overlaid. The candidate table and individual phase-fit list are sorted by support, highest first; this display order does not change the phase decision. Individual fit controls also expose every retained below-threshold candidate and both geometry-only grid fits. Dashed rings flag rejected candidates; displaying a fit does not accept it. Opposite spots represent one independent profile. HCP zone axes use four-index Miller–Bravais [u v t w] notation and HCP reflection labels use (h k i l); BCC keeps three indices. Negative indices display an overbar. Opposite reflection tooltips carry opposite signs. These are display conversions; saved numerical indices and phase fits are unchanged.
+- Choose **FFT brightness**: log power reveals weak background and reflections; linear amplitude gives a darker background. **Background** sets the lower display percentile and **White point** sets the upper percentile. **Auto contrast** restores per-image percentile limits (log: 60–99.8%; linear: 30–99.9%). These controls use a 16-bit encoded log field and do not rerun or change the FFT, measured peak positions or fitting. Choose colour (magma) or greyscale. Maxima markers can be white circles, white crosshairs, or hidden.
+  The default overlay is **Best HCP + Best BCC**. **Primary + Secondary Geometry** shows the phase-independent reciprocal grids as purple/teal diamonds. A substantial secondary geometry pattern can trigger adaptive subdivision but does not determine the HCP/BCC phase label. Measured profiles and candidate prediction points can also be overlaid. The candidate table and individual phase-fit list are sorted by support, highest first; this display order does not change the phase decision. Individual fit controls also expose every retained below-threshold candidate and both geometry-only grid fits. Dashed rings flag rejected candidates; displaying a fit does not accept it. Opposite spots represent one independent profile. HCP zone axes use four-index Miller–Bravais [u v t w] notation and HCP reflection labels use (h k i l); BCC keeps three indices. Negative indices display an overbar. Opposite reflection tooltips carry opposite signs. These are display conversions; saved numerical indices and phase fits are unchanged.
 - **Run grid** starts with a uniform grid, defaulting to 20 per side (400 regions). With **Adaptive** checked, unresolved, insufficient, HCP/BCC-ambiguous or two-candidate-structure regions split into four, as do regions with a substantial second independently supported periodic pattern. The two-structure label triggers subdivision even if the separate geometry-only check finds one predominant pattern. This repeats until a supported phase candidate predominates or a further split would make children smaller than the chosen **Stopping limit, nm** (any positive value; default 5 nm) or 32 pixels. The grid-size hint explains when the starting grid is already too fine to subdivide. Limits below 5 nm are allowed; the FFT warning reports the actual Hann broadening at the selected region size. On ST1221, 20 per side starts at about 6 nm, so it cannot split again with a 5 nm stopping size; use a coarser starting grid for refinement. Click a map cell to calculate its detailed FFT. Saved grid settings record the refinement policy and every region records its stopping reason.
 - **Grid results** shows current map-region counts and area percentages for every candidate label. Areas are weighted by tile size; subdivided parents are excluded. Running or cancelled grids also show uncovered image area. These are candidate-labelled areas, not confirmed phase fractions.
 - Cancel retains a partial result and clearly marks it cancelled. Completed and
@@ -47,23 +51,26 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
 ## Calibration and interpretation
 
 The default is the stored DM4 calibration, shared scale 1.000. HCP references use
-a = 0.295 nm and c = 0.468 nm; BCC defaults to a = 0.330 nm. The peak threshold is editable. **Scale comparison** is available for every real-space image:
+a = 0.295 nm and c = 0.468 nm; BCC defaults to a = 0.330 nm. The peak threshold is editable. **Scale fitting** is available for every real-space image:
 
 - **Stored scale** uses a model multiplier of 1.000.
 - **Comparison scale ×0.950** reproduces the previous ST1221 model estimate. On other images it is an exploratory comparison, not a calibration measured for that image.
 - **Custom comparison scale** enables **Model size ×**, from 0.850 to 1.150.
 - **1222 BCC reference** uses the provisional BCC parameter described below with a shared multiplier of 0.950.
+- **Auto: single scale for HCP and BCC** fits one uniform reciprocal-space multiplier independently for each candidate in each movable region or grid cell. HCP c/a stays fixed.
+- **Auto: BCC single · HCP a + c** fits one multiplier for BCC and independent basal/c reciprocal multipliers for HCP. The HCP deformation is derived from its 3D reciprocal metric, not independent screen x/y stretching. Zones without c-sensitive reflections report c as unconstrained.
 
 The selection is remembered per source pixel hash in this browser. New images start
-at stored scale. The multiplier applies to both structures' predicted reciprocal
-vectors and stays fixed across a grid; measured FFT axes and reported d spacings
-retain the stored DM4 calibration. A better fit after adjusting model size does not
+at stored scale. In fixed modes the multiplier applies to both structures' predicted reciprocal
+vectors and stays fixed across a grid. Automatic modes use nominal references (HCP a = 0.295 nm, c = 0.468 nm; BCC a = 0.330 nm) and fit each candidate independently in each region, including adaptive children. Each reciprocal multiplier is bounded to 0.85–1.15. Both modes move prediction points only; measured FFT axes, measured peaks and reported d spacings retain the stored DM4 calibration. A better fit after adjusting model size does not
 measure strain, independently calibrate the microscope, or confirm a phase. The
-current matcher still checks absolute distances, not only ratios and angles.
+fixed matcher checks absolute distances. Automatic uniform scaling permits the absolute size to vary while retaining each structure's geometric ratios; the HCP two-scale mode additionally varies c/a.
+
+The candidate table keeps support sorting and now reports the fit score and model a/c dimensions. The score includes positional agreement and the existing chance-density correction; it is not a probability. Hover over the dimensions, or expand individual fits, to see reciprocal multipliers. Lattice a = reference a / basal multiplier and c = reference c / c multiplier. Fitted dimensions depend on image calibration and do not independently measure strain. HCP gets an extra parameter in the second mode, and current scores are not corrected for that added flexibility. Compare the two automatic modes before interpreting an improved HCP fit.
 
 `analysis_core.py` contains the numerical functions from the existing ST1221
 analysis. Their source hashes and limitations are in `engine_provenance.json`.
-`templates.json` is the same bounded library of 46 HCP/BCC templates. No new
+`templates.json` is the same bounded library of 46 HCP/BCC templates, including mirror pairs. This covers a limited set of zone axes, not all crystal orientations. Automatic fitting expands the reflection band for these same zones so resized reflections can enter the visible range; it does not expand orientation coverage. `scale_fitting.py` adds bounded scale/orientation seed searches and local refinement. This is not a guaranteed global optimum. No new
 scientific validation or exhaustive phase search is claimed for this interface.
 The 0.950 preset and nominal references reproduce only their corresponding
 scenario. The fixed-reference view uses the same 0.950 scale and provisional BCC a = 0.32452995 nm from diffraction 1222.
@@ -79,7 +86,7 @@ other phases, arbitrary region masks, and persistent sessions are future work.
 
 ## Structure
 
-`analysis_core.py` holds reusable numerical functions; `engine.py` handles source
+`analysis_core.py` holds the original fixed-scale numerical functions; `scale_fitting.py` holds optional local scale fits. The engine fingerprint includes both modules, the template library and the engine wrapper. `engine.py` handles source
 images and regions; `server.py` exposes local endpoints and grid jobs; `web/` is
 the interface. Filesystem paths live in the ignored `.tem-paths.json`. Results
 and microscope data belong in TEM, outside this repository. Changing analysis
@@ -96,3 +103,7 @@ This is a local research tool, not an internet-facing server.
 ## License
 
 [MIT](LICENSE). Copyright (c) 2026 pKai3.
+
+The native macOS launcher is adapted from Tensile Workbench under the MIT licence; its attribution is retained in `macos/TENSILE-LICENSE`. The installed bundle contains machine-specific checkout paths; those paths and compiled apps are not committed.
+
+Run the four focused synthetic scale checks with `python -m unittest discover -s tests`. They do not read microscope files.
