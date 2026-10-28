@@ -27,10 +27,10 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
 
 - Choose a real-space DM4 from the STA or ST folders. ST1221 opens by default.
 - Move the box; resize its lower-right handle. Coordinates and width are editable.
-  Arrow keys nudge one pixel; Shift moves ten. The FFT and candidate results update
+  Click the image, then arrow keys nudge ten pixels; Shift moves fifty. The FFT and candidate results update
   as computation completes. The timing line records the coordinates of the result
   being shown; while dragging, these can briefly trail the moving box.
-- Change **Background** to adjust FFT contrast without changing detected peaks. Choose colour (magma) or greyscale.
+- Change **Background** to adjust FFT contrast without changing detected peaks. Choose colour (magma) or greyscale. Maxima markers can be white circles, white crosshairs, or hidden.
   Measured profiles and either candidate's matched predicted positions can be
   overlaid. Individual fit controls also expose every retained below-threshold candidate and both geometry-only grid fits. Dashed rings flag rejected candidates; displaying a fit does not accept it. Opposite spots represent one independent profile.
 - **Run grid** starts with a uniform grid. With **Adaptive** checked, regions with
