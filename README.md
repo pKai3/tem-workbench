@@ -48,8 +48,7 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
 ## Calibration and interpretation
 
 The default is the stored DM4 calibration, shared scale 1.000. HCP references use
-a = 0.295 nm and c = 0.468 nm; BCC defaults to a = 0.330 nm. BCC a and the peak
-threshold are editable. The saved ST1221 pixel hash unlocks its previous
+a = 0.295 nm and c = 0.468 nm; BCC defaults to a = 0.330 nm. The peak threshold is editable; the selected calibration view sets BCC a. The saved ST1221 pixel hash unlocks its previous
 model-estimated scale of 0.950. This multiplies both structures' predicted
 reciprocal vectors and is applied uniformly across each grid; measured FFT axes
 stay in the stored calibration. It is not an independent instrument calibration.
@@ -59,7 +58,7 @@ analysis. Their source hashes and limitations are in `engine_provenance.json`.
 `templates.json` is the same bounded library of 46 HCP/BCC templates. No new
 scientific validation or exhaustive phase search is claimed for this interface.
 The 0.950 preset and nominal references reproduce only their corresponding
-scenario, not every sensitivity view in the prior viewer.
+scenario. The fixed-reference view uses the same 0.950 scale and provisional BCC a = 0.32452995 nm from diffraction 1222.
 
 Compatibility is not a confirmed phase identification. Support is weighted
 Fourier evidence, not phase fraction or probability. Images lacking the full

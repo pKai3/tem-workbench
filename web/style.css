@@ -3,3 +3,5 @@
 .intensity-key{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:10px;margin-top:5px}.intensity-key div{height:7px;flex:1;border-radius:3px;background:linear-gradient(90deg,#000004,#3b0f70,#8c2981,#de4968,#fe9f6d,#fcfdbf)}
 
 .intensity-key.gray div{background:linear-gradient(90deg,#000,#fff)}.fit-choice{display:flex;flex-direction:row;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12px;line-height:1.5}.fit-choice input{min-height:0;margin:0}.fit-choice span{min-width:0}#fit-list{margin-top:10px;max-height:280px;overflow:auto}
+
+.calibration-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:0 0 14px}.calibration-bar label{min-width:200px;flex:1}.calibration-bar p{flex:1;min-width:170px;margin:0}.settings label:first-child{grid-column:auto}
