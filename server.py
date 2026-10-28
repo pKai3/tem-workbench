@@ -178,7 +178,7 @@ def make_handler(app):
                     with app.lock:
                         item=app.engine.load(body['file_id'])
                         _, settings=app.engine.validate(item, body['roi'], body.get('settings', {}))
-                    self.send(app.grid(item, settings, int(body.get('count', 6)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5))))
+                    self.send(app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5))))
                 elif self.path == '/api/cancel':
                     app.jobs[body['job_id']]['cancel']=True
                     self.send({'ok':True})

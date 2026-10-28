@@ -33,7 +33,7 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
 - Change **Background** to adjust FFT contrast without changing detected peaks. Choose colour (magma) or greyscale. Maxima markers can be white circles, white crosshairs, or hidden.
   Measured profiles and either candidate's matched predicted positions can be
   overlaid. Individual fit controls also expose every retained below-threshold candidate and both geometry-only grid fits. Dashed rings flag rejected candidates; displaying a fit does not accept it. Opposite spots represent one independent profile.
-- **Run grid** starts with a uniform grid. With **Adaptive** checked, regions with
+- **Run grid** starts with a uniform grid, defaulting to 20 per side (400 regions). With **Adaptive** checked, regions with
   a substantial second independently supported periodic pattern split into four.
   Subdivision stops when no such second pattern is supported, or another split
   would go below the selected minimum (at least 5 nm). Phase uncertainty alone
