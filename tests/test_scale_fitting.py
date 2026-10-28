@@ -69,6 +69,21 @@ class ScaleFits(unittest.TestCase):
         self.assertTrue(small['valid'])
         self.assertTrue(large['valid'])
 
+    def test_reranking_recovers_pruned_zone_and_does_not_accumulate_penalties(self):
+        def model(zone, score, scale):
+            return dict(phase='HCP', zone_3index=zone, score=score, valid=True,
+                        scale_a=scale, scale_c=None, scale_parameter_count=1,
+                        matches=[{'profile_id': i} for i in range(4)])
+        # Keep only one per phase to make the penalty-dependent pruning explicit.
+        pool = [model([1, -1, 0], .80, 1.01), model([1, -1, -2], .85, 1.10)]
+        smaller = fitting.rerank(pool, .1, topn=1)
+        unpenalized = fitting.rerank(pool, 0, topn=1)
+        self.assertEqual(smaller[0]['zone_3index'], [1, -1, 0])
+        self.assertEqual(unpenalized[0]['zone_3index'], [1, -1, -2])
+        self.assertEqual(fitting.rerank(smaller, .1, topn=1), smaller)
+        self.assertNotIn('position_score', pool[0])
+        self.assertTrue(fitting.rerank(fitting.rerank(pool, .5), 0)[0]['valid'])
+
     def test_penalty_changes_ranking_without_moving_fitted_points(self):
         template = self.template('HCP', [1, -1, -2])
         q = core.canonical(core.rotation(fitting.prediction_points(template, .96, 1.035), .47))

@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import time
+import zlib
 import numpy as np
 from PIL import Image
 import analysis_core as core
@@ -124,7 +125,7 @@ class Engine:
         values['scale_mode'] = mode
         return {'x': x, 'y': y, 'w': w, 'h': h}, values
 
-    def analyze(self, item, roi, settings, images=True):
+    def analyze(self, item, roi, settings, images=True, cache_candidates=False):
         roi, settings = self.validate(item, roi, settings)
         started = time.perf_counter()
         x, y, w, h = [roi[k] for k in ['x', 'y', 'w', 'h']]
@@ -138,6 +139,7 @@ class Engine:
         else:
             s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'])
         tol = max(.10, s['hann_power_fwhm_nm_inv'])
+        candidates = [] if cache_candidates else None
         if not info['can_index']:
             models = []
         elif settings['scale_mode'] == 'fixed':
@@ -153,31 +155,10 @@ class Engine:
         else:
             models = scale_fitting.search(s['peaks'], self.auto_templates, tol,
                                           settings['scale_mode'], bcc_a=settings['bcc_a'],
-                                          scale_penalty_strength=settings['scale_penalty_strength'])
-        classification = phase_comparison.classify(s['peaks'], models, s['df'])
-        if settings['scale_mode'] != 'fixed':
-            classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the stored image calibration.')
-            if settings['scale_mode'] == 'auto_hcp_ac':
-                classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scale penalties discourage large adjustments; the separate shared-evidence check retains unresolved model tradeoffs.')
-            if settings['scale_penalty_strength']:
-                classification['flags'].append(
-                    f"Scale penalty strength {settings['scale_penalty_strength']:.3f}: ranking score = position score minus "
-                    'the mean squared reciprocal-scale deviation, normalized to 5%. This is an adjustable preference, not a measured strain limit.')
-            primary = classification.get('primary_model')
-            if primary and primary.get('scale_at_bound'):
-                classification['flags'].append('The leading fit reaches an automatic scale limit.')
-            if primary and primary.get('scale_note'):
-                classification['flags'].append(primary['scale_note'])
+                                          scale_penalty_strength=settings['scale_penalty_strength'],
+                                          candidate_sink=candidates)
+        classification = self.classify(s, models, settings, w*sx, h*sy, info['can_index'])
         periodicity = core.purity(s['peaks'], tol) if info['can_index'] else {'status': 'unresolved_pattern', 'substantial_second_pattern': False}
-        if not info['can_index']:
-            classification['label'] = 'insufficient'
-            classification['flags'].append('The stored sampling does not cover the full 3–10 nm⁻¹ fitting band; phase fitting is disabled.')
-        # Report the actual window broadening rather than the original fixed 5 nm example.
-        classification['flags'] = [f for f in classification['flags'] if not f.startswith('At ~5nm, Hann broadening')]
-        if s['df'] > .15:
-            classification['flags'].append(
-                f"This {min(w*sx, h*sy):.2f} nm region has Hann broadening of about "
-                f"{s['hann_power_fwhm_nm_inv']:.3f} nm⁻¹; closely spaced candidate reflections may not be distinguishable.")
         log = s.pop('log')
         # Return an encoded log-power field; display contrast is adjusted in the browser only.
         if images:
@@ -198,8 +179,49 @@ class Engine:
             encoded.update({'fft_log16': data_url(stream.getvalue()), 'fft_log_limits': [lo, hi]})
         else:
             encoded = {}
-        return {'roi': roi, 'width_nm': w*sx, 'height_nm': h*sy, 'settings': settings,
+        result = {'roi': roi, 'width_nm': w*sx, 'height_nm': h*sy, 'settings': settings,
                 'spectrum': s, 'models': models, 'classification': classification,
                 'periodicity': periodicity, 'images': encoded,
                 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                 'engine_sha256': self.version}
+        if candidates is not None and settings['scale_mode'] != 'fixed':
+            # Internal, compressed pool: never serialize it into API/saved output.
+            result['_fit_cache'] = zlib.compress(json.dumps(candidates, separators=(',', ':'), allow_nan=False).encode(), 1)
+        return result
+
+    def classify(self, s, models, settings, width_nm, height_nm, can_index=True):
+        classification = phase_comparison.classify(s['peaks'], models, s['df'])
+        if settings['scale_mode'] != 'fixed':
+            classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the stored image calibration.')
+            if settings['scale_mode'] == 'auto_hcp_ac':
+                classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scale penalties discourage large adjustments; the separate shared-evidence check retains unresolved model tradeoffs.')
+            if settings['scale_penalty_strength']:
+                classification['flags'].append(
+                    f"Scale penalty strength {settings['scale_penalty_strength']:.3f}: ranking score = position score minus "
+                    'the mean squared reciprocal-scale deviation, normalized to 5%. This is an adjustable preference, not a measured strain limit.')
+            primary = classification.get('primary_model')
+            if primary and primary.get('scale_at_bound'):
+                classification['flags'].append('The leading fit reaches an automatic scale limit.')
+            if primary and primary.get('scale_note'):
+                classification['flags'].append(primary['scale_note'])
+        if not can_index:
+            classification['label'] = 'insufficient'
+            classification['flags'].append('The stored sampling does not cover the full 3–10 nm⁻¹ fitting band; phase fitting is disabled.')
+        # Report the actual window broadening rather than the original fixed 5 nm example.
+        classification['flags'] = [f for f in classification['flags'] if not f.startswith('At ~5nm, Hann broadening')]
+        if s['df'] > .15:
+            classification['flags'].append(
+                f"This {min(width_nm, height_nm):.2f} nm region has Hann broadening of about "
+                f"{s['hann_power_fwhm_nm_inv']:.3f} nm⁻¹; closely spaced candidate reflections may not be distinguishable.")
+        return classification
+
+    def rescore(self, result, strength):
+        """Only ranking/classification changes; all measured evidence is reused."""
+        if '_fit_cache' not in result:
+            raise ValueError('Run an automatic-scale grid once to enable cached rescoring.')
+        candidates = json.loads(zlib.decompress(result['_fit_cache']))
+        models = scale_fitting.rerank(candidates, strength)
+        settings = {**result['settings'], 'scale_penalty_strength': float(strength)}
+        classification = self.classify(result['spectrum'], models, settings,
+                                       result['width_nm'], result['height_nm'])
+        return {**result, 'settings': settings, 'models': models, 'classification': classification}

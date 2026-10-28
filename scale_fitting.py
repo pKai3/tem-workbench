@@ -27,9 +27,10 @@ def penalize(result, scale_a, scale_c, strength):
     if result is None:
         return None
     cost = float(scale_cost(scale_a, scale_c, strength))
-    result.update(position_score=result['score'], position_valid=result['valid'],
+    result.update(position_score=result.get('position_score', result['score']),
+                  position_valid=result.get('position_valid', result['valid']),
                   scale_penalty=cost, scale_penalty_strength=strength)
-    result['score'] -= cost
+    result['score'] = result['position_score'] - cost
     result['valid'] = bool(result['position_valid'] and result['score'] > .20)
     return result
 
@@ -192,7 +193,7 @@ def _refine(peaks, template, seed, tol, bcc_a, double, strength):
     return penalize(result, sa, sc if double else None, strength)
 
 
-def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY):
+def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None):
     if mode not in ('auto_uniform', 'auto_hcp_ac'):
         raise ValueError('Unknown automatic scale mode.')
     strength = float(scale_penalty_strength)
@@ -216,6 +217,13 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
                     result.update({'scale_c': None, 'fitted_c_nm': None,
                                    'scale_note': 'This zone does not constrain c; only a is fitted.'})
                 candidates.append(result)
+    if candidate_sink is not None:
+        # Retain every refined hypothesis, before penalty-dependent pruning.
+        candidate_sink.extend(candidates)
+    return retain(candidates, topn)
+
+
+def retain(candidates, topn=5):
     retained = []
     for candidate in sorted(candidates, key=lambda m: m['score'], reverse=True):
         ids = {m['profile_id'] for m in candidate['matches']}
@@ -227,3 +235,16 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
         if sum(candidate['phase'] == other['phase'] for other in retained) < topn:
             retained.append(candidate)
     return retained
+
+
+def rerank(candidates, strength, topn=5):
+    """Reweight cached positional fits without changing coordinates or matches."""
+    strength = float(strength)
+    if not np.isfinite(strength) or not 0 <= strength <= .5:
+        raise ValueError('Scale penalty must be between 0 and 0.5.')
+    ranked = []
+    for original in candidates:
+        model = original.copy()
+        c = model.get('scale_c') if model.get('scale_parameter_count') == 2 else None
+        ranked.append(penalize(model, model['scale_a'], c, strength))
+    return retain(ranked, topn)

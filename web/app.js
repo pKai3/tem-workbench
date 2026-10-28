@@ -5,6 +5,10 @@ const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',co
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
 let config, meta, roi={x:0,y:0,w:684,h:684}, fileId, result=null, fftRaw=null, grid=null, jobId=null;
 let chosenFits=new Set(), favorites=new Set();
+let rescoreTimer=null, rescoreBusy=false, rescorePending=false, rescoreRevision=0, scalePenalty=.10;
+let zoneJob=null, zoneSymbols={HCP:new Map(),BCC:new Map()};
+const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢','◀','▶','✦','✳','◉','⊞','⊠','✧'];
+const phaseColors={HCP:colors.hcp_compatible,BCC:colors.bcc_compatible};
 let generation=0, busy=false, pending=false, timer=null, drag=null, sourceRequest=0, opened=false;
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error)}
 async function api(path,body){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,options);const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
@@ -28,9 +32,10 @@ $('favorite-toggle').onclick=()=>{
  writePreference(favoriteKey(),[...favorites]);renderFavorites();
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){$('file').value=id;openFile()}};
-function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?Number($('scale-penalty').value):0,scale_mode:mode.startsWith('auto_')?mode:'fixed'}}
+function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,scale_mode:mode.startsWith('auto_')?mode:'fixed'}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
+ updatePenaltyControls();
  field.closest('.scale-input').style.display=automatic?'none':'';
  if(automatic){field.value='1.000';field.readOnly=true;$('bcc-a').value=.330;
   $('calibration-note').textContent=(v==='auto_uniform'?'Each region fits one prediction scale separately for HCP and BCC; HCP c/a stays fixed.':'Each region fits one BCC prediction scale and independent HCP a/c scales where visible.')+' Range ×0.85–1.15 relative to nominal dimensions. Measured FFT axes stay unchanged. Candidate model dimensions are shown below.';return}
@@ -75,7 +80,7 @@ function updateBox(preserveHeight=false){if(!meta)return;const min=32,max=Math.m
 // Invalidate the old result immediately; never attach it to a newly moved region.
 function schedule(delay=120){generation++;pending=true;result=null;$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
 async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true;const version=generation,body=requestBody();try{const data=await api('analyze',body);if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}}catch(e){if(version===generation){message(e.message,true);$('phase-label').textContent='Analysis unavailable'}}finally{busy=false;if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20)}}
-async function openFile(){const version=++sourceRequest;generation++;pending=false;meta=null;result=null;opened=false;renderFavorites();$('save-region').disabled=true;const id=$('file').value;message('Opening source image…');try{if(jobId&&grid?.state==='running')await api('cancel',{job_id:jobId});const info=await api('open',{file_id:id});if(version!==sourceRequest)return;meta=info;fileId=id;opened=true;grid=null;jobId=null;drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=false;$('grid-status').textContent='Adaptive subdivides unresolved or ambiguous regions, two candidate structures, and substantial second patterns.';restoreCalibration();renderFavorites();updateGridSizeNote();$('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);$('source-image').setAttribute('width',info.width);$('source-image').setAttribute('height',info.height);$('source-image').setAttribute('href','/api/preview?id='+encodeURIComponent(id));$('metadata').textContent=`${info.width} × ${info.height} · ${info.pixel_x_nm.toFixed(5)} nm/px · ${info.device}${info.is_demo?' · bundled demo':''}`;const size=Math.min(info.width,info.height,Math.max(32,Math.round(20/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size};updateBox();schedule(0);message('Drag the box to inspect a region, or run an automatic grid.')}catch(e){if(version===sourceRequest)message(e.message,true)}}
+async function openFile(){rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);const version=++sourceRequest;generation++;pending=false;meta=null;result=null;opened=false;renderFavorites();$('save-region').disabled=true;const id=$('file').value;message('Opening source image…');try{if(isGridRunning())await api('cancel',{job_id:jobId});const info=await api('open',{file_id:id});if(version!==sourceRequest)return;meta=info;fileId=id;opened=true;grid=null;jobId=null;drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=false;$('grid-status').textContent='Adaptive subdivides unresolved or ambiguous regions, two candidate structures, and substantial second patterns.';restoreCalibration();renderFavorites();updateGridSizeNote();$('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);$('source-image').setAttribute('width',info.width);$('source-image').setAttribute('height',info.height);$('source-image').setAttribute('href','/api/preview?id='+encodeURIComponent(id));$('metadata').textContent=`${info.width} × ${info.height} · ${info.pixel_x_nm.toFixed(5)} nm/px · ${info.device}${info.is_demo?' · bundled demo':''}`;const size=Math.min(info.width,info.height,Math.max(32,Math.round(20/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size};updateBox();schedule(0);message('Drag the box to inspect a region, or run an automatic grid.')}catch(e){if(version===sourceRequest)message(e.message,true)}}
 function point(event){const pt=new DOMPoint(event.clientX,event.clientY);return pt.matrixTransform($('overview').getScreenCTM().inverse())}
 $('overview').addEventListener('pointerdown',e=>{if(!meta||e.button!==0)return;$('overview').focus({preventScroll:true});e.preventDefault();const cell=e.target.closest('.grid-cell');if(cell){const r=grid.regions.find(r=>r.id===cell.dataset.id);roi={...r.roi};updateBox(true);schedule(0);return}const p=point(e);const inside=p.x>=roi.x&&p.x<=roi.x+roi.w&&p.y>=roi.y&&p.y<=roi.y+roi.h;const resizing=e.target.id==='roi-handle';if(!inside&&!resizing){roi.x=p.x-roi.w/2;roi.y=p.y-roi.h/2;updateBox();schedule()}drag={mode:resizing?'resize':'move',x:p.x,y:p.y,roi:{...roi}};$('overview').setPointerCapture(e.pointerId);e.preventDefault()});
 $('overview').addEventListener('pointermove',e=>{if(!drag)return;const p=point(e);if(drag.mode==='resize'){roi.w=clamp(drag.roi.w+Math.max(p.x-drag.x,p.y-drag.y),32,Math.min(meta.width-drag.roi.x,meta.height-drag.roi.y))}else{roi.x=drag.roi.x+p.x-drag.x;roi.y=drag.roi.y+p.y-drag.y}updateBox();schedule(90)});
@@ -124,13 +129,13 @@ function renderModels(data){
  const ranked=['HCP','BCC'].map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>(b.m?.coverage??-1)-(a.m?.coverage??-1));
  for(const {phase,m} of ranked){
   const row=document.createElement('tr');
-  const values=m?[`${phase} ${zoneLabel(m)}`,predictionCounts(m),`${(100*m.coverage).toFixed(0)}%`,(m.position_score??m.score).toFixed(3),(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),fittedDimensions(m),scalePercentages(m),m.rms_nm_inv.toFixed(3),m.valid?'Pass':'Below threshold']:[phase,'—','—','—','—','—','—','—','—','No fit'];
+  const values=m?[`${phase} ${zoneLabel(m)}`,predictionCounts(m),`${(100*m.coverage).toFixed(0)}%`,(m.position_score??m.score).toFixed(3),(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),fittedDimensions(m).replace(' / ','\n'),scalePercentages(m).replace(' / ','\n'),m.rms_nm_inv.toFixed(3),m.valid?'Pass':'Below threshold']:[phase,'—','—','—','—','—','—','—','—','No fit'];
   values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(m&&(i===6||i===7))td.title=scaleDetails(m)+(i===7?' · change from the reference prediction coordinates: 100 × (multiplier − 1). Model lattice dimensions change inversely.':'');if(m&&i===1)td.title='Matched detected profiles / allowed prediction positions in the 3–10 nm⁻¹ fitting band. Opposite spots count once.';row.append(td)});
   $('models').append(row);
  }
  $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank score = position score − scale penalty. Scale penalty ranks automatic fits before choosing the best zone axis, including HCP alternatives. Position score measures agreement with detected peaks; it is not a phase probability. Matches / predictions also exposes unsupported positions. Prediction scale Δ is the percentage change from reference reciprocal coordinates; model a/c changes inversely and assumes the stored DM4 calibration.';
 }
-async function renderResult(data,version,body){$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · ROI ${data.roi.x}, ${data.roi.y}`;$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Separate geometry-only check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.')+' This check uses freely fitted reciprocal grids, not HCP/BCC assignments; its acceptance rules differ from the phase-fit check.';renderModels(data);$('result-detail').textContent=`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const img=new Image();const precise=Boolean(data.images.fft_log16);img.src=data.images.fft_log16||data.images.fft;await img.decode();if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;fftRaw={canvas,pixels,precise,histogram,maximum,limits:data.images.fft_log_limits||[0,1]};drawFFT();document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
+async function renderResult(data,version,body){$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · ROI ${data.roi.x}, ${data.roi.y}`;$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Geometry check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.');renderModels(data);$('result-detail').textContent=`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const img=new Image();const precise=Boolean(data.images.fft_log16);img.src=data.images.fft_log16||data.images.fft;await img.decode();if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;fftRaw={canvas,pixels,precise,histogram,maximum,limits:data.images.fft_log_limits||[0,1]};drawFFT();document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
 function drawFFT(){
  if(!result||!fftRaw)return;
  const {canvas,pixels,precise,histogram,maximum,limits}=fftRaw,ctx=canvas.getContext('2d');
@@ -158,7 +163,8 @@ function renderFitChoices(data){
  chosenFits=new Set();$('fit-list').replaceChildren();
  const table=document.createElement('table');table.className='fit-table';
  const head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
- for(const title of ['Show','Candidate / zone axis','Matches / predictions','Support ↓','RMS, nm⁻¹','Model a / c, nm','Prediction scale Δ, %','Scale penalty','Rank score','Screen']){const th=document.createElement('th');th.scope='col';th.textContent=title;header.append(th)}
+ const headings=[['Show','Toggle this overlay'],['Candidate\nZone axis','Candidate structure and zone axis; rotation is shown below'],['Peaks\nhit / all','Matched detected profiles / allowed prediction positions; opposite spots count once'],['Support ↓','Share of detected Fourier evidence'],['RMS\nnm⁻¹','Root-mean-square positional residual'],['a / c\nnm','Fitted model lattice parameters'],['Scale Δ\n%','Reciprocal prediction scale changes; HCP shows a* and c*'],['Penalty','Scale penalty subtracted from the position score'],['Rank','Position score minus scale penalty'],['Screen','Candidate acceptance screen; hover for rejection reasons']];
+ for(const [title,help]of headings){const th=document.createElement('th');th.scope='col';th.textContent=title;th.title=help;header.append(th)}
  head.append(header);table.append(head,body);$('fit-list').append(table);
  const add=(key,m,name,geometry=false)=>{
   const row=document.createElement('tr'),toggle=document.createElement('td'),box=document.createElement('input');
@@ -166,12 +172,12 @@ function renderFitChoices(data){
   box.addEventListener('change',()=>{box.checked?chosenFits.add(key):chosenFits.delete(key);$('overlay').value='custom';drawFFT()});toggle.append(box);row.append(toggle);
   const why=[];
   if(!geometry&&!m.valid){if(m.matched_profile_count<4)why.push('fewer than 4 profiles');if(m.nonparallel_spread_sine<=.5)why.push('limited directions');if(m.score<=.20)why.push('rank score ≤ 0.20');if(m.coverage<=.30)why.push('support ≤ 30%')}
-  const values=[name+(geometry?'':`\n${m.rotation_deg.toFixed(1)}°`),geometry?m.matched_profile_count+' peaks':predictionCounts(m),`${(m.coverage*100).toFixed(0)}%`,m.rms_nm_inv.toFixed(3),geometry?'—':fittedDimensions(m).replace(' / ','\n'),geometry?'—':scalePercentages(m).replace(' / ','\n'),geometry?'—':(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),m.valid?'Pass':'Below threshold'];
-  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===0)td.className=geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc';if(!geometry&&(i===4||i===5))td.title=scaleDetails(m);if(i===7)td.title=geometry?'Geometry-only score':`Position ${(m.position_score??m.score).toFixed(3)} − scale penalty ${(m.scale_penalty??0).toFixed(3)} = rank ${m.score.toFixed(3)}`;if(i===8)td.title=why.join('; ');row.append(td)});
+  const values=[name+(geometry?'':`\n${m.rotation_deg.toFixed(1)}°`),geometry?m.matched_profile_count+' peaks':predictionCounts(m),`${(m.coverage*100).toFixed(0)}%`,m.rms_nm_inv.toFixed(3),geometry?'—':fittedDimensions(m).replace(' / ','\n'),geometry?'—':scalePercentages(m).replace(' / ','\n'),geometry?'—':(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),m.valid?'Pass':'Below'];
+  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===0)td.className=geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc';if(!geometry&&(i===4||i===5))td.title=scaleDetails(m);if(i===7)td.title=geometry?'Geometry-only score':`Position ${(m.position_score??m.score).toFixed(3)} − scale penalty ${(m.scale_penalty??0).toFixed(3)} = rank ${m.score.toFixed(3)}`;if(i===8)td.title=m.valid?'Passes the screen':'Below threshold'+(why.length?' · '+why.join('; '):'');row.append(td)});
   body.append(row);
  };
  data.models.map((m,i)=>({m,i})).sort((a,b)=>b.m.coverage-a.m.coverage||b.m.score-a.m.score).forEach(({m,i})=>add('phase-'+i,m,`${m.phase} ${zoneLabel(m)}`));
- for(const [key,name]of [['primary_lattice','Primary geometry-only grid'],['secondary_lattice','Secondary geometry-only grid']])if(data.periodicity[key])add(key,data.periodicity[key],name,true);
+ for(const [key,name]of [['primary_lattice','Primary geometry'],['secondary_lattice','Secondary geometry']])if(data.periodicity[key])add(key,data.periodicity[key],name,true);
  if(!body.children.length)$('fit-list').textContent='No retained candidate fits in this region.';
 }
 
@@ -222,34 +228,170 @@ function renderGridSummary(){
  if(covered<totalArea)add('Not yet covered','—',totalArea-covered);
  table.append(body);const note=document.createElement('p');note.className='hint';
  note.textContent='Area is weighted by region size. Counts include current map regions only, excluding subdivided parents. Candidate-labelled image area is not a confirmed phase fraction.';
+ if(grid.rescore&&grid.grid.adaptive)note.textContent+=` Labels have been reweighted within the existing cells. Subdivision decisions and stopping reasons remain from the original run (penalty ${grid.initial_settings.scale_penalty_strength.toFixed(3)}). Run a new grid to change its boundaries.`;
  container.append(heading,summary,table,note);
 }
-function drawGrid(){renderGridSummary();const group=$('grid-map');group.replaceChildren();if(!grid||!$('show-grid').checked)return;for(const r of grid.regions){if(!r.leaf)continue;const e=el('rect',{x:r.roi.x,y:r.roi.y,width:r.roi.w,height:r.roi.h,fill:colors[r.label]||'#aaa',stroke:colors[r.label]||'#aaa',class:'grid-cell','data-id':r.id,'fill-opacity':Number($('grid-opacity').value)/100});e.append(el('title',{},labels[r.label]));group.append(e)}}
+function zoneKey(model){return zoneIndices(model).join(',')}
+function collectZones(){
+ if(zoneJob!==grid?.id){zoneJob=grid?.id;zoneSymbols={HCP:new Map(),BCC:new Map()}}
+ const found={HCP:new Map(),BCC:new Map()};
+ for(const region of grid?.regions??[]){
+  if(!region.leaf)continue;
+  for(const phase of ['HCP','BCC']){
+   const model=region.best_zones?.[phase];if(!model)continue;
+   const key=zoneKey(model);
+   if(!found[phase].has(key))found[phase].set(key,{model,count:0,passing:0});
+   const entry=found[phase].get(key);entry.count++;if(model.valid)entry.passing++;
+  }
+ }
+ for(const phase of ['HCP','BCC'])for(const key of [...found[phase].keys()].sort()){
+  if(!zoneSymbols[phase].has(key)){
+   const index=zoneSymbols[phase].size;
+   zoneSymbols[phase].set(key,ZONE_SYMBOLS[index]??`◌${index+1}`);
+  }
+ }
+ return found;
+}
+function renderZoneLegend(found){
+ const legend=$('zone-legend');legend.replaceChildren();legend.hidden=!grid||!$('show-zones').checked||$('show-zones').disabled;
+ if(legend.hidden)return;
+ const hint=document.createElement('p');hint.className='hint';
+ hint.textContent='Best candidate for each structure in every cell: blue HCP on the left, gold BCC on the right. Faded symbols are below the screen threshold. These are alternative fits, not proof that both phases are present.';
+ legend.append(hint);
+ for(const phase of ['HCP','BCC']){
+  const group=document.createElement('div');group.className='zone-legend-group';group.style.color=phaseColors[phase];
+  const title=document.createElement('strong');title.textContent=phase;group.append(title);
+  for(const [key,entry] of found[phase]){
+   const item=document.createElement('span');item.className='zone-key';
+   const symbol=document.createElement('b');symbol.textContent=zoneSymbols[phase].get(key);
+   item.append(symbol,document.createTextNode(zoneLabel(entry.model)));
+   item.title=`${entry.count} cells · ${entry.passing} passing fits`;group.append(item);
+  }
+  if(!found[phase].size)group.append(document.createTextNode('No fitted zones'));
+  legend.append(group);
+ }
+}
+function drawGrid(){
+ renderGridSummary();const found=collectZones();renderZoneLegend(found);
+ const group=$('grid-map');group.replaceChildren();
+ const showGrid=$('show-grid').checked,showZones=$('show-zones').checked&&!$('show-zones').disabled;
+ if(!grid||(!showGrid&&!showZones)){updatePenaltyControls();return}
+ for(const r of grid.regions){
+  if(!r.leaf)continue;
+  const e=el('rect',{x:r.roi.x,y:r.roi.y,width:r.roi.w,height:r.roi.h,fill:colors[r.label]||'#aaa',stroke:showGrid?(colors[r.label]||'#aaa'):'none',class:'grid-cell','data-id':r.id,'fill-opacity':showGrid?Number($('grid-opacity').value)/100:0});
+  const descriptions=[labels[r.label]];
+  for(const phase of ['HCP','BCC']){const m=r.best_zones?.[phase];if(m)descriptions.push(`${phase} ${zoneLabel(m)} · ${m.valid?'passes screen':'below threshold'}`)}
+  e.append(el('title',{},descriptions.join(' · ')));group.append(e);
+  if(showZones)for(const [i,phase]of ['HCP','BCC'].entries()){
+   const model=r.best_zones?.[phase];if(!model)continue;
+   const size=Math.min(r.roi.w,r.roi.h)*.30;
+   const marker=el('text',{x:r.roi.x+r.roi.w*(i ? .72 : .28),y:r.roi.y+r.roi.h*.5,
+    fill:phaseColors[phase],'font-size':size,'stroke-width':size*.12,
+    class:'zone-marker','fill-opacity':model.valid?1:.38,'stroke-opacity':model.valid ? .85 : .38,
+    'aria-hidden':'true'},zoneSymbols[phase].get(zoneKey(model)));
+   group.append(marker);
+  }
+ }
+ updatePenaltyControls();
+}
+$('show-zones').checked=readPreference('tem-grid-zones',true)!==false;
+$('show-zones').onchange=()=>{writePreference('tem-grid-zones',$('show-zones').checked);drawGrid()};
 $('show-grid').onchange=drawGrid;
 function updateGridOpacity(){
  const amount=Number($('grid-opacity').value);$('grid-opacity-value').textContent=amount+'%';
- for(const cell of $('grid-map').children)cell.setAttribute('fill-opacity',amount/100);
+ for(const cell of $('grid-map').querySelectorAll('.grid-cell'))cell.setAttribute('fill-opacity',$('show-grid').checked?amount/100:0);
 }
 $('grid-opacity').oninput=()=>{updateGridOpacity();writePreference('tem-grid-opacity',Number($('grid-opacity').value))};
 const savedOpacity=readPreference('tem-grid-opacity',12);
 if(Number.isFinite(savedOpacity))$('grid-opacity').value=clamp(savedOpacity,0,100);
 updateGridOpacity();
-async function poll(id){try{const status=await api('job?id='+encodeURIComponent(id));if(id!==jobId)return;grid=status;drawGrid();$('grid-status').textContent=`${status.processed} regions analysed · ${status.pending} pending · ${status.state}${status.error?' — '+status.error:''}`;if(status.state==='running')setTimeout(()=>poll(id),600);else{$('run-grid').disabled=false;$('cancel-grid').disabled=true;$('save-grid').disabled=false}}catch(e){message(e.message,true);$('run-grid').disabled=false;$('cancel-grid').disabled=true}}
-$('run-grid').onclick=async()=>{if(!meta)return;try{$('run-grid').disabled=true;const d=await api('grid',{...requestBody(),count:Number($('grid-count').value),adaptive:$('adaptive').checked,minimum_nm:Number($('grid-min').value)});jobId=d.id;$('cancel-grid').disabled=false;$('save-grid').disabled=true;poll(jobId)}catch(e){$('run-grid').disabled=false;message(e.message,true)}};
+function isGridRunning(){return Boolean(jobId&&(!grid||grid.state==='running'))}
+function gridStatus(){
+ if(!grid)return;
+ $('grid-status').textContent=`${grid.processed} regions analysed · ${grid.pending} pending · ${grid.state}${grid.error?' — '+grid.error:''}`+(grid.rescore?` · reweighted in ${(grid.rescore.elapsed_ms/1000).toFixed(2)} s using cached fits`:'');
+}
+async function poll(id){
+ try{
+  const status=await api('job?id='+encodeURIComponent(id));if(id!==jobId)return;
+  grid=status;drawGrid();gridStatus();
+  if(status.state==='running')setTimeout(()=>poll(id),600);
+  else{$('run-grid').disabled=false;$('cancel-grid').disabled=true;updatePenaltyControls()}
+ }catch(e){if(id===jobId){message(e.message,true);$('run-grid').disabled=false;$('cancel-grid').disabled=true}}
+}
+$('run-grid').onclick=async()=>{
+ if(!meta)return;
+ try{
+  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
+  $('run-grid').disabled=true;$('clear-grid').disabled=true;$('cancel-grid').disabled=true;
+  const version=sourceRequest,expectedSettings=JSON.stringify(settings()),d=await api('grid',{...requestBody(),count:Number($('grid-count').value),adaptive:$('adaptive').checked,minimum_nm:Number($('grid-min').value)});
+  if(version!==sourceRequest||JSON.stringify(settings())!==expectedSettings){await api('cancel',{job_id:d.id});$('run-grid').disabled=false;updatePenaltyControls();return}
+  jobId=d.id;grid=null;drawGrid();$('cancel-grid').disabled=false;$('save-grid').disabled=true;
+  $('scale-penalty').disabled=true;$('scale-penalty-slider').disabled=true;poll(jobId);
+ }catch(e){$('run-grid').disabled=false;message(e.message,true);updatePenaltyControls()}
+};
 $('cancel-grid').onclick=async()=>{try{await api('cancel',{job_id:jobId})}catch(e){message(e.message,true)}};
+$('clear-grid').onclick=()=>{
+ const id=jobId,running=isGridRunning();
+ rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
+ jobId=null;grid=null;drawGrid();
+ $('run-grid').disabled=false;$('cancel-grid').disabled=true;
+ $('grid-status').textContent='Grid cleared. Run grid to create a new map.';
+ if(id&&running)api('cancel',{job_id:id}).catch(e=>message(e.message,true));
+};
 async function save(body){try{const d=await api('save',body);message('Saved: '+d.path)}catch(e){message(e.message,true)}}
 $('save-region').onclick=()=>{if(result)save({file_id:fileId,roi:result.roi,settings:result.settings})};$('save-grid').onclick=()=>{if(jobId)save({job_id:jobId})};
+function updatePenaltyControls(){
+ const automatic=$('scenario').value.startsWith('auto_'),running=isGridRunning();
+ const disabled=!config?.grid_rescore||!automatic||running;
+ $('scale-penalty').disabled=disabled;$('scale-penalty-slider').disabled=disabled;
+ const mismatch=Boolean(grid&&grid.settings.scale_mode!=='fixed'&&scalePenalty!==grid.settings.scale_penalty_strength);
+ const updating=rescorePending||rescoreBusy;
+ $('grid-map').classList.toggle('stale',updating||mismatch);
+ $('save-grid').disabled=!grid||running||updating||mismatch;
+ $('clear-grid').disabled=!grid&&!jobId;
+ const note=$('penalty-note');
+ note.textContent=!config?.grid_rescore?'Restart TEM Workbench and reload to enable cached grid rescoring.':!automatic?'Choose an automatic scale mode to apply a scaling penalty.':running?'Finish or cancel this grid to adjust its penalty.':updating?'Updating the map from cached fits…':mismatch?'This map still shows its previous penalty; adjust the control again to retry.':grid?'Updates labels, zone symbols and totals from cached fits. Existing cell boundaries stay fixed.':'Adjust the preference for smaller scale changes. Zero disables the penalty.';
+}
+function penaltyChanged(input){
+ if(!input.value)return;
+ const value=Number(input.value);
+ if(!Number.isFinite(value)||value<0||value>.5){message('Use a scale penalty from 0 to 0.5.',true);return}
+ scalePenalty=value;
+ if(input.id==='scale-penalty-slider')$('scale-penalty').value=value;
+ else $('scale-penalty-slider').value=value;
+ writePreference('tem-scale-penalty',value);
+ rescoreRevision++;clearTimeout(rescoreTimer);
+ rescorePending=Boolean(jobId&&grid?.can_rescore&&grid.settings.scale_mode!=='fixed');
+ updatePenaltyControls();if(meta)schedule(150);
+ if(rescorePending)rescoreTimer=setTimeout(rescoreGrid,140);
+}
+async function rescoreGrid(){
+ if(rescoreBusy||!rescorePending)return;
+ const id=jobId,version=rescoreRevision,strength=scalePenalty;
+ rescoreBusy=true;rescorePending=false;updatePenaltyControls();
+ try{
+  const status=await api('rescore-grid',{job_id:id,scale_penalty_strength:strength});
+  if(id===jobId&&version===rescoreRevision){grid=status;drawGrid();gridStatus()}
+ }catch(e){if(id===jobId&&version===rescoreRevision)message(e.message,true)}
+ finally{
+  rescoreBusy=false;updatePenaltyControls();
+  if(rescorePending){clearTimeout(rescoreTimer);rescoreTimer=setTimeout(rescoreGrid,0)}
+ }
+}
 const savedPenalty=readPreference('tem-scale-penalty',.10);
-if(Number.isFinite(savedPenalty)&&savedPenalty>=0&&savedPenalty<=.5)$('scale-penalty').value=savedPenalty;
-for(const id of ['scenario','model-scale','threshold','scale-penalty'])$(id).onchange=()=>{
+if(Number.isFinite(savedPenalty)&&savedPenalty>=0&&savedPenalty<=.5)scalePenalty=savedPenalty;
+$('scale-penalty').value=scalePenalty;
+$('scale-penalty-slider').value=$('scale-penalty').value;
+for(const id of ['scale-penalty','scale-penalty-slider'])$(id).oninput=()=>penaltyChanged($(id));
+$('scale-penalty').onblur=()=>{$('scale-penalty').value=scalePenalty};
+for(const id of ['scenario','model-scale','threshold'])$(id).onchange=()=>{
  if(!meta)return;
  if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
   restoreCalibration();message('Use a model size between 0.850 and 1.150.',true);return;
  }
- if(id==='scale-penalty'){const value=Number($('scale-penalty').value);if(!Number.isFinite(value)||value<0||value>.5){message('Use a scale penalty from 0 to 0.5.',true);return}writePreference('tem-scale-penalty',value)}
  if(id==='scenario'||id==='model-scale'){calibrationView();rememberCalibration()}
- if(jobId&&grid?.state==='running')api('cancel',{job_id:jobId}).catch(e=>message(e.message,true));
- jobId=null;grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=false;$('cancel-grid').disabled=true;
+ if(isGridRunning())api('cancel',{job_id:jobId}).catch(e=>message(e.message,true));
+ rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);jobId=null;grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=false;$('cancel-grid').disabled=true;
  $('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(0);
 };
 $('model-scale').oninput=()=>{
@@ -257,5 +399,5 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('engine-note').hidden=config.phase_comparison==='shared-evidence-v1'&&Boolean(config.scale_penalty);$('scale-penalty').disabled=!config.scale_penalty;for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['Demo','STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}if(config.default_file)$('file').value=config.default_file;if(!$('file').value&&config.files.length)$('file').value=config.files[0].id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones);$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['Demo','STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}if(config.default_file)$('file').value=config.default_file;if(!$('file').value&&config.files.length)$('file').value=config.files[0].id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 start();

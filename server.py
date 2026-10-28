@@ -10,6 +10,7 @@ import json
 import mimetypes
 import os
 import sys
+import time
 import secrets
 import threading
 import traceback
@@ -41,6 +42,7 @@ class Workbench:
         self.token = secrets.token_urlsafe(24)
         self.lock = threading.Lock()
         self.jobs = {}
+        self.job_lock = threading.RLock()
         self.engine.catalog()
 
     def grid(self, item, settings, count, adaptive, minimum):
@@ -50,16 +52,17 @@ class Workbench:
             raise ValueError('Automatic grids currently require a square source image.')
         if count not in range(2, 25) or not np.isfinite(minimum) or minimum <= 0:
             raise ValueError('Use a grid of 2–24 per side and a positive stopping limit in nm.')
-        if any(j['state'] == 'running' for j in self.jobs.values()):
-            raise ValueError('Cancel or finish the current grid first.')
         bounds = np.round(np.linspace(0, item['info']['width'], count+1)).astype(int)
         if np.diff(bounds).min() < 32:
             raise ValueError('Grid regions would be smaller than 32 pixels.')
         job = {'id': uuid.uuid4().hex, 'state': 'running', 'source': item['info'],
-               'settings': settings, 'grid': {'count': count, 'adaptive': adaptive, 'minimum_nm': minimum,
+               'settings': settings.copy(), 'initial_settings': settings.copy(), 'grid': {'count': count, 'adaptive': adaptive, 'minimum_nm': minimum,
                                              'refinement_policy': 'unresolved_or_multiple_patterns' if adaptive else 'uniform'},
                'regions': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False}
-        self.jobs = {job['id']: job}
+        with self.job_lock:
+            if any(j['state'] == 'running' and not j['cancel'] for j in self.jobs.values()):
+                raise ValueError('Cancel or finish the current grid first.')
+            self.jobs = {job['id']: job}
 
         def work():
             queue = [({'x': int(bounds[c]), 'y': int(bounds[r]), 'w': int(bounds[c+1]-bounds[c]), 'h': int(bounds[r+1]-bounds[r])}, 0, None) for r in range(count) for c in range(count)]
@@ -67,7 +70,7 @@ class Workbench:
                 while queue and not job['cancel']:
                     roi, depth, parent = queue.pop(0)
                     with self.lock:
-                        result = self.engine.analyze(item, roi, settings, images=False)
+                        result = self.engine.analyze(item, roi, settings, images=False, cache_candidates=True)
                     result.update({'id': str(len(job['regions'])), 'depth': depth, 'parent': parent, 'leaf': True})
                     halfx, halfy = roi['w']//2, roi['h']//2
                     can_split = min(halfx, halfy) >= 32 and min(halfx*item['info']['pixel_x_nm'], halfy*item['info']['pixel_y_nm']) >= minimum
@@ -90,9 +93,10 @@ class Workbench:
                                 queue.append(({'x': roi['x']+dx, 'y': roi['y']+dy, 'w': ww, 'h': hh}, depth+1, result['id']))
                     else:
                         result['stop_reason'] = ('Uniform grid.' if not adaptive else 'Further subdivision would fall below the stopping size or 32 pixels.' if needs_split and not can_split else 'Supported phase candidate with no substantial second periodic pattern.')
-                    job['regions'].append(result)
-                    job['processed'] += 1
-                    job['pending'] = len(queue)
+                    with self.job_lock:
+                        job['regions'].append(result)
+                        job['processed'] += 1
+                        job['pending'] = len(queue)
                 job['state'] = 'cancelled' if job['cancel'] else 'complete'
             except Exception as exc:
                 job['error'] = str(exc)
@@ -101,14 +105,53 @@ class Workbench:
         threading.Thread(target=work, daemon=True).start()
         return {'id': job['id']}
 
+    @staticmethod
+    def best_zones(region):
+        zones = {}
+        for phase in ('HCP', 'BCC'):
+            options = [m for m in region['models'] if m['phase'] == phase]
+            model = next((m for m in options if m['valid']), options[0] if options else None)
+            if model:
+                zones[phase] = {key: model[key] for key in ('phase', 'zone_3index', 'valid', 'score', 'coverage')}
+        return zones
+
     def status(self, job_id, full=False):
-        job = self.jobs.get(job_id)
-        if not job:
-            raise ValueError('This grid is no longer in memory.')
-        result = {k: v for k, v in job.items() if k not in ['cancel', 'regions']}
-        regions = list(job['regions'])
-        result['regions'] = regions if full else [{'id': r['id'], 'roi': r['roi'], 'label': r['classification']['label'], 'leaf': r['leaf'], 'depth': r['depth'], 'elapsed_ms': r['elapsed_ms']} for r in regions]
-        return result
+        with self.job_lock:
+            job = self.jobs.get(job_id)
+            if not job:
+                raise ValueError('This grid is no longer in memory.')
+            result = {k: v for k, v in job.items() if k not in ['cancel', 'regions']}
+            regions = list(job['regions'])
+            result['can_rescore'] = (job['state'] != 'running' and
+                                     job['settings']['scale_mode'] != 'fixed' and
+                                     all('_fit_cache' in r for r in regions))
+            result['regions'] = ([{k: v for k, v in r.items() if not k.startswith('_')} for r in regions] if full else
+                                 [{'id': r['id'], 'roi': r['roi'], 'label': r['classification']['label'],
+                                   'leaf': r['leaf'], 'depth': r['depth'], 'elapsed_ms': r['elapsed_ms'],
+                                   'best_zones': self.best_zones(r)} for r in regions])
+            return result
+
+    def rescore(self, job_id, strength):
+        strength = float(strength)
+        if not np.isfinite(strength) or not 0 <= strength <= .5:
+            raise ValueError('Scale penalty must be between 0 and 0.5.')
+        with self.job_lock:
+            job = self.jobs.get(job_id)
+            if not job:
+                raise ValueError('This grid is no longer in memory.')
+            if job['state'] == 'running':
+                raise ValueError('Finish or cancel the grid before adjusting its penalty.')
+            if job['settings']['scale_mode'] == 'fixed':
+                raise ValueError('Fixed comparison modes do not use a scale penalty.')
+            started = time.perf_counter()
+            # Build a replacement before publishing, so a failure cannot leave
+            # half the map at the new penalty. Parent/child boundaries stay fixed.
+            regions = [self.engine.rescore(region, strength) for region in job['regions']]
+            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength},
+                       rescore={'strength': strength, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
+                                'region_count': len(regions), 'reused_fits': True, 'boundaries_unchanged': True,
+                                'at': datetime.now(ZoneInfo('Australia/Brisbane')).isoformat()})
+            return self.status(job_id)
 
     def save(self, body):
         if body.get('job_id'):
@@ -168,7 +211,7 @@ def make_handler(app):
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
                 if url.path == '/api/config':
-                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True, 'phase_comparison': 'shared-evidence-v1', 'scale_penalty': True, 'bundled_demo': demo_data.ID})
+                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True, 'phase_comparison': 'shared-evidence-v1', 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'bundled_demo': demo_data.ID})
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
                 elif url.path == '/api/preview':
@@ -206,6 +249,8 @@ def make_handler(app):
                         item=app.engine.load(body['file_id'])
                         _, settings=app.engine.validate(item, body['roi'], body.get('settings', {}))
                     self.send(app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5))))
+                elif self.path == '/api/rescore-grid':
+                    self.send(app.rescore(body['job_id'], body['scale_penalty_strength']))
                 elif self.path == '/api/cancel':
                     app.jobs[body['job_id']]['cancel']=True
                     self.send({'ok':True})
