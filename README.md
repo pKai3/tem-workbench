@@ -96,7 +96,7 @@ Exports use the configured output directory, defaulting to `./output` beside the
 1. Select an image. Favourites provide a shorter image list.
 2. Drag the region box or resize its corner. Arrow keys move it by 10 pixels; Shift+arrow moves it by 50.
 3. Select a scale-fitting mode and inspect candidate rank, peak coverage, residuals, model dimensions and prediction-scale changes. Candidate tables are sorted by rank, highest first; geometry-only checks have a separate score group.
-4. Choose FFT overlays. The default shows the best HCP and best BCC fits; individual-fit controls also expose rejected candidates.
+4. Choose FFT overlays. The default shows the best HCP and best BCC fits; individual-fit controls also expose rejected candidates. Click the FFT to enlarge it with the same axes, peaks and overlays; close with Escape, the × button or a click outside.
 5. Run a grid and click cells to inspect their detailed FFTs. Save results before stopping the server.
 
 FFT brightness, background, white point and colour are display controls. The reset icon beside the white-point field restores the background and white-point defaults. These controls do not alter detected peaks or fitted coordinates.
