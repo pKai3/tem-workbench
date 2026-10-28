@@ -28,9 +28,16 @@
     "Passing-parent child checks use a limited candidate search and heuristic margin; smaller windows may lose information, and hidden finer structures can remain undetected."
   ],
   "extensions": {
-    "scale_fitting.py": "Automatic uniform HCP/BCC or independent HCP basal/c reciprocal scales. Same bounded zones, wider reflection band, scale bounds 0.85\u20131.15. Each fitted hypothesis receives an optional mean squared scale-deviation penalty before ranking and zone selection. Default strength 0.10 per 5% adjustment, zero disables; fitted positions are unchanged by the ranking cost. Distinct zone hypotheses can be retained for the same observed profile set.",
+    "scale_fitting.py": "Automatic uniform HCP/BCC or independent HCP basal/c reciprocal scales. Same bounded zones, wider reflection band, scale bounds 0.85–1.15. Each fitted hypothesis receives an optional mean squared scale-deviation penalty before ranking and zone selection. Default strength 0.10 per 5% adjustment, zero disables; fitted positions are unchanged by the ranking cost. Distinct zone hypotheses can be retained for the same observed profile set.",
     "phase_comparison.py": "shared-evidence-v1: reports matched/unsupported prediction counts and adds an exact-shared-profile ambiguity guard. Operates on the rank score supplied by fitting; does not adjust positional scores, simulate intensities, assume allowed reflections must be present, or automatically prefer the sparser model.",
     "peak_evidence.py": "local-maxima-v1: phase-independent weak-maxima pool, one-to-one prediction matching within a Hann-width radius, local-background contrast and rotated controls. Default weight 0.10 adds weak support and a bounded unsupported-prediction cost. Does not promote weak maxima to strong profiles, change original peak positions or supply separate-pattern evidence.",
     "adaptive_refinement.py": "passing-children-v1: optional four-child trial after a parent passes. Keep children for separate strong patterns or a resolved alternative beating the parent family on the same child by 0.08 (or passing when that family fails). Parent retained on interruption or absent useful evidence. Rescoring preserves boundaries and original refinement decisions."
+  },
+  "fft_processing": {
+    "defaults": {
+      "fft_window": "hann",
+      "remove_mean": true
+    },
+    "options": "Hann or rectangular crop; optional mean removal before windowing. Defaults retain the original transform. Approximate power peak widths are 1.44 or 0.886 FFT bins; detection, fitting and weak-peak tolerances use the selected window."
   }
 }

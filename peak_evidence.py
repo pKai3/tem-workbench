@@ -24,7 +24,7 @@ def prepare(spectrum, shape, sx, sy):
     count = np.bincount(radial_bin.ravel())
     radial_mean = np.bincount(radial_bin.ravel(), weights=log.ravel())/np.maximum(count, 1)
     residual = gaussian_filter(log-radial_mean[radial_bin], .65)
-    radius = max(.10, spectrum['hann_power_fwhm_nm_inv'])
+    radius = max(.10, core.peak_width(spectrum))
     mask = ((residual == maximum_filter(residual, size=3, mode='nearest')) &
             (residual >= 1.8) & (g >= 3) & (g <= 10) &
             ((yy > 1e-8) | ((abs(yy) < 1e-8) & (xx > 0))))

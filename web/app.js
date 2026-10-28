@@ -12,8 +12,46 @@ const phaseColors={HCP:colors.hcp_compatible,BCC:colors.bcc_compatible};
 let generation=0, busy=false, pending=false, timer=null, drag=null, sourceRequest=0, opened=false;
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error)}
 async function api(path,body){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,options);const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
-function readPreference(key, fallback){try{return JSON.parse(localStorage.getItem(key))??fallback}catch{return fallback}}
+function readPreference(key,fallback){
+ try{
+  const text=localStorage.getItem(key);if(text===null)return fallback;
+  try{return JSON.parse(text)??fallback}catch{return text} // Accept older plain-text display preferences.
+ }catch{return fallback}
+}
 function writePreference(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch{message('Browser storage is unavailable; these preferences will last until this page closes.',true)}}
+const BASIC_NUMBERS={"threshold":[0.15,0.7],"grid-count":[2,24,true],"grid-min":[0,null]};
+const BASIC_FLAGS=['adaptive','check-passing','show-grid','fft-hann','fft-mean'];
+const OVERLAY_MODES=['none','HCP','BCC','both','geometry','custom'];
+let preferredRegionNm=readPreference('tem-region-width-nm',20);
+if(typeof preferredRegionNm!=='number'||!Number.isFinite(preferredRegionNm)||preferredRegionNm<=0)preferredRegionNm=20;
+function validControlNumber(id,value){
+ const [min,max,integer]=BASIC_NUMBERS[id];
+ return typeof value==='number'&&Number.isFinite(value)&&value>=min&&(max===null||value<=max)&&(!integer||Number.isInteger(value))&&(id!=='grid-min'||value>0);
+}
+function restoreBasicControls(){
+ const saved=readPreference('tem-basic-settings',{});if(!saved||typeof saved!=='object')return;
+ for(const id of Object.keys(BASIC_NUMBERS))if(validControlNumber(id,saved[id]))$(id).value=saved[id];
+ for(const id of BASIC_FLAGS)if(typeof saved[id]==='boolean')$(id).checked=saved[id];
+ if(OVERLAY_MODES.includes(saved.overlay))$('overlay').value=saved.overlay;
+ if($('overlay').value==='custom')$('fit-controls').open=true;
+}
+function rememberBasicControls(){
+ const previous=readPreference('tem-basic-settings',{}),saved={};
+ for(const id of Object.keys(BASIC_NUMBERS)){
+  const value=$(id).value===''?NaN:Number($(id).value);
+  if(validControlNumber(id,value))saved[id]=value;
+  else if(previous&&validControlNumber(id,previous[id]))saved[id]=previous[id];
+ }
+ for(const id of BASIC_FLAGS)saved[id]=$(id).checked;
+ if(OVERLAY_MODES.includes($('overlay').value))saved.overlay=$('overlay').value;
+ writePreference('tem-basic-settings',saved);
+}
+function rememberRegionSize(){
+ if(!meta)return;
+ const width=roi.w*meta.pixel_x_nm;
+ if(width!==preferredRegionNm){preferredRegionNm=width;writePreference('tem-region-width-nm',width)}
+}
+function lastImageKey(){return 'tem-last-image:'+config.data_root}
 function favoriteKey(){return 'tem-favorites:'+config.data_root}
 function renderFavorites(){
  const select=$('favorites'), rows=config.files.filter(f=>favorites.has(f.id));
@@ -32,7 +70,7 @@ $('favorite-toggle').onclick=()=>{
  writePreference(favoriteKey(),[...favorites]);renderFavorites();
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){$('file').value=id;openFile()}};
-function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed'}}
+function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
@@ -47,13 +85,13 @@ function calibrationView(){
  $('calibration-note').textContent=`Model size ×${scale} for both structures · BCC a = ${Number($('bcc-a').value).toFixed(5)} nm. ${explanation} Measured FFT axes stay unchanged.`;
 }
 function restoreCalibration(){
- const saved=readPreference('tem-scale:'+meta.sha256_pixels,{});
+ const saved=readPreference('tem-scale-last',readPreference('tem-scale:'+meta.sha256_pixels,{}));
  const valid=saved&&['1','custom','auto_uniform','auto_hcp_ac'].includes(saved.mode)&&(!saved.mode.startsWith('auto_')||config.scale_modes?.includes(saved.mode))&&Number.isFinite(saved.scale)&&saved.scale>=.85&&saved.scale<=1.15;
  const defaultMode=config.scale_modes?.includes('auto_hcp_ac')?'auto_hcp_ac':'1';
  $('scenario').value=valid?saved.mode:defaultMode;$('model-scale').value=valid?saved.scale:1;
- calibrationView();
+ calibrationView();rememberCalibration();
 }
-function rememberCalibration(){writePreference('tem-scale:'+meta.sha256_pixels,{mode:$('scenario').value,scale:Number($('model-scale').value)})}
+function rememberCalibration(){writePreference('tem-scale-last',{mode:$('scenario').value,scale:Number($('model-scale').value)})}
 function requestBody(){return {file_id:fileId,roi:{...roi},settings:settings()}}
 function el(tag,attrs,text){const e=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e}
 // Convert labels only; numerical fits and saved three-index records stay unchanged.
@@ -77,11 +115,11 @@ function indexLabel(indices,brackets='[]'){
 function zoneLabel(model){return indexLabel(zoneIndices(model))}
 function planeLabel(model,hkl,sign=1){return indexLabel(planeIndices(model,hkl,sign),'()')}
 function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
-function updateBox(preserveHeight=false){if(!meta)return;const min=32,max=Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=preserveHeight?roi.h:roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`}
+function updateBox(preserveHeight=false){if(!meta)return;const min=32,max=Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=preserveHeight?roi.h:roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`;rememberRegionSize()}
 // Invalidate the old result immediately; never attach it to a newly moved region.
 function schedule(delay=120){generation++;pending=true;result=null;$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
 async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true;const version=generation,body=requestBody();try{const data=await api('analyze',body);if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}}catch(e){if(version===generation){message(e.message,true);$('phase-label').textContent='Analysis unavailable'}}finally{busy=false;if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20)}}
-async function openFile(){rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);const version=++sourceRequest;generation++;pending=false;meta=null;result=null;opened=false;renderFavorites();$('save-region').disabled=true;const id=$('file').value;message('Opening source image…');try{if(isGridRunning())await api('cancel',{job_id:jobId});const info=await api('open',{file_id:id});if(version!==sourceRequest)return;meta=info;fileId=id;opened=true;grid=null;jobId=null;drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=false;$('grid-status').textContent='Adaptive subdivides unresolved or ambiguous regions, two candidate structures, and substantial second patterns.';restoreCalibration();renderFavorites();updateGridSizeNote();$('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);$('source-image').setAttribute('width',info.width);$('source-image').setAttribute('height',info.height);$('source-image').setAttribute('href','/api/preview?id='+encodeURIComponent(id));$('metadata').textContent=`${info.width} × ${info.height} · ${info.pixel_x_nm.toFixed(5)} nm/px · ${info.device}${info.is_demo?' · bundled demo':''}`;const size=Math.min(info.width,info.height,Math.max(32,Math.round(20/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size};updateBox();schedule(0);message('Drag the box to inspect a region, or run an automatic grid.')}catch(e){if(version===sourceRequest)message(e.message,true)}}
+async function openFile(){rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);const version=++sourceRequest;generation++;pending=false;meta=null;result=null;opened=false;renderFavorites();$('save-region').disabled=true;const id=$('file').value;message('Opening source image…');try{if(isGridRunning())await api('cancel',{job_id:jobId});const info=await api('open',{file_id:id});if(version!==sourceRequest)return;meta=info;fileId=id;opened=true;writePreference(lastImageKey(),id);grid=null;jobId=null;drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=false;$('grid-status').textContent='Adaptive subdivides unresolved or ambiguous regions, two candidate structures, and substantial second patterns.';restoreCalibration();renderFavorites();updateGridSizeNote();$('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);$('source-image').setAttribute('width',info.width);$('source-image').setAttribute('height',info.height);$('source-image').setAttribute('href','/api/preview?id='+encodeURIComponent(id));$('metadata').textContent=`${info.width} × ${info.height} · ${info.pixel_x_nm.toFixed(5)} nm/px · ${info.device}${info.is_demo?' · bundled demo':''}`;const size=Math.min(info.width,info.height,Math.max(32,Math.round(preferredRegionNm/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size};updateBox();schedule(0);message('Drag the box to inspect a region, or run an automatic grid.')}catch(e){if(version===sourceRequest)message(e.message,true)}}
 function point(event){const pt=new DOMPoint(event.clientX,event.clientY);return pt.matrixTransform($('overview').getScreenCTM().inverse())}
 $('overview').addEventListener('pointerdown',e=>{if(!meta||e.button!==0)return;$('overview').focus({preventScroll:true});e.preventDefault();const cell=e.target.closest('.grid-cell');if(cell){const r=grid.regions.find(r=>r.id===cell.dataset.id);roi={...r.roi};updateBox(true);schedule(0);return}const p=point(e);const inside=p.x>=roi.x&&p.x<=roi.x+roi.w&&p.y>=roi.y&&p.y<=roi.y+roi.h;const resizing=e.target.id==='roi-handle';if(!inside&&!resizing){roi.x=p.x-roi.w/2;roi.y=p.y-roi.h/2;updateBox();schedule()}drag={mode:resizing?'resize':'move',x:p.x,y:p.y,roi:{...roi}};$('overview').setPointerCapture(e.pointerId);e.preventDefault()});
 $('overview').addEventListener('pointermove',e=>{if(!drag)return;const p=point(e);if(drag.mode==='resize'){roi.w=clamp(drag.roi.w+Math.max(p.x-drag.x,p.y-drag.y),32,Math.min(meta.width-drag.roi.x,meta.height-drag.roi.y))}else{roi.x=drag.roi.x+p.x-drag.x;roi.y=drag.roi.y+p.y-drag.y}updateBox();schedule(90)});
@@ -157,7 +195,7 @@ function screenReasons(m){
  if(m.score<=.20)reasons.push('rank ≤ 0.20');
  return reasons;
 }
-function screenLabel(m){return m.valid?'Pass':'Below: '+(screenReasons(m)[0]||'fit screen')}
+function screenLabel(m){return m.valid?'Pass':'Below\n'+(screenReasons(m)[0]||'fit screen').replace(' strong profiles',' strong').replace('peak coverage','coverage')}
 function bestModel(data,phase){return data.models.find(m=>m.phase===phase&&m.valid)??data.models.find(m=>m.phase===phase)}
 // Shared column definitions keep both candidate tables aligned.
 const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axis: HCP [u v t w], BCC [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","a / c\nnm","Candidate model lattice dimensions, assuming the stored image calibration"],["scale","Scale Δ\n%","100 × (reciprocal prediction multiplier − 1); HCP shows a* and c* separately. Model lattice dimensions change inversely."]];
@@ -280,7 +318,7 @@ const displayPreference=readPreference('tem-fft-display',{});
 if(['log','linear'].includes(displayPreference.curve))$('fft-curve').value=displayPreference.curve;
 if(Number.isFinite(displayPreference.background))$('contrast').value=clamp(displayPreference.background,0,90);
 if(Number.isFinite(displayPreference.white))$('fft-white').value=clamp(displayPreference.white,91,100);
-$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{localStorage.setItem('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=localStorage.getItem('tem-peak-marker');if(['crosshair','circle','off'].includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{localStorage.setItem('tem-palette',$('palette').value);document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');drawFFT()};const savedPalette=localStorage.getItem('tem-palette');if(['gray','magma'].includes(savedPalette))$('palette').value=savedPalette;document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');
+$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=readPreference('tem-peak-marker',null);if(['crosshair','circle','off'].includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');drawFFT()};const savedPalette=readPreference('tem-palette',null);if(['gray','magma'].includes(savedPalette))$('palette').value=savedPalette;document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');
 function updateGridSizeNote(){
  $('check-passing').disabled=!config?.check_passing||!$('adaptive').checked;
  const note=$('grid-size-note');if(!meta){note.textContent='';return}
@@ -378,19 +416,19 @@ function renderZoneLegend(found){
  const legend=$('zone-legend');legend.replaceChildren();legend.hidden=!found.HCP.size&&!found.BCC.size;
  if(legend.hidden)return;
  const hint=document.createElement('p');hint.className='hint';
- hint.textContent='Best candidate for each structure in every cell: blue HCP on the left, gold BCC on the right. Faded symbols are below the screen threshold. These are alternative fits, not proof that both phases are present.';
+ hint.textContent='Best candidate for each structure in every cell: blue HCP on the left, gold BCC on the right. Faded symbols are below the screen threshold. These are alternative fits, not proof that both phases are present. Ordered by image area, largest first.';
  legend.append(hint);
  for(const phase of ['HCP','BCC']){
   if(!found[phase].size)continue;
   const group=document.createElement('div');group.className='zone-legend-group';group.style.color=phaseColors[phase];
   const title=document.createElement('strong');title.textContent=phase;group.append(title);
-  for(const [key,entry] of found[phase]){
+  for(const [key,entry] of [...found[phase]].sort((a,b)=>b[1].area-a[1].area||b[1].count-a[1].count||a[0].localeCompare(b[0]))){
    const item=document.createElement('span');item.className='zone-key';
    const symbol=document.createElement('b');symbol.textContent=zoneSymbols[phase].get(key);
    const count=document.createElement('small');count.textContent='×'+entry.count;
    item.dataset.phase=phase;item.dataset.zone=key;
    item.append(symbol,document.createTextNode(zoneLabel(entry.model)),count);
-   item.title=`${entry.count} cells · ${entry.passing} passing fits`;group.append(item);
+   item.title=`${entry.count} cells · ${(100*entry.area/(grid.source.width*grid.source.height)).toFixed(1)}% image area · ${entry.passing} passing fits`;group.append(item);
   }
   legend.append(group);
  }
@@ -418,8 +456,8 @@ function drawGrid(){
     'aria-hidden':'true'},symbol);
    group.append(marker);
    // Only emitted markers contribute to the legend; cached symbols stay stable.
-   if(!shown[phase].has(key))shown[phase].set(key,{model,count:0,passing:0});
-   const entry=shown[phase].get(key);entry.count++;if(model.valid)entry.passing++;
+   if(!shown[phase].has(key))shown[phase].set(key,{model,count:0,passing:0,area:0});
+   const entry=shown[phase].get(key);entry.count++;entry.area+=r.roi.w*r.roi.h;if(model.valid)entry.passing++;
   }
  }
  renderZoneLegend(shown);renderGridSummary();updatePenaltyControls();
@@ -517,11 +555,12 @@ $('peak-evidence-weight').value=peakEvidenceWeight;
 $('peak-evidence-weight').onblur=()=>{$('peak-evidence-weight').value=peakEvidenceWeight};
 for(const id of ['scale-penalty','scale-penalty-slider','peak-evidence-weight'])$(id).oninput=()=>penaltyChanged($(id));
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=scalePenalty};
-for(const id of ['scenario','model-scale','threshold'])$(id).onchange=()=>{
+for(const id of ['scenario','model-scale','threshold','fft-hann','fft-mean'])$(id).onchange=()=>{
  if(!meta)return;
  if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
   restoreCalibration();message('Use a model size between 0.850 and 1.150.',true);return;
  }
+ if(id==='threshold'&&!validControlNumber('threshold',Number($('threshold').value))){message('Use a peak threshold between 0.15 and 0.70.',true);return}
  if(id==='scenario'||id==='model-scale'){calibrationView();rememberCalibration()}
  if(isGridRunning())api('cancel',{job_id:jobId}).catch(e=>message(e.message,true));
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);jobId=null;grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=false;$('cancel-grid').disabled=true;
@@ -532,5 +571,10 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing);$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['Demo','STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}if(config.default_file)$('file').value=config.default_file;if(!$('file').value&&config.files.length)$('file').value=config.files[0].id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;for(const sample of ['Demo','STA','ST']){const group=document.createElement('optgroup');group.label=sample;for(const f of config.files.filter(f=>f.sample===sample)){const option=document.createElement('option');option.value=f.id;option.textContent=f.name;group.append(option)}$('file').append(group)}const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+restoreBasicControls();
+for(const id of [...Object.keys(BASIC_NUMBERS),...BASIC_FLAGS,'overlay']){
+ $(id).addEventListener('input',rememberBasicControls);
+ $(id).addEventListener('change',rememberBasicControls);
+}
 start();

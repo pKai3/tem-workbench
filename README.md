@@ -94,6 +94,16 @@ With a data configuration, all results use `output_root`. In demo-only mode, res
 
 FFT brightness, background, white point and colour are display controls. The reset icon beside the white-point field restores the background and white-point defaults. These controls do not alter detected peaks or fitted coordinates.
 
+The **FFT processing** row above Scale fitting controls **Hann window**, **Remove mean**, and the peak threshold. Windowing and mean removal default to on, preserving the original computation. Turning Hann off uses the rectangular crop. These affect the FFT and detected peaks, so changing them recalculates the selected region and clears the previous grid. Saved analyses record both choices. Display controls remain separate.
+
+Window widths used for matching and weak-peak checks follow the selected window (approximately 1.44 FFT bins for Hann or 0.886 for a rectangular crop, with existing minimum tolerances). Windowing suppresses side lobes at the cost of a wider central peak; see the [SciPy spectral-analysis guide](https://docs.scipy.org/doc/scipy/tutorial/signal.html#spectral-analysis).
+
+### Remembered settings
+
+Basic preferences are saved automatically in browser local storage: the last image, region width, scale-fitting mode and custom scale, ranking weights, FFT processing and peak threshold, grid size and stopping limit, adaptive options, grid visibility, and FFT display/overlay controls. Analysis controls carry across images; a new image opens with a centred region at the remembered physical width, limited to the image size. Existing display preferences and favourites are retained.
+
+These preferences survive browser and app restarts at the same address in the same browser profile. Clearing site data resets them. This stores settings only: grids, analysis results and individual candidate-overlay selections are not restored. Use **Save region** or **Save grid results** for analysis output.
+
 ### Grid analysis
 
 The initial grid defaults to **20 × 20** cells. Adaptive mode subdivides unresolved or ambiguous cells, cells supporting two candidate structures, and cells with substantial secondary periodicity. Subdivision stops when the next children would fall below the selected physical size or the 32-pixel minimum. The default physical stopping limit is 5 nm; it is adjustable.
@@ -108,7 +118,7 @@ The colour legend and zone-symbol legends appear below the image. Blue symbols i
 
 ### Scale fitting and rescoring
 
-The reference lattice dimensions are HCP **a = 0.295 nm, c = 0.468 nm** and BCC **a = 0.330 nm**. The default is automatic BCC uniform / HCP independent a-and-c scaling. Automatic uniform scaling for both structures, stored scale and custom comparison scale are also available. Valid per-image choices are remembered; removed preset choices fall back to the automatic default.
+The reference lattice dimensions are HCP **a = 0.295 nm, c = 0.468 nm** and BCC **a = 0.330 nm**. The default is automatic BCC uniform / HCP independent a-and-c scaling. Automatic uniform scaling for both structures, stored scale and custom comparison scale are also available. The last-used mode carries across images and restarts; removed preset choices fall back to the automatic default.
 
 Automatic reciprocal-scale multipliers are bounded to **0.85–1.15**. Scaling moves predicted reflections; measured FFT axes remain tied to the stored image calibration. Model lattice dimensions change inversely with reciprocal scale. Zones without c-sensitive reflections cannot determine HCP c.
 
@@ -130,7 +140,7 @@ Caches are held in memory and disappear when the server stops. Saved JSON record
 Prediction-site evidence supplements the original strong-peak detector. It uses the existing FFT; neither image pixels nor the FFT coordinates are changed. The same procedure applies to both structures:
 
 1. Find additional local maxima without reference to any crystal template, using the radially background-subtracted, smoothed log-power field. Require enrichment of at least 1.8 and local contrast of at least 2 robust background spreads, measured in an annulus two to four search radii away.
-2. Exclude maxima within one search radius of an original strong profile and merge nearby weak maxima. Opposite spots count once. The search radius is the Hann power width, with a minimum of 0.10 nm⁻¹.
+2. Exclude maxima within one search radius of an original strong profile and merge nearby weak maxima. Opposite spots count once. The search radius is the selected window’s approximate power peak width, with a minimum of 0.10 nm⁻¹.
 3. Match remaining prediction positions one-to-one to weak maxima within that radius. Positions too near the 3–10 nm⁻¹ boundary or another prediction are left unchecked. Weak evidence is capped at half credit per maximum and decreases with positional error.
 4. Subtract average support at 11 rotated control patterns at the same radii from the weak-support bonus. This is a chance-match heuristic, not a statistical confidence test.
 

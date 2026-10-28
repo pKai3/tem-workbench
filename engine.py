@@ -124,6 +124,11 @@ class Engine:
         if mode not in scale_fitting.MODES:
             raise ValueError('Choose a supported scale fitting mode.')
         values['scale_mode'] = mode
+        window = settings.get('fft_window', 'hann')
+        remove_mean = settings.get('remove_mean', True)
+        if window not in ('hann', 'none') or not isinstance(remove_mean, bool):
+            raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
+        values.update(fft_window=window, remove_mean=remove_mean)
         return {'x': x, 'y': y, 'w': w, 'h': h}, values
 
     def analyze(self, item, roi, settings, images=True, cache_candidates=False):
@@ -132,14 +137,9 @@ class Engine:
         x, y, w, h = [roi[k] for k in ['x', 'y', 'w', 'h']]
         info = item['info']; sx, sy = info['pixel_x_nm'], info['pixel_y_nm']
         crop = item['array'][y:y+h, x:x+w]
-        if min(.5/sx, .5/sy) < 3:
-            z = (crop-crop.mean())*np.hanning(h)[:, None]*np.hanning(w)[None, :]
-            lg = np.log1p(abs(core.fftshift(core.fft2(z)))**2)
-            fx=core.fftshift(core.fftfreq(w, sx)); fy=-core.fftshift(core.fftfreq(h, sy))
-            s={'log': lg, 'extent': [float(fx[0]), float(fx[-1]), float(fy[-1]), float(fy[0])], 'peaks': [], 'df': max(1/(w*sx),1/(h*sy)), 'hann_power_fwhm_nm_inv': 1.44*max(1/(w*sx),1/(h*sy))}
-        else:
-            s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'])
-        tol = max(.10, s['hann_power_fwhm_nm_inv'])
+        s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'],
+                          window=settings['fft_window'], remove_mean=settings['remove_mean'])
+        tol = max(.10, core.peak_width(s))
         candidates = []
         if not info['can_index']:
             models = []
@@ -219,10 +219,14 @@ class Engine:
             classification['flags'].append('The stored sampling does not cover the full 3–10 nm⁻¹ fitting band; phase fitting is disabled.')
         # Report the actual window broadening rather than the original fixed 5 nm example.
         classification['flags'] = [f for f in classification['flags'] if not f.startswith('At ~5nm, Hann broadening')]
+        window = settings.get('fft_window', 'hann')
         if s['df'] > .15:
+            window_name = 'Hann' if window == 'hann' else 'rectangular'
             classification['flags'].append(
-                f"This {min(width_nm, height_nm):.2f} nm region has Hann broadening of about "
-                f"{s['hann_power_fwhm_nm_inv']:.3f} nm⁻¹; closely spaced candidate reflections may not be distinguishable.")
+                f"This {min(width_nm, height_nm):.2f} nm region has an approximate {window_name}-window peak width of "
+                f"{core.peak_width(s):.3f} nm⁻¹; closely spaced candidate reflections may not be distinguishable.")
+        if window == 'none':
+            classification['flags'].append('Hann window is off: crop-edge streaks and side lobes can produce extra detected peaks.')
         return classification
 
     def cached_models(self, result, settings):

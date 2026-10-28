@@ -12,9 +12,21 @@ from scipy.optimize import linear_sum_assignment
 def canonical(q):
  q=np.array(q,copy=True);flip=(q[:,1]<-1e-8)|((abs(q[:,1])<1e-8)&(q[:,0]<0));q[flip]*=-1;return q
 
-def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.):
- h,w=a.shape;z=a.astype('float32');z=(z-float(z.mean()))*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:];power=np.abs(fftshift(fft2(z,workers=2)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=10.5)[0];iy=np.where(abs(fy)<=10.5)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],.65);valid=(g>=3)&(g<=10)
- threshold=max(1.8,profile_fraction*float(np.max(wh[valid])));components,nc=label(valid&(wh>threshold));peaks=[]
+def peak_width(spectrum):
+ # Older saved/cached spectra used the Hann-specific name.
+ return spectrum.get('peak_width_nm_inv', spectrum.get('hann_power_fwhm_nm_inv', 1.44*spectrum['df']))
+
+def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True):
+ if window not in ('hann','none') or not isinstance(remove_mean,bool):
+  raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
+ h,w=a.shape
+ z=a.astype('float32')
+ if remove_mean:z=z-float(z.mean())
+ if window=='hann':z=z*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:]
+ power=np.abs(fftshift(fft2(z,workers=2)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=10.5)[0];iy=np.where(abs(fy)<=10.5)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],.65);valid=(g>=3)&(g<=10)
+ window_width=(1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
+ threshold=max(1.8,profile_fraction*float(np.max(wh[valid]))) if np.any(valid) else 1.8
+ components,nc=label(valid&(wh>threshold));peaks=[]
  for ci in range(1,nc+1):
   ys,xs=np.where(components==ci)
   if not len(ys):continue
@@ -30,13 +42,13 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.):
   q=canonical(np.array([[float(xx[y,x]+dx*df),float(yy[y,x]-dy*df)]]))[0].tolist();weights=np.maximum(wh[ys,xs]-threshold,0);area=int(len(ys));width=float(np.sqrt(max(area,1)/np.pi)*2*df)
   peaks.append({'profile_id':0,'qx':q[0],'qy':q[1],'g_nm_inv':float(np.linalg.norm(q)),'log_radial_enrichment':en,'weight':float(np.clip(en-2,1,6)),'profile_area_bins':area,'equivalent_profile_diameter_nm_inv':width})
  peaks.sort(key=lambda p:p['log_radial_enrichment'],reverse=True)
- # Weak fragments within one Hann response cannot be counted independently.
+ # Weak fragments within one window response cannot be counted independently.
  clean=[]
  for p in peaks:
-  if any(np.hypot(p['qx']-v['qx'],p['qy']-v['qy'])<max(.12,1.44*df) for v in clean):continue
+  if any(np.hypot(p['qx']-v['qx'],p['qy']-v['qy'])<max(.12,window_width) for v in clean):continue
   p['profile_id']=len(clean)+1;clean.append(p)
   if len(clean)>=70:break
- return {'log':lg,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'hann_power_fwhm_nm_inv':1.44*df,'profile_threshold':threshold}
+ return {'log':lg,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
 
 def rotation(q,ang):
  c=np.cos(ang);s=np.sin(ang);return q@np.array([[c,s],[-s,c]])

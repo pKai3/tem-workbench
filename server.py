@@ -257,7 +257,7 @@ def make_handler(app):
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
                 if url.path == '/api/config':
-                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True, 'phase_comparison': 'shared-evidence-v1', 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'bundled_demo': demo_data.ID})
+                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True, 'fft_processing': True, 'phase_comparison': 'shared-evidence-v1', 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'bundled_demo': demo_data.ID})
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
                 elif url.path == '/api/preview':
