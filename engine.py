@@ -11,6 +11,7 @@ from PIL import Image
 import analysis_core as core
 import scale_fitting
 import phase_comparison
+import demo_data
 
 ROOT = Path(__file__).resolve().parent
 
@@ -33,24 +34,19 @@ class Engine:
     def __init__(self, settings):
         self.settings = settings
         self.data_root = Path(settings['data_root']).expanduser().resolve()
-        reader = Path(settings['dm_reader']).expanduser().resolve()
-        if not reader.is_file():
-            raise ValueError('The configured DM4 reader is missing. Check .tem-paths.json.')
-        spec = importlib.util.spec_from_file_location('workbench_dm_reader', reader)
-        self.reader = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(self.reader)
+        self.reader = None  # Load the optional DM4 reader only for external DM4 files.
         self.templates = json.loads((ROOT/'templates.json').read_text())
         for t in self.templates:
             for key in ['q', 'hkl', 'g']:
                 t[key] = np.array(t[key])
         self.auto_templates = scale_fitting.prepare_templates(self.templates)
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'scale_fitting.py', 'phase_comparison.py', 'engine.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'scale_fitting.py', 'phase_comparison.py', 'demo_data.py', 'engine.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
 
     def catalog(self):
-        rows = []
+        rows = [demo_data.catalog_entry()]
         for sample in ['STA', 'ST']:
             for path in sorted((self.data_root/sample).rglob('*.dm4')):
                 relative = path.relative_to(self.data_root).as_posix()
@@ -61,12 +57,25 @@ class Engine:
     def load(self, file_id):
         if file_id in self.loaded:
             return self.loaded[file_id]
-        path = self.files.get(file_id)
-        if not path or not path.resolve().is_relative_to(self.data_root):
-            raise ValueError('Choose a DM4 from the configured TEM folder.')
-        with self.reader.fileDM(path, on_memory=False) as f:
-            meta = f.getMetadata(0)
-            array = np.asarray(f.getDataset(0)['data'])
+        is_demo = file_id == demo_data.ID
+        if is_demo:
+            array, meta = demo_data.load()
+            name = demo_data.NAME
+        else:
+            path = self.files.get(file_id)
+            if not path or not path.resolve().is_relative_to(self.data_root):
+                raise ValueError('Choose the bundled demo or a DM4 from the configured TEM folder.')
+            if self.reader is None:
+                reader = Path(self.settings.get('dm_reader', '')).expanduser().resolve()
+                if not reader.is_file():
+                    raise ValueError('Set dm_reader in .tem-paths.json to open external DM4 files. The bundled ST1221 demo works without it.')
+                spec = importlib.util.spec_from_file_location('workbench_dm_reader', reader)
+                self.reader = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(self.reader)
+            with self.reader.fileDM(path, on_memory=False) as f:
+                meta = f.getMetadata(0)
+                array = np.asarray(f.getDataset(0)['data'])
+            name = path.stem
         if array.ndim != 2 or not np.isfinite(array).all():
             raise ValueError('This first version supports finite, two-dimensional images.')
         factors = {'nm': 1., 'µm': 1000., 'μm': 1000., 'um': 1000., 'm': 1e9, 'A': .1, 'Å': .1}
@@ -83,7 +92,7 @@ class Engine:
             raise ValueError('Unequal x/y pixel calibration needs an additional fitting check; this first version supports square pixels.')
         sx, sy = scales
         h, w = array.shape
-        info = {'id': file_id, 'name': path.stem, 'width': w, 'height': h,
+        info = {'id': file_id, 'name': name, 'is_demo': is_demo, 'width': w, 'height': h,
                 'pixel_x_nm': sx, 'pixel_y_nm': sy, 'field_nm': [w*sx, h*sy],
                 'sha256_pixels': hashlib.sha256(array.tobytes()).hexdigest(),
                 'date': str(meta.get('DataBar Acquisition Date', '')),

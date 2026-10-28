@@ -7,16 +7,20 @@ and Pillow. No JavaScript dependencies or build step.
 
 ## Start
 
-On macOS, double-click **Install TEM Workbench App.command** to build a small native app in `~/Applications/TEM Workbench.app`. It uses this checkout and its existing configured Python environment. No research data or Python environment is bundled. Apple Command Line Tools are needed to compile the launcher.
+On macOS, double-click **Install TEM Workbench App.command** to build a small native app in `~/Applications/TEM Workbench.app`. It uses this checkout and its existing configured Python environment. ST1221 is bundled as a full-resolution, lossless demo; the Python environment is separate. Apple Command Line Tools are needed to compile the launcher.
 
 The app has **Open Workbench**, **View log**, and **Start/Stop** controls. Closing its window leaves it in the Dock; quitting stops only the server it started. Save grid results before stopping. It tries port 8767 first and uses the next available local port if another session is already running. Click **Open Workbench** to open the page; the launcher does not take over an existing browser tab.
 
 
-Copy `tem-paths.example.json` to `.tem-paths.json` and fill in the local paths.
-The configured Python environment needs `requirements.txt`; the configured
-`dm_reader` is the saved ncempy reader from the existing TEM analysis. That
-third-party reader remains outside this repository with its original GPLv3
-license. No research data are bundled.
+The Python environment needs `requirements.txt`. With no `.tem-paths.json`, the
+app opens the bundled **ST1221 demo**. It needs no TEM folder or external DM4
+reader. On a fresh checkout, create `.venv` and install the requirements there;
+the macOS launcher uses that environment when no local settings are present.
+
+To open your own images, copy `tem-paths.example.json` to `.tem-paths.json` and
+fill in the local paths. `dm_reader` is the saved ncempy reader from the existing
+TEM analysis, loaded only for external DM4 files. That third-party reader remains
+outside this repository with its original GPLv3 licence.
 
 Double-click **Launch TEM Workbench.command**, or use:
 
@@ -24,13 +28,16 @@ Double-click **Launch TEM Workbench.command**, or use:
 python server.py --open
 ```
 
+Use `python server.py --demo` to run only the bundled demo even when local data settings exist. Demo-only results go to the user application-data folder (`~/Library/Application Support/TEM Workbench/Demo/Analysis/tem_workbench` on macOS). With your usual configuration, demo and research results both use the configured TEM results folder.
+
+
 The server listens only on `127.0.0.1`, normally port 8767; the Dock app can choose the next free port. Stop a Terminal-launched server with Control-C.
 Use `--port 8768` if the default port is occupied. The launcher uses the Python
 environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
 
 ## Use
 
-- Choose a real-space DM4 from the STA or ST folders; it opens as soon as you select it. ST1221 opens by default.
+- Choose **Demo → ST1221 · bundled demo** from All images, or a real-space DM4 from the configured STA/ST folders. Selection opens the image immediately. The demo works with movable regions, scale fitting, saving and automatic grids; it preserves the original pixels and calibration. Existing local settings keep their default image.
 - Click **☆ Favourite open image** to add it to the separate **Favourites** dropdown. Choosing a favourite opens it immediately; click the star again to remove it. The shortlist is remembered in this browser for this TEM folder.
 - **Colour overlay intensity** adjusts the grid fill over the real-space reference image from 0–100%. It does not rerun analysis; grid outlines remain visible. Use **Show grid** to hide the grid entirely.
 - Move the box; resize its lower-right handle. Coordinates and width are editable.
@@ -96,8 +103,7 @@ other phases, arbitrary region masks, and persistent sessions are future work.
 
 `analysis_core.py` holds the original fixed-scale numerical functions; `scale_fitting.py` holds optional local scale fits. `phase_comparison.py` adds the conservative shared-evidence ambiguity guard. The engine fingerprint includes all three modules, the template library and the engine wrapper. `engine.py` handles source
 images and regions; `server.py` exposes local endpoints and grid jobs; `web/` is
-the interface. Filesystem paths live in the ignored `.tem-paths.json`. Results
-and microscope data belong in TEM, outside this repository. Changing analysis
+the interface. Filesystem paths live in the ignored `.tem-paths.json`. Research results and source microscope files belong in TEM, outside this repository. The expressly bundled ST1221 example is stored under `demo/`. Changing analysis
 settings clears the displayed grid so old colours cannot be mistaken for a new
 calculation. Grid jobs record their own settings.
 

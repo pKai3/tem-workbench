@@ -8,6 +8,8 @@ import argparse
 import errno
 import json
 import mimetypes
+import os
+import sys
 import secrets
 import threading
 import traceback
@@ -15,8 +17,21 @@ import uuid
 import webbrowser
 import numpy as np
 from engine import Engine
+import demo_data
 
 ROOT = Path(__file__).resolve().parent
+
+
+def demo_config():
+    """Fresh installations can run the demo without paths to research data."""
+    if sys.platform == 'darwin':
+        folder = Path.home() / 'Library/Application Support/TEM Workbench/Demo'
+    elif os.name == 'nt':
+        folder = Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData/Local')) / 'TEM Workbench/Demo'
+    else:
+        folder = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'tem-workbench/demo'
+    return {'data_root': str(folder), 'output_root': str(folder / 'Analysis/tem_workbench'),
+            'default_file': demo_data.ID}
 
 
 class Workbench:
@@ -153,7 +168,7 @@ def make_handler(app):
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
                 if url.path == '/api/config':
-                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True, 'phase_comparison': 'shared-evidence-v1', 'scale_penalty': True})
+                    self.send({'token': app.token, 'data_root': str(app.engine.data_root), 'output_root': app.config['output_root'], 'files': app.engine.catalog(), 'default_file': app.config.get('default_file'), 'engine': app.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'], 'fft_log16': True, 'phase_comparison': 'shared-evidence-v1', 'scale_penalty': True, 'bundled_demo': demo_data.ID})
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
                 elif url.path == '/api/preview':
@@ -208,14 +223,17 @@ def make_handler(app):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', type=Path, default=ROOT/'.tem-paths.json')
+    parser.add_argument('--config', type=Path, help='Optional settings for external TEM data')
+    parser.add_argument('--demo', action='store_true', help='Use only the bundled ST1221 demo, without local data settings')
     parser.add_argument('--port', type=int, default=8767)
     parser.add_argument('--open', action='store_true')
     parser.add_argument('--fallback-port', action='store_true', help='Use the next free local port if the default is occupied')
     args=parser.parse_args()
-    if not args.config.exists():
-        parser.error('Create .tem-paths.json using tem-paths.example.json.')
-    app=Workbench(json.loads(args.config.read_text()))
+    config_path = args.config or ROOT/'.tem-paths.json'
+    if args.config and not config_path.is_file() and not args.demo:
+        parser.error('The specified configuration file does not exist.')
+    config = demo_config() if args.demo or not config_path.is_file() else json.loads(config_path.read_text())
+    app=Workbench(config)
     ports = range(args.port, min(args.port+20, 65536)) if args.fallback_port and args.port else [args.port]
     server = None
     for port in ports:
