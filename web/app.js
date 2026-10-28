@@ -278,33 +278,21 @@ function renderGridSummary(){
  container.append(heading,summary,table,note);
 }
 function zoneKey(model){return zoneIndices(model).join(',')}
-function collectZones(){
- if(zoneJob!==grid?.id){zoneJob=grid?.id;zoneSymbols={HCP:new Map(),BCC:new Map()}}
- const found={HCP:new Map(),BCC:new Map()};
- for(const region of grid?.regions??[]){
-  if(!region.leaf)continue;
-  for(const phase of ['HCP','BCC']){
-   const model=region.best_zones?.[phase];if(!model)continue;
-   const key=zoneKey(model);
-   if(!found[phase].has(key))found[phase].set(key,{model,count:0,passing:0});
-   const entry=found[phase].get(key);entry.count++;if(model.valid)entry.passing++;
-  }
+function zoneSymbol(phase,key){
+ if(!zoneSymbols[phase].has(key)){
+  const index=zoneSymbols[phase].size;
+  zoneSymbols[phase].set(key,ZONE_SYMBOLS[index]??`◌${index+1}`);
  }
- for(const phase of ['HCP','BCC'])for(const key of [...found[phase].keys()].sort()){
-  if(!zoneSymbols[phase].has(key)){
-   const index=zoneSymbols[phase].size;
-   zoneSymbols[phase].set(key,ZONE_SYMBOLS[index]??`◌${index+1}`);
-  }
- }
- return found;
+ return zoneSymbols[phase].get(key);
 }
 function renderZoneLegend(found){
- const legend=$('zone-legend');legend.replaceChildren();legend.hidden=!grid||!$('show-zones').checked||$('show-zones').disabled;
+ const legend=$('zone-legend');legend.replaceChildren();legend.hidden=!found.HCP.size&&!found.BCC.size;
  if(legend.hidden)return;
  const hint=document.createElement('p');hint.className='hint';
  hint.textContent='Best candidate for each structure in every cell: blue HCP on the left, gold BCC on the right. Faded symbols are below the screen threshold. These are alternative fits, not proof that both phases are present.';
  legend.append(hint);
  for(const phase of ['HCP','BCC']){
+  if(!found[phase].size)continue;
   const group=document.createElement('div');group.className='zone-legend-group';group.style.color=phaseColors[phase];
   const title=document.createElement('strong');title.textContent=phase;group.append(title);
   for(const [key,entry] of found[phase]){
@@ -313,15 +301,16 @@ function renderZoneLegend(found){
    item.append(symbol,document.createTextNode(zoneLabel(entry.model)));
    item.title=`${entry.count} cells · ${entry.passing} passing fits`;group.append(item);
   }
-  if(!found[phase].size)group.append(document.createTextNode('No fitted zones'));
   legend.append(group);
  }
 }
 function drawGrid(){
- renderGridSummary();const found=collectZones();renderZoneLegend(found);
+ renderGridSummary();
+ if(zoneJob!==grid?.id){zoneJob=grid?.id;zoneSymbols={HCP:new Map(),BCC:new Map()}}
+ const shown={HCP:new Map(),BCC:new Map()};
  const group=$('grid-map');group.replaceChildren();
  const showGrid=$('show-grid').checked,showZones=$('show-zones').checked&&!$('show-zones').disabled;
- if(!grid||(!showGrid&&!showZones)){updatePenaltyControls();return}
+ if(!grid||(!showGrid&&!showZones)){renderZoneLegend(shown);updatePenaltyControls();return}
  for(const r of grid.regions){
   if(!r.leaf)continue;
   const e=el('rect',{x:r.roi.x,y:r.roi.y,width:r.roi.w,height:r.roi.h,fill:colors[r.label]||'#aaa',stroke:showGrid?(colors[r.label]||'#aaa'):'none',class:'grid-cell','data-id':r.id,'fill-opacity':showGrid?Number($('grid-opacity').value)/100:0});
@@ -330,15 +319,19 @@ function drawGrid(){
   e.append(el('title',{},descriptions.join(' · ')));group.append(e);
   if(showZones)for(const [i,phase]of ['HCP','BCC'].entries()){
    const model=r.best_zones?.[phase];if(!model)continue;
+   const key=zoneKey(model),symbol=zoneSymbol(phase,key);
    const size=Math.min(r.roi.w,r.roi.h)*.30;
    const marker=el('text',{x:r.roi.x+r.roi.w*(i ? .72 : .28),y:r.roi.y+r.roi.h*.5,
     fill:phaseColors[phase],'font-size':size,'stroke-width':size*.12,
     class:'zone-marker','fill-opacity':model.valid?1:.38,'stroke-opacity':model.valid ? .85 : .38,
-    'aria-hidden':'true'},zoneSymbols[phase].get(zoneKey(model)));
+    'aria-hidden':'true'},symbol);
    group.append(marker);
+   // Only emitted markers contribute to the legend; cached symbols stay stable.
+   if(!shown[phase].has(key))shown[phase].set(key,{model,count:0,passing:0});
+   const entry=shown[phase].get(key);entry.count++;if(model.valid)entry.passing++;
   }
  }
- updatePenaltyControls();
+ renderZoneLegend(shown);updatePenaltyControls();
 }
 $('show-zones').checked=readPreference('tem-grid-zones',true)!==false;
 $('show-zones').onchange=()=>{writePreference('tem-grid-zones',$('show-zones').checked);drawGrid()};
