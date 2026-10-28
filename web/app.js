@@ -309,12 +309,33 @@ function renderModels(data){
  $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank = position − scale cost + weak-peak bonus − missing-prediction cost. S+W separates strong profiles from weak maxima; peak coverage is the weighted share of original detected profiles matched by the candidate. Prediction-site evidence below shows the separate adjustments. Model dimensions assume the image calibration used; these scores are not phase probabilities.';
 }
 async function renderResult(data,version,body){if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Geometry check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.');renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const img=new Image();const precise=Boolean(data.images.fft_log16);img.src=data.images.fft_log16||data.images.fft;await img.decode();if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;fftRaw={canvas,pixels,precise,histogram,maximum,limits:data.images.fft_log_limits||[0,1]};drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
-function peakMarker(x,y,mode,attrs={}){
- const style={stroke:'#ffffff','stroke-width':1,fill:'none',...attrs};
- if(mode==='open-crosshair')return el('path',{...style,'stroke-linecap':'butt',d:`M${x-8},${y}h4M${x+4},${y}h4M${x},${y-8}v4M${x},${y+4}v4`});
- if(mode==='crosshair')return el('path',{...style,d:`M${x-4},${y}h8M${x},${y-4}v8`});
- return el('circle',{...style,cx:x,cy:y,r:3});
+const MARKER_SHAPES=['circle','diamond','square','triangle','crosshair','open-crosshair','off'];
+function markerShape(x,y,mode,attrs={},r=7){
+ const style={class:'spectrum-marker',stroke:'#ffffff','stroke-width':1,fill:'none',...attrs};
+ if(mode==='off')return null;
+ if(mode==='diamond')return el('path',{...style,d:`M${x} ${y-r}L${x+r} ${y}L${x} ${y+r}L${x-r} ${y}Z`});
+ if(mode==='square')return el('rect',{...style,x:x-r,y:y-r,width:2*r,height:2*r});
+ if(mode==='triangle'){const dx=r*Math.sqrt(3)/2;return el('path',{...style,d:`M${x} ${y-r}L${x+dx} ${y+r/2}L${x-dx} ${y+r/2}Z`})}
+ if(mode==='open-crosshair')return el('path',{...style,'stroke-linecap':'butt',d:`M${x-r},${y}h${r/2}M${x+r/2},${y}h${r/2}M${x},${y-r}v${r/2}M${x},${y+r/2}v${r/2}`});
+ if(mode==='crosshair')return el('path',{...style,d:`M${x-r},${y}h${2*r}M${x},${y-r}v${2*r}`});
+ return el('circle',{...style,cx:x,cy:y,r});
 }
+function peakMarker(x,y,mode,attrs={}){
+ return markerShape(x,y,mode,{'data-marker-kind':'measured',...attrs},mode==='open-crosshair'?8:mode==='circle'?3:4);
+}
+function weakMarker(x,y,id){
+ const choice=$('weak-marker').value,mode=choice==='follow'?$('peak-marker').value:choice;
+ const attrs={stroke:'#ffffff','stroke-width':1,opacity:.9,'data-marker-kind':'weak','data-weak-profile':id};
+ if(choice==='follow')attrs['stroke-dasharray']='2 2';
+ if(choice==='dot')return markerShape(x,y,'circle',{...attrs,fill:'#fff',stroke:'none'},1.5);
+ return peakMarker(x,y,mode,attrs);
+}
+function rememberMarkerStyles(){
+ const value={motion:$('marker-motion').value};
+ for(const id of ['hcp-marker','bcc-marker','primary-geometry-marker','secondary-geometry-marker','weak-marker'])value[id]=$(id).value;
+ writePreference('tem-marker-styles',value);
+}
+function applyMarkerAnimation(){const mode=$('marker-motion').value;document.body.classList.toggle('marker-pulse',mode==='pulse');document.body.classList.toggle('marker-bounce',mode==='bounce')}
 function drawFFT(){
  if(!result||!fftRaw)return;
  const {canvas,pixels,precise,histogram,maximum,limits}=fftRaw,ctx=canvas.getContext('2d');
@@ -336,6 +357,7 @@ if(overlay==='geometry'){for(const [key,color,name]of [['primary_lattice','#df92
 if(overlay==='custom'){
  for(const key of chosenFits){if(key.startsWith('phase-')){const m=result.models[Number(key.slice(6))];if(m)fits.push({model:m,color:m.phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}else{const m=result.periodicity[key];if(m)fits.push({model:m,color:key==='primary_lattice'?'#df92ef':'#64d6bb',geometry:true,name:key==='primary_lattice'?'Primary geometry':'Secondary geometry'})}}
 }
+const shownWeak=new Set();
 for(const f of fits){
  const matched=new Set(f.model.matches.map(m=>m.node_index));
  for(const [nodeIndex,node] of f.model.predicted_nodes.entries()){
@@ -346,10 +368,18 @@ for(const f of fits){
    const attrs={stroke:f.color,'stroke-width':1.2,fill:'none'};
    if(!f.model.valid)attrs['stroke-dasharray']='5 3';else if(weak)attrs['stroke-dasharray']='2 2';else if(!supported)attrs['stroke-dasharray']='1 3';
    if(evidence?.status==='unassessable')attrs.opacity=.35;
-   const shape=f.geometry?el('path',{...attrs,d:`M${x} ${y-7}L${x+7} ${y}L${x} ${y+7}L${x-7} ${y}Z`}):el('circle',{...attrs,cx:x,cy:y,r:7});
+   const styleId=f.geometry?(f.model===result.periodicity.primary_lattice?'primary-geometry-marker':'secondary-geometry-marker'):(f.model.phase==='HCP'?'hcp-marker':'bcc-marker');
+   const shape=markerShape(x,y,$(styleId).value,{...attrs,'data-marker-kind':'prediction'},7);
    const evidenceText=supported?'matched original detected profile':weak?`weak local maximum ${evidence.weak_id}, local contrast ${evidence.local_contrast.toFixed(1)}, offset ${evidence.offset_nm_inv.toFixed(3)} nm⁻¹`:evidence?.status==='unassessable'?'not reliably assessable':'no strong or qualifying weak maximum assigned';
-   shape.append(el('title',{},f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.model.phase} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${evidenceText}`));$('fft-overlay').append(shape);
-   if(weak&&marker!=='off'){const observations=evidence.observed_spots?(sign===1?evidence.observed_spots:[]):[[sign*evidence.observed_q[0],sign*evidence.observed_q[1]]];for(const q of observations){const [wx,wy]=qp(q[0],q[1]);const dot=marker==='open-crosshair'?peakMarker(wx,wy,marker,{opacity:.8,'data-weak-profile':evidence.weak_id}):el('circle',{cx:wx,cy:wy,r:1.5,fill:'#fff',opacity:.8,'data-weak-profile':evidence.weak_id});dot.append(el('title',{},evidenceText));$('fft-overlay').append(dot)}}
+   if(shape){shape.append(el('title',{},f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.model.phase} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${evidenceText}`));$('fft-overlay').append(shape)}
+   if(weak){
+    const observations=evidence.observed_spots?(sign===1?evidence.observed_spots:[]):[[sign*evidence.observed_q[0],sign*evidence.observed_q[1]]];
+    for(const q of observations){
+     const key=JSON.stringify([evidence.weak_id,...q]);if(shownWeak.has(key))continue;shownWeak.add(key);
+     const [wx,wy]=qp(q[0],q[1]),mark=weakMarker(wx,wy,evidence.weak_id);
+     if(mark){mark.append(el('title',{},'Weak detection · '+evidenceText));$('fft-overlay').append(mark)}
+    }
+   }
   }
  }
 }
@@ -387,7 +417,15 @@ const displayPreference=readPreference('tem-fft-display',{});
 if(['log','linear'].includes(displayPreference.curve))$('fft-curve').value=displayPreference.curve;
 if(Number.isFinite(displayPreference.background))$('contrast').value=clamp(displayPreference.background,0,90);
 if(Number.isFinite(displayPreference.white))$('fft-white').value=clamp(displayPreference.white,91,100);
-$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=readPreference('tem-peak-marker',null);if(['crosshair','open-crosshair','circle','off'].includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');drawFFT()};const savedPalette=readPreference('tem-palette',null);if(['gray','magma'].includes(savedPalette))$('palette').value=savedPalette;document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');
+const savedMarkerStyles=readPreference('tem-marker-styles',{});
+for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'circle','primary-geometry-marker':'diamond','secondary-geometry-marker':'diamond','weak-marker':'diamond'})){
+ const choices=id==='weak-marker'?[...MARKER_SHAPES,'follow','dot']:MARKER_SHAPES;
+ $(id).value=choices.includes(savedMarkerStyles?.[id])?savedMarkerStyles[id]:fallback;
+ $(id).onchange=()=>{rememberMarkerStyles();drawFFT()};
+}
+$('marker-motion').value=['off','pulse','bounce'].includes(savedMarkerStyles?.motion)?savedMarkerStyles.motion:savedMarkerStyles?.pulse===true?'bounce':'off';applyMarkerAnimation();
+$('marker-motion').onchange=()=>{rememberMarkerStyles();applyMarkerAnimation()};
+$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');drawFFT()};const savedPalette=readPreference('tem-palette',null);if(['gray','magma'].includes(savedPalette))$('palette').value=savedPalette;document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');
 function updateGridSizeNote(){
  $('check-passing').disabled=!config?.check_passing||!$('adaptive').checked;
  const note=$('grid-size-note');if(!meta||isDiffraction()){note.textContent='';return}
