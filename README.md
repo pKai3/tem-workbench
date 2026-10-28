@@ -68,6 +68,8 @@ scientific validation or exhaustive phase search is claimed for this interface.
 The 0.950 preset and nominal references reproduce only their corresponding
 scenario. The fixed-reference view uses the same 0.950 scale and provisional BCC a = 0.32452995 nm from diffraction 1222.
 
+The region explanation follows the phase-candidate result. The separate geometry-only pattern assessment remains visible in the individual-fit details; it uses different acceptance rules and does not measure phase proportions.
+
 Compatibility is not a confirmed phase identification. Support is weighted
 Fourier evidence, not phase fraction or probability. Images lacking the full
 3–10 nm⁻¹ sampling band are shown but phase fitting is disabled. This first
