@@ -138,6 +138,15 @@ class Engine:
         self.loaded[file_id] = item
         return item
 
+    def region_preview(self, item, roi):
+        if item['info'].get('image_kind') == 'diffraction':
+            raise ValueError('Region previews apply to real-space images.')
+        x, y, w, h = [int(roi[k]) for k in ('x', 'y', 'w', 'h')]
+        ih, iw = item['array'].shape
+        if min(w, h) < 1 or x < 0 or y < 0 or x+w > iw or y+h > ih:
+            raise ValueError('Preview region must lie within the source image.')
+        return png(item['array'][y:y+h, x:x+w], item['limits'], 384)
+
     def native_preview(self, item):
         """Lazy native-pixel display for the centre-placement magnifier."""
         if item['info'].get('image_kind') != 'diffraction':

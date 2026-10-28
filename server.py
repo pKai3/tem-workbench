@@ -5,6 +5,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 import argparse
+import base64
+from io import BytesIO
+from PIL import Image
 import errno
 import json
 import logging
@@ -52,7 +55,7 @@ class Workbench:
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
-                'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
+                'spectrum_exports': True, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -256,6 +259,59 @@ class Workbench:
             LOG.info('Grid %s reweighted: scale penalty %.3f; peak evidence %.3f', job_id[:8], strength, evidence_weight)
             return self.status(job_id)
 
+    def export_spectrum(self, body):
+        format_name = body.get('format')
+        frames = body.get('frames')
+        if format_name not in ('png', 'gif') or not isinstance(frames, list) or not frames or len(frames) > 24:
+            raise ValueError('Choose PNG or GIF with at most 24 frames.')
+        if format_name == 'png' and len(frames) != 1:
+            raise ValueError('PNG exports contain one frame.')
+        duration = int(body.get('duration_ms', 60))
+        if not 20 <= duration <= 1000:
+            raise ValueError('Frame duration is outside the supported range.')
+        with self.lock:
+            file_id = body['file_id']
+            if file_id in demo_data.DEMOS:
+                name = demo_data.DEMOS[file_id]['name']
+            elif file_id in self.engine.files:
+                name = self.engine.files[file_id].stem
+            else:
+                raise ValueError('The exported image is no longer in the current collection.')
+            output = Path(self.config['output_root']).expanduser().resolve()
+        images = []
+        total_pixels = 0
+        for frame in frames:
+            if not isinstance(frame, str) or not frame.startswith('data:image/png;base64,'):
+                raise ValueError('Expected PNG image frames.')
+            raw = base64.b64decode(frame.split(',', 1)[1], validate=True)
+            with Image.open(BytesIO(raw)) as image:
+                if image.format != 'PNG' or max(image.size) > 3200 or min(image.size) < 1:
+                    raise ValueError('Export frames must be PNG images up to 3200 pixels per side.')
+                total_pixels += image.width * image.height
+                if total_pixels > 200000000 or (images and image.size != images[0].size):
+                    raise ValueError('Export frames must have matching dimensions within the size limit.')
+                rgb = image.convert('RGB')
+                if format_name == 'gif':
+                    # Share one palette to keep the static image steady and store
+                    # indexed frames instead of retaining every full RGB frame.
+                    images.append(rgb.quantize(palette=images[0], dither=Image.Dither.NONE) if images
+                                  else rgb.quantize(colors=256, method=Image.Quantize.FASTOCTREE))
+                else:
+                    images.append(rgb)
+        safe_name = ''.join(c if c.isalnum() or c in '-_.' else '_' for c in name)[:120]
+        kind = 'diffraction' if body.get('image_kind') == 'diffraction' else 'fft'
+        stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
+        output.mkdir(parents=True, exist_ok=True)
+        target = output / f'{stamp}_{safe_name}_{kind}_{uuid.uuid4().hex[:6]}.{format_name}'
+        with target.open('xb') as destination:
+            if format_name == 'gif':
+                images[0].save(destination, format='GIF', save_all=True, append_images=images[1:],
+                               duration=duration, loop=0, disposal=2)
+            else:
+                images[0].save(destination, format='PNG')
+        LOG.info('Exported %s view: %s', kind, target)
+        return {'path': str(target)}
+
     def save(self, body):
         # A folder change must not redirect an export partway through analysis.
         with self.lock:
@@ -324,6 +380,13 @@ def make_handler(app):
                     self.send(app.project.read())
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
+                elif url.path == '/api/region-preview':
+                    with app.lock:
+                        item=app.engine.loaded.get(query['id'][0])
+                        if item is None:
+                            raise ValueError('That source is no longer open.')
+                        preview=app.engine.region_preview(item, {k:query[k][0] for k in ('x','y','w','h')})
+                    self.send(preview, 'image/png')
                 elif url.path == '/api/preview':
                     with app.lock:
                         item=app.engine.load(query['id'][0])
@@ -344,7 +407,8 @@ def make_handler(app):
                 if self.headers.get('X-TEM-Token') != app.token:
                     self.send({'error': 'Reload the workbench to reconnect.'}, status=403); return
                 size=int(self.headers.get('Content-Length', 0))
-                if size <= 0 or size > 65536 or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
+                limit = 256*1024*1024 if self.path == '/api/export-spectrum' else 65536
+                if size <= 0 or size > limit or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                     raise ValueError('Expected a small JSON request.')
                 body=json.loads(self.rfile.read(size))
                 if self.path == '/api/browse-folders':
@@ -386,6 +450,8 @@ def make_handler(app):
                     app.jobs[body['job_id']]['cancel']=True
                     LOG.info('Grid %s cancellation requested', body['job_id'][:8])
                     self.send({'ok':True})
+                elif self.path == '/api/export-spectrum':
+                    self.send(app.export_spectrum(body))
                 elif self.path == '/api/save':
                     self.send(app.save(body))
                 else:
