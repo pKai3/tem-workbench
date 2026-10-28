@@ -159,13 +159,52 @@ function screenReasons(m){
 }
 function screenLabel(m){return m.valid?'Pass':'Below: '+(screenReasons(m)[0]||'fit screen')}
 function bestModel(data,phase){return data.models.find(m=>m.phase===phase&&m.valid)??data.models.find(m=>m.phase===phase)}
+// Shared column definitions keep both candidate tables aligned.
+const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axis: HCP [u v t w], BCC [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","a / c\nnm","Candidate model lattice dimensions, assuming the stored image calibration"],["scale","Scale Δ\n%","100 × (reciprocal prediction multiplier − 1); HCP shows a* and c* separately. Model lattice dimensions change inversely."]];
+function renderFitHeader(head, showToggle=false){
+ const row=document.createElement('tr');
+ const columns=showToggle?[['show','Show','Toggle this overlay'],...FIT_COLUMNS]:FIT_COLUMNS;
+ for(const [key,label,help]of columns){
+  const cell=document.createElement('th');cell.scope='col';cell.className='col-'+key;cell.dataset.column=key;
+  cell.textContent=label;cell.title=help;
+  if(key==='rank')cell.setAttribute('aria-sort','descending');
+  row.append(cell);
+ }
+ head.replaceChildren(row);
+}
+function appendFitCells(row,m,{name,geometry=false,rotation=false}){
+ const values={
+  candidate:name+(m&&rotation?`\n${m.rotation_deg.toFixed(1)}°`:''),
+  rank:m?m.score.toFixed(3):'—',
+  screen:m?(geometry?(m.valid?'Pass':'Below'):screenLabel(m)):'No fit',
+  peaks:m?(geometry?m.matched_profile_count+' peaks':predictionCounts(m)):'—',
+  coverage:m?`${(100*m.coverage).toFixed(0)}%`:'—',
+  rms:m?m.rms_nm_inv.toFixed(3):'—',
+  position:m&&!geometry?(m.position_score??m.score).toFixed(3):'—',
+  cost:m&&!geometry?(m.scale_penalty??0).toFixed(3):'—',
+  dimensions:m&&!geometry?fittedDimensions(m).replace(' / ','\n'):'—',
+  scale:m&&!geometry?scalePercentages(m).replace(' / ','\n'):'—'
+ };
+ for(const [key,,help]of FIT_COLUMNS){
+  const cell=document.createElement('td');cell.className='col-'+key;cell.dataset.column=key;
+  cell.textContent=values[key];cell.title=help;
+  if(m){
+   if(key==='candidate')cell.className+=' '+(geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc');
+   if(key==='rank')cell.title=geometry?'Geometry-only score':rankDescription(m);
+   if(key==='peaks')cell.title=geometry?'Profiles matched by a freely fitted reciprocal grid':evidenceDescription(m);
+   if(key==='screen')cell.title=m.valid?'Passes the screen':geometry?'Below threshold':screenReasons(m).join('; ');
+   if(!geometry&&(key==='dimensions'||key==='scale'))cell.title=scaleDetails(m)+(key==='scale'?' · '+help:'');
+  }
+  row.append(cell);
+ }
+}
+renderFitHeader($('model-head'));
 function renderModels(data){
  $('models').replaceChildren();
  const ranked=['HCP','BCC'].map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>compareRank(a.m,b.m));
- for(const {phase,m} of ranked){
+ for(const {phase,m}of ranked){
   const row=document.createElement('tr');
-  const values=m?[`${phase} ${zoneLabel(m)}`,predictionCounts(m),`${(100*m.coverage).toFixed(0)}%`,(m.position_score??m.score).toFixed(3),(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),fittedDimensions(m).replace(' / ','\n'),scalePercentages(m).replace(' / ','\n'),m.rms_nm_inv.toFixed(3),screenLabel(m)]:[phase,'—','—','—','—','—','—','—','—','No fit'];
-  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(m&&(i===6||i===7))td.title=scaleDetails(m)+(i===7?' · change from the reference prediction coordinates: 100 × (multiplier − 1). Model lattice dimensions change inversely.':'');if(m&&i===1)td.title=evidenceDescription(m);if(m&&i===2)td.title=COVERAGE_HELP;if(m&&i===5)td.title=rankDescription(m);if(m&&i===9)td.title=screenReasons(m).join('; ')||'Passes the screen';row.append(td)});
+  appendFitCells(row,m,{name:m?`${phase} ${zoneLabel(m)}`:phase});
   $('models').append(row);
  }
  $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank = position − scale cost + weak-peak bonus − missing-prediction cost. S+W separates strong profiles from weak maxima; peak coverage is the weighted share of original detected profiles matched by the candidate. Prediction-site evidence below shows the separate adjustments. Model dimensions assume the stored calibration; these scores are not phase probabilities.';
@@ -212,25 +251,22 @@ for(const f of fits){
 }
 function renderFitChoices(data){
  chosenFits=new Set();$('fit-list').replaceChildren();
- const table=document.createElement('table');table.className='fit-table';
- const head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
- const headings=[['Show','Toggle this overlay'],['Candidate\nZone axis','Candidate structure and zone axis; rotation is shown below'],['Peaks\nS+W / all','Strong profiles + additional weak maxima / prediction positions; weak maxima do not count toward the screen'],['Peak\ncoverage',COVERAGE_HELP],['RMS\nnm⁻¹','Root-mean-square positional residual'],['a / c\nnm','Fitted model lattice parameters'],['Scale Δ\n%','Reciprocal prediction scale changes; HCP shows a* and c*'],['Scale cost','Scale penalty subtracted from the position score'],['Rank ↓','Position − scale + weak-peak bonus − missing-prediction cost; highest first'],['Screen','Candidate acceptance screen; hover for rejection reasons']];
- for(const [title,help]of headings){const th=document.createElement('th');th.scope='col';th.textContent=title;th.title=help;if(title==='Rank ↓')th.setAttribute('aria-sort','descending');header.append(th)}
- head.append(header);table.append(head,body);$('fit-list').append(table);
+ const table=document.createElement('table');table.className='model-table fit-table';
+ const head=document.createElement('thead'),body=document.createElement('tbody');
+ renderFitHeader(head,true);table.append(head,body);$('fit-list').append(table);
  const add=(key,m,name,geometry=false,target=body)=>{
   const row=document.createElement('tr'),toggle=document.createElement('td'),box=document.createElement('input');
+  toggle.className='col-show';toggle.dataset.column='show';
   box.type='checkbox';box.dataset.fit=key;box.setAttribute('aria-label','Overlay '+name);
-  box.addEventListener('change',()=>{box.checked?chosenFits.add(key):chosenFits.delete(key);$('overlay').value='custom';drawFFT()});toggle.append(box);row.append(toggle);
-  const why=geometry?[]:screenReasons(m);
-  const values=[name+(geometry?'':`\n${m.rotation_deg.toFixed(1)}°`),geometry?m.matched_profile_count+' peaks':predictionCounts(m),`${(m.coverage*100).toFixed(0)}%`,m.rms_nm_inv.toFixed(3),geometry?'—':fittedDimensions(m).replace(' / ','\n'),geometry?'—':scalePercentages(m).replace(' / ','\n'),geometry?'—':(m.scale_penalty??0).toFixed(3),m.score.toFixed(3),geometry?(m.valid?'Pass':'Below'):screenLabel(m)];
-  values.forEach((value,i)=>{const td=document.createElement('td');td.textContent=value;if(i===0)td.className=geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc';if(!geometry&&(i===4||i===5))td.title=scaleDetails(m);if(!geometry&&i===1)td.title=evidenceDescription(m);if(i===2)td.title=COVERAGE_HELP;if(i===7)td.title=geometry?'Geometry-only score':rankDescription(m);if(i===8)td.title=m.valid?'Passes the screen':'Below threshold'+(why.length?' · '+why.join('; '):'');row.append(td)});
-  target.append(row);
+  box.addEventListener('change',()=>{box.checked?chosenFits.add(key):chosenFits.delete(key);$('overlay').value='custom';drawFFT()});
+  toggle.append(box);row.append(toggle);
+  appendFitCells(row,m,{name,geometry,rotation:!geometry});target.append(row);
  };
  data.models.map((m,i)=>({m,i})).sort((a,b)=>compareRank(a.m,b.m)).forEach(({m,i})=>add('phase-'+i,m,`${m.phase} ${zoneLabel(m)}`));
  const geometryEntries=[['primary_lattice','Primary geometry'],['secondary_lattice','Secondary geometry']].filter(([key])=>data.periodicity[key]);
  if(geometryEntries.length){
   const geometryBody=document.createElement('tbody'),heading=document.createElement('tr'),cell=document.createElement('td');
-  heading.className='fit-section';cell.colSpan=10;cell.textContent='Geometry-only checks · separate score';heading.append(cell);geometryBody.append(heading);table.append(geometryBody);
+  heading.className='fit-section';cell.colSpan=FIT_COLUMNS.length+1;cell.textContent='Geometry-only checks · separate score';heading.append(cell);geometryBody.append(heading);table.append(geometryBody);
   geometryEntries.sort(([a],[b])=>compareRank(data.periodicity[a],data.periodicity[b])).forEach(([key,name])=>add(key,data.periodicity[key],name,true,geometryBody));
  }
  if(!body.children.length&&!geometryEntries.length)$('fit-list').textContent='No retained candidate fits in this region.';
@@ -262,8 +298,43 @@ function updateGridSizeNote(){
  }
 }
 for(const id of ['grid-count','grid-min','adaptive','check-passing'])$(id).addEventListener('input',updateGridSizeNote);
+function renderZoneBreakdown(phase,totalArea,open){
+ const found=new Map();
+ for(const region of grid.regions){
+  const model=region.leaf&&region.best_zones?.[phase];if(!model)continue;
+  const key=zoneKey(model);
+  if(!found.has(key))found.set(key,{key,model,count:0,passing:0,area:0});
+  const entry=found.get(key);entry.count++;if(model.valid)entry.passing++;entry.area+=region.roi.w*region.roi.h;
+ }
+ const entries=[...found.values()].sort((a,b)=>b.area-a.area||a.key.localeCompare(b.key));
+ const details=document.createElement('details'),summary=document.createElement('summary');
+ details.className='zone-breakdown';details.dataset.phase=phase;details.open=open;
+ const count=entries.reduce((sum,e)=>sum+e.count,0),passing=entries.reduce((sum,e)=>sum+e.passing,0);
+ summary.textContent=`${phase} zone axes · ${count} candidate fits · ${passing} pass`;summary.style.color=phaseColors[phase];details.append(summary);
+ const note=document.createElement('p');note.className='hint';
+ note.textContent='Best fit for this structure in each current map region, including below-threshold alternatives. Regions may appear in both HCP and BCC lists; image area here is not a phase fraction.';
+ details.append(note);
+ const table=document.createElement('table'),head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
+ for(const label of ['Zone axis','Regions','Pass','Below','Image area']){
+  const cell=document.createElement('th');cell.scope='col';cell.textContent=label;header.append(cell);
+ }
+ head.append(header);table.append(head,body);details.append(table);
+ for(const entry of entries){
+  const row=document.createElement('tr'),symbol=zoneSymbols[phase].get(entry.key);
+  row.dataset.zone=entry.key;
+  const values=[(symbol?symbol+' ':'')+zoneLabel(entry.model),entry.count,entry.passing,entry.count-entry.passing,`${(100*entry.area/totalArea).toFixed(1)}%`];
+  for(const [index,value]of values.entries()){
+   const cell=document.createElement('td');cell.textContent=value;if(index===0)cell.style.color=phaseColors[phase];row.append(cell);
+  }
+  body.append(row);
+ }
+ if(!entries.length)note.textContent='No candidate fits for this structure in the current map.';
+ return details;
+}
 function renderGridSummary(){
- const container=$('grid-summary');container.replaceChildren();container.hidden=!grid;
+ const container=$('grid-summary');
+ const expanded=new Set([...container.querySelectorAll('.zone-breakdown')].filter(e=>e.open).map(e=>e.dataset.phase));
+ container.replaceChildren();container.hidden=!grid;
  if(!grid)return;
  const totalArea=grid.source.width*grid.source.height,counts={};
  for(const key of Object.keys(labels))counts[key]={count:0,area:0};
@@ -288,6 +359,7 @@ function renderGridSummary(){
  if(grid.rescore&&grid.grid.adaptive)note.textContent+=` Labels have been reweighted within the existing cells. Subdivision decisions and stopping reasons remain from the original run. Run a new grid to change its boundaries.`;
  if(grid.lookahead?.checked)note.textContent+=` Child checks: ${grid.lookahead.refined} parents subdivided, ${grid.lookahead.retained} retained. Trial-only children are excluded from map totals.`;
  container.append(heading,summary,table,note);
+ for(const phase of ['HCP','BCC'])container.append(renderZoneBreakdown(phase,totalArea,expanded.has(phase)));
 }
 function zoneKey(model){return zoneIndices(model).join(',')}
 function zoneSymbol(phase,key){
@@ -296,6 +368,11 @@ function zoneSymbol(phase,key){
   zoneSymbols[phase].set(key,ZONE_SYMBOLS[index]??`◌${index+1}`);
  }
  return zoneSymbols[phase].get(key);
+}
+function renderClassLegend(){
+ const legend=$('class-legend'),shown=new Set(grid?.regions.filter(r=>r.leaf).map(r=>r.label)??[]);
+ legend.hidden=!$('show-grid').checked||!shown.size;
+ for(const item of legend.children)item.hidden=!shown.has(item.dataset.label);
 }
 function renderZoneLegend(found){
  const legend=$('zone-legend');legend.replaceChildren();legend.hidden=!found.HCP.size&&!found.BCC.size;
@@ -310,19 +387,21 @@ function renderZoneLegend(found){
   for(const [key,entry] of found[phase]){
    const item=document.createElement('span');item.className='zone-key';
    const symbol=document.createElement('b');symbol.textContent=zoneSymbols[phase].get(key);
-   item.append(symbol,document.createTextNode(zoneLabel(entry.model)));
+   const count=document.createElement('small');count.textContent='×'+entry.count;
+   item.dataset.phase=phase;item.dataset.zone=key;
+   item.append(symbol,document.createTextNode(zoneLabel(entry.model)),count);
    item.title=`${entry.count} cells · ${entry.passing} passing fits`;group.append(item);
   }
   legend.append(group);
  }
 }
 function drawGrid(){
- renderGridSummary();
+ renderClassLegend();
  if(zoneJob!==grid?.id){zoneJob=grid?.id;zoneSymbols={HCP:new Map(),BCC:new Map()}}
  const shown={HCP:new Map(),BCC:new Map()};
  const group=$('grid-map');group.replaceChildren();
  const showGrid=$('show-grid').checked,showZones=$('show-zones').checked&&!$('show-zones').disabled;
- if(!grid||(!showGrid&&!showZones)){renderZoneLegend(shown);updatePenaltyControls();return}
+ if(!grid||(!showGrid&&!showZones)){renderZoneLegend(shown);renderGridSummary();updatePenaltyControls();return}
  for(const r of grid.regions){
   if(!r.leaf)continue;
   const e=el('rect',{x:r.roi.x,y:r.roi.y,width:r.roi.w,height:r.roi.h,fill:colors[r.label]||'#aaa',stroke:showGrid?(colors[r.label]||'#aaa'):'none',class:'grid-cell','data-id':r.id,'fill-opacity':showGrid?Number($('grid-opacity').value)/100:0});
@@ -335,7 +414,7 @@ function drawGrid(){
    const size=Math.min(r.roi.w,r.roi.h)*.30;
    const marker=el('text',{x:r.roi.x+r.roi.w*(i ? .72 : .28),y:r.roi.y+r.roi.h*.5,
     fill:phaseColors[phase],'font-size':size,'stroke-width':size*.12,
-    class:'zone-marker','fill-opacity':model.valid?1:.38,'stroke-opacity':model.valid ? .85 : .38,
+    class:'zone-marker','data-phase':phase,'data-zone-key':key,'fill-opacity':model.valid?1:.38,'stroke-opacity':model.valid ? .85 : .38,
     'aria-hidden':'true'},symbol);
    group.append(marker);
    // Only emitted markers contribute to the legend; cached symbols stay stable.
@@ -343,7 +422,7 @@ function drawGrid(){
    const entry=shown[phase].get(key);entry.count++;if(model.valid)entry.passing++;
   }
  }
- renderZoneLegend(shown);updatePenaltyControls();
+ renderZoneLegend(shown);renderGridSummary();updatePenaltyControls();
 }
 $('show-zones').checked=readPreference('tem-grid-zones',true)!==false;
 $('show-zones').onchange=()=>{writePreference('tem-grid-zones',$('show-zones').checked);drawGrid()};
