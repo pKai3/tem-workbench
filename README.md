@@ -30,9 +30,9 @@ environment configured in `.tem-paths.json`, or `TEM_WORKBENCH_PYTHON` if set.
   Arrow keys nudge one pixel; Shift moves ten. The FFT and candidate results update
   as computation completes. The timing line records the coordinates of the result
   being shown; while dragging, these can briefly trail the moving box.
-- Change **Background** to adjust FFT contrast without changing detected peaks.
+- Change **Background** to adjust FFT contrast without changing detected peaks. Choose colour (magma) or greyscale.
   Measured profiles and either candidate's matched predicted positions can be
-  overlaid. Opposite spots represent one independent profile.
+  overlaid. Individual fit controls also expose every retained below-threshold candidate and both geometry-only grid fits. Dashed rings flag rejected candidates; displaying a fit does not accept it. Opposite spots represent one independent profile.
 - **Run grid** starts with a uniform grid. With **Adaptive** checked, regions with
   a substantial second independently supported periodic pattern split into four.
   Subdivision stops when no such second pattern is supported, or another split
