@@ -281,6 +281,11 @@ class Engine:
                 'diffraction intensities depend on excitation and thickness') for f in classification['flags']]
             classification['flags'].append('Direct detector spots, without an FFT. Verify the beam centre and reciprocal calibration; fitting uses the 3–10 nm⁻¹ band.')
             classification['flags'].append(f"Matching radius {max(.10, core.peak_width(s)):.3f} nm⁻¹ uses the estimated spot width with a 0.10 nm⁻¹ floor. Opposite spots are grouped once; only observed spots are marked.")
+            translation = s.get('center_refinement', {})
+            if translation.get('enabled') and not translation.get('applied'):
+                classification['flags'].append('Translation refinement: '+translation['reason'])
+            elif translation.get('near_limit'):
+                classification['flags'].append('The fitted centre is near the translation limit; verify its position.')
             if not s['full_band_on_detector']:
                 classification['flags'].append('The detector does not cover the entire fitting band. Predictions outside the detector or inside exclusions are unchecked.')
             if s['mask_count']:

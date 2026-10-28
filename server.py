@@ -52,7 +52,7 @@ class Workbench:
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
-                'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'phase_comparison': 'shared-evidence-v1',
+                'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -368,7 +368,9 @@ def make_handler(app):
                         app.last_preview_log = time.monotonic()
                         if result.get('image_kind') == 'diffraction':
                             d=result['settings']['diffraction']
-                            LOG.info('Diffraction %s: centre %.1f,%.1f px; %s profiles; %s exclusions; %s; %.0f ms', item['info']['name'], d['center_x'], d['center_y'], len(result['spectrum']['peaks']), len(d['masks']), result['classification']['label'], result['elapsed_ms'])
+                            cx, cy = result['spectrum']['beam_center_px']
+                            shift = result['spectrum']['center_refinement']
+                            LOG.info('Diffraction %s: centre %.2f,%.2f px; translation %s (%+.2f,%+.2f px); %s profiles; %s exclusions; %s; %.0f ms', item['info']['name'], cx, cy, shift['status'], *shift['shift_px'], len(result['spectrum']['peaks']), len(d['masks']), result['classification']['label'], result['elapsed_ms'])
                         else:
                             LOG.info('Region %s at %s,%s (%s px): %s; %.0f ms', item['info']['name'], result['roi']['x'], result['roi']['y'], result['roi']['w'], result['classification']['label'], result['elapsed_ms'])
                     self.send(result)

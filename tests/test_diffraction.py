@@ -124,6 +124,53 @@ class DiffractionChecks(unittest.TestCase):
         settings['masks'].pop();_,context=diffraction.spectrum(array,settings)
         self.assertTrue(context['visible'](np.array([q]))[0])
 
+    def test_translation_recovers_misplaced_origin_without_moving_anchor_or_pixels(self):
+        array, info, observed = pattern()
+        original = array.copy();settings = diffraction.defaults(info)
+        settings['center_x'] += 12.;settings['center_y'] -= 9.
+        request = dict(settings);engine = Engine({})
+        result = engine.analyze(dict(array=array, info=info, limits=[99.,351.]),
+                                dict(x=0,y=0,w=768,h=768),
+                                dict(scale_mode='auto_hcp_ac', diffraction=settings), images=False)
+        spectrum = result['spectrum'];translation = spectrum['center_refinement']
+        self.assertTrue(translation['applied'])
+        self.assertEqual(translation['pair_count'], 4)
+        self.assertLess(np.linalg.norm(np.array(translation['shift_px'])-[-12.,9.]), .05)
+        self.assertLess(translation['rms_after_px'], translation['rms_before_px']/100)
+        measured = np.array([q for p in spectrum['peaks'] for q in p['observed_spots']])
+        self.assertLess(np.linalg.norm(observed[:,None]-measured[None],axis=2).min(axis=1).max(), .02)
+        self.assertEqual(settings, request)
+        self.assertEqual(result['settings']['diffraction'], request)
+        np.testing.assert_array_equal(array, original)
+        json.dumps(result, allow_nan=False)
+
+    def test_translation_limits_disabled_mode_and_ambiguous_pairs(self):
+        _, info, _ = pattern();settings = diffraction.defaults(info)
+        settings.update(center_x=250., center_y=250., max_center_shift_px=50.)
+        def spots(centre, vectors):
+            return [dict(x_px=float(x), y_px=float(y), width_px=5., local_contrast=20.)
+                    for vector in np.array(vectors) for sign in (1,-1)
+                    for x,y in [np.array(centre)+sign*vector]]
+        first = spots([240.,240.], [[70,0],[0,90],[80,100]])
+        found = diffraction.refine_translation(first, settings, (500,500))
+        self.assertTrue(found['applied'])
+        np.testing.assert_allclose(found['shift_px'], [-10.,-10.], atol=.01)
+        for override in ({'refine_center':False}, {'max_center_shift_px':3.}):
+            held = diffraction.refine_translation(first, {**settings, **override}, (500,500))
+            self.assertFalse(held['applied'])
+            self.assertEqual(held['fitted_center_px'], [250.,250.])
+        insufficient = diffraction.refine_translation(first[:4], settings, (500,500))
+        self.assertFalse(insufficient['applied'])
+        collinear = spots([240.,240.], [[60,0],[90,0],[120,0]])
+        self.assertFalse(diffraction.refine_translation(collinear, settings, (500,500))['applied'])
+        second = spots([265.,250.], [[110,20],[-30,120],[100,-70]])
+        ambiguous = diffraction.refine_translation(first+second, settings, (500,500))
+        self.assertEqual(ambiguous['status'], 'ambiguous')
+        self.assertEqual(ambiguous['shift_px'], [0.,0.])
+        for override in ({'refine_center':'yes'}, {'max_center_shift_px':0}, {'max_center_shift_px':201}):
+            with self.assertRaises(ValueError):
+                diffraction.validate(info, {**diffraction.defaults(info), **override})
+
     def test_reopen_preserves_detector_settings_and_checks_reciprocal_calibration(self):
         array,info,_=pattern();settings=diffraction.defaults(info)
         settings.update(center_x=391.,pixel_x_nm_inv=.031,masks=[dict(x=30.,y=40.,w=20.,h=50.)])
