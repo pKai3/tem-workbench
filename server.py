@@ -25,6 +25,7 @@ from engine import Engine
 import demo_data
 import adaptive_refinement
 import folder_paths
+from preview_files import PreviewBatch, sidecar_path
 from workbench_project import Project
 
 ROOT = Path(__file__).resolve().parent
@@ -46,6 +47,7 @@ class Workbench:
         self.last_preview_log = 0.
         self.token = secrets.token_urlsafe(24)
         self.lock = threading.RLock()
+        self.preview_batch = None
         self.jobs = {}
         self.job_lock = threading.RLock()
         self.engine.catalog()
@@ -55,6 +57,7 @@ class Workbench:
         return {'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
+                'delete_regions': True, 'fft_detection_controls': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
@@ -65,14 +68,43 @@ class Workbench:
 
     def set_folders(self, data, output):
         with self.lock, self.job_lock:
+            if self.preview_batch and self.preview_status()['state'] == 'running':
+                raise ValueError('Finish or cancel PNG preview generation before changing folders.')
             if any(j['state'] == 'running' for j in self.jobs.values()):
                 raise ValueError('Finish or cancel the running grid before changing folders.')
             saved = folder_paths.save_locations(self.config_path, self.root, self.config, data, output)
             self.config = folder_paths.resolve_config(saved, self.root)
             self.engine = Engine(self.config)
             self.jobs.clear()
+            self.preview_batch = None
             LOG.info('Folders changed: data=%s; output=%s', self.config['data_root'], self.config['output_root'])
             return self.config_info()
+
+    def preview_status(self):
+        return self.preview_batch.status() if self.preview_batch else None
+
+    def generate_previews(self):
+        with self.lock:
+            if self.preview_batch and self.preview_status()['state'] == 'running':
+                return self.preview_status()
+            engine = self.engine
+            engine.catalog()
+            def render(file_id):
+                with self.lock:
+                    return engine.file_preview(file_id)
+            self.preview_batch = PreviewBatch(engine.files, render, engine.data_root)
+            self.preview_batch.start()
+            return self.preview_status()
+
+    def file_preview(self, file_id):
+        with self.lock:
+            path = self.engine.files.get(file_id)
+            if not path or not path.resolve().is_relative_to(self.engine.data_root):
+                raise ValueError('That image has no sidecar preview.')
+            preview = sidecar_path(path)
+            if not preview.resolve().is_relative_to(self.engine.data_root):
+                raise ValueError('Preview must be inside the data folder.')
+            return preview.read_bytes()
 
     def saved_region(self, region_id):
         region = next((r for r in self.project.read()['regions'] if r['id'] == region_id), None)
@@ -100,6 +132,11 @@ class Workbench:
             saved = self.project.save_region(body, item['info'], roi, settings)
         LOG.info('Saved region %s on %s', saved['region']['name'], item['info']['name'])
         return saved
+
+    def delete_region(self, body):
+        deleted = self.project.delete_region(body)
+        LOG.info('Saved region deleted: %s (%s)', deleted['region']['name'], deleted['region']['id'])
+        return deleted
 
     def grid(self, item, settings, count, adaptive, minimum, check_passing=False):
         if item['info'].get('image_kind') == 'diffraction':
@@ -403,6 +440,10 @@ def make_handler(app):
                         self.send(app.config_info())
                 elif url.path == '/api/regions':
                     self.send(app.project.read())
+                elif url.path == '/api/previews':
+                    self.send(app.preview_status())
+                elif url.path == '/api/file-preview':
+                    self.send(app.file_preview(query['id'][0]), 'image/png')
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
                 elif url.path == '/api/region-preview':
@@ -440,8 +481,16 @@ def make_handler(app):
                     self.send(folder_paths.browse(body.get('path'), app.root))
                 elif self.path == '/api/folders':
                     self.send(app.set_folders(body['data_root'], body['output_root']))
+                elif self.path == '/api/previews':
+                    self.send(app.generate_previews())
+                elif self.path == '/api/previews/cancel':
+                    if app.preview_batch:
+                        app.preview_batch.cancel.set()
+                    self.send(app.preview_status())
                 elif self.path == '/api/regions/save':
                     self.send(app.store_region(body))
+                elif self.path == '/api/regions/delete':
+                    self.send(app.delete_region(body))
                 elif self.path == '/api/regions/open':
                     self.send(app.saved_region(body['id']))
                 elif self.path == '/api/open':

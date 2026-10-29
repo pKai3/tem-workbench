@@ -16,16 +16,19 @@ def peak_width(spectrum):
  # Older saved/cached spectra used the Hann-specific name.
  return spectrum.get('peak_width_nm_inv', spectrum.get('hann_power_fwhm_nm_inv', 1.44*spectrum['df']))
 
-def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True,g_max=10.,g_min=3.):
+def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True,g_max=10.,g_min=3.,
+             smoothing_sigma=.65,threshold_floor=1.8,minimum_separation=.12,max_peaks=70):
  if window not in ('hann','none') or not isinstance(remove_mean,bool):
   raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
+ if not all(np.isfinite(v) for v in (smoothing_sigma,threshold_floor,minimum_enrichment,minimum_separation,max_peaks)) or not (0<=smoothing_sigma<=3 and 0<=threshold_floor<=20 and 0<=minimum_enrichment<=20 and 0<=minimum_separation<=3 and 4<=max_peaks<=200 and int(max_peaks)==max_peaks):
+  raise ValueError('FFT detection settings are outside the supported range.')
  h,w=a.shape
  z=a.astype('float32')
  if remove_mean:z=z-float(z.mean())
  if window=='hann':z=z*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:]
- power=np.abs(fftshift(fft2(z,workers=2)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],.65);valid=(g>0)&(g>=g_min)&(g<=g_max)
+ power=np.abs(fftshift(fft2(z,workers=2)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],smoothing_sigma);valid=(g>0)&(g>=g_min)&(g<=g_max)
  window_width=(1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
- threshold=max(1.8,profile_fraction*float(np.max(wh[valid]))) if np.any(valid) else 1.8
+ threshold=max(threshold_floor,profile_fraction*float(np.max(wh[valid]))) if np.any(valid) else threshold_floor
  components,nc=label(valid&(wh>threshold));peaks=[]
  for ci in range(1,nc+1):
   ys,xs=np.where(components==ci)
@@ -46,10 +49,10 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
  # Weak fragments within one window response cannot be counted independently.
  clean=[]
  for p in peaks:
-  if any(np.hypot(p['qx']-v['qx'],p['qy']-v['qy'])<max(.12,window_width) for v in clean):continue
+  if any(np.hypot(p['qx']-v['qx'],p['qy']-v['qy'])<max(minimum_separation,window_width) for v in clean):continue
   p['profile_id']=len(clean)+1;clean.append(p)
-  if len(clean)>=70:break
- return {'g_min':float(g_min),'g_max':float(g_max),'log':lg,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
+  if len(clean)>=max_peaks:break
+ return {'g_min':float(g_min),'g_max':float(g_max),'log':lg,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
 
 def rotation(q,ang):
  c=np.cos(ang);s=np.sin(ang);return q@np.array([[c,s],[-s,c]])

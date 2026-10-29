@@ -53,3 +53,16 @@ class Project:
             data['revision'] += 1
             atomic_json(self.path, data)
             return {'project': data, 'region': region}
+
+    def delete_region(self, body):
+        with self.lock:
+            data = self.read()
+            if body.get('revision') != data['revision']:
+                raise ValueError('Saved regions changed in another session. Refresh the region list before deleting.')
+            region = next((r for r in data['regions'] if r['id'] == body.get('id')), None)
+            if region is None:
+                raise ValueError('That saved region no longer exists. Refresh the region list.')
+            data['regions'] = [r for r in data['regions'] if r['id'] != region['id']]
+            data['revision'] += 1
+            atomic_json(self.path, data)
+            return {'project': data, 'region': region}

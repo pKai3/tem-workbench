@@ -62,6 +62,10 @@ The app maintains `./data` and `./output` directory links to those locations (sy
 
 The catalog finds `.dm4` files recursively beneath the selected data folder, including files at its root. `STA` and `ST` folders retain their sample grouping; other folders also work. The selected output directory is skipped during scanning. Output may be outside the data directory.
 
+**Generate PNG previews** under Folders creates missing same-name sidecars (`image.dm4` → `image.png`) throughout the linked collection. Previews are greyscale, contrast-adjusted, and up to 1400 pixels along the longest side; direct diffraction uses log intensity. This does not run a fit or estimate a beam centre. Existing PNGs are skipped, source files are unchanged, and the progress display reports saved, skipped and failed files. Cancellation stops after the current file. Bundled demos are excluded from sidecar generation.
+
+**Browse images…** opens a searchable thumbnail gallery, ordered by filename or acquisition number. It uses existing sidecar PNGs; files without a preview remain selectable. Choose a thumbnail to load that image for analysis. The gallery can also start generation of missing previews.
+
 External DM4 loading uses the [openNCEM DM reader](https://openncem.readthedocs.io/en/latest/ncempy.io.dm.html). The Mac app installer includes it. For a manual installation, install it in the app's Python environment:
 
 ```sh
@@ -81,7 +85,7 @@ For manual configuration, copy [tem-paths.example.json](tem-paths.example.json) 
 
 ### Saved regions and results
 
-Expand **Saved regions** below the image controls. Give a box a name, optional comma-separated tags, and notes, then **Save region**. Saved regions on the current image have red outlines; click an outline or choose a saved entry to reopen its source image, box and analysis settings. Outline interiors remain available for grid selection and dragging. Reopening a region on the same image keeps an existing grid when its analysis settings are unchanged. **All images** exposes entries for other photos. **Update region** changes that definition; **Save as new** keeps the original.
+Expand **Saved regions** below the image controls. Give a box a name, optional comma-separated tags, and notes, then **Save region**. Saved regions on the current image have red outlines; click an outline or choose a saved entry to reopen its source image, box and analysis settings. Outline interiors remain available for grid selection and dragging. Reopening a region on the same image keeps an existing grid when its analysis settings are unchanged. **All images** exposes entries for other photos. **Update region** changes that definition; **Save as new** keeps the original. **Delete region** removes the selected saved entry after confirmation, including its red outline. Source images and exported files are kept.
 
 Definitions live in the ignored `tem_workbench.project.json` beside the app. Each entry records the relative image path, pixel checksum, dimensions, calibration, coordinates, settings and annotations. Reopening checks the image identity and calibration before applying coordinates. The file is replaced atomically and remains available after restarting; stale concurrent edits are rejected until refreshed. There is no automatic backup history.
 
@@ -102,12 +106,22 @@ Exports use the configured output directory, defaulting to `./output` beside the
 1. Select an image. **Search files** filters the list by name, sample or acquisition number; Enter opens a sole match and Escape clears the search. Favourites provide a shorter image list. **Sort by** switches between filename order and acquisition number (ascending), within each sample group and in Favourites. Acquisition numbers are read from filenames, including descriptive suffixes such as `_Diffraction`; unnumbered images appear last. The sort choice is remembered across restarts.
 2. Drag the region box or resize its corner. Arrow keys move it by 10 pixels; Shift+arrow moves it by 50.
 3. Choose a material reference and scale-fitting mode, then inspect candidate rank, peak coverage, residuals, model dimensions and prediction-scale changes. Candidate tables are sorted by rank, highest first; geometry-only checks have a separate score group.
-4. Choose FFT overlays. The default shows the best HCP, BCC and FCC fits; individual-fit controls also expose rejected candidates. Click the FFT to enlarge it with the same axes, peaks and overlays; close with Escape, the × button or a click outside.
+4. Choose FFT overlays. The default shows the best fit for each enabled phase; individual-fit controls also expose rejected candidates. Click the FFT to enlarge it with the same axes, peaks and overlays; close with Escape, the × button or a click outside.
 5. Run a grid and click cells to inspect their detailed FFTs. Save results before stopping the server.
 
 FFT brightness, background, white point and colour are display controls. The intensity palette offers Magma (default), Viridis, Plasma, Cividis, Turbo and Greyscale; the colour bar follows the selected palette. The reset icon beside the white-point field restores the background and white-point defaults. These controls do not alter detected peaks or fitted coordinates. White maxima markers can be crosshairs, open crosshairs, circles or off. Open crosshairs leave the spot centre uncovered and draw four outer alignment arms; the choice is remembered.
 
-The **FFT processing** row above Material and Scale fitting controls **Hann window**, **Remove mean**, and the peak threshold. Windowing and mean removal default to on, preserving the original computation. Turning Hann off uses the rectangular crop. Changing these controls recalculates the selected region and clears the previous grid. Saved analyses record these settings. Display controls remain separate.
+The **FFT processing** row above Material and Scale fitting controls **Hann window**, **Remove mean**, the peak threshold fraction, and FFT peak detection:
+
+| FFT detector control | Default | Meaning |
+| --- | --- | --- |
+| Smoothing σ | 0.65 bins | Gaussian smoothing of background-subtracted log power; zero disables it. |
+| Threshold floor | 1.8 | Lower bound for the profile cutoff. The cutoff is max(floor, threshold fraction × strongest signal). |
+| Minimum peak strength | 3.0 | Minimum height above radial background for a detected profile. |
+| Minimum separation | 0.12 nm⁻¹ | Nearby profiles merge, retaining the strongest. The effective minimum is at least the crop-window peak width. |
+| Maximum profiles | 70 | Strongest independent profiles retained; opposite spots count once. |
+
+Threshold floor and peak strength are in background-subtracted natural-log-power units, not intensity percentages. These controls select original strong profiles; prediction-site checks for additional weak maxima are a separate ranking step. Windowing and mean removal default to on, preserving the original computation. Turning Hann off uses the rectangular crop. Changing these controls recalculates the selected region and clears the previous grid. Settings persist across images and restarts, and saved analyses record them. Detection-only controls leave the FFT pixels and axes unchanged. Display controls remain separate.
 
 Window widths used for matching and weak-peak checks follow the selected window (approximately 1.44 FFT bins for Hann or 0.886 for a rectangular crop, with existing minimum tolerances). Windowing suppresses side lobes at the cost of a wider central peak; see the [SciPy spectral-analysis guide](https://docs.scipy.org/doc/scipy/tutorial/signal.html#spectral-analysis).
 
@@ -164,13 +178,17 @@ In real-space mode, hover over a computed grid cell, the computed manual selecti
 
 The geometry-only check displays a secondary grid only when it passes the independent-evidence screen, including at least three additional profiles beyond the primary in nonparallel directions. Failed secondary attempts can repeat the primary grid; these are omitted and the interface reports **No distinct secondary geometry detected**. Equal scores or RMS values alone do not make two grids duplicates. These checks describe periodic patterns, not phase identities.
 
+Hover over an FFT or diffraction image for a **3× cursor magnifier**, including the current spot/pattern markers and reciprocal coordinates. It also works in the enlarged view. The preview uses the displayed pixels and overlays without running another analysis; clicking still opens the enlarged image. It hides when the pointer leaves, on scrolling, or while a new analysis is loading. Touch devices retain tap-to-enlarge.
+
+**Pattern overlay → Winning fit** shows only the leading accepted candidate. Both **Fitted A/B/C** and **Indexed reflections** vector overlays have a matching Winning fit option. If no candidate passes the screen, these options draw no candidate. For ambiguous or multiple-pattern results, they show the leading fit without changing the phase label; the other overlay options remain available to compare alternatives. Pattern and vector menus include only enabled search phases.
+
 **Vector overlay → Indexed reflections** in Marker styles adds centre-to-spot arrows for two non-parallel matched reflections of the selected HCP/BCC/FCC candidate. Labels give the candidate plane indices, measured reciprocal distance g in nm⁻¹ and plane spacing d = 1/g in nm. These are reflection spacings, not unit-cell edge lengths. Rejected candidates retain dashed arrows; showing them does not accept a phase assignment.
 
 **Vector overlay → Fitted A/B/C** instead shows reference vectors at the fitted prediction coordinates, with the candidate zone axis labelled once. It prefers short closed triples with strong peak matches. As an app display convention, letters run from longest to shortest reciprocal length (A > B > C); equal fitted lengths share a letter, for example A/A/B. Textbook diagram letters may differ. Equality allows numerical roundoff, not measurement uncertainty. The caption shows the angle between the first two vectors and, for distinct letters, their signed closure relation after ordering. Tied lengths show the letter sequence instead. Label backgrounds fit their text and stay near their vector endpoints; a dotted connector identifies a label displaced by crowding. If no closed triple is available in the prediction band, it shows the available independent directions. These reference vectors illustrate the fit based on all detected peaks; they are not the unit-cell edges a/b/c or a separate three-point phase decision. The measured FFT/diffraction image stays unchanged.
 
 ### Remembered settings
 
-Basic preferences are saved automatically in browser local storage: the last image, region width, material and lattice references, enabled phases and phase colours, scale-fitting mode and custom scale, ranking weights, FFT processing, central exclusion and peak threshold, outer fitting limit, grid size and stopping limit, adaptive options, grid visibility, and FFT display/overlay controls. Analysis controls carry across images; a new image opens with a centred region at the remembered physical width, limited to the image size. Existing display preferences and favourites are retained.
+Basic preferences are saved automatically in browser local storage: the last image, region width, material and lattice references, enabled phases and phase colours, scale-fitting mode and custom scale, ranking weights, FFT processing and detection settings, central exclusion, outer fitting limit, grid size and stopping limit, adaptive options, grid visibility, and FFT display/overlay controls. Analysis controls carry across images; a new image opens with a centred region at the remembered physical width, limited to the image size. Existing display preferences and favourites are retained.
 
 These preferences survive browser and app restarts at the same address in the same browser profile. Clearing site data resets them. This stores settings only: grids, analysis results and individual candidate-overlay selections are not restored. Use **Save region** for a reusable box definition, and **Export result** or **Export grid results** for numerical output.
 
@@ -184,7 +202,7 @@ A different phase/zone is compared against the parent’s family fitted to **tha
 
 The parent stays visible until all four trial children finish. Rejected trial subdivisions are retained in saved results but excluded from map counts and area. Cancellation during a trial retains its parent. The grid summary reports parents retained and subdivided after these checks.
 
-The colour legend and zone-symbol legends appear below the image. Blue, gold and pink symbols identify the best HCP, BCC and FCC zones respectively by default; phase colours are editable. All three structures reuse the same symbol set, at the left, middle and right of each cell. Faded symbols indicate candidates below the acceptance threshold; displaying several fits is not evidence of phase coexistence. HCP directions use four indices, cubic directions use three, and negative indices carry an overbar.
+The colour legend and zone-symbol legends appear below the image. Blue, gold and pink symbols identify the best HCP, BCC and FCC zones respectively by default; phase colours are editable. All three structures reuse the same symbol set, at the left, middle and right of each cell. Faded symbols indicate candidates below the acceptance threshold. Zone-legend counts and the zone-axis breakdowns count only passing fits; zones with no passing fits are omitted from the legend. Displaying several fits is not evidence of phase coexistence. HCP directions use four indices, cubic directions use three, and negative indices carry an overbar.
 
 **Cancel** retains a partial grid. **Clear grid** clears the displayed map and cancels an active run without deleting saved results. Area summaries use current leaf cells and exclude subdivided parents.
 

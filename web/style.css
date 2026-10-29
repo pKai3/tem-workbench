@@ -117,3 +117,27 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 .fitting-limits .diffraction-fitting-limit{display:none}
 body.diffraction .fitting-limits .diffraction-fitting-limit{display:flex}
 body.diffraction .fitting-limits .fft-fitting-limit{display:none}
+
+/* Cursor magnifier shares the current spectrum pixels and overlays. */
+#spectrum-hover{position:fixed;left:0;top:0;z-index:40;pointer-events:none;width:min(280px,calc(100vw - 16px),calc(100dvh - 70px));background:#0c121a;border:1px solid var(--cyan);border-radius:7px;overflow:hidden;box-shadow:0 4px 22px #0009}
+#spectrum-hover[hidden]{display:none}
+#spectrum-hover>div{padding:6px 8px;font-size:11px;line-height:1.3}
+.spectrum-hover-head{display:flex;justify-content:space-between;gap:8px}
+#spectrum-hover-view{display:block;width:100%;aspect-ratio:1;background:#05090e}
+#spectrum-hover-view image{image-rendering:pixelated}
+#spectrum-hover-cross{stroke:#edf5fc;stroke-width:1;vector-effect:non-scaling-stroke;fill:none;filter:drop-shadow(0 0 1px #000)}
+#spectrum-hover-coords{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+#material-note{white-space:pre-line}
+
+.preview-generation{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px}.preview-generation .hint{margin:0;flex:1;min-width:200px;overflow-wrap:anywhere}
+#preview-errors{font-size:12px}#preview-error-list{padding-left:20px;overflow-wrap:anywhere}
+#image-browser{width:min(1100px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:16px;border:1px solid var(--line);border-radius:10px;background:#111d29;color:#dce6ef}
+#image-browser::backdrop{background:#0009}
+.image-browser-tools{display:flex;align-items:end;flex-wrap:wrap;gap:10px}.image-browser-tools label:first-child{flex:1;min-width:180px}.image-browser-tools input{width:100%}
+#image-browser-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px;margin-top:12px}
+.image-browser-tile{display:flex;flex-direction:column;gap:6px;min-width:0;text-align:left;padding:8px;border-radius:7px}
+.image-browser-tile[aria-current]{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan)}
+.image-browser-preview{display:grid;place-items:center;position:relative;width:100%;aspect-ratio:1;background:#080d13;border-radius:3px;overflow:hidden;font-size:12px}
+.image-browser-preview img{position:absolute;width:100%;height:100%;object-fit:contain}
+.image-browser-tile strong{font-size:12px;overflow-wrap:anywhere;font-weight:500}.image-browser-tile small{color:var(--muted);font-size:11px}

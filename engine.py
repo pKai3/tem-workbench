@@ -9,6 +9,7 @@ import json
 import time
 import os
 import folder_paths
+from preview_files import sidecar_path
 import zlib
 import numpy as np
 from PIL import Image
@@ -83,8 +84,40 @@ class Engine:
                 sample = next((part for part in relative.parts[:-1] if part in ('STA', 'ST')),
                               relative.parts[0] if len(relative.parts) > 1 else 'Images')
                 self.files[file_id] = path
-                rows.append({'id': file_id, 'name': path.stem, 'sample': sample})
+                rows.append({'id': file_id, 'name': path.stem, 'sample': sample,
+                             'has_preview': sidecar_path(path).is_file()})
         return rows
+
+    def read_dm4(self, path):
+        if self.reader is None:
+            if self.settings.get('dm_reader'):
+                reader = Path(self.settings['dm_reader']).expanduser().resolve()
+                if not reader.is_file():
+                    raise ValueError('The configured DM4 reader is unavailable. Update dm_reader in .tem-paths.json, or remove it to use installed ncempy.')
+                spec = importlib.util.spec_from_file_location('workbench_dm_reader', reader)
+                self.reader = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(self.reader)
+            else:
+                try:
+                    self.reader = importlib.import_module('ncempy.io.dm')
+                except ImportError as exc:
+                    raise ValueError('Install ncempy in the app Python environment to open DM4 files, or configure dm_reader in .tem-paths.json. The bundled demo works without it.') from exc
+        with self.reader.fileDM(path, on_memory=False) as f:
+            meta = f.getMetadata(0)
+            array = np.asarray(f.getDataset(0)['data'])
+        return array, meta
+
+    def file_preview(self, file_id):
+        path = self.files.get(file_id)
+        if not path or not path.resolve().is_relative_to(self.data_root):
+            raise ValueError('Choose a DM4 from the configured data folder.')
+        array, meta = self.read_dm4(path)
+        if array.ndim != 2 or min(array.shape) < 1 or not np.isfinite(array).all():
+            raise ValueError('Preview requires a finite two-dimensional image.')
+        units = [str(meta.get(f'Calibrations Dimension {d} Units', '')).strip() for d in (1, 2)]
+        if all(diffraction.reciprocal_factor(unit) is not None for unit in units):
+            array = np.log1p(np.maximum(array, 0))
+        return png(array, max_size=1400)
 
     def load(self, file_id):
         if file_id in self.loaded:
@@ -97,22 +130,7 @@ class Engine:
             path = self.files.get(file_id)
             if not path or not path.resolve().is_relative_to(self.data_root):
                 raise ValueError('Choose the bundled demo or a DM4 from the configured TEM folder.')
-            if self.reader is None:
-                if self.settings.get('dm_reader'):
-                    reader = Path(self.settings['dm_reader']).expanduser().resolve()
-                    if not reader.is_file():
-                        raise ValueError('The configured DM4 reader is unavailable. Update dm_reader in .tem-paths.json, or remove it to use installed ncempy.')
-                    spec = importlib.util.spec_from_file_location('workbench_dm_reader', reader)
-                    self.reader = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(self.reader)
-                else:
-                    try:
-                        self.reader = importlib.import_module('ncempy.io.dm')
-                    except ImportError as exc:
-                        raise ValueError('Install ncempy in the app Python environment to open DM4 files, or configure dm_reader in .tem-paths.json. The bundled demo works without it.') from exc
-            with self.reader.fileDM(path, on_memory=False) as f:
-                meta = f.getMetadata(0)
-                array = np.asarray(f.getDataset(0)['data'])
+            array, meta = self.read_dm4(path)
             name = path.stem
         if array.ndim != 2 or min(array.shape) < 32 or not np.isfinite(array).all():
             raise ValueError('Choose a finite two-dimensional image at least 32 pixels per side.')
@@ -186,6 +204,17 @@ class Engine:
             raise ValueError('Analysis settings must be finite numbers.')
         if not (.85 <= values['scale'] <= 1.15 and 0 <= values['g_min'] < 30 and 4 <= values['g_max'] <= 30 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
             raise ValueError('Analysis settings are outside the supported range.')
+        detector_defaults = {'fft_smoothing_sigma': .65, 'fft_threshold_floor': 1.8,
+                             'fft_minimum_enrichment': 3., 'fft_minimum_separation': .12,
+                             'fft_max_peaks': 70}
+        detector = {key: float(settings.get(key, default)) for key, default in detector_defaults.items()}
+        if not all(np.isfinite(v) for v in detector.values()) or not (
+                0 <= detector['fft_smoothing_sigma'] <= 3 and 0 <= detector['fft_threshold_floor'] <= 20 and
+                0 <= detector['fft_minimum_enrichment'] <= 20 and 0 <= detector['fft_minimum_separation'] <= 3 and
+                4 <= detector['fft_max_peaks'] <= 200 and detector['fft_max_peaks'].is_integer()):
+            raise ValueError('Use FFT smoothing 0–3 bins, threshold floor and strength 0–20, separation 0–3 nm⁻¹, and 4–200 whole peak profiles.')
+        detector['fft_max_peaks'] = int(detector['fft_max_peaks'])
+        values.update(detector)
         values.update(reference_settings(settings))
         mode = settings.get('scale_mode', 'fixed')
         if mode not in scale_fitting.MODES:
@@ -218,7 +247,10 @@ class Engine:
             sx, sy = info['pixel_x_nm'], info['pixel_y_nm']
             width_nm, height_nm = w*sx, h*sy
             s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'],
-                              window=settings['fft_window'], remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'])
+                              window=settings['fft_window'], remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'],
+                              smoothing_sigma=settings['fft_smoothing_sigma'], threshold_floor=settings['fft_threshold_floor'],
+                              minimum_enrichment=settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
+                              max_peaks=settings['fft_max_peaks'])
             can_index = min(.5/sx, .5/sy) >= settings['g_max']
         tol = max(.10, core.peak_width(s))
         candidates = []
