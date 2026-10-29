@@ -1,5 +1,6 @@
 .tem-paths.json
 .venv/
+.venv.previous/
 __pycache__/
 *.pyc
 .DS_Store

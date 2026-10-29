@@ -1,4 +1,4 @@
-"""Find and prepare the Python used by the Mac launcher, using only stdlib."""
+"""Prepare and launch Workbench's own Python environment, using only stdlib."""
 from __future__ import annotations
 
 import argparse
@@ -10,26 +10,11 @@ import subprocess
 import sys
 
 MIN_VERSION = (3, 10)
+MAX_VERSION = (3, 15)  # Exclusive: desktop dependencies need wheels for this Python.
 CORE_IMPORTS = ('numpy', 'scipy.ndimage', 'scipy.optimize', 'PIL.Image')
 PACKAGE_NAMES = {'numpy': 'NumPy', 'scipy.ndimage': 'SciPy',
                  'scipy.optimize': 'SciPy', 'PIL.Image': 'Pillow (PIL)',
                  'ncempy.io.dm': 'ncempy (DM4 reader)'}
-
-
-def configured_python(root, environ):
-    override = environ.get('TEM_WORKBENCH_PYTHON', '').strip()
-    if override:
-        return override
-    config = Path(root) / '.tem-paths.json'
-    if not config.is_file():
-        return None
-    try:
-        value = json.loads(config.read_text()).get('python_executable')
-        if value is not None and not isinstance(value, str):
-            raise ValueError('python_executable must be a path or command name')
-        return value.strip() if value and value.strip() else None
-    except (ValueError, AttributeError, OSError) as error:
-        raise RuntimeError(f'Cannot read {config}: {error}') from error
 
 
 def executable_path(value, root, environ):
@@ -42,7 +27,7 @@ def executable_path(value, root, environ):
         result = shutil.which(value, path=environ.get('PATH', os.defpath))
     if not result or not os.access(result, os.X_OK):
         raise RuntimeError(f'Python executable not found: {value}. '
-                           'Check TEM_WORKBENCH_PYTHON or python_executable in .tem-paths.json.')
+                           'Check TEM_WORKBENCH_PYTHON, which selects the installer’s base Python.')
     return result
 
 
@@ -50,16 +35,24 @@ def python_info(executable):
     try:
         result = subprocess.run([str(executable), '-c',
             'import json,sys; print(json.dumps({"version":list(sys.version_info[:2]),'
-            '"venv":sys.prefix != sys.base_prefix}))'],
+            '"venv":sys.prefix != sys.base_prefix,"prefix":sys.prefix}))'],
             check=True, text=True, capture_output=True, timeout=15)
         info = json.loads(result.stdout)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         raise RuntimeError(f'Could not run Python at {executable}. '
                            'Virtual environments cannot be copied between computers; recreate .venv on this Mac.') from error
-    if tuple(info['version']) < MIN_VERSION:
-        raise RuntimeError(f'{executable} is Python {".".join(map(str, info["version"]))}; '
-                           'TEM Workbench needs Python 3.10 or newer (3.12 recommended).')
     return info
+
+
+def compatible(info):
+    return MIN_VERSION <= tuple(info['version']) < MAX_VERSION
+
+
+def require_compatible(executable, info):
+    if not compatible(info):
+        raise RuntimeError(f'{executable} is Python {".".join(map(str, info["version"]))}; '
+                           'TEM Workbench currently supports Python 3.10–3.14 (3.12 preferred). '
+                           'Rerun Install TEM Workbench App.command to prepare a compatible .venv.')
 
 
 def discover_python(root, environ):
@@ -70,30 +63,45 @@ def discover_python(root, environ):
         candidates += [f'python{version}', f'/opt/homebrew/bin/python{version}',
                        f'/usr/local/bin/python{version}',
                        f'/Library/Frameworks/Python.framework/Versions/{version}/bin/python{version}']
+    # Conda installs are often absent from Finder's PATH, but can seed a venv.
+    for name in ('anaconda3', 'miniconda3', 'miniforge3', 'mambaforge'):
+        candidates += [str(Path.home() / name / 'bin/python3'), f'/opt/{name}/bin/python3']
     candidates += ['python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3', sys.executable]
     for candidate in dict.fromkeys(candidates):
         try:
             executable = executable_path(candidate, root, environ)
-            python_info(executable)
+            require_compatible(executable, python_info(executable))
             return executable
         except RuntimeError:
             continue
-    raise RuntimeError('No Python 3.10 or newer was found. Install Python 3.12 from python.org, '
-                       'then rerun Install TEM Workbench App.command. Apple’s system Python may be too old.')
+    raise RuntimeError('No compatible Python 3.10–3.14 was found. Install Python 3.12 from python.org '
+                       'or Homebrew (brew install python@3.12), then rerun Install TEM Workbench App.command.')
 
 
-def select_python(root, environ=None):
+def local_python(root):
+    """Reject external environments before the installer can modify packages."""
     root = Path(root).resolve()
-    environ = os.environ if environ is None else environ
-    override = configured_python(root, environ)
-    local = root / '.venv/bin/python'
-    if override:
-        executable = executable_path(override, root, environ)
-    elif local.exists() or local.is_symlink():
-        executable = executable_path(str(local), root, environ)
-    else:
-        executable = discover_python(root, environ)
-    python_info(executable)
+    environment = root / '.venv'
+    if environment.is_symlink():
+        raise RuntimeError('Workbench needs its own .venv directory, not a link to another environment. '
+                           'Remove the link and rerun Install TEM Workbench App.command.')
+    local = environment / 'bin/python'
+    if not local.exists():
+        raise RuntimeError('Workbench’s .venv is missing or incomplete. '
+                           'Run Install TEM Workbench App.command to prepare it. '
+                           'If an incomplete .venv directory exists, move it aside first.')
+    executable = str(local)
+    info = python_info(executable)
+    if not info['venv'] or Path(info['prefix']).resolve() != environment.resolve():
+        raise RuntimeError('The .venv Python belongs to a different environment. '
+                           'Move .venv aside and rerun Install TEM Workbench App.command.')
+    return executable, info
+
+
+def select_python(root):
+    # Launch never follows legacy config, an environment override, or PATH.
+    executable, info = local_python(root)
+    require_compatible(executable, info)
     return executable
 
 
@@ -118,32 +126,34 @@ print(json.dumps(failures))
     if failures:
         details = '; '.join(f'{PACKAGE_NAMES[name]}: {message}' for name, message in failures.items())
         raise RuntimeError(f'Python dependencies are missing or broken in {executable}: {details}. '
-                           'Rerun Install TEM Workbench App.command to install them. '
-                           'For a custom Python, install requirements.txt into that same environment.')
+                           'Rerun Install TEM Workbench App.command to install them into .venv.')
 
 
 def prepare_python(root, environ=None):
     root = Path(root).resolve()
     environ = os.environ if environ is None else environ
-    override = configured_python(root, environ)
-    local = root / '.venv/bin/python'
-    if not override and not local.exists() and not local.is_symlink():
-        if (root / '.venv').exists():
-            raise RuntimeError('An incomplete .venv already exists. Move it aside and rerun the installer; '
-                               'it has not been replaced.')
-        base = discover_python(root, environ)
+    environment = root / '.venv'
+    replacement = False
+    if environment.exists() or environment.is_symlink():
+        _, info = local_python(root)
+        replacement = not compatible(info)
+    if not environment.exists() or replacement:
+        # The override only seeds a NEW local venv; it is never a package target.
+        override = environ.get('TEM_WORKBENCH_PYTHON', '').strip()
+        base = executable_path(override, root, environ) if override else discover_python(root, environ)
+        require_compatible(base, python_info(base))
+        if replacement:
+            previous = root / '.venv.previous'
+            if previous.exists() or previous.is_symlink():
+                raise RuntimeError('Move .venv.previous aside before replacing the incompatible .venv.')
+            environment.rename(previous)
+            print(f'Previous incompatible environment kept at {previous}', flush=True)
         print(f'Creating the app’s Python environment with {base}', flush=True)
-        subprocess.run([base, '-m', 'venv', str(root / '.venv')], check=True)
-    executable = select_python(root, environ)
-    if not python_info(executable)['venv']:
-        # A configured system Python is usable if already provisioned, but the
-        # installer must not write packages into a global Python installation.
-        check_dependencies(executable, include_dm4=True)
-        print(f'Using configured Python: {executable}', flush=True)
-        return executable
+        subprocess.run([base, '-m', 'venv', str(environment)], check=True)
+    executable = select_python(root)
     print(f'Installing/checking NumPy, SciPy, Pillow and the DM4 reader in {executable}', flush=True)
     subprocess.run([executable, '-m', 'ensurepip', '--upgrade'], check=True)
-    subprocess.run([executable, '-m', 'pip', 'install', '-r',
+    subprocess.run([executable, '-m', 'pip', 'install', '--only-binary=numpy,scipy,h5py,pillow', '-r',
                     str(root / 'requirements-desktop.txt')], check=True)
     check_dependencies(executable, include_dm4=True)
     print('Python dependencies are ready.', flush=True)
@@ -153,9 +163,11 @@ def prepare_python(root, environ=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Check imports before launching')
+    parser.add_argument('--prepare', action='store_true', help='Create/repair the local .venv without building the Dock app')
     args = parser.parse_args()
     try:
-        executable = select_python(Path(__file__).resolve().parents[1])
+        root = Path(__file__).resolve().parents[1]
+        executable = prepare_python(root) if args.prepare else select_python(root)
         if args.check:
             check_dependencies(executable)
         print(executable)

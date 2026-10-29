@@ -387,10 +387,6 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             child.currentDirectoryURL = URL(fileURLWithPath: launcher).deletingLastPathComponent()
             var environment = ProcessInfo.processInfo.environment
             environment["PYTHONUNBUFFERED"] = "1"
-            if let environmentPath = Bundle.main.object(forInfoDictionaryKey: "WorkbenchPythonExecutable") as? String,
-               !environmentPath.isEmpty {
-                environment["TEM_WORKBENCH_PYTHON"] = environmentPath
-            }
             environment["TEM_DESKTOP_APP"] = "1"
             child.environment = environment
             input = try FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
