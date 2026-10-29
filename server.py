@@ -98,6 +98,8 @@ class Workbench:
 
     def file_preview(self, file_id):
         with self.lock:
+            if file_id in demo_data.DEMOS:
+                return demo_data.preview_path(file_id).read_bytes()
             path = self.engine.files.get(file_id)
             if not path or not path.resolve().is_relative_to(self.engine.data_root):
                 raise ValueError('That image has no sidecar preview.')

@@ -11,6 +11,8 @@ Both contain all original **4096 × 4096 float32 pixels**. They are worked examp
 
 The `.npz` archives use lossless ZIP compression after grouping the four byte positions of each little-endian float32 pixel into separate planes. There is no quantization, denoising, cropping or resizing. `demo_data.py` reverses that grouping and verifies the reconstructed pixel SHA-256 against each JSON manifest. The manifests contain calibration and provenance without local computer paths.
 
+Each example includes a 1400 × 1400 greyscale PNG for the visual image browser. These contrast-adjusted previews use linear intensity for ST1221 and log intensity for ST1144; analysis always uses the original pixels from the lossless archives.
+
 The application loads both examples without ncempy or the original DM4 files. To decode directly:
 
 ```python

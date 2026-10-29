@@ -108,7 +108,7 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 .material-settings .material-bar .hint{flex-basis:100%}
 .material-settings .phase-color-controls{flex:0 1 344px;align-content:center;align-items:end;gap:8px 10px}
 .phase-colors-heading{display:flex;align-items:center;justify-content:space-between;flex-basis:100%}
-#reset-phase-colors{min-height:26px;width:28px;padding:0;font-size:19px;line-height:1}
+#reset-phase-colors,#reset-fft{min-height:26px;width:28px;padding:0;font-size:19px;line-height:1}
 .phase-color-controls label{flex:1 1 90px;min-width:0}
 .phase-color-controls select{width:100%}
 .phase-color-controls .hint{flex-basis:100%;margin:0;font-size:11px;line-height:1.4}
@@ -141,3 +141,6 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .image-browser-preview{display:grid;place-items:center;position:relative;width:100%;aspect-ratio:1;background:#080d13;border-radius:3px;overflow:hidden;font-size:12px}
 .image-browser-preview img{position:absolute;width:100%;height:100%;object-fit:contain}
 .image-browser-tile strong{font-size:12px;overflow-wrap:anywhere;font-weight:500}.image-browser-tile small{color:var(--muted);font-size:11px}
+
+.fft-processing-heading{display:flex;align-items:center;gap:8px;align-self:center}
+.favorite-star{color:#f4b75e;white-space:nowrap}

@@ -12,8 +12,15 @@ DEMOS = {ID: {'name': NAME, 'stem': 'st1221'},
          DIFFRACTION_ID: {'name': 'ST1144 diffraction · bundled demo', 'stem': 'st1144'}}
 
 
+def preview_path(file_id):
+    if file_id not in DEMOS:
+        raise ValueError('Unknown bundled demo.')
+    return DIRECTORY / (DEMOS[file_id]['stem']+'.png')
+
+
 def catalog_entry(file_id=ID):
-    return {'id': file_id, 'name': DEMOS[file_id]['name'], 'sample': 'Demo'}
+    return {'id': file_id, 'name': DEMOS[file_id]['name'], 'sample': 'Demo',
+            'has_preview': preview_path(file_id).is_file()}
 
 
 def catalog_entries():
