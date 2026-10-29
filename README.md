@@ -42,11 +42,13 @@ Without `.tem-paths.json`, the application starts with the bundled demo and defa
 
 ### macOS launcher
 
-After installing the Python dependencies, double-click **Install TEM Workbench App.command** to build a Dock application in `~/Applications`. Building the launcher requires macOS 13 or newer and Apple Command Line Tools or Xcode.
+Install Python 3.10 or newer (3.12 recommended), then double-click **Install TEM Workbench App.command**. The installer creates a local `.venv` and installs NumPy, SciPy, Pillow and the DM4 reader before building a Dock application in `~/Applications`. The first installation needs an internet connection and can take a few minutes. Rerunning the installer repairs missing dependencies. Building the launcher requires macOS 13 or newer and Apple Command Line Tools or Xcode.
 
 The launcher provides **Start/Stop**, **Open Workbench** and **View log** controls. It uses the repository checkout and a separate Python environment; it is not a standalone Python distribution. Keep the checkout in place, or reinstall the launcher after moving it. Closing the window leaves the application running; quitting stops the server it started.
 
-**Launch TEM Workbench.command** is also available for terminal-based startup. The launcher uses `TEM_WORKBENCH_PYTHON` when set, otherwise the configured Python executable, the checkout's `.venv`, or `python3` as applicable.
+**Launch TEM Workbench.command** is also available for terminal-based startup. Both installation and launch use `TEM_WORKBENCH_PYTHON` when set, otherwise an explicit `python_executable` in `.tem-paths.json`, then the checkout's `.venv`. A folder configuration without a Python override still uses `.venv`. Installed Python versions are discovered in the usual Homebrew and python.org locations even when launched from Finder. Explicit custom environments are respected; the installer only installs packages into virtual environments, never into a global Python installation.
+
+If the log reports **No module named PIL**, Pillow is missing from the Python actually running the app. Update the checkout and rerun **Install TEM Workbench App.command**. Install the app separately on each Mac; do not copy a `.venv` from another computer. Missing or broken dependencies now produce a setup message before the server starts.
 
 ## Opening DM4 images
 
@@ -56,7 +58,7 @@ The app maintains `./data` and `./output` directory links to those locations (sy
 
 The catalog finds `.dm4` files recursively beneath the selected data folder, including files at its root. `STA` and `ST` folders retain their sample grouping; other folders also work. The selected output directory is skipped during scanning. Output may be outside the data directory.
 
-External DM4 loading uses the [openNCEM DM reader](https://openncem.readthedocs.io/en/latest/ncempy.io.dm.html). Install it in the app's Python environment:
+External DM4 loading uses the [openNCEM DM reader](https://openncem.readthedocs.io/en/latest/ncempy.io.dm.html). The Mac app installer includes it. For a manual installation, install it in the app's Python environment:
 
 ```sh
 python -m pip install ncempy

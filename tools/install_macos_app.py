@@ -1,4 +1,4 @@
-"""Build/install the local Dock launcher; never install packages or launch Workbench."""
+"""Prepare Python dependencies and install the local Dock launcher without starting Workbench."""
 from __future__ import annotations
 
 import os
@@ -9,6 +9,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+if __package__:
+    from .python_runtime import prepare_python
+else:
+    from python_runtime import prepare_python
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_NAME = 'TEM Workbench.app'
@@ -21,7 +26,7 @@ def run(command, **kwargs):
 
 def require_build_tools():
     if sys.platform != 'darwin':
-        raise RuntimeError('This installer is for macOS. Use the Windows Setup/Launch files on Windows.')
+        raise RuntimeError('This installer is for macOS. Follow the README Quick start on Windows.')
     if int(platform.mac_ver()[0].split('.')[0]) < 13:
         raise RuntimeError('The Dock app requires macOS 13 or newer. Use Launch TEM Workbench.command instead.')
     try:
@@ -71,7 +76,8 @@ def build_bundle(root, build_directory, environ=None, architecture=None):
     if architecture not in ('arm64', 'x86_64'):
         raise RuntimeError(f'Unsupported Mac architecture: {architecture}')
     required = ('macos/Launcher.swift', 'macos/Info.plist', 'macos/Icon.swift',
-                'LICENSE', 'macos/TENSILE-LICENSE', 'Launch TEM Workbench.command', 'server.py')
+                'LICENSE', 'macos/TENSILE-LICENSE', 'Launch TEM Workbench.command', 'server.py',
+                'tools/python_runtime.py', 'requirements.txt', 'requirements-desktop.txt')
     for name in required:
         if not (root / name).is_file():
             raise RuntimeError(f'Missing {name}. Download/extract the complete repository before installing.')
@@ -138,6 +144,8 @@ def main():
     user_home = Path.home()
     destination = user_home / 'Applications' / APP_NAME
     validate_destination(destination)
+    print('Preparing Python dependencies. This can take a few minutes on the first install.', flush=True)
+    prepare_python(ROOT)
     print('Building the Dock app for this Mac. No data will be processed.', flush=True)
     # The temporary compiler cache can be large. Always remove it, including
     # on build failure; never leave it in the checkout or a synced data folder.
@@ -157,7 +165,7 @@ def main():
         print(f'Previous app contents kept at: {backup}', flush=True)
     print('Open the app in Finder and drag it to the Dock. Open Workbench opens its local page; View log shows live output.\n'
           'Closing the launcher window leaves it running; Quit stops its server.\n'
-          'The app has not been launched. Data, Python packages and personal settings are unchanged.', flush=True)
+          'The app has not been launched. Python dependencies are ready; data and personal settings are unchanged.', flush=True)
     return 0
 
 
@@ -171,5 +179,5 @@ if __name__ == '__main__':
         print(f'\nCould not install the Dock app: {error}', file=sys.stderr)
         if isinstance(error, subprocess.CalledProcessError) and error.stderr:
             print(error.stderr, file=sys.stderr)
-        print('Use Launch TEM Workbench.command in the meantime. See README.md.', file=sys.stderr)
+        print('Resolve the error above and rerun this installer. See README.md for setup and troubleshooting.', file=sys.stderr)
         raise SystemExit(1)
