@@ -43,7 +43,7 @@ function readPreference(key,fallback){
  }catch{return fallback}
 }
 function writePreference(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch{message('Browser storage is unavailable; these preferences will last until this page closes.',true)}}
-const BASIC_NUMBERS={"g-max":[4,30],"fcc-a":[0.30,0.65],"threshold":[0.15,0.7],"grid-count":[2,24,true],"grid-min":[0,null]};
+const BASIC_NUMBERS={"g-max":[4,30],"fft-g-min":[0,29.9],"hcp-a":[0.15,0.65],"hcp-c":[0.20,1.20],"bcc-a":[0.20,0.65],"fcc-a":[0.20,0.65],"threshold":[0.15,0.7],"grid-count":[2,24,true],"grid-min":[0,null]};
 const BASIC_FLAGS=['adaptive','check-passing','show-grid','fft-hann','fft-mean'];
 const OVERLAY_MODES=['none',...PHASES,'both','all','geometry','custom'];
 let preferredRegionNm=readPreference('tem-region-width-nm',20);
@@ -56,6 +56,8 @@ function restoreBasicControls(){
  const saved=readPreference('tem-basic-settings',{});if(!saved||typeof saved!=='object')return;
  for(const id of Object.keys(BASIC_NUMBERS))if(validControlNumber(id,saved[id]))$(id).value=saved[id];
  for(const id of BASIC_FLAGS)if(typeof saved[id]==='boolean')$(id).checked=saved[id];
+ if(['titanium','iron','custom'].includes(saved.material))$('material').value=saved.material;
+ if(Number($('fft-g-min').value)>=Number($('g-max').value))$('fft-g-min').value=3;
  if(OVERLAY_MODES.includes(saved.overlay))$('overlay').value=saved.overlay;
  if($('overlay').value==='custom')$('fit-controls').open=true;
 }
@@ -68,6 +70,8 @@ function rememberBasicControls(){
  }
  for(const id of BASIC_FLAGS)saved[id]=$(id).checked;
  if(OVERLAY_MODES.includes($('overlay').value))saved.overlay=$('overlay').value;
+ saved.material=$('material').value;
+ if(Number(saved['fft-g-min'])>=Number(saved['g-max'])){saved['fft-g-min']=previous?.['fft-g-min']??3;saved['g-max']=previous?.['g-max']??10}
  writePreference('tem-basic-settings',saved);
 }
 function rememberRegionSize(){
@@ -141,19 +145,19 @@ $('favorite-toggle').onclick=()=>{
  writePreference(favoriteKey(),[...favorites]);renderFavorites();
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){clearFileSearch();$('file').value=id;openFile()}};
-function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:JSON.parse(JSON.stringify(diffractionSettings))}:{})}}
+function settings(){const mode=$('scenario').value;return {material:$('material').value,hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:JSON.parse(JSON.stringify(diffractionSettings))}:{})}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
  field.closest('.scale-input').style.display=automatic?'none':'';
- if(automatic){field.value='1.000';field.readOnly=true;$('bcc-a').value=.330;
+ if(automatic){field.value='1.000';field.readOnly=true;
   $('calibration-note').textContent=(v==='auto_uniform'?'Each region fits one prediction scale separately for HCP, BCC and FCC; HCP c/a stays fixed.':'Each region fits one BCC/FCC prediction scale and independent HCP a/c scales where visible.')+' Range ×0.85–1.15 relative to nominal dimensions. Measured reciprocal axes stay unchanged. Candidate model dimensions are shown below.';return}
 
  if(v!=='custom')field.value='1.000';
- field.readOnly=v!=='custom';$('bcc-a').value=.330;
+ field.readOnly=v!=='custom';
  const scale=Number(field.value).toFixed(3);
  const explanation=v==='1'?'Nominal model sizes; stored DM4 calibration.':'Manual comparison; a better fit is not a measurement of calibration or strain.';
- $('calibration-note').textContent=`Model size ×${scale} for all structures · BCC a = ${Number($('bcc-a').value).toFixed(5)} nm. ${explanation} Measured reciprocal axes stay unchanged.`;
+ $('calibration-note').textContent=`Model size ×${scale} for all structures, relative to the selected material references. ${explanation} Measured reciprocal axes stay unchanged.`;
 }
 function restoreCalibration(){
  const saved=readPreference('tem-scale-last',readPreference('tem-scale:'+meta.sha256_pixels,{}));
@@ -234,7 +238,7 @@ function patternExplanation(data){
 }
 function scaleSummary(settings){
  const label=settings.scale_mode==='auto_uniform'?'automatic single scale per candidate and region':settings.scale_mode==='auto_hcp_ac'?'automatic BCC/FCC single / HCP a+c per region':`fixed prediction scale ×${settings.scale.toFixed(3)}`;
- return label+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'')+` · peak evidence ${(settings.peak_evidence_weight??0).toFixed(2)} · FCC reference ${(settings.fcc_a??.417).toFixed(3)} nm · fitting band 3–${settings.g_max??10} nm⁻¹`;
+ return label+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'')+` · peak evidence ${(settings.peak_evidence_weight??0).toFixed(2)} · ${config?.material_presets?.[settings.material]?.label??'Custom'} references · fitting band ${settings.g_min??settings.diffraction?.exclude_radius_nm_inv??3}–${settings.g_max??10} nm⁻¹`;
 }
 function fittedDimensions(model){
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
@@ -440,7 +444,7 @@ function spectrumTicks(extent){
 }
 function drawFittingBand(qp){
  const outer=result.spectrum.g_max??result.settings.g_max??10;
- const inner=Math.max(result.spectrum.g_min??3,result.settings.diffraction?.exclude_radius_nm_inv??0);
+ const inner=result.spectrum.g_min??result.settings.g_min??result.settings.diffraction?.exclude_radius_nm_inv??3;
  const [cx,cy]=qp(0,0),rx=Math.abs(qp(outer,0)[0]-cx),ry=Math.abs(qp(0,outer)[1]-cy);
  const ix=Math.abs(qp(inner,0)[0]-cx),iy=Math.abs(qp(0,inner)[1]-cy);
  const group=el('svg',{x:0,y:0,width:420,height:420,viewBox:'0 0 420 420',overflow:'hidden','pointer-events':'none','data-fitting-band':`${inner}-${outer}`});
@@ -448,6 +452,7 @@ function drawFittingBand(qp){
  group.append(el('path',{d:'M0 0H420V420H0Z'+ellipse,fill:'#000','fill-opacity':.25,'fill-rule':'evenodd'}));
  group.append(el('ellipse',{cx,cy,rx:ix,ry:iy,fill:'#000','fill-opacity':.16}));
  for(const [r,xr,yr,description]of [[outer,rx,ry,'Outer fitting limit'],[inner,ix,iy,'Central exclusion']]){
+  if(r===0)continue;
   const boundary=el('ellipse',{cx,cy,rx:xr,ry:yr,fill:'none',stroke:'#b3c2d0','stroke-width':.7,'stroke-dasharray':'3 3',opacity:.8});
   boundary.append(el('title',{},`${description}: ${r} nm⁻¹. Shaded areas are excluded from fitting.`));group.append(boundary);
   const x=r===outer?cx+xr*.70:cx,y=r===outer?cy-yr*.70-4:cy-yr-4;
@@ -800,25 +805,44 @@ $('peak-evidence-weight').value=peakEvidenceWeight;$('peak-evidence-slider').val
 $('peak-evidence-weight').onblur=()=>{$('peak-evidence-weight').value=peakEvidenceWeight};
 for(const id of ['scale-penalty','scale-penalty-slider','peak-evidence-weight','peak-evidence-slider'])$(id).oninput=()=>penaltyChanged($(id));
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=scalePenalty};
-for(const id of ['scenario','model-scale','fcc-a','g-max','threshold','fft-hann','fft-mean'])$(id).onchange=()=>{
+const REFERENCE_CONTROLS={'hcp-a':'hcp_a','hcp-c':'hcp_c','bcc-a':'bcc_a','fcc-a':'fcc_a'};
+function materialView(){
+ const selected=$('material').value,preset=config?.material_presets?.[selected];
+ if(preset&&Object.entries(REFERENCE_CONTROLS).some(([id,key])=>Math.abs(Number($(id).value)-preset.references[key])>1e-9))$('material').value='custom';
+ const note=config?.material_presets?.[$('material').value]?.note??'Custom reference cells. Changing the material or a reference recalculates this region; rerun any grid.';
+ $('material-note').textContent=note+' Cubic: a = b = c; HCP: a = b, γ = 120°. Dimensions in nm.';
+}
+function invalidateAnalysisSettings(){
  if(!meta)return;
- if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
-  restoreCalibration();message('Use a model size between 0.850 and 1.150.',true);return;
- }
- if(['fcc-a','g-max'].includes(id)&&!validControlNumber(id,Number($(id).value))){message(id==='fcc-a'?'Use an FCC reference between 0.300 and 0.650 nm.':'Use an outer fitting limit between 4 and 30 nm⁻¹.',true);return}
- if(id==='threshold'&&!validControlNumber('threshold',Number($('threshold').value))){message('Use a peak threshold between 0.15 and 0.70.',true);return}
- if(id==='scenario'||id==='model-scale'){calibrationView();rememberCalibration()}
- if(id==='g-max'&&isDiffraction())syncDetectorControls();
  if(isGridRunning())api('cancel',{job_id:jobId}).catch(e=>message(e.message,true));
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);jobId=null;grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=isDiffraction();$('cancel-grid').disabled=true;
  $('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(0);
+}
+$('material').onchange=()=>{
+ const preset=config?.material_presets?.[$('material').value];
+ if(preset)for(const [id,key]of Object.entries(REFERENCE_CONTROLS))$(id).value=preset.references[key];
+ materialView();rememberBasicControls();calibrationView();invalidateAnalysisSettings();
+};
+for(const id of ['scenario','model-scale',...Object.keys(REFERENCE_CONTROLS),'fft-g-min','g-max','threshold','fft-hann','fft-mean'])$(id).onchange=()=>{
+ if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
+  if(meta)restoreCalibration();message('Use a model size between 0.850 and 1.150.',true);return;
+ }
+ for(const key of [...Object.keys(REFERENCE_CONTROLS),'fft-g-min','g-max','threshold']){
+  if($(key).value===''||!validControlNumber(key,Number($(key).value))){const [low,high]=BASIC_NUMBERS[key];message(`Enter a value between ${low} and ${high} for ${$(key).closest('label').firstChild.textContent.trim()}.`,true);return}
+ }
+ const inner=isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value);
+ if(inner>=Number($('g-max').value)){message('Central exclusion must be smaller than the outer fitting limit.',true);return}
+ if(id in REFERENCE_CONTROLS){$('material').value='custom';materialView()}
+ if(id==='scenario'||id==='model-scale'){calibrationView();rememberCalibration()}
+ if(id==='g-max'&&isDiffraction())syncDetectorControls();
+ rememberBasicControls();invalidateAnalysisSettings();
 };
 $('model-scale').oninput=()=>{
  const field=$('model-scale'),value=Number(field.value);
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('file-search').value='';$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('FCC')&&config.adjustable_fitting_band);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('g-max').disabled=!config.adjustable_fitting_band;$('fcc-a').disabled=!config.fcc_reference;$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('file-search').value='';$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('FCC')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 function syncFFTZoom(){
@@ -922,7 +946,11 @@ async function loadSavedRegions(){
  catch(e){$('saved-region-note').textContent=e.message;$('store-region').disabled=true;$('copy-region').disabled=true}
 }
 function applyRegionSettings(saved){
- $('fcc-a').value=saved.fcc_a??.417;$('g-max').value=saved.g_max??10;
+ const defaults={hcp_a:.295,hcp_c:.468,bcc_a:.330,fcc_a:.417};
+ for(const [id,key]of Object.entries(REFERENCE_CONTROLS))$(id).value=saved[key]??defaults[key];
+ $('material').value=saved.material??'titanium';materialView();
+ if(!isDiffraction())$('fft-g-min').value=saved.g_min??3;
+ $('g-max').value=saved.g_max??10;
  if(isDiffraction()&&saved.diffraction){diffractionSettings=withTranslationDefaults(JSON.parse(JSON.stringify(saved.diffraction)));syncDetectorControls();rememberDiffraction();}
  $('scenario').value=saved.scale_mode==='fixed'?(saved.scale===1?'1':'custom'):saved.scale_mode;
  $('model-scale').value=saved.scale??1;$('threshold').value=saved.threshold??.35;
@@ -977,7 +1005,7 @@ function withTranslationDefaults(d){return {refine_center:true,max_center_shift_
 function validDiffraction(d){
  if(!d||typeof d!=='object'||typeof d.refine_center!=='boolean')return false;
  if(!Object.values(DETECTOR_FIELDS).every(key=>typeof d[key]==='number'&&Number.isFinite(d[key])))return false;
- if(!(d.center_x>=0&&d.center_x<meta.width&&d.center_y>=0&&d.center_y<meta.height&&d.pixel_x_nm_inv>=1e-6&&d.pixel_x_nm_inv<=10&&d.pixel_y_nm_inv>=1e-6&&d.pixel_y_nm_inv<=10&&d.exclude_radius_nm_inv>=0&&d.exclude_radius_nm_inv<=9.5&&d.spot_sigma_px>=.5&&d.spot_sigma_px<=10&&d.spot_snr>=2&&d.spot_snr<=30&&d.max_center_shift_px>=1&&d.max_center_shift_px<=200))return false;
+ if(!(d.center_x>=0&&d.center_x<meta.width&&d.center_y>=0&&d.center_y<meta.height&&d.pixel_x_nm_inv>=1e-6&&d.pixel_x_nm_inv<=10&&d.pixel_y_nm_inv>=1e-6&&d.pixel_y_nm_inv<=10&&d.exclude_radius_nm_inv>=0&&d.exclude_radius_nm_inv<Number($('g-max').value)&&d.spot_sigma_px>=.5&&d.spot_sigma_px<=10&&d.spot_snr>=2&&d.spot_snr<=30&&d.max_center_shift_px>=1&&d.max_center_shift_px<=200))return false;
  return Array.isArray(d.masks)&&d.masks.length<=20&&d.masks.every(r=>['x','y','w','h'].every(k=>Number.isFinite(r[k]))&&r.x>=0&&r.y>=0&&r.w>0&&r.h>0&&r.x+r.w<=meta.width&&r.y+r.h<=meta.height);
 }
 function setupImageKind(){
@@ -1003,12 +1031,13 @@ function syncDetectorControls(){
  if(!isDiffraction()||!diffractionSettings)return;
  for(const [id,key]of Object.entries(DETECTOR_FIELDS))$(id).value=Number(diffractionSettings[key].toPrecision(9));
  $('diff-snr-slider').value=diffractionSettings.spot_snr;
+ $('diff-radius').max=Number($('g-max').value)-.1;
  $('diff-refine-center').checked=diffractionSettings.refine_center;
  $('diff-refine-center').disabled=!config.diffraction_translation;
  $('diff-shift-limit').disabled=!config.diffraction_translation||!diffractionSettings.refine_center;
  $('diff-cx').max=meta.width-1;$('diff-cy').max=meta.height-1;
  const c=meta.beam_center;
- $('diffraction-note').textContent=(c.pairs?`Initial centre estimate: ${c.pairs} opposite-spot pairs; pair residual ${c.residual_px.toFixed(1)} px${c.beamstop_prior?'; beam-stop shadow used to choose the centre':''}. Verify visually. `:'No reliable opposite-spot centre found: set the beam centre manually. ')+`${diffractionSettings.masks.length} exclusion rectangle(s). Calibration and centre are remembered for this image. Save a named entry to keep a reusable analysis. Fitting band: 3–${Number($('g-max').value)} nm⁻¹.`;
+ $('diffraction-note').textContent=(c.pairs?`Initial centre estimate: ${c.pairs} opposite-spot pairs; pair residual ${c.residual_px.toFixed(1)} px${c.beamstop_prior?'; beam-stop shadow used to choose the centre':''}. Verify visually. `:'No reliable opposite-spot centre found: set the beam centre manually. ')+`${diffractionSettings.masks.length} exclusion rectangle(s). Calibration and centre are remembered for this image. Save a named entry to keep a reusable analysis. Fitting band: ${diffractionSettings.exclude_radius_nm_inv}–${Number($('g-max').value)} nm⁻¹.`;
  $('diff-undo-mask').disabled=$('diff-clear-masks').disabled=!diffractionSettings.masks.length;drawDetector();renderTranslation();
 }
 function currentTranslation(){
@@ -1058,7 +1087,7 @@ $('diff-refine-center').onchange=()=>{if(!isDiffraction()||!config.diffraction_t
 for(const [id,key]of Object.entries(DETECTOR_FIELDS))$(id).onchange=()=>{
  if(!isDiffraction())return;
  const updated={...diffractionSettings,[key]:$(id).value===''?NaN:Number($(id).value)};
- if(!validDiffraction(updated)){message('Enter a valid detector centre, positive calibration, exclusion radius 0–9.5, smoothing 0.5–10 px, contrast 2–30 and shift limit 1–200 px.',true);syncDetectorControls();return}
+ if(!validDiffraction(updated)){message('Enter a valid detector centre, positive calibration, exclusion radius from 0 up to the outer fitting limit, smoothing 0.5–10 px, contrast 2–30 and shift limit 1–200 px.',true);syncDetectorControls();return}
  diffractionSettings=updated;commitDetector();
 };
 $('diff-snr-slider').oninput=()=>{

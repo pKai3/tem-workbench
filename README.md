@@ -101,23 +101,40 @@ Exports use the configured output directory, defaulting to `./output` beside the
 
 1. Select an image. **Search files** filters the list by name, sample or acquisition number; Enter opens a sole match and Escape clears the search. Favourites provide a shorter image list. **Sort by** switches between filename order and acquisition number (ascending), within each sample group and in Favourites. Acquisition numbers are read from filenames, including descriptive suffixes such as `_Diffraction`; unnumbered images appear last. The sort choice is remembered across restarts.
 2. Drag the region box or resize its corner. Arrow keys move it by 10 pixels; Shift+arrow moves it by 50.
-3. Select a scale-fitting mode and inspect candidate rank, peak coverage, residuals, model dimensions and prediction-scale changes. Candidate tables are sorted by rank, highest first; geometry-only checks have a separate score group.
+3. Choose a material reference and scale-fitting mode, then inspect candidate rank, peak coverage, residuals, model dimensions and prediction-scale changes. Candidate tables are sorted by rank, highest first; geometry-only checks have a separate score group.
 4. Choose FFT overlays. The default shows the best HCP, BCC and FCC fits; individual-fit controls also expose rejected candidates. Click the FFT to enlarge it with the same axes, peaks and overlays; close with Escape, the × button or a click outside.
 5. Run a grid and click cells to inspect their detailed FFTs. Save results before stopping the server.
 
 FFT brightness, background, white point and colour are display controls. The intensity palette offers Magma (default), Viridis, Plasma, Cividis, Turbo and Greyscale; the colour bar follows the selected palette. The reset icon beside the white-point field restores the background and white-point defaults. These controls do not alter detected peaks or fitted coordinates. White maxima markers can be crosshairs, open crosshairs, circles or off. Open crosshairs leave the spot centre uncovered and draw four outer alignment arms; the choice is remembered.
 
-The **FFT processing** row above Scale fitting controls **Hann window**, **Remove mean**, and the peak threshold. Windowing and mean removal default to on, preserving the original computation. Turning Hann off uses the rectangular crop. These affect the FFT and detected peaks, so changing them recalculates the selected region and clears the previous grid. Saved analyses record both choices. Display controls remain separate.
+The **FFT processing** row above Material and Scale fitting controls **Hann window**, **Remove mean**, **Central exclusion, nm⁻¹**, and the peak threshold. Windowing and mean removal default to on, preserving the original computation. Turning Hann off uses the rectangular crop. Changing these controls recalculates the selected region and clears the previous grid. Saved analyses record these settings. Display controls remain separate.
 
 Window widths used for matching and weak-peak checks follow the selected window (approximately 1.44 FFT bins for Hann or 0.886 for a rectangular crop, with existing minimum tolerances). Windowing suppresses side lobes at the cost of a wider central peak; see the [SciPy spectral-analysis guide](https://docs.scipy.org/doc/scipy/tutorial/signal.html#spectral-analysis).
 
 **Outer fitting limit, nm⁻¹** controls the radial upper cutoff for both FFT and direct diffraction analysis (default 10, adjustable from 4 to 30). The selected limit applies to detected peaks, allowed crystal predictions, geometry checks and missing-spot checks. Reflections are generated far enough to cover that band throughout automatic scale fitting. Changing the limit recalculates the selected region and clears the old grid; run a new grid to use the new range. The setting is remembered across images and saved with regions.
 
-Both spectrum views show a central exclusion boundary and the outer fitting boundary, with light shading outside the analysed band. The inner FFT cutoff is 3 nm⁻¹; direct diffraction also honours a larger user-selected central exclusion. These boundaries appear in enlarged views and PNG/GIF exports. An FFT image must sample the selected band; lower the limit if the stored pixel calibration does not allow it.
+**Central exclusion, nm⁻¹** sets the radial lower cutoff: default 3 for FFTs and 2.5 for direct diffraction. Values below 3 are supported; the selected radius applies to peak detection, predictions, geometry checks and weak/missing-spot checks. It must be non-negative and smaller than the outer fitting limit. A zero radius still excludes the origin itself. Lowering the radius admits longer-period features and may admit central-beam or background artefacts; it does not change the FFT pixels or calibration. Each mode remembers its own exclusion setting.
+
+Both spectrum views show the selected central exclusion boundary and outer fitting boundary, with light shading outside the analysed band. These boundaries also appear in enlarged views and PNG/GIF exports. An FFT image must sample the selected band; lower the outer limit if the stored pixel calibration does not allow it.
+
+### Material references
+
+**Material** groups the HCP a/c, BCC a and FCC a references in one place. Titanium is the default; Iron supplies a separate starting set. Selecting a preset updates all four dimensions. Editing any dimension selects **Custom**. Cubic cells use a = b = c; HCP uses a = b with a 120° basal angle. These values generate the prediction grids and define zero scale deviation; automatic fitting adjusts predictions relative to the chosen references. Changing them recalculates the selected region and clears the grid. Preferences and saved regions retain the material and explicit dimensions.
+
+| Material | HCP a / c, nm | BCC a, nm | FCC a, nm |
+| --- | --- | --- | --- |
+| Titanium | 0.295 / 0.468 | 0.330 | 0.417 |
+| Iron | 0.24637 / 0.39568 | 0.28675 | 0.36484 |
+
+These are editable starting references, not a claim that every phase is stable under the same conditions:
+
+- Titanium retains the workbench's nominal α-HCP and approximate β-BCC references. FCC is a metastable comparison. [Ren et al. (2020)](https://doi.org/10.1590/1980-5373-MR-2019-0638) use HCP dimensions close to these and an energy-minimised FCC parameter of 0.4174 nm. The approximate BCC value should be adjusted for the alloy and temperature.
+- Iron BCC is evaluated at 295 K and FCC at 1183 K using the temperature-dependent equations of [Seki and Nagata (2005)](https://doi.org/10.2355/isijinternational.45.1789).
+- Iron HCP represents ε-Fe at **15 GPa and 300 K**. Its dimensions are derived from the equation-of-state volume of 10.40 Å³/atom and c/a = 1.606 tabulated by [Dewaele et al. (2023)](https://doi.org/10.1103/PhysRevLett.131.034101), using a = [4V / (√3 × c/a)]⅓ and c = (c/a)a. This is a high-pressure reference, not ambient iron.
 
 ### Direct diffraction (experimental)
 
-Opening a DM4 with reciprocal-length calibration (for example `1/nm`) automatically switches to **Direct diffraction**. The recorded detector intensity is analysed directly, without an FFT, Hann window or mean removal. The first version supports spot patterns, not ring indexing. It uses the same limited HCP/BCC/FCC template library and adjustable fitting band (default **3–10 nm⁻¹**) as FFT analysis.
+Opening a DM4 with reciprocal-length calibration (for example `1/nm`) automatically switches to **Direct diffraction**. The recorded detector intensity is analysed directly, without an FFT, Hann window or mean removal. The first version supports spot patterns, not ring indexing. It uses the same limited HCP/BCC/FCC template library and adjustable fitting-band controls as FFT analysis; direct diffraction defaults to **2.5–10 nm⁻¹**.
 
 - **Beam centre:** an initial estimate clusters opposite-spot midpoints near the detector centre. When a clear dark beam-stop shadow is present centrally, it helps choose between repeated lattice inversion centres; its silhouette centroid is not treated as the direct beam. The pair count, residual and use of this shadow constraint are shown. Verify visually: neither spot symmetry nor a beam-stop shadow uniquely guarantees the correct origin. If pairs are inadequate, the detector midpoint is labelled as a fallback. Edit X/Y, or choose **Set beam centre**: a magnified native-pixel preview follows the cursor, with a clear-centred crosshair; click to place the centre. **Use estimated centre** restores the initial estimate. Previous manual choices remain saved until changed.
 - **Refine translation:** enabled by default for direct diffraction. The selected centre is a fixed starting point; one shared X/Y translation is fitted from the midpoints of detected opposite spots, before fitting HCP/BCC/FCC rotation and scale. At least three independent pairs spanning two directions are required. Robust positional least squares rejects inconsistent pairs; their intensities need not match. The default maximum total movement is **50 original detector pixels**, adjustable from 1 to 200. Competing centre solutions or a solution outside the limit retain the starting centre with an explanation. Turn the checkbox off to hold that centre fixed. This is a local refinement, so an incorrect lattice-equivalent starting centre may still require manual correction.
@@ -149,7 +166,7 @@ The geometry-only check displays a secondary grid only when it passes the indepe
 
 ### Remembered settings
 
-Basic preferences are saved automatically in browser local storage: the last image, region width, scale-fitting mode and custom scale, ranking weights, FFT processing and peak threshold, grid size and stopping limit, adaptive options, grid visibility, and FFT display/overlay controls. Analysis controls carry across images; a new image opens with a centred region at the remembered physical width, limited to the image size. Existing display preferences and favourites are retained.
+Basic preferences are saved automatically in browser local storage: the last image, region width, material and lattice references, scale-fitting mode and custom scale, ranking weights, FFT processing, central exclusion and peak threshold, outer fitting limit, grid size and stopping limit, adaptive options, grid visibility, and FFT display/overlay controls. Analysis controls carry across images; a new image opens with a centred region at the remembered physical width, limited to the image size. Existing display preferences and favourites are retained.
 
 These preferences survive browser and app restarts at the same address in the same browser profile. Clearing site data resets them. This stores settings only: grids, analysis results and individual candidate-overlay selections are not restored. Use **Save region** for a reusable box definition, and **Export result** or **Export grid results** for numerical output.
 
@@ -169,7 +186,7 @@ The colour legend and zone-symbol legends appear below the image. Blue, gold and
 
 ### Scale fitting and rescoring
 
-The reference lattice dimensions are HCP **a = 0.295 nm, c = 0.468 nm**, BCC **a = 0.330 nm**, and FCC **a = 0.417 nm**. **FCC reference a, nm** is editable (0.300–0.650 nm) and remembered with the other settings. The default is automatic BCC/FCC uniform / HCP independent a-and-c scaling. Automatic uniform scaling for every structure, stored scale and custom comparison scale are also available. The last-used mode carries across images and restarts; removed preset choices fall back to the automatic default.
+The **Material** row supplies editable reference dimensions for all three structures (see Material references above). The default is automatic BCC/FCC uniform / HCP independent a-and-c scaling. Automatic uniform scaling for every structure, stored scale and custom comparison scale are also available. The last-used mode carries across images and restarts; removed preset choices fall back to the automatic default.
 
 Automatic reciprocal-scale multipliers are bounded to **0.85–1.15**. Scaling moves predicted reflections; measured reciprocal axes remain tied to the image calibration used. Model lattice dimensions change inversely with reciprocal scale. Zones without c-sensitive reflections cannot determine HCP c.
 
@@ -205,12 +222,12 @@ These adjustments do not simulate reflection intensities, thickness, defocus or 
 
 `crystal_templates.py` defines the reciprocal coordinates and allowed-reflection rules. Cubic reflections use **g = (h, k, l) / a**; FCC allows indices all odd or all even, while BCC requires an even sum. HCP uses its hexagonal metric and basis selection rule. `fcc_templates()` generates the finite FCC zone library. Existing HCP/BCC zone templates are stored in `templates.json`.
 
-`scale_fitting.prepare_templates()` enumerates integer plane indices, applies the structure rule and zone law **hu + kv + lw = 0** (three-index coordinates internally), and projects the surviving reciprocal vectors into the detector plane. The reflection range follows the selected cutoff and lattice reference rather than a fixed number of shells. `prediction_points()` applies the fitted reciprocal scale; the search then rotates the predictions to match the observed points. These are allowed positions, not simulated intensities.
+`scale_fitting.prepare_templates()` enumerates integer plane indices, applies the structure rule and zone law **hu + kv + lw = 0** (three-index coordinates internally), and projects the surviving reciprocal vectors into the detector plane. The reflection range follows the selected inner/outer cutoffs and lattice references rather than a fixed number of shells. Changing HCP a/c also updates the reciprocal-plane projection so its lengths and angles follow the new hexagonal metric. `prediction_points()` applies the fitted reciprocal scale; the search then rotates the predictions to match the observed points. These are allowed positions, not simulated intensities. `materials.py` supplies preset references and validates custom dimensions.
 
 ## Interpretation and limitations
 
 - The library contains **72 templates**: the existing 46 HCP/BCC templates and 26 FCC templates, including mirror variants. FCC covers primitive cubic direction families with maximum index 3. This is a finite orientation library; other structures and untested orientations can affect results.
-- Peak detection and matching default to the **3–10 nm⁻¹** band. The outer limit is adjustable; the fixed 3 nm⁻¹ inner cutoff is a heuristic, and longer-period signals below it are excluded.
+- Peak detection and matching default to **3–10 nm⁻¹** for FFTs and **2.5–10 nm⁻¹** for direct diffraction. Both boundaries are adjustable. Signals outside the selected band are excluded; these cutoffs are heuristics, not structure-specific physical limits.
 - Peak coverage is the sum of weights of matched original detected peak profiles divided by the weight of all original detected profiles. FFT weights use height above the radial background; direct spots use log(1 + local contrast). Both are capped at 1–6; additional weak maxima are excluded. Neither peak coverage nor rank score is an intensity fraction, phase probability or phase fraction.
 - The scale penalty is a preference for smaller adjustments, not a calibrated strain prior. Calibration errors can change candidate rankings.
 - Independent HCP a/c fitting adds flexibility. The penalty is not a statistical correction for the number of fitted parameters.
@@ -227,6 +244,7 @@ Supported input is finite, two-dimensional DM4 data with length or reciprocal-le
 | `analysis_core.py` | FFT processing, peak detection, fixed-scale matching and geometry checks. |
 | `diffraction.py` | Reciprocal calibration, beam-centre estimation, direct spot detection and detector exclusions. |
 | `scale_fitting.py` | Bounded automatic scale fitting, candidate ranking and cached reranking. |
+| `materials.py`, `crystal_templates.py` | Material references, reciprocal coordinates and allowed-reflection generation. |
 | `phase_comparison.py` | Prediction counts and shared-evidence ambiguity checks. |
 | `peak_evidence.py` | Independent weak-maxima detection, prediction-site audits and ranking adjustments. |
 | `adaptive_refinement.py` | Same-child comparisons and mixed assignability checks for passing parents. |

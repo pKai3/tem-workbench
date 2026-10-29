@@ -13,13 +13,14 @@ NOMINAL_A = {'HCP': .295, 'BCC': .330, 'FCC': .417}
 FCC_ZONE_MAX = 3
 
 
-def reciprocal(hkl, phase):
+def reciprocal(hkl, phase, a=None, c=.468):
     h, k, l = np.asarray(hkl, dtype=float).T
+    a = NOMINAL_A[phase] if a is None else a
     if phase in ('BCC', 'FCC'):
-        return np.asarray(hkl, dtype=float)/NOMINAL_A[phase]
+        return np.asarray(hkl, dtype=float)/a
     if phase != 'HCP':
         raise ValueError('Unknown crystal structure.')
-    return np.column_stack(((2*h+k)/(np.sqrt(3)*.295), k/.295, l/.468))
+    return np.column_stack(((2*h+k)/(np.sqrt(3)*a), k/a, l/c))
 
 
 def allowed(hkl, phase):

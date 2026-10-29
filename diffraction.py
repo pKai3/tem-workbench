@@ -11,7 +11,7 @@ from scipy.optimize import least_squares
 import analysis_core as core
 
 VERSION = 'direct-spots-v2'
-BAND = (3., 10.)
+DEFAULT_G_MAX = 10.
 CENTER_REFINEMENT_VERSION = 'shared-center-v1'
 
 
@@ -125,8 +125,8 @@ def validate(info, supplied):
         raise ValueError('Beam centre must lie inside the detector image.')
     if not (1e-6 <= value['pixel_x_nm_inv'] <= 10 and 1e-6 <= value['pixel_y_nm_inv'] <= 10):
         raise ValueError('Use a positive reciprocal calibration in nm⁻¹ per pixel.')
-    if not (0 <= value['exclude_radius_nm_inv'] <= 9.5 and .5 <= value['spot_sigma_px'] <= 10 and 2 <= value['spot_snr'] <= 30):
-        raise ValueError('Use exclusion radius 0–9.5 nm⁻¹, smoothing 0.5–10 px and spot contrast 2–30.')
+    if not (0 <= value['exclude_radius_nm_inv'] < 30 and .5 <= value['spot_sigma_px'] <= 10 and 2 <= value['spot_snr'] <= 30):
+        raise ValueError('Use exclusion radius from 0 to below 30 nm⁻¹, smoothing 0.5–10 px and spot contrast 2–30.')
     if not 1 <= value['max_center_shift_px'] <= 200:
         raise ValueError('Use a translation limit between 1 and 200 detector pixels.')
     masks = supplied.get('masks', [])
@@ -274,7 +274,7 @@ def _prepare_detector(array, settings):
     sigma = settings['spot_sigma_px']
     scales = _spot_scales(sigma)
     pad = int(np.ceil(8*scales[-1]))
-    g_max = settings.get('g_max', BAND[1])
+    g_max = settings.get('g_max', DEFAULT_G_MAX)
     span = g_max*1.05
     x0, x1 = max(0, int(cx-span/sx)-pad), min(w, int(np.ceil(cx+span/sx))+pad+1)
     y0, y1 = max(0, int(cy-span/sy)-pad), min(h, int(np.ceil(cy+span/sy))+pad+1)
@@ -283,14 +283,14 @@ def _prepare_detector(array, settings):
     qx, qy = (xx+x0-cx)*sx, (cy-yy-y0)*sy
     g = np.hypot(qx, qy)
     valid = visible(np.c_[qx.ravel(), qy.ravel()], settings, array.shape).reshape(raw.shape)
-    band = valid & (g >= BAND[0]) & (g <= g_max)
+    band = valid & (g > 0) & (g >= settings['exclude_radius_nm_inv']) & (g <= g_max)
     candidates = _spot_candidates(raw, valid, band, scales)
     deduplicated = _deduplicate_spots(candidates, sigma)
     spots = []
     for spot in deduplicated:
         px, py = spot['x_px']+x0, spot['y_px']+y0
         q = np.array([(px-cx)*sx, (cy-py)*sy])
-        if not BAND[0] <= np.linalg.norm(q) <= g_max or not visible([q], settings, array.shape)[0]:
+        if not settings['exclude_radius_nm_inv'] <= np.linalg.norm(q) <= g_max or np.linalg.norm(q)==0 or not visible([q], settings, array.shape)[0]:
             continue
         spot.update(q=q.tolist(), x_px=px, y_px=py,
                     enrichment=float(np.log1p(spot['local_contrast'])),
@@ -308,7 +308,7 @@ def _prepare_detector(array, settings):
 
 def _cached_detector(array, settings, cache):
     sx, sy = settings['pixel_x_nm_inv'], settings['pixel_y_nm_inv']
-    key = (settings.get('g_max', BAND[1]), array.__array_interface__['data'][0], array.shape, array.strides,
+    key = (settings.get('g_max', DEFAULT_G_MAX), array.__array_interface__['data'][0], array.shape, array.strides,
            settings['center_x'], settings['center_y'], sx, sy, settings['spot_sigma_px'],
            settings['exclude_radius_nm_inv'],
            tuple(tuple(r[k] for k in ('x', 'y', 'w', 'h')) for r in settings['masks']))
@@ -427,6 +427,9 @@ def spectrum(array, settings, cache=None, g_max=10.):
     """
     h, w = array.shape
     settings = {**settings, 'g_max': g_max}
+    g_min = settings['exclude_radius_nm_inv']
+    if not 0 <= g_min < g_max:
+        raise ValueError('Central exclusion must be smaller than the outer fitting limit.')
     prepared = _cached_detector(array, settings, cache)
     translation = refine_translation(prepared['spots'], settings, array.shape)
     if translation['applied']:
@@ -460,11 +463,11 @@ def spectrum(array, settings, cache=None, g_max=10.):
                        'observed_spots': [s['q'] for s in p['spots']],
                        'strength': min(.5, (strongest['local_contrast']-1)/6),
                        'local_contrast': strongest['local_contrast'], 'enrichment': strongest['enrichment']})
-    context = {'maxima': maxima, 'radius': radius, 'g_max': g_max, 'x_limit': max(cx, w-1-cx)*sx,
+    context = {'maxima': maxima, 'radius': radius, 'g_min': g_min, 'g_max': g_max, 'x_limit': max(cx, w-1-cx)*sx,
                'y_limit': max(cy, h-1-cy)*sy,
                'visible': lambda q: visible(q, settings, array.shape, radius) | visible(-q, settings, array.shape, radius)}
     complete_band = min(cx*sx, (w-1-cx)*sx, cy*sy, (h-1-cy)*sy) >= g_max
-    result = {'kind': 'diffraction', 'log': prepared['log'], 'extent': [-g_max*1.05, g_max*1.05, -g_max*1.05, g_max*1.05], 'g_min': BAND[0], 'g_max': g_max,
+    result = {'kind': 'diffraction', 'log': prepared['log'], 'extent': [-g_max*1.05, g_max*1.05, -g_max*1.05, g_max*1.05], 'g_min': g_min, 'g_max': g_max,
               'peaks': peaks, 'df': max(sx, sy), 'peak_width_nm_inv': width,
               'weak_maxima': maxima, 'profile_threshold': settings['spot_snr'],
               'observed_spot_count': sum(len(p['observed_spots']) for p in peaks),

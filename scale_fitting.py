@@ -36,7 +36,7 @@ def penalize(result, scale_a, scale_c, strength):
     return result
 
 
-def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417):
+def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, hcp_c=.468, g_min=3.):
     """Expand allowed reflections for these zones and the complete scale range.
 
     The zone library stays finite; the reflection-index bound follows the chosen
@@ -48,17 +48,26 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417):
         projection = original.get('projection')
         if projection is None:
             projection = np.linalg.lstsq(reciprocal(original['hkl'], phase), original['q'], rcond=None)[0]
+        if phase == 'HCP':
+            # Changing a/c changes the zone's plane in Cartesian reciprocal space.
+            # Re-orthonormalize that plane instead of stretching detector x/y axes.
+            old_a = original.get('reference_a_nm', .295)
+            old_c = original.get('reference_c_nm', .468)
+            scaled = projection * np.array([old_a/hcp_a, old_a/hcp_a, old_c/hcp_c])[:, None]
+            eig, axes = np.linalg.eigh(scaled.T @ scaled)
+            projection = scaled @ ((axes / np.sqrt(eig)) @ axes.T)
         reference = {'BCC': .330/bcc_a, 'FCC': .417/fcc_a}.get(phase, 1.)
         maximum = (g_max+.1)/(BOUNDS[0]*reference)
-        a_bound = int(np.ceil(NOMINAL_A[phase]*maximum))
-        c_bound = int(np.ceil(.468*maximum)) if phase == 'HCP' else a_bound
+        a = hcp_a if phase == 'HCP' else NOMINAL_A[phase]
+        a_bound = int(np.ceil(a*maximum))
+        c_bound = int(np.ceil(hcp_c*maximum)) if phase == 'HCP' else a_bound
         hs = np.array(list(itertools.product(range(-a_bound, a_bound+1),
                                              range(-a_bound, a_bound+1),
                                              range(-c_bound, c_bound+1))))
         hs = hs[allowed(hs, phase) & (hs @ original['zone_3index'] == 0)]
-        vectors = reciprocal(hs, phase)
+        vectors = reciprocal(hs, phase, a=a, c=hcp_c)
         radii = np.linalg.norm(vectors, axis=1)
-        keep = (radii >= (3.-.1)/(BOUNDS[1]*reference)) & (radii <= maximum)
+        keep = (radii > 0) & (radii >= (g_min-.1)/(BOUNDS[1]*reference)) & (radii <= maximum)
         hs, vectors = hs[keep], vectors[keep]
         q = vectors @ projection
         half = (q[:, 1] > 1e-8) | ((abs(q[:, 1]) < 1e-8) & (q[:, 0] > 0))
@@ -66,6 +75,7 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417):
         order = np.argsort(np.linalg.norm(q, axis=1))
         prepared.append({**original, 'hkl': hs[order], 'q': q[order],
                          'g': np.linalg.norm(q[order], axis=1),
+                         'reference_a_nm': a, 'reference_c_nm': hcp_c if phase == 'HCP' else None,
                          'projection': projection, 'c_direction': projection[2].copy()})
     return prepared
 
@@ -88,12 +98,14 @@ def metric_transform(template, scale_a, scale_c):
 
 
 def prediction_points(template, scale_a, scale_c, bcc_a=.330, hkl=None, fcc_a=.417):
-    q = template['q'] if hkl is None else reciprocal(hkl, template['phase']) @ template['projection']
+    q = template['q'] if hkl is None else reciprocal(
+        hkl, template['phase'], a=template.get('reference_a_nm'),
+        c=template.get('reference_c_nm', .468)) @ template['projection']
     reference = {'BCC': .330/bcc_a, 'FCC': .417/fcc_a}.get(template['phase'], 1.)
     return q @ metric_transform(template, scale_a, scale_c)*reference
 
 
-def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max):
+def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min):
     lengths = np.linalg.norm(observed, axis=1)
     angles = np.arctan2(observed[:, 1], observed[:, 0])
     low, high = BOUNDS
@@ -121,7 +133,7 @@ def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weight
         distance, nearest = tree.query(predicted.reshape(-1, 2))
         distance = distance.reshape(len(scale), -1)
         nearest = nearest.reshape(distance.shape) % len(observed)
-        visible = (g[None, :]*scale[:, None] >= 3) & (g[None, :]*scale[:, None] <= g_max)
+        visible = (g[None, :]*scale[:, None] >= g_min) & (g[None, :]*scale[:, None] <= g_max)
         quality = np.exp(-.5*(distance/(tol/2))**2)
         quality[(distance > tol) | ~visible] = 0
         support = np.zeros((len(scale), len(observed)))
@@ -142,12 +154,12 @@ def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weight
     return selected
 
 
-def _refine(peaks, template, seed, tol, bcc_a, double, strength, fcc_a, g_max):
+def _refine(peaks, template, seed, tol, bcc_a, double, strength, fcc_a, g_max, g_min):
     _, angle, sa, sc = seed
     low, high = BOUNDS
 
     def score(angle, sa, sc):
-        return core.score_hypothesis(peaks, template, prediction_points(template, sa, sc, bcc_a, fcc_a=fcc_a), 1., angle, tol, g_max)
+        return core.score_hypothesis(peaks, template, prediction_points(template, sa, sc, bcc_a, fcc_a=fcc_a), 1., angle, tol, g_max, g_min)
 
     result = score(angle, sa, sc)
     if not result:
@@ -182,13 +194,14 @@ def _refine(peaks, template, seed, tol, bcc_a, double, strength, fcc_a, g_max):
         if improvement < 1e-7:
             break
     c_visible = template['phase'] == 'HCP' and float(template['c_direction'] @ template['c_direction']) > 1e-10
-    nominal_a = {'BCC': bcc_a, 'FCC': fcc_a, 'HCP': .295}[template['phase']]
+    nominal_a = {'BCC': bcc_a, 'FCC': fcc_a, 'HCP': template.get('reference_a_nm', .295)}[template['phase']]
+    nominal_c = template.get('reference_c_nm', .468) if template['phase'] == 'HCP' else None
     fitted_a = nominal_a/sa
-    fitted_c = .468/sc if template['phase'] == 'HCP' else None
+    fitted_c = nominal_c/sc if template['phase'] == 'HCP' else None
     result.update({'shared_scale': None if double else sa, 'scale_a': sa,
                    'scale_c': sc if template['phase'] == 'HCP' else None,
                    'nominal_a_nm': nominal_a,
-                   'nominal_c_nm': .468 if template['phase'] == 'HCP' else None,
+                   'nominal_c_nm': nominal_c,
                    'fitted_a_nm': fitted_a, 'fitted_c_nm': fitted_c,
                    'scale_parameter_count': 2 if double else 1,
                    'c_axis_visible': c_visible,
@@ -198,7 +211,7 @@ def _refine(peaks, template, seed, tol, bcc_a, double, strength, fcc_a, g_max):
     return penalize(result, sa, sc if double else None, strength)
 
 
-def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10.):
+def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10., g_min=3.):
     if mode not in ('auto_uniform', 'auto_hcp_ac'):
         raise ValueError('Unknown automatic scale mode.')
     strength = float(scale_penalty_strength)
@@ -215,9 +228,9 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
                   float(template['c_direction'] @ template['c_direction']) > 1e-10)
         if len(template['q']) < 4:
             continue
-        seeds = _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max)
+        seeds = _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min)
         for seed in seeds:
-            result = _refine(peaks, template, seed, tol, bcc_a, double, strength, fcc_a, g_max)
+            result = _refine(peaks, template, seed, tol, bcc_a, double, strength, fcc_a, g_max, g_min)
             if result:
                 result['scale_mode'] = mode
                 if mode == 'auto_hcp_ac' and template['phase'] == 'HCP' and not double:

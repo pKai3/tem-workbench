@@ -16,14 +16,14 @@ def peak_width(spectrum):
  # Older saved/cached spectra used the Hann-specific name.
  return spectrum.get('peak_width_nm_inv', spectrum.get('hann_power_fwhm_nm_inv', 1.44*spectrum['df']))
 
-def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True,g_max=10.):
+def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True,g_max=10.,g_min=3.):
  if window not in ('hann','none') or not isinstance(remove_mean,bool):
   raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
  h,w=a.shape
  z=a.astype('float32')
  if remove_mean:z=z-float(z.mean())
  if window=='hann':z=z*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:]
- power=np.abs(fftshift(fft2(z,workers=2)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],.65);valid=(g>=3)&(g<=g_max)
+ power=np.abs(fftshift(fft2(z,workers=2)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],.65);valid=(g>0)&(g>=g_min)&(g<=g_max)
  window_width=(1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
  threshold=max(1.8,profile_fraction*float(np.max(wh[valid]))) if np.any(valid) else 1.8
  components,nc=label(valid&(wh>threshold));peaks=[]
@@ -40,7 +40,7 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
     if axis==0:dx=off
     else:dy=off
   q=canonical(np.array([[float(xx[y,x]+dx*df),float(yy[y,x]-dy*df)]]))[0].tolist();weights=np.maximum(wh[ys,xs]-threshold,0);area=int(len(ys));width=float(np.sqrt(max(area,1)/np.pi)*2*df)
-  if not 3 <= np.linalg.norm(q) <= g_max:continue
+  if not g_min <= np.linalg.norm(q) <= g_max or np.linalg.norm(q)==0:continue
   peaks.append({'profile_id':0,'qx':q[0],'qy':q[1],'g_nm_inv':float(np.linalg.norm(q)),'log_radial_enrichment':en,'weight':float(np.clip(en-2,1,6)),'profile_area_bins':area,'equivalent_profile_diameter_nm_inv':width})
  peaks.sort(key=lambda p:p['log_radial_enrichment'],reverse=True)
  # Weak fragments within one window response cannot be counted independently.
@@ -49,13 +49,13 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
   if any(np.hypot(p['qx']-v['qx'],p['qy']-v['qy'])<max(.12,window_width) for v in clean):continue
   p['profile_id']=len(clean)+1;clean.append(p)
   if len(clean)>=70:break
- return {'g_min':3.,'g_max':float(g_max),'log':lg,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
+ return {'g_min':float(g_min),'g_max':float(g_max),'log':lg,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
 
 def rotation(q,ang):
  c=np.cos(ang);s=np.sin(ang);return q@np.array([[c,s],[-s,c]])
 
-def score_hypothesis(peaks,T,q,scale,ang,tol,g_max=10.):
- O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);rawP=rotation(q*scale,ang);flip=(rawP[:,1]<-1e-8)|((abs(rawP[:,1])<1e-8)&(rawP[:,0]<0));P=canonical(rawP);hkl=T['hkl'].copy();hkl[flip]*=-1;g=np.linalg.norm(P,axis=1);keep=(g>=3)&(g<=g_max);P=P[keep];hi=hkl[keep]
+def score_hypothesis(peaks,T,q,scale,ang,tol,g_max=10.,g_min=3.):
+ O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);rawP=rotation(q*scale,ang);flip=(rawP[:,1]<-1e-8)|((abs(rawP[:,1])<1e-8)&(rawP[:,0]<0));P=canonical(rawP);hkl=T['hkl'].copy();hkl[flip]*=-1;g=np.linalg.norm(P,axis=1);keep=(g>0)&(g>=g_min)&(g<=g_max);P=P[keep];hi=hkl[keep]
  if len(P)<4:return None
  d=np.linalg.norm(O[:,None]-P[None,:],axis=2);d=np.minimum(d,np.linalg.norm(O[:,None]+P[None,:],axis=2));qual=np.exp(-.5*(d/(tol/2))**2);qual[d>tol]=0;cost=np.c_[-w[:,None]*qual,np.zeros((len(O),len(O)))];ii,jj=linear_sum_assignment(cost);matches=[]
  for i,j in zip(ii,jj):
@@ -68,16 +68,16 @@ def score_hypothesis(peaks,T,q,scale,ang,tol,g_max=10.):
  angles=np.array([np.arctan2(x['observed_q'][1],x['observed_q'][0]) for x in matches]);spread=float(np.max(abs(np.sin(angles[:,None]-angles[None,:])))) if len(angles)>1 else 0
  return {'template_id':T['id'],'phase':T['phase'],'zone_3index':T['zone_3index'],'mirror':T['mirror'],'rotation_deg':float(np.degrees(ang)%180),'shared_scale':scale,'score':float(score),'coverage':float(coverage),'quality_coverage':float(quality),'chance_density_penalty':penalty,'matched_profile_count':len(matches),'predicted_visible_band_node_count':len(P),'nonparallel_spread_sine':spread,'rms_nm_inv':float(np.sqrt(np.mean([x['residual_nm_inv']**2 for x in matches]))),'matches':matches,'predicted_nodes':[{'q':v.tolist(),'hkl':h.tolist()} for v,h in zip(P,hi)],'valid':bool(len(matches)>=4 and spread>.5 and score>.20 and coverage>.30)}
 
-def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a=.417,g_max=10.):
+def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a=.417,g_max=10.,g_min=3.):
  if len(peaks)<4:return []
  O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);og=np.linalg.norm(O,axis=1);oa=np.arctan2(O[:,1],O[:,0]);tree=cKDTree(np.r_[O,-O]);candidates=[]
  for T in templates:
   qs=T['q']*({'BCC':.330/bcc_a,'FCC':.417/fcc_a}.get(T['phase'],1));g=np.linalg.norm(qs,axis=1)*scale;ta=np.arctan2(qs[:,1],qs[:,0]);pairs=np.argwhere(abs(og[:min(16,len(og)),None]-g[None,:])<tol)
   if not len(pairs):continue
-  angles=np.unique(np.round(((oa[pairs[:,0]]-ta[pairs[:,1]])%np.pi)/np.radians(.5))*np.radians(.5));cs=np.cos(angles);sn=np.sin(angles);P=np.empty((len(angles),len(qs),2));P[:,:,0]=scale*(cs[:,None]*qs[None,:,0]-sn[:,None]*qs[None,:,1]);P[:,:,1]=scale*(sn[:,None]*qs[None,:,0]+cs[:,None]*qs[None,:,1]);dist,ind=tree.query(P.reshape(-1,2));dist=dist.reshape(len(angles),-1);ind=ind.reshape(len(angles),-1)%len(O);vals=np.exp(-.5*(dist/(tol/2))**2);vals[(dist>tol)|((g<3)|(g>g_max))[None,:]]=0;support=np.zeros((len(angles),len(O)));np.maximum.at(support,(np.repeat(np.arange(len(angles)),len(qs)),ind.ravel()),vals.ravel());quick=support@w/w.sum()
+  angles=np.unique(np.round(((oa[pairs[:,0]]-ta[pairs[:,1]])%np.pi)/np.radians(.5))*np.radians(.5));cs=np.cos(angles);sn=np.sin(angles);P=np.empty((len(angles),len(qs),2));P[:,:,0]=scale*(cs[:,None]*qs[None,:,0]-sn[:,None]*qs[None,:,1]);P[:,:,1]=scale*(sn[:,None]*qs[None,:,0]+cs[:,None]*qs[None,:,1]);dist,ind=tree.query(P.reshape(-1,2));dist=dist.reshape(len(angles),-1);ind=ind.reshape(len(angles),-1)%len(O);vals=np.exp(-.5*(dist/(tol/2))**2);vals[(dist>tol)|((g<g_min)|(g>g_max))[None,:]]=0;support=np.zeros((len(angles),len(O)));np.maximum.at(support,(np.repeat(np.arange(len(angles)),len(qs)),ind.ravel()),vals.ravel());quick=support@w/w.sum()
   for ai in np.argsort(quick)[-2:]:
    if quick[ai]<.2:continue
-   ang=float(angles[ai]);r=score_hypothesis(peaks,T,qs,scale,ang,tol,g_max)
+   ang=float(angles[ai]);r=score_hypothesis(peaks,T,qs,scale,ang,tol,g_max,g_min)
    if r:
     # Continuous in-plane rotation refinement at the SAME fixed shared scale.
     # No radial scale, affine distortion or phase-specific metric refinement is allowed.
@@ -87,10 +87,10 @@ def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a
       pv=np.array(match['predicted_q']);ov=np.array(match['observed_q']);ov=ov if ov@pv>=0 else -ov;num+=match['weight']*complex(*ov)*np.conj(complex(*pv))
      delta=float(np.angle(num)) if abs(num)>0 else 0
      if abs(delta)>np.radians(2):delta=float(np.clip(delta,-np.radians(2),np.radians(2)))
-     rr=score_hypothesis(peaks,T,qs,scale,ang+delta,tol,g_max)
+     rr=score_hypothesis(peaks,T,qs,scale,ang+delta,tol,g_max,g_min)
      if rr and rr['score']>=r['score']:r=rr;ang+=delta
      else:break
-    r['nominal_a_nm']={'BCC':bcc_a,'FCC':fcc_a,'HCP':.295}[T['phase']];r['nominal_c_nm']=.468 if T['phase']=='HCP' else None;candidates.append(r)
+    r['nominal_a_nm']={'BCC':bcc_a,'FCC':fcc_a,'HCP':T.get('reference_a_nm',.295)}[T['phase']];r['nominal_c_nm']=T.get('reference_c_nm',.468) if T['phase']=='HCP' else None;candidates.append(r)
  if candidate_sink is not None:candidate_sink.extend(candidates)
  return retain(candidates,topn)
 
@@ -133,12 +133,12 @@ def classify(peaks,models,df):
  if df>.15:base['flags'].append('At ~5nm, Hann broadening is about0.286nm^-1; near-coincident template differences are resolution-limited.')
  return base
 
-def gridfit(peaks,tol,min_profiles=4,exclude_ids=(),g_max=10.):
+def gridfit(peaks,tol,min_profiles=4,exclude_ids=(),g_max=10.,g_min=3.):
  if len(peaks)<min_profiles:return None
  O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);order=np.argsort(w)[::-1][:16];total=w.sum();candidates=[]
  for i,j in itertools.combinations(order,2):
   B=np.array([O[i],O[j]]);gn=np.linalg.norm(B,axis=1);area=abs(np.linalg.det(B));sine=area/np.prod(gn)
-  if max(gn)>8.3 or min(gn)<3 or area<10 or sine<.45:continue
+  if max(gn)>8.3 or min(gn)<max(g_min,tol) or area<10 or sine<.45:continue
   seed=[peaks[i]['profile_id'],peaks[j]['profile_id']]
   for iteration in range(3):
    if abs(np.linalg.det(B))<10:break
@@ -154,7 +154,7 @@ def gridfit(peaks,tol,min_profiles=4,exclude_ids=(),g_max=10.):
    ang=np.arctan2(O[rr,1],O[rr,0]);spread=float(np.max(abs(np.sin(ang[:,None]-ang[None,:]))))
    if spread<.5:break
    # Predict a finite reciprocal grid from observed basis seeds; no missing half-basis is invented.
-   cs=np.array(list(itertools.product(range(-4,5),repeat=2)));qp=cs@B;gg=np.linalg.norm(qp,axis=1);sel=(gg>=3)&(gg<=g_max)&((qp[:,1]>1e-8)|((abs(qp[:,1])<=1e-8)&(qp[:,0]>0)));cs=cs[sel];qp=qp[sel];gg=gg[sel]
+   cs=np.array(list(itertools.product(range(-4,5),repeat=2)));qp=cs@B;gg=np.linalg.norm(qp,axis=1);sel=(gg>0)&(gg>=g_min)&(gg<=g_max)&((qp[:,1]>1e-8)|((abs(qp[:,1])<=1e-8)&(qp[:,0]>0)));cs=cs[sel];qp=qp[sel];gg=gg[sel]
    if len(qp)>32 or len(qp)<min_profiles:break
    og=np.linalg.norm(O,axis=1);chance=np.minimum(1,((abs(og[:,None]-gg[None,:])<tol)*(2*np.arcsin(np.minimum(tol/np.maximum(og[:,None],.1),1))/np.pi)).sum(axis=1));chance=float(w@chance/total);coverage=float(w[rr].sum()/total);qcoverage=float((w[rr]*quality[rr]).sum()/total);score=qcoverage-chance-.03
    matches=[{'profile_id':peaks[k]['profile_id'],'coefficients_mn':coeff[k].tolist(),'observed_q':O[k].tolist(),'predicted_q':P[k].tolist(),'residual_nm_inv':float(dist[k]),'weight':float(w[k])} for k in inds]
@@ -165,11 +165,11 @@ def gridfit(peaks,tol,min_profiles=4,exclude_ids=(),g_max=10.):
  if not candidates:return None
  return max(candidates,key=lambda c:(c['valid'],c['unique_quality_coverage'] if exclude_ids else c['score'],c['coverage']))
 
-def purity(peaks,tol,g_max=10.):
- primary=gridfit(peaks,tol,4,g_max=g_max);total=sum(p['weight'] for p in peaks);out={'status':'unresolved_pattern','primary_lattice':primary,'secondary_lattice':None,'primary_weight_fraction':primary['coverage'] if primary else 0.,'secondary_unique_fraction':0.,'explained_fraction':primary['coverage'] if primary else 0.,'dominance':None,'substantial_second_pattern':False,'phase_independent':True,'unexplained_residual_fraction':1-primary['coverage'] if primary else 1.}
+def purity(peaks,tol,g_max=10.,g_min=3.):
+ primary=gridfit(peaks,tol,4,g_max=g_max,g_min=g_min);total=sum(p['weight'] for p in peaks);out={'status':'unresolved_pattern','primary_lattice':primary,'secondary_lattice':None,'primary_weight_fraction':primary['coverage'] if primary else 0.,'secondary_unique_fraction':0.,'explained_fraction':primary['coverage'] if primary else 0.,'dominance':None,'substantial_second_pattern':False,'phase_independent':True,'unexplained_residual_fraction':1-primary['coverage'] if primary else 1.}
  if not primary or not primary['valid']:return out
  used={x['profile_id'] for x in primary['matches']}
- second=gridfit(peaks,tol,4,exclude_ids=used,g_max=g_max)
+ second=gridfit(peaks,tol,4,exclude_ids=used,g_max=g_max,g_min=g_min)
  # A failed residual fit can repeat the primary grid; it is not a second pattern.
  if second and not second['valid']:second=None
  unique=second['unique_weight_fraction'] if second else 0.;dominance=primary['coverage']/(primary['coverage']+unique);strong=[p for p in peaks if p.get('log_local_contrast',p.get('log_radial_enrichment',0))>=.5*max(q.get('log_local_contrast',q.get('log_radial_enrichment',0)) for q in peaks)];strongtotal=sum(p['weight'] for p in strong);strongcoverage=sum(p['weight'] for p in strong if p['profile_id'] in used)/strongtotal

@@ -18,6 +18,7 @@ import phase_comparison
 import demo_data
 import peak_evidence
 import diffraction
+from materials import reference_settings
 from crystal_templates import fcc_templates
 
 ROOT = Path(__file__).resolve().parent
@@ -49,19 +50,19 @@ class Engine:
         self.template_library = self.templates + fcc_templates()
         self.templates = scale_fitting.prepare_templates(self.template_library)
         self.auto_templates = self.templates
-        self._template_cache = {(10., .330, .417): self.templates}
+        self._template_cache = {(10., 3., .295, .468, .330, .417): self.templates}
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'engine.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'engine.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
 
     def templates_for(self, settings):
-        key = (settings['g_max'], settings['bcc_a'], settings['fcc_a'])
+        key = tuple(settings[k] for k in ('g_max', 'g_min', 'hcp_a', 'hcp_c', 'bcc_a', 'fcc_a'))
         if key not in self._template_cache:
             if len(self._template_cache) >= 4:
                 self._template_cache.pop(next(iter(self._template_cache)))
             self._template_cache[key] = scale_fitting.prepare_templates(
-                self.template_library, g_max=key[0], bcc_a=key[1], fcc_a=key[2])
+                self.template_library, g_max=key[0], g_min=key[1], hcp_a=key[2], hcp_c=key[3], bcc_a=key[4], fcc_a=key[5])
         return self._template_cache[key]
 
     def catalog(self):
@@ -179,11 +180,12 @@ class Engine:
             raise ValueError('Direct diffraction analyses use the full detector image; use exclusion masks for unwanted areas.')
         if min(w, h) < 32 or x < 0 or y < 0 or x+w > iw or y+h > ih or (not direct and abs(w-h) > 1):
             raise ValueError('Choose a square region within the image, at least 32 pixels wide.')
-        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('bcc_a', .330), ('fcc_a', .417), ('g_max', 10.), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT)]}
+        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('g_min', 3.), ('g_max', 10.), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT)]}
         if not all(np.isfinite(v) for v in values.values()):
             raise ValueError('Analysis settings must be finite numbers.')
-        if not (.85 <= values['scale'] <= 1.15 and .30 <= values['bcc_a'] <= .37 and .30 <= values['fcc_a'] <= .65 and 4 <= values['g_max'] <= 30 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
+        if not (.85 <= values['scale'] <= 1.15 and 0 <= values['g_min'] < 30 and 4 <= values['g_max'] <= 30 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
             raise ValueError('Analysis settings are outside the supported range.')
+        values.update(reference_settings(settings))
         mode = settings.get('scale_mode', 'fixed')
         if mode not in scale_fitting.MODES:
             raise ValueError('Choose a supported scale fitting mode.')
@@ -195,6 +197,9 @@ class Engine:
         values.update(fft_window=window, remove_mean=remove_mean)
         if direct:
             values['diffraction'] = diffraction.validate(item['info'], settings.get('diffraction', {}))
+            values['g_min'] = values['diffraction']['exclude_radius_nm_inv']
+        if values['g_min'] >= values['g_max']:
+            raise ValueError('Central exclusion must be smaller than the outer fitting limit.')
         return {'x': x, 'y': y, 'w': w, 'h': h}, values
 
     def analyze(self, item, roi, settings, images=True, cache_candidates=False):
@@ -212,7 +217,7 @@ class Engine:
             sx, sy = info['pixel_x_nm'], info['pixel_y_nm']
             width_nm, height_nm = w*sx, h*sy
             s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'],
-                              window=settings['fft_window'], remove_mean=settings['remove_mean'], g_max=settings['g_max'])
+                              window=settings['fft_window'], remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'])
             can_index = min(.5/sx, .5/sy) >= settings['g_max']
         tol = max(.10, core.peak_width(s))
         candidates = []
@@ -220,7 +225,7 @@ class Engine:
         if not can_index:
             models = []
         elif settings['scale_mode'] == 'fixed':
-            models = core.search(s['peaks'], templates, settings['scale'], tol, bcc_a=settings['bcc_a'], candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'])
+            models = core.search(s['peaks'], templates, settings['scale'], tol, bcc_a=settings['bcc_a'], candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'])
             for model in candidates:
                 model.update({'scale_mode': 'fixed', 'scale_a': settings['scale'],
                               'scale_c': settings['scale'] if model['phase'] == 'HCP' else None,
@@ -233,7 +238,7 @@ class Engine:
             models = scale_fitting.search(s['peaks'], templates, tol,
                                           settings['scale_mode'], bcc_a=settings['bcc_a'],
                                           scale_penalty_strength=settings['scale_penalty_strength'],
-                                          candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'])
+                                          candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'])
         if can_index:
             if not direct:
                 context = peak_evidence.prepare(s, crop.shape, sx, sy)
@@ -243,7 +248,7 @@ class Engine:
                 peak_evidence.apply(model, settings['peak_evidence_weight'])
             models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
         classification = self.classify(s, models, settings, width_nm, height_nm, can_index)
-        periodicity = core.purity(s['peaks'], tol, g_max=settings['g_max']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False}
+        periodicity = core.purity(s['peaks'], tol, g_max=settings['g_max'], g_min=settings['g_min']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False}
         log = s.pop('log')
         # Return an encoded log-power field; display contrast is adjusted in the browser only.
         if images:
@@ -296,13 +301,13 @@ class Engine:
             classification['flags'].append('Prediction-site evidence is an exploratory ranking adjustment. Weak maxima are checked against local background and rotated controls; they do not count toward the initial fit screen or separate-pattern criteria. Missing spots are not proof of an absent reflection.')
         if not can_index:
             classification['label'] = 'insufficient'
-            classification['flags'].append('No usable sampling in the phase-fitting band.' if s.get('kind') == 'diffraction' else f"The stored sampling does not cover the full 3–{settings['g_max']:g} nm⁻¹ fitting band; lower the outer limit to enable phase fitting.")
+            classification['flags'].append('No usable sampling in the phase-fitting band.' if s.get('kind') == 'diffraction' else f"The stored sampling does not cover the full {settings.get('g_min', 3.):g}–{settings['g_max']:g} nm⁻¹ fitting band; lower the outer limit to enable phase fitting.")
         # Report the actual window broadening rather than the original fixed 5 nm example.
         classification['flags'] = [f for f in classification['flags'] if not f.startswith('At ~5nm, Hann broadening')]
         if s.get('kind') == 'diffraction':
             classification['flags'] = [f.replace('HRTEM contrast transfer can suppress spots',
                 'diffraction intensities depend on excitation and thickness') for f in classification['flags']]
-            classification['flags'].append(f"Direct detector spots, without an FFT. Verify the beam centre and reciprocal calibration; fitting uses the 3–{settings['g_max']:g} nm⁻¹ band.")
+            classification['flags'].append(f"Direct detector spots, without an FFT. Verify the beam centre and reciprocal calibration; fitting uses the {settings.get('g_min', 3.):g}–{settings['g_max']:g} nm⁻¹ band.")
             classification['flags'].append(f"Matching radius {max(.10, core.peak_width(s)):.3f} nm⁻¹ uses the estimated spot width with a 0.10 nm⁻¹ floor. Opposite spots are grouped once; only observed spots are marked.")
             translation = s.get('center_refinement', {})
             if translation.get('enabled') and not translation.get('applied'):
