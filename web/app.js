@@ -1323,7 +1323,7 @@ function fittedReferenceVectors(model){
     const cSign=sum[0]*c.q[0]+sum[1]*c.q[1]<0?-1:1;
     if(Math.hypot(sum[0]-cSign*c.q[0],sum[1]-cSign*c.q[1])>1e-4)continue;
     const score=[a,b,c].reduce((s,n)=>s+(strong.has(n.i)?100:weak.has(n.i)?10:0),0)-a.g-b.g-c.g;
-    if(score>bestScore){bestScore=score;best=[vector(a),vector(b,sign),vector(c,cSign)]}
+    if(score>bestScore){bestScore=score;best=[{...vector(a),coefficient:1},{...vector(b,sign),coefficient:1},{...vector(c,cSign),coefficient:-1}]}
    }
   }
  }
@@ -1334,14 +1334,50 @@ function fittedReferenceVectors(model){
    best.push(vector(node));if(best.length===2)break;
   }
  }
- return best.map((v,i)=>({...v,name:'ABC'[i]}));
+ best.sort((a,b)=>b.g-a.g);
+ let letter=0,length=best[0]?.g;
+ return best.map(v=>{
+  // Share letters only for equal fitted lengths, allowing numerical roundoff.
+  if(Math.abs(v.g-length)>1e-6*Math.max(1,length)){letter++;length=v.g}
+  return {...v,name:'ABC'[letter]};
+ });
 }
-function vectorLabelPosition(x,y,occupied){
- const candidates=[[x+9,y-34],[x+9,y+9],[x-189,y-34],[x-189,y+9]];
- for(let y0=6;y0<=376;y0+=37)for(const x0 of [5,235])candidates.push([x0,y0]);
- const positions=candidates.map(([lx,ly])=>({x:clamp(lx,5,235),y:clamp(ly,5,382),w:180,h:29}));
- const overlap=(a,b)=>a.x<b.x+b.w+4&&a.x+a.w+4>b.x&&a.y<b.y+b.h+4&&a.y+a.h+4>b.y;
- const chosen=positions.find(p=>!occupied.some(b=>overlap(p,b)))||positions[0];occupied.push(chosen);return chosen;
+function fittedVectorSummary(vectors){
+ const [a,b]=vectors;
+ const angle=b?Math.acos(clamp((a.q[0]*b.q[0]+a.q[1]*b.q[1])/(a.g*b.g),-1,1))*180/Math.PI:null;
+ const angleLabel=angle===null?'One direction':`∠${a.name}${b.name} ${angle.toFixed(1)}°`;
+ if(vectors.length!==3)return angleLabel+' · no closed trio';
+ // Repeated letters describe equal lengths, so avoid an ambiguous A = A + B equation.
+ if(new Set(vectors.map(v=>v.name)).size<3)return angleLabel+' · '+vectors.map(v=>v.name).join('/');
+ // Reordering lengths must also reorder the signed vector equation.
+ const terms=vectors.slice(1).map(v=>({name:v.name,sign:-v.coefficient/a.coefficient})).sort((x,y)=>y.sign-x.sign);
+ return `${angleLabel} · ${a.name} = ${terms[0].sign<0?'− ':''}${terms[0].name} ${terms[1].sign<0?'−':'+'} ${terms[1].name}`;
+}
+function addVectorLabel(parent,attrs,lines,height,opacity){
+ const group=el('g',{'font-family':'Arial, sans-serif',...attrs});
+ const background=el('rect',{width:1,height,rx:2,fill:'#05090e',opacity});
+ const text=lines.map(([value,size,y,fill])=>el('text',{x:5,y,fill,'font-size':size},value));
+ group.append(background,...text);parent.append(group);
+ // Measure attached SVG text so boxes and collision checks use the drawn width.
+ const width=Math.ceil(Math.max(...text.map(node=>node.getComputedTextLength())))+10;
+ background.setAttribute('width',width);
+ return {group,w:width,h:height};
+}
+function vectorLabelPosition(x,y,w,h,occupied,anchors){
+ const candidates=[[x+10,y-h-8],[x+10,y+8],[x-w-10,y-h-8],[x-w-10,y+8],
+  [x-w/2,y-h-12],[x-w/2,y+12],[x-w-12,y-h/2],[x+12,y-h/2]];
+ for(let ly=5;ly<=415-h;ly+=12)for(let lx=5;lx<=415-w;lx+=12)candidates.push([lx,ly]);
+ const overlap=(a,b,pad)=>Math.max(0,Math.min(a.x+a.w,b.x+b.w+pad)-Math.max(a.x,b.x-pad))*Math.max(0,Math.min(a.y+a.h,b.y+b.h+pad)-Math.max(a.y,b.y-pad));
+ let chosen=null,best=Infinity;
+ for(const [lx,ly]of candidates){
+  const p={x:clamp(lx,5,415-w),y:clamp(ly,5,415-h),w,h};
+  const dx=x-clamp(x,p.x,p.x+w),dy=y-clamp(y,p.y,p.y+h);
+  const score=occupied.reduce((sum,box)=>sum+overlap(p,box,4),0)*10000+
+   anchors.reduce((sum,box)=>sum+overlap(p,box,2),0)*20+dx*dx+dy*dy+
+   .03*((x-p.x-w/2)**2+(y-p.y-h/2)**2);
+  if(score<best){best=score;chosen=p}
+ }
+ occupied.push(chosen);return chosen;
 }
 function drawReflectionVectors(qp){
  const mode=$('reflection-vectors').value,fitted=mode.startsWith('fitted_'),choice=fitted?mode.slice(7):mode;
@@ -1351,30 +1387,37 @@ function drawReflectionVectors(qp){
   const model=bestModel(result,phase);if(!model)continue;
   const vectors=fitted?fittedReferenceVectors(model):matchedReflectionVectors(model);if(!vectors.length)continue;
   if(fitted){
-   const lx=phases.length===2?5+210*phaseNumber:5,ly=382,group=el('g',{'data-vector-key':phase});
-   occupied.push({x:lx,y:ly,w:205,h:33});
-   const angle=vectors.length>=2?Math.acos(clamp((vectors[0].q[0]*vectors[1].q[0]+vectors[0].q[1]*vectors[1].q[1])/(vectors[0].g*vectors[1].g),-1,1))*180/Math.PI:null;
-   group.append(el('rect',{x:lx,y:ly,width:205,height:33,rx:2,fill:'#05090e',opacity:.92}));
-   group.append(el('text',{x:lx+5,y:ly+12,fill:phaseColors[phase],'font-size':10},phase+' '+zoneLabel(model)+' · fitted'));
-   group.append(el('text',{x:lx+5,y:ly+26,fill:'#dce6ef','font-size':9},(angle===null?'One direction':`∠AB ${angle.toFixed(1)}°`)+(vectors.length===3?' · A + B = C':' · no closed A/B/C trio')));
-   groups.push(group);
+   const label=addVectorLabel($('fft-overlay'),{'data-vector-key':phase},[
+    [phase+' '+zoneLabel(model)+' · fitted',10,12,phaseColors[phase]],
+    [fittedVectorSummary(vectors),9,26,'#dce6ef']
+   ],33,.92);
+   const lx=phases.length===2&&phaseNumber===1?415-label.w:5,ly=382;
+   label.group.setAttribute('transform',`translate(${lx} ${ly})`);
+   occupied.push({x:lx,y:ly,w:label.w,h:label.h});
   }
   groups.push({phase,model,vectors});
  }
- for(const entry of groups){
-  if(!entry.vectors){$('fft-overlay').append(entry);continue}
-  const {phase,model,vectors}=entry;
+ const points=[[0,0],...groups.flatMap(entry=>entry.vectors.map(v=>v.q)),
+  ...(result.spectrum?.peaks||[]).flatMap(p=>p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])];
+ const anchors=points.map(q=>{const [x,y]=qp(...q);return {x:x-8,y:y-8,w:16,h:16}});
+ for(const {phase,model,vectors}of groups){
   for(const {q,g,sign,hkl,name}of vectors){
    const [ox,oy]=qp(0,0),[x,y]=qp(...q),dx=x-ox,dy=y-oy,length=Math.hypot(dx,dy),ux=dx/length,uy=dy/length,color=phaseColors[phase];
    const group=el('g',{'data-reflection-vector':phase});
    const line=el('path',{d:`M${ox} ${oy}L${x} ${y}M${x-7*ux+3*uy} ${y-7*uy-3*ux}L${x} ${y}L${x-7*ux-3*uy} ${y-7*uy+3*ux}`,stroke:color,'stroke-width':1.2,fill:'none'});
-   if(!model.valid)line.setAttribute('stroke-dasharray','4 3');group.append(line);
-   const {x:lx,y:ly}=vectorLabelPosition(x,y,occupied);
-   group.append(el('rect',{x:lx,y:ly,width:180,height:29,rx:2,fill:'#05090e',opacity:.88}));
-   group.append(el('text',{x:lx+5,y:ly+11,fill:color,'font-size':9.5},fitted?`${name} · ${phase} · fitted vector`:phase+' '+planeLabel(model,hkl,sign)));
-   group.append(el('text',{x:lx+5,y:ly+23,fill:'#edf5fc','font-size':9},`g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm`));
-   group.append(el('title',{},fitted?`${name}: ${planeLabel(model,hkl,sign)} from the fitted prediction lattice. A/B/C are reference vectors, not unit-cell edges or a separate phase test.`:'Measured reciprocal distance and plane spacing, indexed by this candidate fit. Opposite observations count as one profile.'));
-   $('fft-overlay').append(group);
+   if(!model.valid)line.setAttribute('stroke-dasharray','4 3');group.append(line);$('fft-overlay').append(group);
+   const label=addVectorLabel(group,{'data-vector-label':phase},[
+    [fitted?`${name} · ${phase} · fitted vector`:phase+' '+planeLabel(model,hkl,sign),9.5,11,color],
+    [`g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm`,9,23,'#edf5fc']
+   ],29,.88);
+   const {x:lx,y:ly}=vectorLabelPosition(x,y,label.w,label.h,occupied,anchors);
+   label.group.setAttribute('transform',`translate(${lx} ${ly})`);
+   const edgeX=clamp(x,lx,lx+label.w),edgeY=clamp(y,ly,ly+label.h),distance=Math.hypot(edgeX-x,edgeY-y);
+   if(distance>12){
+    const lead=el('path',{d:`M${x+8*(edgeX-x)/distance} ${y+8*(edgeY-y)/distance}L${edgeX} ${edgeY}`,stroke:color,'stroke-width':.7,'stroke-dasharray':'2 2',opacity:.7,fill:'none','data-vector-leader':phase});
+    group.insertBefore(lead,label.group);
+   }
+   group.append(el('title',{},fitted?`${name}: ${planeLabel(model,hkl,sign)} from the fitted prediction lattice. Letters run from longest to shortest reciprocal length; equal lengths share a letter. These are not unit-cell edges or a separate phase test.`:'Measured reciprocal distance and plane spacing, indexed by this candidate fit. Opposite observations count as one profile.'));
   }
  }
 }
