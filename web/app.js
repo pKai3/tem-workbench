@@ -962,10 +962,18 @@ function beginSpectrumLoading(){
  spectrumLoadingTimer=setTimeout(()=>{spectrumLoadingTimer=null;if(spectrumLoading)setSpectrumSpinner(true)},1000);
 }
 function finishSpectrumLoading(){spectrumLoading=false;clearTimeout(spectrumLoadingTimer);spectrumLoadingTimer=null;setSpectrumSpinner(false);$('fft-stage').setAttribute('aria-busy','false')}
+function syncLargeSpectrumSize(){
+ const {width,height}=$('overview').getBoundingClientRect();
+ const size=Math.min(width,height);
+ if(size>0)document.querySelector('.previews').style.setProperty('--reference-preview-size',`${size}px`);
+}
 function applyInspectorLayout(){
  document.body.classList.toggle('fft-only',!isDiffraction()&&$('inspector-layout').value==='fft');
  $('inspector-layout-control').hidden=isDiffraction();
+ syncLargeSpectrumSize();
 }
+if(typeof ResizeObserver!=='undefined')new ResizeObserver(syncLargeSpectrumSize).observe($('overview'));
+else window.addEventListener('resize',syncLargeSpectrumSize);
 $('inspector-layout').value=readPreference('tem-inspector-layout','paired')==='fft'?'fft':'paired';
 $('inspector-layout').onchange=()=>{writePreference('tem-inspector-layout',$('inspector-layout').value);applyInspectorLayout()};
 function hideRegionPreview(){clearTimeout(hoverTimer);hoverTimer=null;hoverKey=null;hoverVersion++;hoverController?.abort();hoverController=null;$('region-hover').hidden=true}

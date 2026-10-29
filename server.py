@@ -279,6 +279,8 @@ class Workbench:
                 raise ValueError('The exported image is no longer in the current collection.')
             output = Path(self.config['output_root']).expanduser().resolve()
         images = []
+        gif_palette = None
+        previous_pixels = None
         total_pixels = 0
         for frame in frames:
             if not isinstance(frame, str) or not frame.startswith('data:image/png;base64,'):
@@ -292,10 +294,23 @@ class Workbench:
                     raise ValueError('Export frames must have matching dimensions within the size limit.')
                 rgb = image.convert('RGB')
                 if format_name == 'gif':
-                    # Share one palette to keep the static image steady and store
-                    # indexed frames instead of retaining every full RGB frame.
-                    images.append(rgb.quantize(palette=images[0], dither=Image.Dither.NONE) if images
-                                  else rgb.quantize(colors=256, method=Image.Quantize.FASTOCTREE))
+                    if gif_palette is None:
+                        # Reserve index 255 for unchanged pixels. Duplicate colour
+                        # zero there so palette quantization cannot add a new colour.
+                        colours = rgb.quantize(colors=255, method=Image.Quantize.FASTOCTREE).getpalette()[:765]
+                        gif_palette = Image.new('P', (1, 1))
+                        gif_palette.putpalette(colours + colours[:3])
+                    # Quantize every frame the same way, including the first, so
+                    # identical background pixels remain identical palette indices.
+                    pixels = np.array(rgb.quantize(palette=gif_palette, dither=Image.Dither.NONE))
+                    pixels[pixels == 255] = 0
+                    delta = pixels.copy()
+                    if previous_pixels is not None:
+                        delta[pixels == previous_pixels] = 255
+                    indexed = Image.fromarray(delta)
+                    indexed.putpalette(gif_palette.getpalette())
+                    images.append(indexed)
+                    previous_pixels = pixels
                 else:
                     images.append(rgb)
         safe_name = ''.join(c if c.isalnum() or c in '-_.' else '_' for c in name)[:120]
@@ -306,7 +321,7 @@ class Workbench:
         with target.open('xb') as destination:
             if format_name == 'gif':
                 images[0].save(destination, format='GIF', save_all=True, append_images=images[1:],
-                               duration=duration, loop=0, disposal=2)
+                               duration=duration, loop=0, disposal=1, transparency=255, optimize=False)
             else:
                 images[0].save(destination, format='PNG')
         LOG.info('Exported %s view: %s', kind, target)
