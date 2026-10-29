@@ -144,3 +144,8 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 
 .fft-processing-heading{display:flex;align-items:center;gap:8px;align-self:center}
 .favorite-star{color:#f4b75e;white-space:nowrap}
+
+.result-label-help{border:0;margin:0 0 12px;padding:0;font-size:12px;line-height:1.55;color:var(--muted)}
+.result-label-help summary{font-size:12px}
+.result-label-help p{margin:8px 0}
+.result-label-help strong{color:#dce6ef}

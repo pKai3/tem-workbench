@@ -274,10 +274,10 @@ for(const [id,key]of [['roi-x','x'],['roi-y','y'],['roi-nm','w']])$(id).addEvent
 $('centre').onclick=()=>{if(!meta)return;roi.x=(meta.width-roi.w)/2;roi.y=(meta.height-roi.h)/2;updateBox();schedule(0)};
 function patternExplanation(data){
  const label=data.classification.label;
- if(label==='coexisting_candidates')return 'Separate peak sets support candidates of different structures; their proportions are unknown.';
+ if(label==='coexisting_candidates')return 'Separate peak sets support passing fits of different structures. Both may contribute; their proportions are unknown.';
  if(label==='multiple_orientations')return 'Separate peak sets support multiple orientations of the same candidate structure.';
  if(data.classification.ambiguity_reason==='shared_peaks_model_tradeoff')return 'Both structures explain the same detected peaks. The leading fit also uses extra flexibility or more unsupported predictions; the phase remains ambiguous.';
- if(label==='ambiguous')return 'Different structures fit overlapping evidence; the phase assignment remains ambiguous.';
+ if(label==='ambiguous')return 'Different structures compete to explain the same or overlapping peaks; the phase assignment remains ambiguous.';
  if(data.periodicity.status==='multiple_periodic_patterns')return 'Additional periodicity is supported, but a second phase assignment remains unresolved.';
  if(data.periodicity.status==='predominantly_one_periodic_pattern')return ['hcp_compatible','bcc_compatible','fcc_compatible'].includes(label)?'One periodic pattern predominates in the geometry check.':'A periodic pattern is supported, but its phase remains unresolved.';
  return 'The geometry check could not resolve the number of periodic patterns.';
