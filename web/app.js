@@ -290,6 +290,22 @@ function screenReasons(m){
 }
 function screenLabel(m){return m.valid?'Pass':'Below\n'+(screenReasons(m)[0]||'fit screen').replace(' strong profiles',' strong').replace('peak coverage','coverage')}
 function bestModel(data,phase){return data.models.find(m=>m.phase===phase&&m.valid)??data.models.find(m=>m.phase===phase)}
+function geometryFits(data){
+ const p=data.periodicity||{};
+ return [['primary_lattice','#df92ef','Primary geometry'],['secondary_lattice','#64d6bb','Secondary geometry']].flatMap(([key,color,name])=>{
+  const model=p[key];
+  // Older engines and saved results may retain a rejected copy of the primary.
+  if(!model||(key==='secondary_lattice'&&(!p.primary_lattice?.valid||!model.valid)))return [];
+  return [{key,model,color,name,geometry:true}];
+ });
+}
+function geometryDescription(data){
+ const p=data.periodicity||{};
+ if(p.status==='multiple_periodic_patterns')return 'Geometry check: a substantial second periodic pattern is supported.';
+ if(p.status==='predominantly_one_periodic_pattern')return 'Geometry check: one periodic pattern predominates.'+
+  (geometryFits(data).some(f=>f.key==='secondary_lattice')?'':' No distinct secondary geometry detected.');
+ return 'Geometry check: pattern count remains unresolved.';
+}
 // Shared column definitions keep both candidate tables aligned.
 const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axis: HCP [u v t w], BCC [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","a / c\nnm","Candidate model lattice dimensions, assuming the image calibration used"],["scale","Scale Δ\n%","100 × (reciprocal prediction multiplier − 1); HCP shows a* and c* separately. Model lattice dimensions change inversely."]];
 function renderFitHeader(head, showToggle=false){
@@ -340,7 +356,7 @@ function renderModels(data){
  }
  $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank = position − scale cost + weak-peak bonus − missing-prediction cost. S+W separates strong profiles from weak maxima; peak coverage is the weighted share of original detected profiles matched by the candidate. Prediction-site evidence below shows the separate adjustments. Model dimensions assume the image calibration used; these scores are not phase probabilities.';
 }
-async function renderResult(data,version,body){if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Geometry check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.');renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const raw=await decodeSpectrumImage(data.images);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;fftRaw=raw;if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
+async function renderResult(data,version,body){if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const raw=await decodeSpectrumImage(data.images);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;fftRaw=raw;if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
 const MARKER_SHAPES=['circle','diamond','square','triangle','crosshair','open-crosshair','off'];
 // Fraction of one animation cycle; the same value drives live CSS and GIF frames.
 function markerMotionOffset(kind,phase){
@@ -419,9 +435,9 @@ function drawFFT(){
  $('fft-image').setAttribute('href',colourSpectrum(fftRaw,result.image_kind));$('contrast-value').textContent=$('contrast').value+'%';
  const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();for(const q of [-10,-5,0,5,10]){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off')for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const attrs={stroke:'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} nm⁻¹`));$('fft-overlay').append(shape)}}const fits=[];
 if(['HCP','BCC','both'].includes(overlay)){for(const phase of overlay==='both'?['HCP','BCC']:[overlay]){const m=bestModel(result,phase);if(m)fits.push({model:m,color:phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}}
-if(overlay==='geometry'){for(const [key,color,name]of [['primary_lattice','#df92ef','Primary geometry'],['secondary_lattice','#64d6bb','Secondary geometry']]){const m=result.periodicity[key];if(m)fits.push({model:m,color,geometry:true,name})}}
+if(overlay==='geometry')fits.push(...geometryFits(result));
 if(overlay==='custom'){
- for(const key of chosenFits){if(key.startsWith('phase-')){const m=result.models[Number(key.slice(6))];if(m)fits.push({model:m,color:m.phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}else{const m=result.periodicity[key];if(m)fits.push({model:m,color:key==='primary_lattice'?'#df92ef':'#64d6bb',geometry:true,name:key==='primary_lattice'?'Primary geometry':'Secondary geometry'})}}
+ for(const key of chosenFits){if(key.startsWith('phase-')){const m=result.models[Number(key.slice(6))];if(m)fits.push({model:m,color:m.phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}else{const fit=geometryFits(result).find(f=>f.key===key);if(fit)fits.push(fit)}}
 }
 const shownWeak=new Set();
 for(const f of fits){
@@ -432,7 +448,7 @@ for(const f of fits){
   for(const sign of [1,-1]){
    const[x,y]=qp(sign*node.q[0],sign*node.q[1]);if(x<0||x>420||y<0||y>420)continue;
    const attrs={stroke:f.color,'stroke-width':1.2,fill:'none'};
-   if(!f.model.valid)attrs['stroke-dasharray']='5 3';else if(weak)attrs['stroke-dasharray']='2 2';else if(!supported)attrs['stroke-dasharray']='1 3';
+   if(weak)attrs['stroke-dasharray']='5 3';else if(!f.model.valid)attrs['stroke-dasharray']='2 2';else if(!supported)attrs['stroke-dasharray']='1 3';
    if(evidence?.status==='unassessable')attrs.opacity=.35;
    const styleId=f.geometry?(f.model===result.periodicity.primary_lattice?'primary-geometry-marker':'secondary-geometry-marker'):(f.model.phase==='HCP'?'hcp-marker':'bcc-marker');
    const shape=markerShape(x,y,$(styleId).value,{...attrs,'data-marker-kind':'prediction','data-marker-phase':f.geometry?'geometry':f.model.phase},7);
@@ -467,11 +483,11 @@ function renderFitChoices(data){
   appendFitCells(row,m,{name,geometry,rotation:!geometry});target.append(row);
  };
  data.models.map((m,i)=>({m,i})).sort((a,b)=>compareRank(a.m,b.m)).forEach(({m,i})=>add('phase-'+i,m,`${m.phase} ${zoneLabel(m)}`));
- const geometryEntries=[['primary_lattice','Primary geometry'],['secondary_lattice','Secondary geometry']].filter(([key])=>data.periodicity[key]);
+ const geometryEntries=geometryFits(data);
  if(geometryEntries.length){
   const geometryBody=document.createElement('tbody'),heading=document.createElement('tr'),cell=document.createElement('td');
   heading.className='fit-section';cell.colSpan=FIT_COLUMNS.length+1;cell.textContent='Geometry-only checks · separate score';heading.append(cell);geometryBody.append(heading);table.append(geometryBody);
-  geometryEntries.sort(([a],[b])=>compareRank(data.periodicity[a],data.periodicity[b])).forEach(([key,name])=>add(key,data.periodicity[key],name,true,geometryBody));
+  geometryEntries.sort((a,b)=>compareRank(a.model,b.model)).forEach(({key,name,model})=>add(key,model,name,true,geometryBody));
  }
  if(!body.children.length&&!geometryEntries.length)$('fit-list').textContent='No retained candidate fits in this region.';
 }

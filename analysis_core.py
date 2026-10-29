@@ -167,7 +167,11 @@ def gridfit(peaks,tol,min_profiles=4,exclude_ids=()):
 def purity(peaks,tol):
  primary=gridfit(peaks,tol,4);total=sum(p['weight'] for p in peaks);out={'status':'unresolved_pattern','primary_lattice':primary,'secondary_lattice':None,'primary_weight_fraction':primary['coverage'] if primary else 0.,'secondary_unique_fraction':0.,'explained_fraction':primary['coverage'] if primary else 0.,'dominance':None,'substantial_second_pattern':False,'phase_independent':True,'unexplained_residual_fraction':1-primary['coverage'] if primary else 1.}
  if not primary or not primary['valid']:return out
- used={x['profile_id'] for x in primary['matches']};second=gridfit(peaks,tol,4,exclude_ids=used);unique=second['unique_weight_fraction'] if second and second['valid'] else 0.;dominance=primary['coverage']/(primary['coverage']+unique);strong=[p for p in peaks if p.get('log_local_contrast',p.get('log_radial_enrichment',0))>=.5*max(q.get('log_local_contrast',q.get('log_radial_enrichment',0)) for q in peaks)];strongtotal=sum(p['weight'] for p in strong);strongcoverage=sum(p['weight'] for p in strong if p['profile_id'] in used)/strongtotal
+ used={x['profile_id'] for x in primary['matches']}
+ second=gridfit(peaks,tol,4,exclude_ids=used)
+ # A failed residual fit can repeat the primary grid; it is not a second pattern.
+ if second and not second['valid']:second=None
+ unique=second['unique_weight_fraction'] if second else 0.;dominance=primary['coverage']/(primary['coverage']+unique);strong=[p for p in peaks if p.get('log_local_contrast',p.get('log_radial_enrichment',0))>=.5*max(q.get('log_local_contrast',q.get('log_radial_enrichment',0)) for q in peaks)];strongtotal=sum(p['weight'] for p in strong);strongcoverage=sum(p['weight'] for p in strong if p['profile_id'] in used)/strongtotal
  out.update({'secondary_lattice':second,'secondary_unique_fraction':unique,'explained_fraction':min(1,primary['coverage']+unique),'dominance':dominance,'strong_profile_weight_fraction':strongcoverage,'substantial_second_pattern':bool(second and second['valid'] and dominance<.80),'unexplained_residual_fraction':max(0,1-primary['coverage']-unique)})
  out['status']='multiple_periodic_patterns' if out['substantial_second_pattern'] else 'predominantly_one_periodic_pattern'
  return out
