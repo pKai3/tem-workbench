@@ -7,16 +7,20 @@ function paletteRamp(stops){
   return rgb[lo].map((value,channel)=>Math.round(value+(rgb[hi][channel]-value)*t));
  });
 }
+// Matplotlib colour tables quantized to RGB8; see web/colormaps.LICENSE.
+function paletteFromHex(hex){return hex.match(/.{6}/g).map(rgb=>[0,2,4].map(i=>parseInt(rgb.slice(i,i+2),16)))}
 const SPECTRUM_PALETTES={
  magma:MAGMA,gray:paletteRamp(['#000000','#ffffff']),
- ice:paletteRamp(['#000309','#10274d','#185b94','#23b4d1','#e9ffff']),
- violet:paletteRamp(['#030108','#281548','#623e8f','#b18bd0','#fcf5ff']),
- green:paletteRamp(['#000503','#0b3327','#13794d','#62b977','#edffec'])
+ viridis:paletteFromHex('44015444025544035745055845065a45085b46095c460b5e460c5f460e61470f6247116347126547146647156747166947186a48196b481a6c481c6e481d6f481e70482071482172482273482374472575472676472777472878472a79472b7a472c7b462d7c462f7c46307d46317e45327f45347f453580453681443781443982433a83433b83433c84423d84423e854240854141864142864043874044873f45873f47883e48883e49893d4a893d4b893d4c893c4d8a3c4e8a3b508a3b518a3a528b3a538b39548b39558b38568b38578c37588c37598c365a8c365b8c355c8c355d8c345e8d345f8d33608d33618d32628d32638d31648d31658d31668d30678d30688d2f698d2f6a8d2e6b8e2e6c8e2e6d8e2d6e8e2d6f8e2c708e2c718e2c728e2b738e2b748e2a758e2a768e2a778e29788e29798e287a8e287a8e287b8e277c8e277d8e277e8e267f8e26808e26818e25828e25838d24848d24858d24868d23878d23888d23898d22898d228a8d228b8d218c8d218d8c218e8c208f8c20908c20918c1f928c1f938b1f948b1f958b1f968b1e978a1e988a1e998a1e998a1e9a891e9b891e9c891e9d881e9e881e9f881ea0871fa1871fa2861fa38620a48520a58521a68521a78422a78423a88323a98224aa8225ab8126ac8127ad8028ae7f29af7f2ab07e2bb17d2cb17d2eb27c2fb37b30b47a32b57a33b67935b77836b87738b97639b9763bba753dbb743ebc7340bd7242be7144be7045bf6f47c06e49c16d4bc26c4dc26b4fc36951c46853c56755c66657c66559c7645bc8625ec96160c96062ca5f64cb5d67cc5c69cc5b6bcd596dce5870ce5672cf5574d05477d05279d1517cd24f7ed24e81d34c83d34b86d44988d5478bd5468dd64490d64392d74195d73f97d83e9ad83c9dd93a9fd938a2da37a5da35a7db33aadb32addc30afdc2eb2dd2cb5dd2bb7dd29bade27bdde26bfdf24c2df22c5df21c7e01fcae01ecde01dcfe11cd2e11bd4e11ad7e219dae218dce218dfe318e1e318e4e318e7e419e9e419ece41aeee51bf1e51cf3e51ef6e61ff8e621fae622fde724'),
+ plasma:paletteFromHex('0c078610078713068915068a18068b1b068c1d068d1f058e21058f2305902505912705922905932b05942d04942f04953104963304973404983604983804993a049a3b039a3d039b3f039c40039c42039d44039e45039e47029f49029f4a02a04c02a14e02a14f02a25101a25201a35401a35601a35701a45901a45a00a55c00a55e00a55f00a66100a66200a66400a76500a76700a76800a76a00a76c00a86d00a86f00a87000a87200a87300a87500a87601a87801a87901a87b02a87c02a77e03a77f03a78104a78204a78405a68506a68607a68807a58908a58b09a48c0aa48e0ca48f0da3900ea3920fa29310a19511a19612a09713a099149f9a159e9b179e9d189d9e199c9f1a9ba01b9ba21c9aa31d99a41e98a51f97a72197a82296a92395aa2494ac2593ad2692ae2791af2890b02a8fb12b8fb22c8eb42d8db52e8cb62f8bb7308ab83289b93388ba3487bb3586bc3685bd3784be3883bf3982c03b81c13c80c23d80c33e7fc43f7ec5407dc6417cc7427bc8447ac94579ca4678cb4777cc4876cd4975ce4a75cf4b74d04d73d14e72d14f71d25070d3516fd4526ed5536dd6556dd7566cd7576bd8586ad95969da5a68db5b67dc5d66dc5e66dd5f65de6064df6163df6262e06461e16560e26660e3675fe3685ee46a5de56b5ce56c5be66d5ae76e5ae87059e87158e97257ea7356ea7455eb7654ec7754ec7853ed7952ed7b51ee7c50ef7d4fef7e4ef0804df0814df1824cf2844bf2854af38649f38748f48947f48a47f58b46f58d45f68e44f68f43f69142f79241f79341f89540f8963ff8983ef9993df99a3cfa9c3bfa9d3afa9f3afaa039fba238fba337fba436fca635fca735fca934fcaa33fcac32fcad31fdaf31fdb030fdb22ffdb32efdb52dfdb62dfdb82cfdb92bfdbb2bfdbc2afdbe29fdc029fdc128fdc328fdc427fdc626fcc726fcc926fccb25fccc25fcce25fbd024fbd124fbd324fad524fad624fad824f9d924f9db24f8dd24f8df24f7e024f7e225f6e425f6e525f5e726f5e926f4ea26f3ec26f3ee26f2f026f2f126f1f326f0f525f0f623eff821'),
+ cividis:paletteFromHex('00224d00234f00235000245200255400265500265700275900285b00285c00295e002a60002a62002b64002c66002c67002d69002e6b002f6d002f6f0030700030700031700031700432700833700b33700e347011356f14366f16366f18376f1a386f1c386e1d396e1f3a6e213b6e223b6e243c6e253d6d273d6d283e6d2a3f6d2b3f6d2c406d2e416c2f426c30426c31436c32446c34446c35456c36466c37466c38476c39486c3a486b3b496b3d4a6b3e4b6b3f4b6b404c6b414d6b424d6b434e6b444f6b454f6b46506b47516b48516b49526b4a536b4b546c4c546c4d556c4e566c4e566c4f576c50586c51586c52596c535a6c545a6c555b6d565c6d575d6d585d6d595e6d595f6d5a5f6d5b606e5c616e5d616e5e626e5f636e60646e61646f61656f62666f63666f64676f656870666970676970686a70686b71696b716a6c716b6d716c6d726d6e726e6f726e70736f70737071737172737273747373747474757475757575757676767777767878767978777979777a7a777b7b777c7b787d7c787e7d787f7d78807e78817f788280788380788481788582788583788683788784788885788986788a86788b87788c88788d89788e89788f8a77908b77918c77928c77938d77948e77958f77968f779790769891769992769a93769b93769c94769d95759e96759f9675a09775a19874a29974a39a74a49a74a59b73a69c73a79d73a89e73a99e72aa9f72aba072aca171ada271aea271afa370b0a470b1a570b2a66fb3a66fb4a76fb5a86eb6a96eb7aa6db8ab6db9ab6dbaac6cbbad6cbcae6bbdaf6bbeb06abfb06ac1b169c2b269c3b368c4b468c5b567c6b567c7b666c8b765c9b865cab964cbba64ccbb63cdbc62cebc62cfbd61d0be60d2bf60d3c05fd4c15ed5c25ed6c35dd7c35cd8c45bd9c55adac65adbc759dcc858dec957dfca56e0cb55e1cc54e2cc53e3cd52e4ce51e5cf50e6d04fe8d14ee9d24dead34cebd44becd54aedd648eed747efd846f1d944f2da43f3da42f4db40f5dc3ff6dd3df8de3bf9df3afae038fbe136fde234fde333fde534fde636fde737'),
+ turbo:paletteFromHex('30123b31154232184a341b51351e5836215f37236538266c3929723a2c793b2f7f3c32853c358b3d37913e3a963f3d9c4040a14043a64145ab4148b0424bb5434eba4350be4353c24456c74458cb455bce455ed24560d64563d94666dd4668e0466be3466de64670e84673eb4675ed4678f0467af2467df4467ff64682f84584f94587fb4589fc448cfd438efd4291fe4193fe4096fe3f98fe3e9bfe3c9dfd3ba0fc39a2fc38a5fb36a8f934aaf833acf631aff52fb1f32db4f12bb6ef2ab9ed28bbeb26bde925c0e623c2e421c4e120c6df1ec9dc1dcbda1ccdd71bcfd41ad1d219d3cf18d5cc18d7ca17d9c717dac417dcc217debf18e0bd18e1ba19e3b81ae4b61be5b41de7b11ee8af20e9ac22eba924eca627eda329eea02cef9d2ff09a32f19735f39438f4913bf48d3ff58a42f68746f7834af8804df97c51f97955fa7659fb725dfb6f61fc6c65fc6869fd656dfd6271fd5f74fe5c78fe597cfe5680fe5384fe5087fe4d8bfe4b8efe4892fe4695fe4498fe429bfd409efd3ea1fc3da4fc3ba6fb3aa9fb39acfa37aef937b1f836b3f835b6f735b9f534bbf434bef334c0f233c3f133c5ef33c8ee33caed33cdeb34cfea34d1e834d4e735d6e535d8e335dae236dde036dfde36e1dc37e3da37e5d838e7d738e8d538ead339ecd139edcf39efcd39f0cb3af2c83af3c63af4c43af6c23af7c039f8be39f9bc39f9ba38fab737fbb537fbb336fcb035fcae34fdab33fda932fda631fda330fea12ffe9e2efe9b2dfe982cfd952bfd9229fd8f28fd8c27fc8926fc8624fb8323fb8022fa7d20fa7a1ff9771ef8741cf7711bf76e1af66b18f56817f46516f36315f26014f15d13ef5a11ee5810ed550fec520eea500de94d0de84b0ce6490be5460ae3440ae24209e04008de3e08dd3c07db3a07d93806d73606d63405d43205d23005d02f04ce2d04cb2b03c92903c72803c52602c32402c02302be2102bb1f01b91e01b61c01b41b01b11901ae1801ac1601a91501a61401a31201a011019d10019a0e01970d01940c01910b018e0a018b09018708018407018106027d05027a0402')
 };
 const PHASE_COLOR_OPTIONS={blue:['Blue','#79bafa'],gold:['Gold','#f4b75e'],mint:['Mint','#64e2b0'],pink:['Pink','#ff8ac3'],white:['White','#f4f7fb']};
 const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
 const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'HCP / BCC ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
+let mapExportBusy=false;
 let config, meta, roi={x:0,y:0,w:684,h:684}, fileId, result=null, fftRaw=null, grid=null, jobId=null;
 let diffractionSettings=null, maskDrag=null;
 function isDiffraction(){return meta?.image_kind==='diffraction'}
@@ -29,7 +33,7 @@ const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢',
 const phaseColors={HCP:colors.hcp_compatible,BCC:colors.bcc_compatible};
 let generation=0, busy=false, pending=false, timer=null, drag=null, sourceRequest=0, opened=false;
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error)}
-async function api(path,body){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,options);const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
+async function api(path,body,signal){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,{...options,signal});const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
 function readPreference(key,fallback){
  try{
   const text=localStorage.getItem(key);if(text===null)return fallback;
@@ -90,16 +94,29 @@ function sortedFiles(files){
   return a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'})||a.id.localeCompare(b.id);
  });
 }
+function matchingFiles(){
+ const terms=$('file-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+ return config.files.filter(f=>terms.every(term=>`${f.name} ${f.sample} ${f.id}`.toLocaleLowerCase().includes(term)));
+}
 function renderFileList(){
- const select=$('file'),selected=select.value;
+ const select=$('file'),selected=select.value||fileId,files=matchingFiles(),searching=Boolean($('file-search').value.trim());
  select.replaceChildren();
- for(const sample of new Set(config.files.map(f=>f.sample))){
+ if(searching)select.append(new Option(files.length?'Choose a matching image…':'No matching images',''));
+ for(const sample of new Set(files.map(f=>f.sample))){
   const group=document.createElement('optgroup');group.label=sample;
-  for(const f of sortedFiles(config.files.filter(f=>f.sample===sample)))group.append(new Option(f.name,f.id));
+  for(const f of sortedFiles(files.filter(f=>f.sample===sample)))group.append(new Option(f.name,f.id));
   select.append(group);
  }
- if(config.files.some(f=>f.id===selected))select.value=selected;
+ if(files.some(f=>f.id===selected))select.value=selected;
+ $('file-search-count').textContent=searching?`${files.length} match${files.length===1?'':'es'}`:'';
+ select.disabled=!files.length;
 }
+function clearFileSearch(){if($('file-search').value){$('file-search').value='';if(config)renderFileList()}}
+$('file-search').oninput=()=>{if(config)renderFileList()};
+$('file-search').onkeydown=event=>{
+ if(event.key==='Escape'){clearFileSearch();return}
+ if(event.key==='Enter'&&config){const files=matchingFiles();if(files.length===1){event.preventDefault();$('file').value=files[0].id;openFile()}else $('file').focus()}
+};
 $('file-sort').value=fileSort;
 $('file-sort').onchange=()=>{
  fileSort=$('file-sort').value;writePreference('tem-file-sort',fileSort);
@@ -121,7 +138,7 @@ $('favorite-toggle').onclick=()=>{
  favorites.has(fileId)?favorites.delete(fileId):favorites.add(fileId);
  writePreference(favoriteKey(),[...favorites]);renderFavorites();
 };
-$('favorites').onchange=()=>{const id=$('favorites').value;if(id){$('file').value=id;openFile()}};
+$('favorites').onchange=()=>{const id=$('favorites').value;if(id){clearFileSearch();$('file').value=id;openFile()}};
 function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:JSON.parse(JSON.stringify(diffractionSettings))}:{})}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
@@ -172,10 +189,11 @@ function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi
 function schedule(delay=120){generation++;pending=true;result=null;hideRegionPreview();beginSpectrumLoading();syncSpectrumExportControls();if(isDiffraction()){drawDetector();renderTranslation()}$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
 async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true;const version=generation,body=requestBody();try{const data=await api('analyze',body);if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}}catch(e){if(version===generation){result=null;message(e.message,true);$('phase-label').textContent='Analysis unavailable'}}finally{busy=false;if(version===generation&&!pending)finishSpectrumLoading();syncSpectrumExportControls();if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20)}}
 async function openFile(){
+ const id=$('file').value;if(!id)return;
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
  const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;opened=false;drag=null;maskDrag=null;
  finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
- const id=$('file').value;message('Opening source image…');
+ message('Opening source image…');
  try{
   if(isGridRunning())await api('cancel',{job_id:jobId});
   const info=await api('open',{file_id:id});if(version!==sourceRequest)return;
@@ -322,7 +340,7 @@ function renderModels(data){
  }
  $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank = position − scale cost + weak-peak bonus − missing-prediction cost. S+W separates strong profiles from weak maxima; peak coverage is the weighted share of original detected profiles matched by the candidate. Prediction-site evidence below shows the separate adjustments. Model dimensions assume the image calibration used; these scores are not phase probabilities.';
 }
-async function renderResult(data,version,body){if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Geometry check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.');renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const img=new Image();const precise=Boolean(data.images.fft_log16);img.src=data.images.fft_log16||data.images.fft;await img.decode();if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;fftRaw={canvas,pixels,precise,histogram,maximum,limits:data.images.fft_log_limits||[0,1]};drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
+async function renderResult(data,version,body){if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Geometry check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.');renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const raw=await decodeSpectrumImage(data.images);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;fftRaw=raw;if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
 const MARKER_SHAPES=['circle','diamond','square','triangle','crosshair','open-crosshair','off'];
 // Fraction of one animation cycle; the same value drives live CSS and GIF frames.
 function markerMotionOffset(kind,phase){
@@ -331,7 +349,7 @@ function markerMotionOffset(kind,phase){
 function markerShape(x,y,mode,attrs={},r=7){
  const offset=markerMotionOffset(attrs['data-marker-kind'],attrs['data-marker-phase']);
  const style={class:'spectrum-marker',stroke:'#ffffff','stroke-width':1,fill:'none',
-  'data-motion-offset':offset,style:`--marker-motion-offset:${offset}`,...attrs};
+  'data-motion-offset':offset,...attrs};
  if(mode==='off')return null;
  if(mode==='diamond')return el('path',{...style,d:`M${x} ${y-r}L${x+r} ${y}L${x} ${y+r}L${x-r} ${y}Z`});
  if(mode==='square')return el('rect',{...style,x:x-r,y:y-r,width:2*r,height:2*r});
@@ -372,13 +390,21 @@ function syncIntensityKey(){
  const stops=Array.from({length:17},(_,i)=>`rgb(${palette[Math.round(i*255/16)].join(',')})`);
  document.documentElement.style.setProperty('--intensity-gradient',`linear-gradient(90deg,${stops.join(',')})`);
 }
-function drawFFT(){
- if(!result||!fftRaw)return;
- const {canvas,pixels,precise,histogram,maximum,limits}=fftRaw,ctx=canvas.getContext('2d');
+async function decodeSpectrumImage(images){
+ const img=new Image(),precise=Boolean(images.fft_log16);
+ img.src=images.fft_log16||images.fft;await img.decode();
+ const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;
+ const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
+ const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);
+ for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;
+ return {canvas,pixels,precise,histogram,maximum,limits:images.fft_log_limits||[0,1]};
+}
+function colourSpectrum(raw,imageKind){
+ const {canvas,pixels,precise,histogram,maximum,limits}=raw,ctx=canvas.getContext('2d');
  const percentile=f=>{let sum=0;for(let i=0;i<=maximum;i++){sum+=histogram[i];if(sum>=canvas.width*canvas.height*f)return i}return maximum};
  const lo=percentile(Number($('contrast').value)/100),high=clamp(Number($('fft-white').value)||99.8,91,100),hi=percentile(high/100);
  const linear=$('fft-curve').value==='linear'&&precise;
- const transform=code=>{if(!linear)return code;const intensity=Math.expm1(limits[0]+code/maximum*(limits[1]-limits[0]));return result.image_kind==='diffraction'?intensity:Math.sqrt(intensity)};
+ const transform=code=>{if(!linear)return code;const intensity=Math.expm1(limits[0]+code/maximum*(limits[1]-limits[0]));return imageKind==='diffraction'?intensity:Math.sqrt(intensity)};
  const lowValue=transform(lo),span=Math.max(transform(hi)-lowValue,1e-12),lookup=new Uint8ClampedArray((maximum+1)*3),palette=SPECTRUM_PALETTES[$('palette').value]||MAGMA;
  for(let code=0;code<=maximum;code++){
   const v=Math.round(clamp((transform(code)-lowValue)/span,0,1)*255),rgb=palette[v];
@@ -386,7 +412,11 @@ function drawFFT(){
  }
  const out=ctx.createImageData(canvas.width,canvas.height);
  for(let i=0;i<out.data.length;i+=4){const code=precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i];out.data[i]=lookup[code*3];out.data[i+1]=lookup[code*3+1];out.data[i+2]=lookup[code*3+2];out.data[i+3]=255}
- ctx.putImageData(out,0,0);$('fft-image').setAttribute('href',canvas.toDataURL());$('contrast-value').textContent=$('contrast').value+'%';
+ ctx.putImageData(out,0,0);return canvas.toDataURL();
+}
+function drawFFT(){
+ if(!result||!fftRaw)return;
+ $('fft-image').setAttribute('href',colourSpectrum(fftRaw,result.image_kind));$('contrast-value').textContent=$('contrast').value+'%';
  const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();for(const q of [-10,-5,0,5,10]){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off')for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const attrs={stroke:'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} nm⁻¹`));$('fft-overlay').append(shape)}}const fits=[];
 if(['HCP','BCC','both'].includes(overlay)){for(const phase of overlay==='both'?['HCP','BCC']:[overlay]){const m=bestModel(result,phase);if(m)fits.push({model:m,color:phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}}
 if(overlay==='geometry'){for(const [key,color,name]of [['primary_lattice','#df92ef','Primary geometry'],['secondary_lattice','#64d6bb','Secondary geometry']]){const m=result.periodicity[key];if(m)fits.push({model:m,color,geometry:true,name})}}
@@ -470,7 +500,7 @@ for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'ci
 $('marker-motion').value=['off','pulse','bounce','wobble'].includes(savedMarkerStyles?.motion)?savedMarkerStyles.motion:savedMarkerStyles?.pulse===true?'bounce':'off';applyMarkerAnimation();
 $('marker-motion').onchange=()=>{rememberMarkerStyles();applyMarkerAnimation()};
 $('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
-const savedPalette=readPreference('tem-palette',null);if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;syncIntensityKey();
+const oldPalette=readPreference('tem-palette',null),savedPalette=({ice:'viridis',violet:'plasma',green:'viridis'})[oldPalette]||oldPalette;if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;syncIntensityKey();
 function updateGridSizeNote(){
  $('check-passing').disabled=!config?.check_passing||!$('adaptive').checked;
  const note=$('grid-size-note');if(!meta||isDiffraction()){note.textContent='';return}
@@ -646,7 +676,7 @@ $('run-grid').onclick=async()=>{
   const version=sourceRequest,expectedSettings=JSON.stringify(settings()),d=await api('grid',{...requestBody(),count:Number($('grid-count').value),adaptive:$('adaptive').checked,minimum_nm:Number($('grid-min').value),check_passing:$('adaptive').checked&&$('check-passing').checked});
   if(version!==sourceRequest||JSON.stringify(settings())!==expectedSettings){await api('cancel',{job_id:d.id});$('run-grid').disabled=isDiffraction();updatePenaltyControls();return}
   jobId=d.id;grid=null;drawGrid();$('cancel-grid').disabled=false;$('save-grid').disabled=true;
-  $('scale-penalty').disabled=true;$('scale-penalty-slider').disabled=true;$('peak-evidence-weight').disabled=true;poll(jobId);
+  $('scale-penalty').disabled=true;$('scale-penalty-slider').disabled=true;$('peak-evidence-weight').disabled=true;$('peak-evidence-slider').disabled=true;poll(jobId);
  }catch(e){$('run-grid').disabled=isDiffraction();message(e.message,true);updatePenaltyControls()}
 };
 $('cancel-grid').onclick=async()=>{try{await api('cancel',{job_id:jobId})}catch(e){message(e.message,true)}};
@@ -658,17 +688,39 @@ $('clear-grid').onclick=()=>{
  $('grid-status').textContent='Grid cleared. Run grid to create a new map.';
  if(id&&running)api('cancel',{job_id:id}).catch(e=>message(e.message,true));
 };
-async function save(body){try{const d=await api('save',body);message('Saved: '+d.path)}catch(e){message(e.message,true)}}
-$('save-region').onclick=()=>{if(result)save({file_id:fileId,roi:result.roi,settings:result.settings})};$('save-grid').onclick=()=>{if(jobId)save({job_id:jobId})};
+const exportButtonTimers=new Map();
+function exportNotice(title,detail='',state='busy'){
+ const notice=$('export-notice');notice.dataset.state=state;
+ $('export-notice-title').textContent=title;$('export-notice-detail').textContent=detail;notice.hidden=false;
+}
+$('export-notice-close').onclick=()=>{$('export-notice').hidden=true};
+function beginExport(id,title){
+ const button=$(id);clearTimeout(exportButtonTimers.get(id));
+ button.dataset.exportLabel??=button.textContent;button.dataset.exportState='busy';button.setAttribute('aria-busy','true');button.disabled=true;button.textContent='Exporting…';
+ exportNotice(title,'Preparing the file…');
+}
+function finishExport(id,path,error=null){
+ const button=$(id);button.removeAttribute('aria-busy');button.dataset.exportState=error?'error':'saved';button.textContent=error?'Export failed':'✓ Saved';
+ if(error){exportNotice('Export failed',error,'error');message(error,true)}
+ else{const name=path.split(/[\\/]/).pop();exportNotice('✓ Export saved · '+name,path,'saved');message('Saved: '+path)}
+ exportButtonTimers.set(id,setTimeout(()=>{button.textContent=button.dataset.exportLabel;delete button.dataset.exportState},5000));
+}
+async function save(body,id){
+ if($(id).dataset.exportState==='busy')return;
+ beginExport(id,'Exporting results…');
+ try{const data=await api('save',body);finishExport(id,data.path)}catch(e){finishExport(id,null,e.message)}
+ finally{if(id==='save-grid')updatePenaltyControls();else $(id).disabled=!result||busy||pending}
+}
+$('save-region').onclick=()=>{if(result)save({file_id:fileId,roi:result.roi,settings:result.settings},'save-region')};$('save-grid').onclick=()=>{if(jobId)save({job_id:jobId},'save-grid')};
 function updatePenaltyControls(){
  const automatic=$('scenario').value.startsWith('auto_'),running=isGridRunning();
  const disabled=!config?.grid_rescore||!automatic||running;
  $('scale-penalty').disabled=disabled;$('scale-penalty-slider').disabled=disabled;
- $('peak-evidence-weight').disabled=!config?.peak_evidence||!config?.grid_rescore||running;
+ $('peak-evidence-weight').disabled=!config?.peak_evidence||!config?.grid_rescore||running;$('peak-evidence-slider').disabled=$('peak-evidence-weight').disabled;
  const mismatch=Boolean(grid&&((grid.settings.scale_mode!=='fixed'&&scalePenalty!==grid.settings.scale_penalty_strength)||(config?.peak_evidence&&peakEvidenceWeight!==grid.settings.peak_evidence_weight)));
  const updating=rescorePending||rescoreBusy;
  $('grid-map').classList.toggle('stale',updating||mismatch);
- $('save-grid').disabled=!grid||running||updating||mismatch;
+ $('save-grid').disabled=!grid||running||updating||mismatch||$('save-grid').dataset.exportState==='busy';syncMapExportControls();
  $('clear-grid').disabled=!grid&&!jobId;
  const note=$('penalty-note');
  note.textContent=!config?.peak_evidence?'Restart TEM Workbench and reload to enable prediction-site evidence.':running?'Finish or cancel this grid to adjust ranking weights.':updating?'Updating the map from cached fits…':mismatch?'This map still shows its previous weights; adjust a control again to retry.':grid?'Updates labels, symbols and totals from cached fits. Existing cell boundaries stay fixed.':automatic?'Zero disables a weight. Scale cost favours smaller adjustments; peak evidence checks weak and missing spots.':'Fixed scale has no scale penalty. Peak-evidence weight adjusts weak and missing spot contributions; zero disables it.';
@@ -677,7 +729,7 @@ function penaltyChanged(input){
  if(!input.value)return;
  const value=Number(input.value);
  if(!Number.isFinite(value)||value<0||value>.5){message('Use a ranking weight from 0 to 0.5.',true);return}
- if(input.id==='peak-evidence-weight'){peakEvidenceWeight=value;writePreference('tem-peak-evidence-weight',value)}
+ if(['peak-evidence-weight','peak-evidence-slider'].includes(input.id)){peakEvidenceWeight=value;$('peak-evidence-weight').value=value;$('peak-evidence-slider').value=value;writePreference('tem-peak-evidence-weight',value)}
  else{scalePenalty=value;if(input.id==='scale-penalty-slider')$('scale-penalty').value=value;else $('scale-penalty-slider').value=value;writePreference('tem-scale-penalty',value)}
  rescoreRevision++;clearTimeout(rescoreTimer);
  rescorePending=Boolean(jobId&&grid?.can_rescore);
@@ -703,9 +755,9 @@ $('scale-penalty').value=scalePenalty;
 $('scale-penalty-slider').value=$('scale-penalty').value;
 const savedEvidenceWeight=readPreference('tem-peak-evidence-weight',.10);
 if(Number.isFinite(savedEvidenceWeight)&&savedEvidenceWeight>=0&&savedEvidenceWeight<=.5)peakEvidenceWeight=savedEvidenceWeight;
-$('peak-evidence-weight').value=peakEvidenceWeight;
+$('peak-evidence-weight').value=peakEvidenceWeight;$('peak-evidence-slider').value=peakEvidenceWeight;
 $('peak-evidence-weight').onblur=()=>{$('peak-evidence-weight').value=peakEvidenceWeight};
-for(const id of ['scale-penalty','scale-penalty-slider','peak-evidence-weight'])$(id).oninput=()=>penaltyChanged($(id));
+for(const id of ['scale-penalty','scale-penalty-slider','peak-evidence-weight','peak-evidence-slider'])$(id).oninput=()=>penaltyChanged($(id));
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=scalePenalty};
 for(const id of ['scenario','model-scale','threshold','fft-hann','fft-mean'])$(id).onchange=()=>{
  if(!meta)return;
@@ -723,7 +775,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('file-search').value='';$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 function syncFFTZoom(){
@@ -803,7 +855,7 @@ function renderSavedRegionOverlays(){
   if(!r||!['x','y','w','h'].every(k=>Number.isFinite(r[k]))||r.w<=0||r.h<=0)continue;
   const group=el('g',{'class':'saved-region-overlay','data-region-id':region.id,role:'button',tabindex:0,'aria-label':'Open saved region: '+region.name});
   const bounds={x:r.x,y:r.y,width:r.w,height:r.h};
-  group.append(el('title',{},'Saved region: '+region.name+' · Click outline to restore'),el('rect',{...bounds,class:'saved-region-hit'}),el('rect',{...bounds,class:'saved-region-outline'}));
+  group.append(el('rect',{...bounds,class:'saved-region-hit'}),el('rect',{...bounds,class:'saved-region-outline'}));
   layer.append(group);
  }
 }
@@ -832,7 +884,7 @@ function applyRegionSettings(saved){
  $('model-scale').value=saved.scale??1;$('threshold').value=saved.threshold??.35;
  $('fft-hann').checked=(saved.fft_window??'hann')==='hann';$('fft-mean').checked=saved.remove_mean!==false;
  scalePenalty=saved.scale_penalty_strength??.1;peakEvidenceWeight=saved.peak_evidence_weight??.1;
- $('scale-penalty').value=scalePenalty;$('scale-penalty-slider').value=scalePenalty;$('peak-evidence-weight').value=peakEvidenceWeight;
+ $('scale-penalty').value=scalePenalty;$('scale-penalty-slider').value=scalePenalty;$('peak-evidence-weight').value=peakEvidenceWeight;$('peak-evidence-slider').value=peakEvidenceWeight;
  calibrationView();rememberCalibration();rememberBasicControls();
  writePreference('tem-scale-penalty',scalePenalty);writePreference('tem-peak-evidence-weight',peakEvidenceWeight);
 }
@@ -844,7 +896,7 @@ async function openSavedRegion(id){
  if(!id){resetRegionEditor();renderSavedRegions();return}
  hideRegionPreview();
  try{
-  const saved=await api('regions/open',{id});if(request!==regionRequest||imageRequest!==sourceRequest)return;
+  const saved=await api('regions/open',{id});if(request!==regionRequest||imageRequest!==sourceRequest)return;clearFileSearch();
   const sameImage=meta?.sha256_pixels===saved.source.sha256_pixels&&fileId===saved.source.id;
   const previousSettings=sameImage?JSON.stringify(settings()):null;
   if(!sameImage){
@@ -1022,7 +1074,8 @@ let spectrumLoadingTimer=null, spectrumLoading=false, spectrumExportBusy=false;
 let hoverTimer=null, hoverKey=null, hoverVersion=0, hoverController=null, hoverPointer={x:0,y:0};
 const hoverCache=new Map();
 function syncSpectrumExportControls(){
- for(const id of ['export-png','export-gif']){$(id).disabled=spectrumExportBusy||busy||pending||!result||!fftRaw||!config?.spectrum_exports;$(id).title=config?.spectrum_exports?'Save the current view to the output folder':'Restart TEM Workbench to enable image exports'}
+ syncMapExportControls();
+ for(const id of ['export-png','export-gif']){$(id).disabled=spectrumExportBusy||mapExportBusy||busy||pending||!result||!fftRaw||!config?.spectrum_exports;$(id).title=config?.spectrum_exports?'Save the current view to the output folder':'Restart TEM Workbench to enable image exports'}
 }
 function setSpectrumSpinner(show){for(const id of ['fft-loading','fft-zoom-loading'])$(id).hidden=!show}
 function beginSpectrumLoading(){
@@ -1046,23 +1099,48 @@ $('inspector-layout').value=readPreference('tem-inspector-layout','paired')==='f
 $('inspector-layout').onchange=()=>{writePreference('tem-inspector-layout',$('inspector-layout').value);applyInspectorLayout()};
 function hideRegionPreview(){clearTimeout(hoverTimer);hoverTimer=null;hoverKey=null;hoverVersion++;hoverController?.abort();hoverController=null;$('region-hover').hidden=true}
 function regionContains(r,p){return p.x>=r.x&&p.x<r.x+r.w&&p.y>=r.y&&p.y<r.y+r.h}
-function computedRegionAt(p){
- if(!meta||isDiffraction()||drag||isGridRunning()||$('run-grid').disabled||rescoreBusy||rescorePending)return null;
- if(result&&result.image_kind!=='diffraction'&&['x','y','w','h'].every(k=>result.roi[k]===roi[k])&&regionContains(roi,p))return {roi:{...roi},label:result.classification.label,models:Object.fromEntries(['HCP','BCC'].map(phase=>[phase,bestModel(result,phase)])),crop:result.images.crop};
+function previewKey(r,values){
+ const ordered=Object.keys(values).sort().map(k=>[k,values[k]]);
+ return JSON.stringify([fileId,meta.sha256_pixels,meta.pixel_x_nm,meta.pixel_y_nm,config.engine,...['x','y','w','h'].map(k=>r[k]),ordered]);
+}
+function analysisPreview(data){
+ return {roi:data.roi,settings:data.settings,label:data.classification.label,
+  models:Object.fromEntries(['HCP','BCC'].map(phase=>[phase,bestModel(data,phase)])),
+  crop:data.images.crop,images:data.images,extent:data.spectrum.extent};
+}
+function cacheRegionPreview(key,preview){
+ hoverCache.delete(key);hoverCache.set(key,preview);
+ // Only the recent encoded previews are retained; no project/backup files.
+ while(hoverCache.size>24)hoverCache.delete(hoverCache.keys().next().value);
+}
+function computedRegionAt(p,savedId){
+ if(!meta||isDiffraction()||drag||busy||pending||isGridRunning()||$('run-grid').disabled||rescoreBusy||rescorePending)return null;
+ if(savedId){
+  const saved=regionProject.regions.find(r=>r.id===savedId);
+  const identity=['sha256_pixels','width','height','pixel_x_nm','pixel_y_nm'];
+  if(!saved||identity.some(k=>saved.source[k]!==meta[k]))return null;
+  return {roi:{...saved.roi},settings:{...saved.settings},name:saved.name,saved:true,models:{}};
+ }
+ if(result&&result.image_kind!=='diffraction'&&['x','y','w','h'].every(k=>result.roi[k]===roi[k])&&regionContains(roi,p))return analysisPreview(result);
  if(grid&&($('show-grid').checked||$('show-zones').checked&&!$('show-zones').disabled)){
   const cell=grid.regions.find(r=>r.leaf&&regionContains(r.roi,p));
-  if(cell)return {roi:cell.roi,label:cell.label,models:cell.best_zones||{}};
+  if(cell)return {roi:cell.roi,settings:{...grid.settings},label:cell.label,models:cell.best_zones||{}};
  }
  return null;
 }
 function renderRegionPreviewDetails(region){
- const heading=$('region-hover-title');heading.textContent=labels[region.label]||'Computed region';heading.style.color=colors[region.label]||'#dce6ef';
+ const heading=$('region-hover-title');heading.textContent=labels[region.label]||(region.saved?'Saved region':'Computed region');heading.style.color=colors[region.label]||'#dce6ef';
+ const name=$('region-hover-name');name.textContent=region.name||'';name.hidden=!region.name;
  const rows=$('region-hover-models');rows.replaceChildren();
- for(const phase of ['HCP','BCC']){
-  const model=region.models[phase],row=document.createElement('div'),name=document.createElement('span'),status=document.createElement('span');
+ if(!region.label){rows.textContent='Loading saved analysis…';return}
+ const candidates=['HCP','BCC'].map(phase=>({phase,model:region.models[phase]}));
+ candidates.sort((a,b)=>Number(Boolean(b.model?.valid))-Number(Boolean(a.model?.valid))||compareRank(a.model,b.model));
+ for(const {phase,model}of candidates){
+  const row=document.createElement('div'),name=document.createElement('span'),rank=document.createElement('span'),status=document.createElement('span');
   name.textContent=phase+(model?' '+zoneLabel(model):'');name.style.color=phaseColors[phase];
+  rank.textContent=Number.isFinite(model?.score)?'Rank '+model.score.toFixed(3):'—';rank.className='preview-rank';
   status.textContent=model?(model.valid?'Pass':'Below threshold'):'No fit';status.className='muted';
-  row.append(name,status);rows.append(row);
+  row.append(name,rank,status);rows.append(row);
  }
 }
 function positionRegionPreview(x,y){
@@ -1075,33 +1153,48 @@ function setRegionPreviewImage(region,src,cropped){
  $('region-hover-view').setAttribute('viewBox',cropped?`0 0 ${r.w} ${r.h}`:`${r.x} ${r.y} ${r.w} ${r.h}`);
  img.setAttribute('width',cropped?r.w:meta.width);img.setAttribute('height',cropped?r.h:meta.height);img.setAttribute('href',src);
 }
-function blobDataURL(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read the preview image.'));reader.readAsDataURL(blob)})}
+async function setRegionPreviewFFT(region,version){
+ const raw=await decodeSpectrumImage(region.images);if(version!==hoverVersion)return;
+ $('region-hover-fft-image').setAttribute('href',colourSpectrum(raw,'real_space'));
+ const axes=$('region-hover-fft-axes'),ex=region.extent;axes.replaceChildren();
+ for(const q of [-10,-5,0,5,10]){
+  if(q>=ex[0]&&q<=ex[1])axes.append(el('text',{x:(q-ex[0])/(ex[1]-ex[0])*420,y:437,'text-anchor':'middle'},q));
+  if(q>=ex[2]&&q<=ex[3])axes.append(el('text',{x:-7,y:(ex[3]-q)/(ex[3]-ex[2])*420+4,'text-anchor':'end'},q));
+ }
+ $('region-hover-fft-status').hidden=true;
+}
 function hoverComputedRegion(event){
- if(event.pointerType==='touch'||event.buttons||event.target?.closest('.saved-region-overlay')){hideRegionPreview();return}
+ if(event.pointerType==='touch'||event.buttons){hideRegionPreview();return}
  hoverPointer={x:event.clientX,y:event.clientY};
- const region=computedRegionAt(point(event));if(!region){hideRegionPreview();return}
- const key=fileId+':'+['x','y','w','h'].map(k=>region.roi[k]).join(',');
- if(key===hoverKey){positionRegionPreview(event.clientX,event.clientY);return}
- hideRegionPreview();hoverKey=key;const version=hoverVersion;
+ const savedId=event.target?.closest('.saved-region-overlay')?.dataset.regionId;
+ const region=computedRegionAt(point(event),savedId);if(!region){hideRegionPreview();return}
+ const key=previewKey(region.roi,region.settings),cardKey=key+':'+(savedId||'');
+ if(cardKey===hoverKey){positionRegionPreview(event.clientX,event.clientY);return}
+ hideRegionPreview();hoverKey=cardKey;const version=hoverVersion,source=fileId;
  hoverTimer=setTimeout(async()=>{
   hoverTimer=null;if(version!==hoverVersion)return;
-  const r=region.roi;renderRegionPreviewDetails(region);
-  $('region-hover-size').textContent=`${(r.w*meta.pixel_x_nm).toFixed(2)} × ${(r.h*meta.pixel_y_nm).toFixed(2)} nm · ${r.w} × ${r.h} px`;
-  const cached=region.crop||hoverCache.get(key);
-  setRegionPreviewImage(region,cached||$('source-image').getAttribute('href'),Boolean(cached));
+  const cached=region.images?region:hoverCache.get(key),preview={...region,...cached};
+  const r=region.roi;renderRegionPreviewDetails(preview);
+  $('region-hover-size').textContent=`${(r.w*meta.pixel_x_nm).toFixed(2)} × ${(r.h*meta.pixel_y_nm).toFixed(2)} nm · ${r.w} × ${r.h} px`+(region.saved?' · Saved settings':'');
+  setRegionPreviewImage(preview,preview.crop||$('source-image').getAttribute('href'),Boolean(preview.crop));
+  $('region-hover-fft-image').removeAttribute('href');$('region-hover-fft-axes').replaceChildren();
+  const status=$('region-hover-fft-status');status.textContent='Loading FFT…';status.hidden=false;
   $('region-hover').hidden=false;positionRegionPreview(hoverPointer.x,hoverPointer.y);
-  if(cached)return;
-  $('region-hover-size').textContent+=config.region_previews?' · Loading detail…':' · Overview preview';
-  if(!config.region_previews)return;
-  hoverController=new AbortController();
   try{
-   const query=new URLSearchParams({id:fileId,...r});const response=await fetch('/api/region-preview?'+query,{signal:hoverController.signal});
-   if(!response.ok)throw new Error('Preview unavailable');const src=await blobDataURL(await response.blob());
+   if(cached){await setRegionPreviewFFT(preview,version);return}
+   hoverController=new AbortController();
+   const data=await api('analyze',{file_id:source,roi:r,settings:region.settings},hoverController.signal);
    if(version!==hoverVersion)return;
-   hoverCache.set(key,src);if(hoverCache.size>48)hoverCache.delete(hoverCache.keys().next().value);
-   setRegionPreviewImage(region,src,true);$('region-hover-size').textContent=`${(r.w*meta.pixel_x_nm).toFixed(2)} × ${(r.h*meta.pixel_y_nm).toFixed(2)} nm · ${r.w} × ${r.h} px`;
-  }catch(error){if(version===hoverVersion)$('region-hover-size').textContent=`${r.w} × ${r.h} px · Overview preview`}
- },140);
+   const detail=analysisPreview(data);cacheRegionPreview(key,detail);
+   const completed={...region,...detail};renderRegionPreviewDetails(completed);setRegionPreviewImage(completed,detail.crop,true);
+   await setRegionPreviewFFT(completed,version);
+   if(version===hoverVersion)positionRegionPreview(hoverPointer.x,hoverPointer.y);
+  }catch(error){
+   if(version!==hoverVersion)return;
+   status.textContent='FFT preview unavailable';status.hidden=false;
+   if(region.saved&&!cached)$('region-hover-models').textContent='Analysis unavailable; click the outline to reopen.';
+  }
+ },180);
 }
 $('overview').addEventListener('pointerleave',hideRegionPreview);
 document.addEventListener('scroll',hideRegionPreview,true);
@@ -1139,22 +1232,71 @@ async function renderSpectrumFrame(snapshot,width,mode,phase){
  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=Math.round(width*452/464);canvas.getContext('2d').drawImage(image,0,0);return canvas.toDataURL('image/png');
 }
 async function exportSpectrum(format){
- if(!result||!fftRaw||spectrumExportBusy||pending||busy)return;
+ if(!result||!fftRaw||spectrumExportBusy||mapExportBusy||pending||busy)return;
  if(!config?.spectrum_exports){message('Restart TEM Workbench to enable PNG and GIF exports.',true);return}
  const mode=format==='gif'?$('marker-motion').value:'off',cycleMs=mode==='pulse'?1800:1200,count=mode==='off'?1:Math.round(cycleMs*30/1000);
  if(count>1&&config.spectrum_export_fps!==30){message('Restart TEM Workbench, then reload the page to enable 30 fps GIF exports.',true);return}
  // GIF delays have 10 ms precision. Rounded frame boundaries alternate
  // 30/40 ms delays for 30 fps on average without changing the cycle length.
  const durations=Array.from({length:count},(_,i)=>10*(Math.round((i+1)*cycleMs/count/10)-Math.round(i*cycleMs/count/10)));
- spectrumExportBusy=true;syncSpectrumExportControls();
+ spectrumExportBusy=true;syncSpectrumExportControls();const buttonId='export-'+format;beginExport(buttonId,'Exporting '+format.toUpperCase()+'…');
  const body={file_id:fileId,image_kind:result.image_kind,format,frames:[],duration_ms:count>1?durations:60};
  try{
   const snapshot=spectrumSnapshot();
-  for(let i=0;i<count;i++){message(`Preparing ${format.toUpperCase()} · ${i+1}/${count}`);body.frames.push(await renderSpectrumFrame(snapshot,2800,mode,i/count));await new Promise(resolve=>setTimeout(resolve,0))}
-  const saved=await api('export-spectrum',body);message('Saved '+saved.path);
- }catch(error){message('Image export failed: '+error.message,true)}finally{spectrumExportBusy=false;syncSpectrumExportControls()}
+  for(let i=0;i<count;i++){$(buttonId).textContent=`Exporting ${i+1}/${count}`;exportNotice('Exporting '+format.toUpperCase()+'…',`Preparing frame ${i+1} of ${count}`);body.frames.push(await renderSpectrumFrame(snapshot,2800,mode,i/count));await new Promise(resolve=>setTimeout(resolve,0))}
+  exportNotice('Saving '+format.toUpperCase()+'…','Writing to the output folder');const saved=await api('export-spectrum',body);finishExport(buttonId,saved.path);
+ }catch(error){finishExport(buttonId,null,'Image export failed: '+error.message)}finally{spectrumExportBusy=false;syncSpectrumExportControls()}
 }
 $('export-png').onclick=()=>exportSpectrum('png');$('export-gif').onclick=()=>exportSpectrum('gif');
+
+function syncMapExportControls(){
+ const button=$('export-map'),mismatch=grid&&((grid.settings.scale_mode!=='fixed'&&scalePenalty!==grid.settings.scale_penalty_strength)||peakEvidenceWeight!==grid.settings.peak_evidence_weight);
+ button.disabled=!config?.map_exports||!meta||isDiffraction()||grid?.state!=='complete'||Boolean(grid?.error)||grid?.source?.sha256_pixels!==meta?.sha256_pixels||rescoreBusy||rescorePending||mismatch||mapExportBusy||spectrumExportBusy;
+ button.title=!config?.map_exports?'Restart TEM Workbench, then reload to enable map exports':button.disabled?'Complete a grid and finish reweighting before exporting':'Save the visible map, colours and zone legend as PNG';
+}
+function blobDataURL(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read the image.'));reader.readAsDataURL(blob)})}
+function mapSnapshot(){
+ const original=$('overview'),copy=original.cloneNode(true),nodes=[original,...original.querySelectorAll('*')],copies=[copy,...copy.querySelectorAll('*')];
+ const properties=['fill','fill-opacity','stroke','stroke-width','stroke-opacity','stroke-dasharray','stroke-linejoin','opacity','vector-effect','paint-order','font-family','font-size','font-weight','text-anchor','dominant-baseline'];
+ nodes.forEach((node,i)=>{const style=getComputedStyle(node);for(const property of properties)copies[i].setAttribute(property,style.getPropertyValue(property))});
+ for(const node of copy.querySelectorAll('#roi-box,#roi-handle,#detector-overlay,title'))node.remove();
+ const source=copy.querySelector('#source-image');
+ for(const node of [copy,...copy.querySelectorAll('*')])for(const attribute of ['id','class','style','role','tabindex'])node.removeAttribute(attribute);
+ copy.setAttribute('x',20);copy.setAttribute('y',78);copy.setAttribute('width',1160);copy.setAttribute('height',1160);
+ const svg=el('svg',{xmlns:NS,width:1200,'font-family':'Arial, sans-serif'});
+ svg.append(el('rect',{x:0,y:0,width:1200,height:'100%',fill:'#0c121a'}));
+ svg.append(el('text',{x:20,y:28,fill:'#dce6ef','font-size':20,'font-weight':600},meta.name));
+ svg.append(el('text',{x:20,y:52,fill:'#94a5b8','font-size':13},`${(meta.width*meta.pixel_x_nm).toFixed(2)} × ${(meta.height*meta.pixel_y_nm).toFixed(2)} nm · ${grid.regions.filter(r=>r.leaf).length} regions · overlay ${$('grid-opacity').value}%`),copy);
+ const measure=document.createElement('canvas').getContext('2d');measure.font='14px Arial';let y=1267,x=20;
+ const legendItem=(text,color)=>{const width=measure.measureText(text).width+27;if(x+width>1180){x=20;y+=25}svg.append(el('text',{x,y,fill:color,'font-size':14},text));x+=width};
+ if(!$('class-legend').hidden)for(const node of $('class-legend').children)if(!node.hidden)legendItem('● '+node.textContent,colors[node.dataset.label]);
+ if(x!==20){x=20;y+=28}
+ if(!$('zone-legend').hidden)for(const group of $('zone-legend').querySelectorAll('.zone-legend-group')){
+  const phase=group.querySelector('strong').textContent;legendItem(phase,phaseColors[phase]);
+  for(const node of group.querySelectorAll('.zone-key'))legendItem([...node.childNodes].map(n=>n.textContent).join(' '),phaseColors[phase]);
+  x=20;y+=28;
+ }
+ svg.append(el('text',{x:20,y:y+4,fill:'#94a5b8','font-size':12},'Candidate map, not confirmed phase fractions. Faded zone symbols are below threshold.'));
+ const height=y+28;svg.setAttribute('viewBox',`0 0 1200 ${height}`);svg.setAttribute('height',height);
+ return {svg,source,height,file_id:fileId};
+}
+async function exportMap(){
+ if($('export-map').disabled)return;
+ mapExportBusy=true;syncSpectrumExportControls();beginExport('export-map','Exporting map PNG…');
+ try{
+  const snapshot=mapSnapshot();
+  const response=await fetch(snapshot.source.getAttribute('href'));if(!response.ok)throw new Error('Source preview unavailable.');
+  snapshot.source.setAttribute('href',await blobDataURL(await response.blob()));
+  const width=Math.min(2800,Math.floor(3200*1200/snapshot.height)),height=Math.round(width*snapshot.height/1200);
+  snapshot.svg.setAttribute('width',width);snapshot.svg.setAttribute('height',height);
+  const image=new Image();image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(snapshot.svg));await image.decode();
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;canvas.getContext('2d').drawImage(image,0,0);
+  exportNotice('Saving map PNG…','Writing to the output folder');
+  const data=await api('export-spectrum',{file_id:snapshot.file_id,image_kind:'real_space_map',format:'png',frames:[canvas.toDataURL('image/png')]});finishExport('export-map',data.path);
+ }catch(error){finishExport('export-map',null,'Map export failed: '+error.message)}
+ finally{mapExportBusy=false;syncSpectrumExportControls()}
+}
+$('export-map').onclick=exportMap;
 
 function matchedReflectionVectors(model){
  const selected=[];

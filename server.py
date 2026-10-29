@@ -55,7 +55,7 @@ class Workbench:
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
-                'spectrum_exports': True, 'spectrum_export_fps': 30, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
+                'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -320,7 +320,7 @@ class Workbench:
                 else:
                     images.append(rgb)
         safe_name = ''.join(c if c.isalnum() or c in '-_.' else '_' for c in name)[:120]
-        kind = 'diffraction' if body.get('image_kind') == 'diffraction' else 'fft'
+        kind = {'diffraction': 'diffraction', 'real_space_map': 'map'}.get(body.get('image_kind'), 'fft')
         stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
         output.mkdir(parents=True, exist_ok=True)
         target = output / f'{stamp}_{safe_name}_{kind}_{uuid.uuid4().hex[:6]}.{format_name}'
