@@ -1,5 +1,19 @@
 'use strict';
 const MAGMA=[[0,0,3],[0,0,4],[0,0,6],[1,0,7],[1,1,9],[1,1,11],[2,2,13],[2,2,15],[3,3,17],[4,3,19],[4,4,21],[5,4,23],[6,5,25],[7,5,27],[8,6,29],[9,7,31],[10,7,34],[11,8,36],[12,9,38],[13,10,40],[14,10,42],[15,11,44],[16,12,47],[17,12,49],[18,13,51],[20,13,53],[21,14,56],[22,14,58],[23,15,60],[24,15,63],[26,16,65],[27,16,68],[28,16,70],[30,16,73],[31,17,75],[32,17,77],[34,17,80],[35,17,82],[37,17,85],[38,17,87],[40,17,89],[42,17,92],[43,17,94],[45,16,96],[47,16,98],[48,16,101],[50,16,103],[52,16,104],[53,15,106],[55,15,108],[57,15,110],[59,15,111],[60,15,113],[62,15,114],[64,15,115],[66,15,116],[67,15,117],[69,15,118],[71,15,119],[72,16,120],[74,16,121],[75,16,121],[77,17,122],[79,17,123],[80,18,123],[82,18,124],[83,19,124],[85,19,125],[87,20,125],[88,21,126],[90,21,126],[91,22,126],[93,23,126],[94,23,127],[96,24,127],[97,24,127],[99,25,127],[101,26,128],[102,26,128],[104,27,128],[105,28,128],[107,28,128],[108,29,128],[110,30,129],[111,30,129],[113,31,129],[115,31,129],[116,32,129],[118,33,129],[119,33,129],[121,34,129],[122,34,129],[124,35,129],[126,36,129],[127,36,129],[129,37,129],[130,37,129],[132,38,129],[133,38,129],[135,39,129],[137,40,129],[138,40,129],[140,41,128],[141,41,128],[143,42,128],[145,42,128],[146,43,128],[148,43,128],[149,44,128],[151,44,127],[153,45,127],[154,45,127],[156,46,127],[158,46,126],[159,47,126],[161,47,126],[163,48,126],[164,48,125],[166,49,125],[167,49,125],[169,50,124],[171,51,124],[172,51,123],[174,52,123],[176,52,123],[177,53,122],[179,53,122],[181,54,121],[182,54,121],[184,55,120],[185,55,120],[187,56,119],[189,57,119],[190,57,118],[192,58,117],[194,58,117],[195,59,116],[197,60,116],[198,60,115],[200,61,114],[202,62,114],[203,62,113],[205,63,112],[206,64,112],[208,65,111],[209,66,110],[211,66,109],[212,67,109],[214,68,108],[215,69,107],[217,70,106],[218,71,105],[220,72,105],[221,73,104],[222,74,103],[224,75,102],[225,76,102],[226,77,101],[228,78,100],[229,80,99],[230,81,98],[231,82,98],[232,84,97],[234,85,96],[235,86,96],[236,88,95],[237,89,95],[238,91,94],[238,93,93],[239,94,93],[240,96,93],[241,97,92],[242,99,92],[243,101,92],[243,103,91],[244,104,91],[245,106,91],[245,108,91],[246,110,91],[246,112,91],[247,113,91],[247,115,92],[248,117,92],[248,119,92],[249,121,92],[249,123,93],[249,125,93],[250,127,94],[250,128,94],[250,130,95],[251,132,96],[251,134,96],[251,136,97],[251,138,98],[252,140,99],[252,142,99],[252,144,100],[252,146,101],[252,147,102],[253,149,103],[253,151,104],[253,153,105],[253,155,106],[253,157,107],[253,159,108],[253,161,110],[253,162,111],[253,164,112],[254,166,113],[254,168,115],[254,170,116],[254,172,117],[254,174,118],[254,175,120],[254,177,121],[254,179,123],[254,181,124],[254,183,125],[254,185,127],[254,187,128],[254,188,130],[254,190,131],[254,192,133],[254,194,134],[254,196,136],[254,198,137],[254,199,139],[254,201,141],[254,203,142],[253,205,144],[253,207,146],[253,209,147],[253,210,149],[253,212,151],[253,214,152],[253,216,154],[253,218,156],[253,220,157],[253,221,159],[253,223,161],[253,225,163],[252,227,165],[252,229,166],[252,230,168],[252,232,170],[252,234,172],[252,236,174],[252,238,176],[252,240,177],[252,241,179],[252,243,181],[252,245,183],[251,247,185],[251,249,187],[251,250,189],[251,252,191]];
+function paletteRamp(stops){
+ const rgb=stops.map(hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)));
+ return Array.from({length:256},(_,i)=>{
+  const at=i/255*(rgb.length-1),lo=Math.floor(at),hi=Math.min(lo+1,rgb.length-1),t=at-lo;
+  return rgb[lo].map((value,channel)=>Math.round(value+(rgb[hi][channel]-value)*t));
+ });
+}
+const SPECTRUM_PALETTES={
+ magma:MAGMA,gray:paletteRamp(['#000000','#ffffff']),
+ ice:paletteRamp(['#000309','#10274d','#185b94','#23b4d1','#e9ffff']),
+ violet:paletteRamp(['#030108','#281548','#623e8f','#b18bd0','#fcf5ff']),
+ green:paletteRamp(['#000503','#0b3327','#13794d','#62b977','#edffec'])
+};
+const PHASE_COLOR_OPTIONS={blue:['Blue','#79bafa'],gold:['Gold','#f4b75e'],mint:['Mint','#64e2b0'],pink:['Pink','#ff8ac3'],white:['White','#f4f7fb']};
 const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
 const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'HCP / BCC ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
@@ -310,8 +324,14 @@ function renderModels(data){
 }
 async function renderResult(data,version,body){if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent='Geometry check: '+({predominantly_one_periodic_pattern:'one periodic pattern predominates.',multiple_periodic_patterns:'a substantial second periodic pattern is supported.',unresolved_pattern:'pattern count remains unresolved.'}[data.periodicity.status]||'pattern count remains unresolved.');renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const img=new Image();const precise=Boolean(data.images.fft_log16);img.src=data.images.fft_log16||data.images.fft;await img.decode();if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,img.width,img.height),maximum=precise?65535:255,histogram=new Uint32Array(maximum+1);for(let i=0;i<pixels.data.length;i+=4)histogram[precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i]]++;fftRaw={canvas,pixels,precise,histogram,maximum,limits:data.images.fft_log_limits||[0,1]};drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
 const MARKER_SHAPES=['circle','diamond','square','triangle','crosshair','open-crosshair','off'];
+// Fraction of one animation cycle; the same value drives live CSS and GIF frames.
+function markerMotionOffset(kind,phase){
+ return kind==='prediction'?(phase==='HCP'?.25:phase==='BCC'?.75:.5):0;
+}
 function markerShape(x,y,mode,attrs={},r=7){
- const style={class:'spectrum-marker',stroke:'#ffffff','stroke-width':1,fill:'none',...attrs};
+ const offset=markerMotionOffset(attrs['data-marker-kind'],attrs['data-marker-phase']);
+ const style={class:'spectrum-marker',stroke:'#ffffff','stroke-width':1,fill:'none',
+  'data-motion-offset':offset,style:`--marker-motion-offset:${offset}`,...attrs};
  if(mode==='off')return null;
  if(mode==='diamond')return el('path',{...style,d:`M${x} ${y-r}L${x+r} ${y}L${x} ${y+r}L${x-r} ${y}Z`});
  if(mode==='square')return el('rect',{...style,x:x-r,y:y-r,width:2*r,height:2*r});
@@ -336,6 +356,22 @@ function rememberMarkerStyles(){
  writePreference('tem-marker-styles',value);
 }
 function applyMarkerAnimation(){const mode=$('marker-motion').value;document.body.classList.toggle('marker-pulse',mode==='pulse');document.body.classList.toggle('marker-bounce',mode==='bounce');document.body.classList.toggle('marker-wobble',mode==='wobble')}
+function applyPhaseColors(redraw=true){
+ for(const [phase,id,key,fallback]of [['HCP','hcp-color','hcp_compatible','blue'],['BCC','bcc-color','bcc_compatible','gold']]){
+  const choice=Object.hasOwn(PHASE_COLOR_OPTIONS,$(id).value)?$(id).value:fallback;
+  const color=PHASE_COLOR_OPTIONS[choice][1];$(id).value=choice;$(id).style.color=color;
+  phaseColors[phase]=color;colors[key]=color;document.documentElement.style.setProperty('--'+id,color);
+ }
+ if(redraw){
+  if(result)$('phase-label').style.color=colors[result.classification.label]||'#ddd';
+  drawGrid();drawFFT();
+ }
+}
+function syncIntensityKey(){
+ const palette=SPECTRUM_PALETTES[$('palette').value]||MAGMA;
+ const stops=Array.from({length:17},(_,i)=>`rgb(${palette[Math.round(i*255/16)].join(',')})`);
+ document.documentElement.style.setProperty('--intensity-gradient',`linear-gradient(90deg,${stops.join(',')})`);
+}
 function drawFFT(){
  if(!result||!fftRaw)return;
  const {canvas,pixels,precise,histogram,maximum,limits}=fftRaw,ctx=canvas.getContext('2d');
@@ -343,9 +379,9 @@ function drawFFT(){
  const lo=percentile(Number($('contrast').value)/100),high=clamp(Number($('fft-white').value)||99.8,91,100),hi=percentile(high/100);
  const linear=$('fft-curve').value==='linear'&&precise;
  const transform=code=>{if(!linear)return code;const intensity=Math.expm1(limits[0]+code/maximum*(limits[1]-limits[0]));return result.image_kind==='diffraction'?intensity:Math.sqrt(intensity)};
- const lowValue=transform(lo),span=Math.max(transform(hi)-lowValue,1e-12),lookup=new Uint8ClampedArray((maximum+1)*3);
+ const lowValue=transform(lo),span=Math.max(transform(hi)-lowValue,1e-12),lookup=new Uint8ClampedArray((maximum+1)*3),palette=SPECTRUM_PALETTES[$('palette').value]||MAGMA;
  for(let code=0;code<=maximum;code++){
-  const v=Math.round(clamp((transform(code)-lowValue)/span,0,1)*255),rgb=$('palette').value==='gray'?[v,v,v]:MAGMA[v];
+  const v=Math.round(clamp((transform(code)-lowValue)/span,0,1)*255),rgb=palette[v];
   lookup.set(rgb,code*3);
  }
  const out=ctx.createImageData(canvas.width,canvas.height);
@@ -369,7 +405,7 @@ for(const f of fits){
    if(!f.model.valid)attrs['stroke-dasharray']='5 3';else if(weak)attrs['stroke-dasharray']='2 2';else if(!supported)attrs['stroke-dasharray']='1 3';
    if(evidence?.status==='unassessable')attrs.opacity=.35;
    const styleId=f.geometry?(f.model===result.periodicity.primary_lattice?'primary-geometry-marker':'secondary-geometry-marker'):(f.model.phase==='HCP'?'hcp-marker':'bcc-marker');
-   const shape=markerShape(x,y,$(styleId).value,{...attrs,'data-marker-kind':'prediction'},7);
+   const shape=markerShape(x,y,$(styleId).value,{...attrs,'data-marker-kind':'prediction','data-marker-phase':f.geometry?'geometry':f.model.phase},7);
    const evidenceText=supported?'matched original detected profile':weak?`weak local maximum ${evidence.weak_id}, local contrast ${evidence.local_contrast.toFixed(1)}, offset ${evidence.offset_nm_inv.toFixed(3)} nm⁻¹`:evidence?.status==='unassessable'?'not reliably assessable':'no strong or qualifying weak maximum assigned';
    if(shape){shape.append(el('title',{},f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.model.phase} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${evidenceText}`));$('fft-overlay').append(shape)}
    if(weak){
@@ -418,6 +454,13 @@ const displayPreference=readPreference('tem-fft-display',{});
 if(['log','linear'].includes(displayPreference.curve))$('fft-curve').value=displayPreference.curve;
 if(Number.isFinite(displayPreference.background))$('contrast').value=clamp(displayPreference.background,0,90);
 if(Number.isFinite(displayPreference.white))$('fft-white').value=clamp(displayPreference.white,91,100);
+const savedPhaseColors=readPreference('tem-phase-colors',{});
+for(const [phase,id,fallback]of [['HCP','hcp-color','blue'],['BCC','bcc-color','gold']]){
+ for(const [value,[name]]of Object.entries(PHASE_COLOR_OPTIONS))$(id).append(new Option(name,value));
+ $(id).value=Object.hasOwn(PHASE_COLOR_OPTIONS,savedPhaseColors?.[phase])?savedPhaseColors[phase]:fallback;
+ $(id).onchange=()=>{writePreference('tem-phase-colors',{HCP:$('hcp-color').value,BCC:$('bcc-color').value});applyPhaseColors()};
+}
+applyPhaseColors(false);
 const savedMarkerStyles=readPreference('tem-marker-styles',{});
 for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'circle','primary-geometry-marker':'diamond','secondary-geometry-marker':'diamond','weak-marker':'diamond'})){
  const choices=id==='weak-marker'?[...MARKER_SHAPES,'follow','dot']:MARKER_SHAPES;
@@ -426,7 +469,8 @@ for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'ci
 }
 $('marker-motion').value=['off','pulse','bounce','wobble'].includes(savedMarkerStyles?.motion)?savedMarkerStyles.motion:savedMarkerStyles?.pulse===true?'bounce':'off';applyMarkerAnimation();
 $('marker-motion').onchange=()=>{rememberMarkerStyles();applyMarkerAnimation()};
-$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');drawFFT()};const savedPalette=readPreference('tem-palette',null);if(['gray','magma'].includes(savedPalette))$('palette').value=savedPalette;document.querySelector('.intensity-key').classList.toggle('gray',$('palette').value==='gray');
+$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
+const savedPalette=readPreference('tem-palette',null);if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;syncIntensityKey();
 function updateGridSizeNote(){
  $('check-passing').disabled=!config?.check_passing||!$('adaptive').checked;
  const note=$('grid-size-note');if(!meta||isDiffraction()){note.textContent='';return}
@@ -524,7 +568,7 @@ function renderZoneLegend(found){
  const legend=$('zone-legend');legend.replaceChildren();legend.hidden=!found.HCP.size&&!found.BCC.size;
  if(legend.hidden)return;
  const hint=document.createElement('p');hint.className='hint';
- hint.textContent='Best candidate for each structure in every cell: blue HCP on the left, gold BCC on the right. Faded symbols are below the screen threshold. These are alternative fits, not proof that both phases are present. Ordered by image area, largest first.';
+ hint.textContent='Best candidate for each structure in every cell: HCP on the left, BCC on the right. Faded symbols are below the screen threshold. These are alternative fits, not proof that both phases are present. Ordered by image area, largest first.';
  legend.append(hint);
  for(const phase of ['HCP','BCC']){
   if(!found[phase].size)continue;
@@ -1073,7 +1117,7 @@ function markerMotionAt(mode,phase){
  return {scale:a[0]+(b[0]-a[0])*t,x:mode==='wobble'?a[1]+(b[1]-a[1])*t:0,y:mode==='wobble'?a[2]+(b[2]-a[2])*t:0,opacity:1};
 }
 function spectrumSnapshot(){
- const svg=$('fft').cloneNode(true),markers=[...$('fft').querySelectorAll('.spectrum-marker')].map(m=>{const b=m.getBBox();return {x:b.x+b.width/2,y:b.y+b.height/2,predicted:m.getAttribute('data-marker-kind')==='prediction'}});
+ const svg=$('fft').cloneNode(true),markers=[...$('fft').querySelectorAll('.spectrum-marker')].map(m=>{const b=m.getBBox();return {x:b.x+b.width/2,y:b.y+b.height/2,offset:Number(m.getAttribute('data-motion-offset'))||0}});
  svg.setAttribute('font-family','Arial, sans-serif');
  for(const node of [svg,...svg.querySelectorAll('[id]')])node.removeAttribute('id');
  for(const attribute of ['tabindex','role','aria-controls','aria-haspopup','aria-label'])svg.removeAttribute(attribute);
@@ -1084,7 +1128,7 @@ function spectrumSnapshot(){
 function spectrumFrameSVG(snapshot,width,mode,phase){
  const svg=snapshot.svg.cloneNode(true);svg.setAttribute('width',width);svg.setAttribute('height',Math.round(width*452/464));
  [...svg.querySelectorAll('.spectrum-marker')].forEach((marker,i)=>{
-  const centre=snapshot.markers[i],motion=markerMotionAt(mode,phase+(centre.predicted ? .5 : 0));
+  const centre=snapshot.markers[i],motion=markerMotionAt(mode,phase+centre.offset);
   marker.removeAttribute('class');marker.setAttribute('transform',`translate(${motion.x} ${motion.y}) translate(${centre.x} ${centre.y}) scale(${motion.scale}) translate(${-centre.x} ${-centre.y})`);
   marker.setAttribute('stroke-opacity',motion.opacity);marker.setAttribute('fill-opacity',motion.opacity);
  });
