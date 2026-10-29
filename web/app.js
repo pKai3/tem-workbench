@@ -1073,9 +1073,13 @@ async function renderSpectrumFrame(snapshot,width,mode,phase){
 async function exportSpectrum(format){
  if(!result||!fftRaw||spectrumExportBusy||pending||busy)return;
  if(!config?.spectrum_exports){message('Restart TEM Workbench to enable PNG and GIF exports.',true);return}
+ const mode=format==='gif'?$('marker-motion').value:'off',cycleMs=mode==='pulse'?1800:1200,count=mode==='off'?1:Math.round(cycleMs*30/1000);
+ if(count>1&&config.spectrum_export_fps!==30){message('Restart TEM Workbench, then reload the page to enable 30 fps GIF exports.',true);return}
+ // GIF delays have 10 ms precision. Rounded frame boundaries alternate
+ // 30/40 ms delays for 30 fps on average without changing the cycle length.
+ const durations=Array.from({length:count},(_,i)=>10*(Math.round((i+1)*cycleMs/count/10)-Math.round(i*cycleMs/count/10)));
  spectrumExportBusy=true;syncSpectrumExportControls();
- const mode=format==='gif'?$('marker-motion').value:'off',count=mode==='off'?1:20;
- const body={file_id:fileId,image_kind:result.image_kind,format,frames:[],duration_ms:mode==='pulse'?90:60};
+ const body={file_id:fileId,image_kind:result.image_kind,format,frames:[],duration_ms:count>1?durations:60};
  try{
   const snapshot=spectrumSnapshot();
   for(let i=0;i<count;i++){message(`Preparing ${format.toUpperCase()} · ${i+1}/${count}`);body.frames.push(await renderSpectrumFrame(snapshot,2800,mode,i/count));await new Promise(resolve=>setTimeout(resolve,0))}

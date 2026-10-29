@@ -55,7 +55,7 @@ class Workbench:
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
-                'spectrum_exports': True, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
+                'spectrum_exports': True, 'spectrum_export_fps': 30, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -262,12 +262,18 @@ class Workbench:
     def export_spectrum(self, body):
         format_name = body.get('format')
         frames = body.get('frames')
-        if format_name not in ('png', 'gif') or not isinstance(frames, list) or not frames or len(frames) > 24:
-            raise ValueError('Choose PNG or GIF with at most 24 frames.')
+        if format_name not in ('png', 'gif') or not isinstance(frames, list) or not frames or len(frames) > 60:
+            raise ValueError('Choose PNG or GIF with at most 60 frames.')
         if format_name == 'png' and len(frames) != 1:
             raise ValueError('PNG exports contain one frame.')
-        duration = int(body.get('duration_ms', 60))
-        if not 20 <= duration <= 1000:
+        duration = body.get('duration_ms', 60)
+        if isinstance(duration, list):
+            if len(duration) != len(frames):
+                raise ValueError('Provide one duration for each frame.')
+            duration = [int(value) for value in duration]
+        else:
+            duration = int(duration)
+        if any(not 20 <= value <= 1000 for value in (duration if isinstance(duration, list) else [duration])):
             raise ValueError('Frame duration is outside the supported range.')
         with self.lock:
             file_id = body['file_id']
@@ -290,7 +296,7 @@ class Workbench:
                 if image.format != 'PNG' or max(image.size) > 3200 or min(image.size) < 1:
                     raise ValueError('Export frames must be PNG images up to 3200 pixels per side.')
                 total_pixels += image.width * image.height
-                if total_pixels > 200000000 or (images and image.size != images[0].size):
+                if total_pixels > 500000000 or (images and image.size != images[0].size):
                     raise ValueError('Export frames must have matching dimensions within the size limit.')
                 rgb = image.convert('RGB')
                 if format_name == 'gif':
