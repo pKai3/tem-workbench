@@ -1369,10 +1369,23 @@ function fittedVectorSummary(vectors){
  const terms=vectors.slice(1).map(v=>({name:v.name,sign:-v.coefficient/a.coefficient})).sort((x,y)=>y.sign-x.sign);
  return `${angleLabel} · ${a.name} = ${terms[0].sign<0?'− ':''}${terms[0].name} ${terms[1].sign<0?'−':'+'} ${terms[1].name}`;
 }
+function vectorLabelText(value,attrs){
+ const text=el('text',attrs);
+ // SVG combining marks can drift onto adjacent indices with font fallback.
+ // Decorate each negative index itself, keeping brackets and spaces unbarred.
+ for(const part of value.split(/((?:\d\u0305)+)/)){
+  if(!part)continue;
+  text.append(part.includes('\u0305')
+   ?el('tspan',{'text-decoration':'overline'},part.replaceAll('\u0305',''))
+   :document.createTextNode(part));
+ }
+ if(value.includes('\u0305'))text.setAttribute('aria-label',value);
+ return text;
+}
 function addVectorLabel(parent,attrs,lines,height,opacity){
  const group=el('g',{'font-family':'Arial, sans-serif',...attrs});
  const background=el('rect',{width:1,height,rx:2,fill:'#05090e',opacity});
- const text=lines.map(([value,size,y,fill])=>el('text',{x:5,y,fill,'font-size':size},value));
+ const text=lines.map(([value,size,y,fill])=>vectorLabelText(value,{x:5,y,fill,'font-size':size}));
  group.append(background,...text);parent.append(group);
  // Measure attached SVG text so boxes and collision checks use the drawn width.
  const width=Math.ceil(Math.max(...text.map(node=>node.getComputedTextLength())))+10;
@@ -1404,7 +1417,7 @@ function drawReflectionVectors(qp){
   const vectors=fitted?fittedReferenceVectors(model):matchedReflectionVectors(model);if(!vectors.length)continue;
   if(fitted){
    const label=addVectorLabel($('fft-overlay'),{'data-vector-key':phase},[
-    [phase+' '+zoneLabel(model)+' · fitted',10,12,phaseColors[phase]],
+    [phase+' '+zoneLabel(model),10,12,phaseColors[phase]],
     [fittedVectorSummary(vectors),9,26,'#dce6ef']
    ],33,.92);
    const lx=phases.length===2&&phaseNumber===1?415-label.w:5,ly=382;
@@ -1423,7 +1436,7 @@ function drawReflectionVectors(qp){
    const line=el('path',{d:`M${ox} ${oy}L${x} ${y}M${x-7*ux+3*uy} ${y-7*uy-3*ux}L${x} ${y}L${x-7*ux-3*uy} ${y-7*uy+3*ux}`,stroke:color,'stroke-width':1.2,fill:'none'});
    if(!model.valid)line.setAttribute('stroke-dasharray','4 3');group.append(line);$('fft-overlay').append(group);
    const label=addVectorLabel(group,{'data-vector-label':phase},[
-    [fitted?`${name} · ${phase} · fitted vector`:phase+' '+planeLabel(model,hkl,sign),9.5,11,color],
+    [fitted?`${name} · ${phase}`:phase+' '+planeLabel(model,hkl,sign),9.5,11,color],
     [`g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm`,9,23,'#edf5fc']
    ],29,.88);
    const {x:lx,y:ly}=vectorLabelPosition(x,y,label.w,label.h,occupied,anchors);
