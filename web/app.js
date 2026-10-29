@@ -160,7 +160,7 @@ async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true
 async function openFile(){
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
  const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;opened=false;drag=null;maskDrag=null;
- finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderFavorites();$('save-region').disabled=true;
+ finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
  const id=$('file').value;message('Opening source image…');
  try{
   if(isGridRunning())await api('cancel',{job_id:jobId});
@@ -182,10 +182,10 @@ async function openFile(){
 }
 
 function point(event){const pt=new DOMPoint(event.clientX,event.clientY);return pt.matrixTransform($('overview').getScreenCTM().inverse())}
-$('overview').addEventListener('pointerdown',e=>{if(!meta||e.button!==0)return;hideRegionPreview();if(isDiffraction()){detectorPointerDown(e);return}$('overview').focus({preventScroll:true});e.preventDefault();const cell=e.target.closest('.grid-cell');if(cell){const r=grid.regions.find(r=>r.id===cell.dataset.id);roi={...r.roi};updateBox(true);schedule(0);return}const p=point(e);const inside=p.x>=roi.x&&p.x<=roi.x+roi.w&&p.y>=roi.y&&p.y<=roi.y+roi.h;const resizing=e.target.id==='roi-handle';if(!inside&&!resizing){roi.x=p.x-roi.w/2;roi.y=p.y-roi.h/2;updateBox();schedule()}drag={mode:resizing?'resize':'move',x:p.x,y:p.y,roi:{...roi}};$('overview').setPointerCapture(e.pointerId);e.preventDefault()});
+$('overview').addEventListener('pointerdown',e=>{if(!meta||e.button!==0)return;hideRegionPreview();const saved=e.target.closest('.saved-region-overlay');if(saved){e.preventDefault();openSavedRegion(saved.dataset.regionId);return}if(isDiffraction()){detectorPointerDown(e);return}$('overview').focus({preventScroll:true});e.preventDefault();const cell=e.target.closest('.grid-cell');if(cell){const r=grid.regions.find(r=>r.id===cell.dataset.id);roi={...r.roi};updateBox(true);schedule(0);return}const p=point(e);const inside=p.x>=roi.x&&p.x<=roi.x+roi.w&&p.y>=roi.y&&p.y<=roi.y+roi.h;const resizing=e.target.id==='roi-handle';if(!inside&&!resizing){roi.x=p.x-roi.w/2;roi.y=p.y-roi.h/2;updateBox();schedule()}drag={mode:resizing?'resize':'move',x:p.x,y:p.y,roi:{...roi}};$('overview').setPointerCapture(e.pointerId);e.preventDefault()});
 $('overview').addEventListener('pointermove',e=>{if(isDiffraction()){detectorPointerMove(e);return}if(!drag){hoverComputedRegion(e);return}const p=point(e);if(drag.mode==='resize'){roi.w=clamp(drag.roi.w+Math.max(p.x-drag.x,p.y-drag.y),32,Math.min(meta.width-drag.roi.x,meta.height-drag.roi.y))}else{roi.x=drag.roi.x+p.x-drag.x;roi.y=drag.roi.y+p.y-drag.y}updateBox();schedule(90)});
 for(const name of ['pointerup','pointercancel'])$('overview').addEventListener(name,e=>{if(isDiffraction()){detectorPointerEnd(e);return}if(drag){drag=null;schedule(0)}});
-$('overview').addEventListener('keydown',e=>{if(!meta||isDiffraction()||e.altKey||e.ctrlKey||e.metaKey)return;const offsets={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};if(!offsets[e.key])return;const n=e.shiftKey?50:10;roi.x+=offsets[e.key][0]*n;roi.y+=offsets[e.key][1]*n;updateBox(true);schedule();e.preventDefault()});
+$('overview').addEventListener('keydown',e=>{const saved=e.target.closest('.saved-region-overlay');if(saved&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openSavedRegion(saved.dataset.regionId);return}if(!meta||isDiffraction()||e.altKey||e.ctrlKey||e.metaKey)return;const offsets={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};if(!offsets[e.key])return;const n=e.shiftKey?50:10;roi.x+=offsets[e.key][0]*n;roi.y+=offsets[e.key][1]*n;updateBox(true);schedule();e.preventDefault()});
 for(const [id,key]of [['roi-x','x'],['roi-y','y'],['roi-nm','w']])$(id).addEventListener('change',()=>{if(!meta)return;const n=Number($(id).value);if(!Number.isFinite(n))return;roi[key]=key==='w'?n/meta.pixel_x_nm:n;updateBox();schedule(0)});
 $('centre').onclick=()=>{if(!meta)return;roi.x=(meta.width-roi.w)/2;roi.y=(meta.height-roi.h)/2;updateBox();schedule(0)};
 function patternExplanation(data){
@@ -750,7 +750,21 @@ function resetRegionEditor(){
  selectedRegionId=null;$('region-name').value='';$('region-tags').value='';$('region-notes').value='';
  $('store-region').textContent='Save region';
 }
+function renderSavedRegionOverlays(){
+ const layer=$('saved-regions-map');layer.replaceChildren();
+ if(!meta?.sha256_pixels)return;
+ for(const region of regionProject.regions){
+  if(region.source.sha256_pixels!==meta.sha256_pixels)continue;
+  const r=region.roi;
+  if(!r||!['x','y','w','h'].every(k=>Number.isFinite(r[k]))||r.w<=0||r.h<=0)continue;
+  const group=el('g',{'class':'saved-region-overlay','data-region-id':region.id,role:'button',tabindex:0,'aria-label':'Open saved region: '+region.name});
+  const bounds={x:r.x,y:r.y,width:r.w,height:r.h};
+  group.append(el('title',{},'Saved region: '+region.name+' · Click outline to restore'),el('rect',{...bounds,class:'saved-region-hit'}),el('rect',{...bounds,class:'saved-region-outline'}));
+  layer.append(group);
+ }
+}
 function renderSavedRegions(){
+ renderSavedRegionOverlays();
  const select=$('saved-region-select'),all=$('saved-region-all').checked;
  const entries=regionProject.regions.filter(r=>all||r.source.sha256_pixels===meta?.sha256_pixels);
  select.replaceChildren(new Option('New region…',''));
@@ -781,20 +795,30 @@ function applyRegionSettings(saved){
 $('saved-region-all').onchange=renderSavedRegions;
 $('reload-regions').onclick=loadSavedRegions;
 $('new-region').onclick=()=>{resetRegionEditor();renderSavedRegions()};
-$('saved-region-select').onchange=async()=>{
+async function openSavedRegion(id){
  const request=++regionRequest,imageRequest=sourceRequest;
- const id=$('saved-region-select').value;if(!id){resetRegionEditor();renderSavedRegions();return}
+ if(!id){resetRegionEditor();renderSavedRegions();return}
+ hideRegionPreview();
  try{
   const saved=await api('regions/open',{id});if(request!==regionRequest||imageRequest!==sourceRequest)return;
-  $('file').value=saved.source.id;await openFile();
-  if(request!==regionRequest||sourceRequest!==imageRequest+1||!meta||fileId!==saved.source.id)return;
+  const sameImage=meta?.sha256_pixels===saved.source.sha256_pixels&&fileId===saved.source.id;
+  const previousSettings=sameImage?JSON.stringify(settings()):null;
+  if(!sameImage){
+   $('file').value=saved.source.id;await openFile();
+   if(request!==regionRequest||sourceRequest!==imageRequest+1||!meta||fileId!==saved.source.id)return;
+  }
   // The server checks the pixel hash, dimensions and calibration before applying.
   selectedRegionId=id;$('region-name').value=saved.name;$('region-tags').value=saved.tags.join(', ');$('region-notes').value=saved.notes;
   $('store-region').textContent='Update region';applyRegionSettings(saved.settings);
+  // Reopening a box on this image need not discard a grid with the same settings.
+  if(sameImage&&previousSettings!==JSON.stringify(settings())&&(jobId||grid)){
+   $('clear-grid').onclick();$('grid-status').textContent='Saved region settings restored. Run grid to create a matching map.';
+  }
   roi={...saved.roi};updateBox(true);renderSavedRegions();schedule(0);
   message('Restored region and analysis settings: '+saved.name);
  }catch(e){message(e.message,true);renderSavedRegions()}
-};
+}
+$('saved-region-select').onchange=() => openSavedRegion($('saved-region-select').value);
 async function storeRegion(asNew=false){
  if(!meta)return;
  try{
@@ -1009,7 +1033,7 @@ function setRegionPreviewImage(region,src,cropped){
 }
 function blobDataURL(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read the preview image.'));reader.readAsDataURL(blob)})}
 function hoverComputedRegion(event){
- if(event.pointerType==='touch'||event.buttons){hideRegionPreview();return}
+ if(event.pointerType==='touch'||event.buttons||event.target?.closest('.saved-region-overlay')){hideRegionPreview();return}
  hoverPointer={x:event.clientX,y:event.clientY};
  const region=computedRegionAt(point(event));if(!region){hideRegionPreview();return}
  const key=fileId+':'+['x','y','w','h'].map(k=>region.roi[k]).join(',');
@@ -1045,7 +1069,7 @@ function markerMotionAt(mode,phase){
  phase=((phase%1)+1)%1;
  if(mode==='pulse')return {scale:1,x:0,y:0,opacity:.675+.325*Math.cos(phase*Math.PI*2)};
  if(!['bounce','wobble'].includes(mode))return {scale:1,x:0,y:0,opacity:1};
- const stops=[[1.35,0,0],[1.1,2,-2],[.85,0,2],[1.1,-2,-1],[1.35,0,0]],i=Math.floor(phase*4),f=phase*4-i,t=f*f*(3-2*f),a=stops[i],b=stops[i+1];
+ const stops=[[1.35,0,0],[1.1,1,-1],[.85,0,1],[1.1,-1,-.5],[1.35,0,0]],i=Math.floor(phase*4),f=phase*4-i,t=f*f*(3-2*f),a=stops[i],b=stops[i+1];
  return {scale:a[0]+(b[0]-a[0])*t,x:mode==='wobble'?a[1]+(b[1]-a[1])*t:0,y:mode==='wobble'?a[2]+(b[2]-a[2])*t:0,opacity:1};
 }
 function spectrumSnapshot(){

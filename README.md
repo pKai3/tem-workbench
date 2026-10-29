@@ -76,7 +76,7 @@ For manual configuration, copy [tem-paths.example.json](tem-paths.example.json) 
 
 ### Saved regions and results
 
-Expand **Saved regions** below the image controls. Give a box a name, optional comma-separated tags, and notes, then **Save region**. Choose a saved entry to reopen its source image, box and analysis settings. **All images** exposes entries for other photos. **Update region** changes that definition; **Save as new** keeps the original.
+Expand **Saved regions** below the image controls. Give a box a name, optional comma-separated tags, and notes, then **Save region**. Saved regions on the current image have red outlines; click an outline or choose a saved entry to reopen its source image, box and analysis settings. Outline interiors remain available for grid selection and dragging. Reopening a region on the same image keeps an existing grid when its analysis settings are unchanged. **All images** exposes entries for other photos. **Update region** changes that definition; **Save as new** keeps the original.
 
 Definitions live in the ignored `tem_workbench.project.json` beside the app. Each entry records the relative image path, pixel checksum, dimensions, calibration, coordinates, settings and annotations. Reopening checks the image identity and calibration before applying coordinates. The file is replaced atomically and remains available after restarting; stale concurrent edits are rejected until refreshed. There is no automatic backup history.
 
