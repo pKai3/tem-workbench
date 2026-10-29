@@ -6,16 +6,19 @@ See README.md for sources and the epsilon-Fe cell derivation.
 """
 import math
 
+PHASES = ('HCP', 'BCC', 'FCC')
 REFERENCE_LIMITS = {'hcp_a': (.15, .65), 'hcp_c': (.20, 1.20),
                     'bcc_a': (.20, .65), 'fcc_a': (.20, .65)}
 MATERIAL_PRESETS = {
     'titanium': {
         'label': 'Titanium',
+        'enabled_phases': ['HCP', 'BCC'],
         'references': {'hcp_a': .295, 'hcp_c': .468, 'bcc_a': .330, 'fcc_a': .417},
         'note': 'Nominal Ti references: α-HCP, approximate β-BCC and a metastable FCC comparison. Alloy composition and temperature can change these dimensions.',
     },
     'iron': {
         'label': 'Iron',
+        'enabled_phases': ['BCC', 'FCC'],
         'references': {'hcp_a': .24637, 'hcp_c': .39568, 'bcc_a': .28675, 'fcc_a': .36484},
         'note': 'Fe references: α-BCC at 295 K; γ-FCC at 1183 K; ε-HCP at 15 GPa / 300 K. These phases are not all stable at ambient conditions. Edit for your alloy and conditions.',
     },
@@ -34,4 +37,10 @@ def reference_settings(settings):
     # Explicit dimensions win, including in older saved analyses without a material.
     if material != 'custom' and any(abs(values[k]-defaults[k]) > 1e-9 for k in values):
         material = 'custom'
-    return {'material': material, **values}
+    enabled = settings.get('enabled_phases',
+                           MATERIAL_PRESETS.get(material, {}).get('enabled_phases', list(PHASES)))
+    if not isinstance(enabled, list) or any(phase not in PHASES for phase in enabled):
+        raise ValueError('Enabled phases must be a list containing only HCP, BCC or FCC.')
+    # Canonical order and independent lists keep presets and cache keys stable.
+    enabled = [phase for phase in PHASES if phase in enabled]
+    return {'material': material, **values, 'enabled_phases': enabled}

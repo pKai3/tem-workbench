@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -27,7 +28,7 @@ class MaterialReferences(unittest.TestCase):
     def test_presets_custom_edits_and_validation(self):
         iron = MATERIAL_PRESETS['iron']['references']
         self.assertEqual(reference_settings({'material': 'iron'}),
-                         {'material': 'iron', **iron})
+                         {'material': 'iron', **iron, 'enabled_phases': ['BCC', 'FCC']})
         edited = reference_settings({'material': 'iron', 'bcc_a': .287})
         self.assertEqual(edited['material'], 'custom')
         self.assertEqual(edited['hcp_a'], iron['hcp_a'])
@@ -38,6 +39,52 @@ class MaterialReferences(unittest.TestCase):
         for supplied in ({'hcp_a': float('nan')}, {'hcp_c': .1}, {'material': 'unknown'}):
             with self.assertRaises(ValueError):
                 reference_settings(supplied)
+
+    def test_phase_defaults_overrides_and_template_cache(self):
+        self.assertEqual(reference_settings({})['enabled_phases'], ['HCP', 'BCC'])
+        self.assertEqual(reference_settings({'material': 'custom'})['enabled_phases'], ['HCP', 'BCC', 'FCC'])
+        self.assertEqual(reference_settings({'material': 'iron', 'enabled_phases': ['HCP']})['enabled_phases'], ['HCP'])
+        self.assertEqual(reference_settings({'enabled_phases': []})['enabled_phases'], [])
+        self.assertEqual(reference_settings({'enabled_phases': ['FCC', 'HCP', 'FCC']})['enabled_phases'], ['HCP', 'FCC'])
+        for enabled in ('HCP', None, ['unknown'], [1]):
+            with self.assertRaises(ValueError):
+                reference_settings({'enabled_phases': enabled})
+        engine = Engine({})
+        for enabled in (['HCP'], ['BCC', 'FCC'], [], ['HCP', 'BCC', 'FCC']):
+            settings = dict(g_min=3., g_max=10., **reference_settings({'enabled_phases': enabled}))
+            self.assertEqual({t['phase'] for t in engine.templates_for(settings)}, set(enabled))
+        self.assertEqual(len(engine._template_cache), 1)
+        self.assertEqual({t['phase'] for t in engine.templates}, {'HCP', 'BCC', 'FCC'})
+
+    def test_disabled_phases_never_enter_search_or_cached_rescore(self):
+        array, info, _ = pattern()
+        direct = dict(array=array, info=info, limits=[99., 351.])
+        n = 256; pixel = .04; yy, xx = np.indices((n, n))
+        engine = Engine({})
+        template = next(t for t in engine.templates if t['phase'] == 'FCC' and t['zone_3index'] == [0, 0, 1] and t['mirror'] == 1)
+        q = core.canonical(core.rotation(template['q'], .37))
+        q = q[(np.linalg.norm(q, axis=1) >= 3) & (np.linalg.norm(q, axis=1) <= 10)]
+        image = 100 + sum(np.cos(2*np.pi*pixel*(x*xx+y*yy)) for x, y in q)
+        fft = dict(array=image, info=dict(id='fft', name='FFT', width=n, height=n,
+                   sha256_pixels='fft-test', pixel_x_nm=pixel, pixel_y_nm=pixel, can_index=True), limits=[90, 110])
+        for item, enabled in ((direct, ['BCC']), (fft, ['FCC'])):
+            h, w = item['array'].shape
+            roi = dict(x=0, y=0, w=w, h=h)
+            for mode in ('fixed', 'auto_uniform', 'auto_hcp_ac'):
+                module = core if mode == 'fixed' else fitting
+                with patch.object(module, 'search', wraps=module.search) as search:
+                    result = engine.analyze(item, roi, dict(enabled_phases=enabled, scale_mode=mode), images=False, cache_candidates=True)
+                self.assertEqual({t['phase'] for t in search.call_args.args[1]}, set(enabled))
+                if item is fft or mode != 'fixed':
+                    self.assertTrue(result['models'], mode)
+                self.assertFalse({m['phase'] for m in result['models']} - set(enabled))
+                reranked = engine.rescore(result, .2, .3)
+                self.assertEqual(reranked['settings']['enabled_phases'], enabled)
+                self.assertFalse({m['phase'] for m in reranked['models']} - set(enabled))
+                self.assertEqual(engine.cached_models(result, {**result['settings'], 'enabled_phases': []}), [])
+            empty = engine.analyze(item, roi, dict(enabled_phases=[]), images=False)
+            self.assertEqual(empty['models'], [])
+            self.assertTrue(empty['spectrum']['peaks'])
 
     def test_hcp_reference_and_fitted_metric_preserve_three_dimensional_geometry(self):
         engine = Engine({})
@@ -132,7 +179,7 @@ class CentralExclusion(unittest.TestCase):
     def test_material_and_band_persist_in_saved_analysis_and_reranking(self):
         array, info, _ = pattern(); item = dict(array=array, info=info, limits=[99., 351.])
         engine = Engine({}); roi = dict(x=0, y=0, w=768, h=768)
-        settings = dict(material='iron', scale_mode='auto_hcp_ac', g_max=8.,
+        settings = dict(material='iron', enabled_phases=['BCC'], scale_mode='auto_hcp_ac', g_max=8.,
                         diffraction=dict(exclude_radius_nm_inv=.8, refine_center=False))
         _, validated = engine.validate(item, roi, settings)
         self.assertEqual(validated['g_min'], .8)
@@ -148,6 +195,7 @@ class CentralExclusion(unittest.TestCase):
             again.engine.loaded[info['id']] = item
             stored = again.saved_region(saved['region']['id'])
             self.assertEqual(stored['settings']['material'], 'iron')
+            self.assertEqual(stored['settings']['enabled_phases'], ['BCC'])
             self.assertEqual(stored['settings']['g_min'], .8)
             for key, value in MATERIAL_PRESETS['iron']['references'].items():
                 self.assertEqual(stored['settings'][key], value)

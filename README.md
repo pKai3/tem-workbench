@@ -107,9 +107,11 @@ Exports use the configured output directory, defaulting to `./output` beside the
 
 FFT brightness, background, white point and colour are display controls. The intensity palette offers Magma (default), Viridis, Plasma, Cividis, Turbo and Greyscale; the colour bar follows the selected palette. The reset icon beside the white-point field restores the background and white-point defaults. These controls do not alter detected peaks or fitted coordinates. White maxima markers can be crosshairs, open crosshairs, circles or off. Open crosshairs leave the spot centre uncovered and draw four outer alignment arms; the choice is remembered.
 
-The **FFT processing** row above Material and Scale fitting controls **Hann window**, **Remove mean**, **Central exclusion, nm⁻¹**, and the peak threshold. Windowing and mean removal default to on, preserving the original computation. Turning Hann off uses the rectangular crop. Changing these controls recalculates the selected region and clears the previous grid. Saved analyses record these settings. Display controls remain separate.
+The **FFT processing** row above Material and Scale fitting controls **Hann window**, **Remove mean**, and the peak threshold. Windowing and mean removal default to on, preserving the original computation. Turning Hann off uses the rectangular crop. Changing these controls recalculates the selected region and clears the previous grid. Saved analyses record these settings. Display controls remain separate.
 
 Window widths used for matching and weak-peak checks follow the selected window (approximately 1.44 FFT bins for Hann or 0.886 for a rectangular crop, with existing minimum tolerances). Windowing suppresses side lobes at the cost of a wider central peak; see the [SciPy spectral-analysis guide](https://docs.scipy.org/doc/scipy/tutorial/signal.html#spectral-analysis).
+
+**Central exclusion** and **Outer fitting limit** sit together under **Scale fitting** in both image modes. They select the reciprocal-space band after the FFT (or on the recorded diffraction image), rather than changing the transform.
 
 **Outer fitting limit, nm⁻¹** controls the radial upper cutoff for both FFT and direct diffraction analysis (default 10, adjustable from 4 to 30). The selected limit applies to detected peaks, allowed crystal predictions, geometry checks and missing-spot checks. Reflections are generated far enough to cover that band throughout automatic scale fitting. Changing the limit recalculates the selected region and clears the old grid; run a new grid to use the new range. The setting is remembered across images and saved with regions.
 
@@ -120,6 +122,8 @@ Both spectrum views show the selected central exclusion boundary and outer fitti
 ### Material references
 
 **Material** groups the HCP a/c, BCC a and FCC a references in one place. Titanium is the default; Iron supplies a separate starting set. Selecting a preset updates all four dimensions. Editing any dimension selects **Custom**. Cubic cells use a = b = c; HCP uses a = b with a 120° basal angle. These values generate the prediction grids and define zero scale deviation; automatic fitting adjusts predictions relative to the chosen references. Changing them recalculates the selected region and clears the grid. Preferences and saved regions retain the material and explicit dimensions.
+
+**Phase colours / search**, beside Material, controls which structures are searched. **Disabled** skips that phase in FFT analysis, direct diffraction and automatic grids. Titanium defaults to HCP + BCC, Iron to BCC + FCC, and Custom to all three; these choices can be overridden. Selecting a material applies its phase defaults; editing a lattice dimension keeps the current phase selection. The small reset arrow restores the selected material’s default phases and Blue/Gold/Pink colours. Changing only a colour redraws the view; enabling or disabling a phase recalculates the region and clears the old grid. Enabled phases are remembered across startup/image changes and saved with regions. All phases may be disabled to inspect peaks and geometry alone.
 
 | Material | HCP a / c, nm | BCC a, nm | FCC a, nm |
 | --- | --- | --- | --- |
@@ -166,7 +170,7 @@ The geometry-only check displays a secondary grid only when it passes the indepe
 
 ### Remembered settings
 
-Basic preferences are saved automatically in browser local storage: the last image, region width, material and lattice references, scale-fitting mode and custom scale, ranking weights, FFT processing, central exclusion and peak threshold, outer fitting limit, grid size and stopping limit, adaptive options, grid visibility, and FFT display/overlay controls. Analysis controls carry across images; a new image opens with a centred region at the remembered physical width, limited to the image size. Existing display preferences and favourites are retained.
+Basic preferences are saved automatically in browser local storage: the last image, region width, material and lattice references, enabled phases and phase colours, scale-fitting mode and custom scale, ranking weights, FFT processing, central exclusion and peak threshold, outer fitting limit, grid size and stopping limit, adaptive options, grid visibility, and FFT display/overlay controls. Analysis controls carry across images; a new image opens with a centred region at the remembered physical width, limited to the image size. Existing display preferences and favourites are retained.
 
 These preferences survive browser and app restarts at the same address in the same browser profile. Clearing site data resets them. This stores settings only: grids, analysis results and individual candidate-overlay selections are not restored. Use **Save region** for a reusable box definition, and **Export result** or **Export grid results** for numerical output.
 

@@ -19,6 +19,22 @@ const SPECTRUM_PALETTES={
 const PHASE_COLOR_OPTIONS={blue:['Blue','#79bafa'],gold:['Gold','#f4b75e'],mint:['Mint','#64e2b0'],green:['Vivid green','#39ff5a'],pink:['Pink','#ff8ac3'],white:['White','#f4f7fb']};
 const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
 const PHASES=['HCP','BCC','FCC'];
+const PHASE_DEFAULT_COLORS={HCP:'blue',BCC:'gold',FCC:'pink'};
+const phaseColorChoices={...PHASE_DEFAULT_COLORS};
+let enabledPhases=['HCP','BCC'];
+function materialPhases(){return config?.material_presets?.[$('material').value]?.enabled_phases??({titanium:['HCP','BCC'],iron:['BCC','FCC'],custom:PHASES}[$('material').value]||PHASES)}
+function analysisPhases(value){return Array.isArray(value?.enabled_phases)?PHASES.filter(phase=>value.enabled_phases.includes(phase)):PHASES}
+function setPhaseSelection(phases){
+ enabledPhases=PHASES.filter(phase=>phases.includes(phase));
+ for(const phase of PHASES)$(phase.toLowerCase()+'-color').value=enabledPhases.includes(phase)?phaseColorChoices[phase]:'disabled';
+ applyPhaseColors(false);
+ $('phase-search-note').textContent=enabledPhases.length?'Searching '+enabledPhases.join(' + ')+'. Disabled skips matching.':'Phase search disabled. Peak and geometry checks remain available.';
+}
+function finishPhaseChange(previous){
+ writePreference('tem-phase-colors',phaseColorChoices);rememberBasicControls();
+ applyPhaseColors();
+ if(previous.join(',')!==enabledPhases.join(','))invalidateAnalysisSettings();
+}
 const phaseMaps=()=>Object.fromEntries(PHASES.map(phase=>[phase,new Map()]));
 const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',fcc_compatible:'FCC compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'Phase ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',fcc_compatible:'#ff8ac3',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
@@ -57,6 +73,7 @@ function restoreBasicControls(){
  for(const id of Object.keys(BASIC_NUMBERS))if(validControlNumber(id,saved[id]))$(id).value=saved[id];
  for(const id of BASIC_FLAGS)if(typeof saved[id]==='boolean')$(id).checked=saved[id];
  if(['titanium','iron','custom'].includes(saved.material))$('material').value=saved.material;
+ setPhaseSelection(Array.isArray(saved.enabled_phases)&&saved.enabled_phases.every(phase=>PHASES.includes(phase))?saved.enabled_phases:materialPhases());
  if(Number($('fft-g-min').value)>=Number($('g-max').value))$('fft-g-min').value=3;
  if(OVERLAY_MODES.includes(saved.overlay))$('overlay').value=saved.overlay;
  if($('overlay').value==='custom')$('fit-controls').open=true;
@@ -70,7 +87,7 @@ function rememberBasicControls(){
  }
  for(const id of BASIC_FLAGS)saved[id]=$(id).checked;
  if(OVERLAY_MODES.includes($('overlay').value))saved.overlay=$('overlay').value;
- saved.material=$('material').value;
+ saved.material=$('material').value;saved.enabled_phases=[...enabledPhases];
  if(Number(saved['fft-g-min'])>=Number(saved['g-max'])){saved['fft-g-min']=previous?.['fft-g-min']??3;saved['g-max']=previous?.['g-max']??10}
  writePreference('tem-basic-settings',saved);
 }
@@ -145,7 +162,7 @@ $('favorite-toggle').onclick=()=>{
  writePreference(favoriteKey(),[...favorites]);renderFavorites();
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){clearFileSearch();$('file').value=id;openFile()}};
-function settings(){const mode=$('scenario').value;return {material:$('material').value,hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:JSON.parse(JSON.stringify(diffractionSettings))}:{})}}
+function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:JSON.parse(JSON.stringify(diffractionSettings))}:{})}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
@@ -354,7 +371,7 @@ function appendFitCells(row,m,{name,geometry=false,rotation=false}){
 renderFitHeader($('model-head'));
 function renderModels(data){
  $('models').replaceChildren();
- const ranked=PHASES.map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>compareRank(a.m,b.m));
+ const ranked=analysisPhases(data.settings).map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>compareRank(a.m,b.m));
  for(const {phase,m}of ranked){
   const row=document.createElement('tr');
   appendFitCells(row,m,{name:m?`${phase} ${zoneLabel(m)}`:phase});
@@ -398,8 +415,8 @@ function rememberMarkerStyles(){
 function applyMarkerAnimation(){const mode=$('marker-motion').value;document.body.classList.toggle('marker-pulse',mode==='pulse');document.body.classList.toggle('marker-bounce',mode==='bounce');document.body.classList.toggle('marker-wobble',mode==='wobble')}
 function applyPhaseColors(redraw=true){
  for(const [phase,id,key,fallback]of [['HCP','hcp-color','hcp_compatible','blue'],['BCC','bcc-color','bcc_compatible','gold'],['FCC','fcc-color','fcc_compatible','pink']]){
-  const choice=Object.hasOwn(PHASE_COLOR_OPTIONS,$(id).value)?$(id).value:fallback;
-  const color=PHASE_COLOR_OPTIONS[choice][1];$(id).value=choice;$(id).style.color=color;
+  const choice=phaseColorChoices[phase]||fallback;
+  const color=PHASE_COLOR_OPTIONS[choice][1];$(id).style.color=$(id).value==='disabled'?'var(--muted)':color;
   phaseColors[phase]=color;colors[key]=color;document.documentElement.style.setProperty('--'+id,color);
  }
  if(redraw){
@@ -531,12 +548,24 @@ if(['log','linear'].includes(displayPreference.curve))$('fft-curve').value=displ
 if(Number.isFinite(displayPreference.background))$('contrast').value=clamp(displayPreference.background,0,90);
 if(Number.isFinite(displayPreference.white))$('fft-white').value=clamp(displayPreference.white,91,100);
 const savedPhaseColors=readPreference('tem-phase-colors',{});
-for(const [phase,id,fallback]of [['HCP','hcp-color','blue'],['BCC','bcc-color','gold'],['FCC','fcc-color','pink']]){
- for(const [value,[name]]of Object.entries(PHASE_COLOR_OPTIONS))$(id).append(new Option(name,value));
- $(id).value=Object.hasOwn(PHASE_COLOR_OPTIONS,savedPhaseColors?.[phase])?savedPhaseColors[phase]:fallback;
- $(id).onchange=()=>{writePreference('tem-phase-colors',Object.fromEntries(PHASES.map(phase=>[phase,$(phase.toLowerCase()+'-color').value])));applyPhaseColors()};
+for(const phase of PHASES){
+ const field=$(phase.toLowerCase()+'-color');field.append(new Option('Disabled','disabled'));
+ for(const [value,[name]]of Object.entries(PHASE_COLOR_OPTIONS))field.append(new Option(name,value));
+ phaseColorChoices[phase]=Object.hasOwn(PHASE_COLOR_OPTIONS,savedPhaseColors?.[phase])?savedPhaseColors[phase]:PHASE_DEFAULT_COLORS[phase];
+ field.value=phaseColorChoices[phase];
+ field.onchange=()=>{
+  const previous=[...enabledPhases];
+  const next=PHASES.filter(phase=>$(phase.toLowerCase()+'-color').value!=='disabled');
+  if(!config?.phase_selection&&previous.join(',')!==next.join(',')){setPhaseSelection(previous);message('Restart TEM Workbench and reload to change which phases are searched.',true);return}
+  if(field.value!=='disabled')phaseColorChoices[phase]=field.value;
+  setPhaseSelection(next);finishPhaseChange(previous);
+ };
 }
-applyPhaseColors(false);
+setPhaseSelection(enabledPhases);
+$('reset-phase-colors').onclick=()=>{
+ const previous=[...enabledPhases];Object.assign(phaseColorChoices,PHASE_DEFAULT_COLORS);
+ setPhaseSelection(config?.phase_selection?materialPhases():PHASES);finishPhaseChange(previous);
+};
 const savedMarkerStyles=readPreference('tem-marker-styles',{});
 for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'circle','fcc-marker':'circle','primary-geometry-marker':'diamond','secondary-geometry-marker':'diamond','weak-marker':'diamond'})){
  const choices=id==='weak-marker'?[...MARKER_SHAPES,'follow','dot']:MARKER_SHAPES;
@@ -625,7 +654,7 @@ function renderGridSummary(){
  if(grid.rescore&&grid.grid.adaptive)note.textContent+=` Labels have been reweighted within the existing cells. Subdivision decisions and stopping reasons remain from the original run. Run a new grid to change its boundaries.`;
  if(grid.lookahead?.checked)note.textContent+=` Child checks: ${grid.lookahead.refined} parents subdivided, ${grid.lookahead.retained} retained. Trial-only children are excluded from map totals.`;
  container.append(heading,summary,table,note);
- for(const phase of PHASES)container.append(renderZoneBreakdown(phase,totalArea,expanded.has(phase)));
+ for(const phase of analysisPhases(grid.settings))container.append(renderZoneBreakdown(phase,totalArea,expanded.has(phase)));
 }
 function zoneKey(model){return zoneIndices(model).join(',')}
 function zoneSymbol(phase,key){
@@ -644,7 +673,7 @@ function renderZoneLegend(found){
  const legend=$('zone-legend');legend.replaceChildren();legend.hidden=PHASES.every(phase=>!found[phase].size);
  if(legend.hidden)return;
  const hint=document.createElement('p');hint.className='hint';
- hint.textContent='Best candidate for each structure in every cell: HCP left, BCC middle, FCC right. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Ordered by image area, largest first.';
+ hint.textContent='Best candidate for each searched structure, left to right: '+analysisPhases(grid?.settings).join(', ')+'. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Ordered by image area, largest first.';
  legend.append(hint);
  for(const phase of PHASES){
   if(!found[phase].size)continue;
@@ -674,11 +703,11 @@ function drawGrid(){
   const descriptions=[labels[r.label]];
   for(const phase of PHASES){const m=r.best_zones?.[phase];if(m)descriptions.push(`${phase} ${zoneLabel(m)} · ${m.valid?'passes screen':'below threshold'}`)}
   e.setAttribute('role','img');e.setAttribute('aria-label',descriptions.join(' · '));group.append(e);
-  if(showZones)for(const [i,phase]of PHASES.entries()){
+  if(showZones)for(const [i,phase]of analysisPhases(grid.settings).entries()){
    const model=r.best_zones?.[phase];if(!model)continue;
    const key=zoneKey(model),symbol=zoneSymbol(phase,key);
    const size=Math.min(r.roi.w,r.roi.h)*.25;
-   const marker=el('text',{x:r.roi.x+r.roi.w*([.2,.5,.8][i]),y:r.roi.y+r.roi.h*.5,
+   const marker=el('text',{x:r.roi.x+r.roi.w*((i+1)/(analysisPhases(grid.settings).length+1)),y:r.roi.y+r.roi.h*.5,
     fill:phaseColors[phase],'font-size':size,'stroke-width':size*.12,
     class:'zone-marker','data-phase':phase,'data-zone-key':key,'fill-opacity':model.valid?1:.38,'stroke-opacity':model.valid ? .85 : .38,
     'aria-hidden':'true'},symbol);
@@ -821,7 +850,7 @@ function invalidateAnalysisSettings(){
 $('material').onchange=()=>{
  const preset=config?.material_presets?.[$('material').value];
  if(preset)for(const [id,key]of Object.entries(REFERENCE_CONTROLS))$(id).value=preset.references[key];
- materialView();rememberBasicControls();calibrationView();invalidateAnalysisSettings();
+ setPhaseSelection(config?.phase_selection?materialPhases():PHASES);materialView();rememberBasicControls();calibrationView();invalidateAnalysisSettings();
 };
 for(const id of ['scenario','model-scale',...Object.keys(REFERENCE_CONTROLS),'fft-g-min','g-max','threshold','fft-hann','fft-mean'])$(id).onchange=()=>{
  if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
@@ -842,7 +871,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('file-search').value='';$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('FCC')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('file-search').value='';$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('FCC')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection);if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES)$(phase.toLowerCase()+'-color').querySelector('option[value=disabled]').disabled=!config.phase_selection;for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 function syncFFTZoom(){
@@ -948,7 +977,7 @@ async function loadSavedRegions(){
 function applyRegionSettings(saved){
  const defaults={hcp_a:.295,hcp_c:.468,bcc_a:.330,fcc_a:.417};
  for(const [id,key]of Object.entries(REFERENCE_CONTROLS))$(id).value=saved[key]??defaults[key];
- $('material').value=saved.material??'titanium';materialView();
+ $('material').value=saved.material??'titanium';setPhaseSelection(analysisPhases(saved));materialView();
  if(!isDiffraction())$('fft-g-min').value=saved.g_min??3;
  $('g-max').value=saved.g_max??10;
  if(isDiffraction()&&saved.diffraction){diffractionSettings=withTranslationDefaults(JSON.parse(JSON.stringify(saved.diffraction)));syncDetectorControls();rememberDiffraction();}
@@ -1205,7 +1234,7 @@ function renderRegionPreviewDetails(region){
  const name=$('region-hover-name');name.textContent=region.name||'';name.hidden=!region.name;
  const rows=$('region-hover-models');rows.replaceChildren();
  if(!region.label){rows.textContent='Loading saved analysis…';return}
- const candidates=PHASES.map(phase=>({phase,model:region.models[phase]}));
+ const candidates=analysisPhases(region.settings).map(phase=>({phase,model:region.models[phase]}));
  candidates.sort((a,b)=>Number(Boolean(b.model?.valid))-Number(Boolean(a.model?.valid))||compareRank(a.model,b.model));
  for(const {phase,model}of candidates){
   const row=document.createElement('div'),name=document.createElement('span'),rank=document.createElement('span'),status=document.createElement('span');

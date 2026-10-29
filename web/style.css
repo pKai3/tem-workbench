@@ -101,3 +101,19 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 .calibration-bar .reference-input{flex:0 0 158px;min-width:158px}.calibration-bar .reference-input input{width:100%}
 
 .material-bar{display:flex;flex-wrap:wrap;align-items:end;gap:10px 14px;margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:#101925}.material-bar label{flex:0 1 112px;min-width:96px}.material-bar .material-choice{flex-basis:180px}.material-bar input,.material-bar select{width:100%;min-height:32px;padding:6px 8px}.material-bar .hint{flex:1 1 300px;margin:0;line-height:1.5;font-size:11px}
+
+/* Material references and phase selection share one compact row. */
+.material-settings{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin-top:12px}
+.material-settings .material-bar{flex:1 1 660px;min-width:0;margin-top:0;gap:8px 12px}
+.material-settings .material-bar .hint{flex-basis:100%}
+.material-settings .phase-color-controls{flex:0 1 344px;align-content:center;align-items:end;gap:8px 10px}
+.phase-colors-heading{display:flex;align-items:center;justify-content:space-between;flex-basis:100%}
+#reset-phase-colors{min-height:26px;width:28px;padding:0;font-size:19px;line-height:1}
+.phase-color-controls label{flex:1 1 90px;min-width:0}
+.phase-color-controls select{width:100%}
+.phase-color-controls .hint{flex-basis:100%;margin:0;font-size:11px;line-height:1.4}
+.calibration-bar .fitting-limits{display:flex;flex:0 1 340px;gap:12px;align-items:end;min-width:0}
+.calibration-bar .fitting-limits .reference-input{flex:1 1 0;min-width:0}
+.fitting-limits .diffraction-fitting-limit{display:none}
+body.diffraction .fitting-limits .diffraction-fitting-limit{display:flex}
+body.diffraction .fitting-limits .fft-fitting-limit{display:none}

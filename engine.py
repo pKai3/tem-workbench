@@ -18,7 +18,7 @@ import phase_comparison
 import demo_data
 import peak_evidence
 import diffraction
-from materials import reference_settings
+from materials import PHASES, reference_settings
 from crystal_templates import fcc_templates
 
 ROOT = Path(__file__).resolve().parent
@@ -63,7 +63,8 @@ class Engine:
                 self._template_cache.pop(next(iter(self._template_cache)))
             self._template_cache[key] = scale_fitting.prepare_templates(
                 self.template_library, g_max=key[0], g_min=key[1], hcp_a=key[2], hcp_c=key[3], bcc_a=key[4], fcc_a=key[5])
-        return self._template_cache[key]
+        enabled = settings.get('enabled_phases', PHASES)
+        return [template for template in self._template_cache[key] if template['phase'] in enabled]
 
     def catalog(self):
         rows = demo_data.catalog_entries()
@@ -286,7 +287,7 @@ class Engine:
         classification = phase_comparison.classify(s['peaks'], models, s['df'])
         if settings['scale_mode'] != 'fixed':
             classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the image calibration used.')
-            if settings['scale_mode'] == 'auto_hcp_ac':
+            if settings['scale_mode'] == 'auto_hcp_ac' and 'HCP' in settings.get('enabled_phases', PHASES):
                 classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scale penalties discourage large adjustments; the separate shared-evidence check retains unresolved model tradeoffs.')
             if settings['scale_penalty_strength']:
                 classification['flags'].append(
@@ -333,6 +334,7 @@ class Engine:
         if '_fit_cache' not in result:
             raise ValueError('Run a grid on the current engine to enable cached rescoring.')
         candidates = json.loads(zlib.decompress(result['_fit_cache']))
+        candidates = [model for model in candidates if model['phase'] in settings.get('enabled_phases', PHASES)]
         for model in candidates:
             if settings['scale_mode'] != 'fixed':
                 c = model.get('scale_c') if model.get('scale_parameter_count') == 2 else None

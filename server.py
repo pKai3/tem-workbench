@@ -56,7 +56,7 @@ class Workbench:
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
-                'engine': self.engine.version[:12], 'phases': list(PHASES), 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
+                'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
                 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
