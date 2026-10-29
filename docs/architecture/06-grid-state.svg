@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="1200" height="900" preserveAspectRatio="xMinYMin meet" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+<title>Adaptive regions, cached fits and saved state</title>
+<desc>Every accepted grid cell runs the same numerical pipeline. Refinement changes the map partition, not the detector physics.</desc>
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="1200" height="900"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-900)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="0" width="1200" height="900" style="stroke: rgb(100%,100%,100%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="34" y="870" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 10px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1740) scale(1,-1)">TEM WORKBENCH / METHODS ATLAS</text>
+			<text x="1130.82421875" y="870" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 10px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,1740) scale(1,-1)">06 / 06</text>
+			<text x="34" y="832" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 26px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1664) scale(1,-1)">Adaptive regions, cached fits and saved state</text>
+			<text x="34" y="807" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.8px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,1614) scale(1,-1)">Every accepted grid cell runs the same numerical pipeline. Refinement changes the map partition, not the detector physics.</text>
+			<polyline points="314 606, 350 606" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="350 606, 344.2697 602.9318, 344.2697 609.0682" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="174 688, 174 657" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="174 657, 170.9318 662.7303, 177.0682 662.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="174 556, 174 524" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="174 524, 170.9318 529.7303, 177.0682 529.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="309 411, 309 379" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="309 379, 305.9318 384.7303, 312.0682 384.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="309 259, 309 226" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="309 226, 305.9318 231.7303, 312.0682 231.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="34 139, 22 139, 22 736, 34 736" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd; stroke-dasharray: 4, 3;"/>
+			<polygon points="34 736, 28.26972 732.9318, 28.26972 739.0682" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="892 617, 892 585" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="892 585, 888.9318 590.7303, 895.0682 590.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="892 469, 892 437" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="892 437, 888.9318 442.7303, 895.0682 442.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="892 284, 892 252" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="892 252, 888.9318 257.7303, 895.0682 257.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<rect x="34" y="688" width="550" height="84" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="48" y="751" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1502) scale(1,-1)">1 Create a breadth-first region queue</text>
+			<text x="48" y="730.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1460) scale(1,-1)">Start with an n×n uniform grid (2–24 per side). Analyse each region using the submitted</text>
+			<text x="48" y="715.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1430) scale(1,-1)">settings; maintain the currently accepted map leaves.</text>
+			<polygon points="174 657, 314 606.5, 174 556, 34 606.5" style="stroke: rgb(49%,60%,66%); stroke-linecap: butt; stroke-width: 1; fill: rgb(92%,95%,97%); fill-rule: evenodd;"/>
+			<text x="105.83330078124999" y="610.0" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 12.4px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1220) scale(1,-1)">Adaptive and children</text>
+			<text x="129.58583984375" y="595.0" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 12.4px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1190) scale(1,-1)">large enough?</text>
+			<rect x="350" y="556" width="234" height="101" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(91%,95%,95%); fill-rule: evenodd;"/>
+			<text x="364" y="636" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1272) scale(1,-1)">Keep current leaf</text>
+			<text x="364" y="615.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.3px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1230) scale(1,-1)">No split if adaptive is off, a child is</text>
+			<text x="364" y="600.4100000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.3px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1200) scale(1,-1)">&lt;32 px, or its physical width would</text>
+			<text x="364" y="585.72" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.3px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1171) scale(1,-1)">fall below the chosen stopping limit.</text>
+			<rect x="34" y="411" width="550" height="113" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="48" y="503" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1006) scale(1,-1)">2 Split uncertain or multiple-pattern regions</text>
+			<text x="48" y="482.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,964) scale(1,-1)">Unresolved, insufficient, ambiguous, two-candidate or multiple-orientation results request</text>
+			<text x="48" y="467.15000000000003" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,934) scale(1,-1)">subdivision. A substantial geometry-only second pattern also requests subdivision.</text>
+			<text x="48" y="448.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,896) scale(1,-1)">Queue four children when size limits allow.</text>
+			<rect x="34" y="259" width="550" height="120" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="48" y="358" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,716) scale(1,-1)">3 Optional “Check passing regions”</text>
+			<text x="48" y="337.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,674) scale(1,-1)">Even a passing parent can test four children. Keep them if a child supports a new</text>
+			<text x="48" y="322.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,644) scale(1,-1)">phase/zone, a separate pattern, or if the children mix passing and unassigned results.</text>
+			<text x="48" y="303.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,606) scale(1,-1)">A new phase/zone must beat the parent family on that same child by ≥0.08 rank, or the</text>
+			<text x="48" y="288.2499999999999" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,576) scale(1,-1)">parent family must be absent/below screen.</text>
+			<rect x="34" y="64" width="550" height="162" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(91%,95%,95%); fill-rule: evenodd;"/>
+			<text x="48" y="205" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,410) scale(1,-1)">4 Commit a subdivision or retain the parent</text>
+			<text x="48" y="184.10000000000002" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,368) scale(1,-1)">All four merely lose evidence → retain the parent. Same interpretation without a split</text>
+			<text x="48" y="169.14999999999998" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,338) scale(1,-1)">trigger → retain the parent. Accepted subdivisions replace the parent and can refine</text>
+			<text x="48" y="154.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,308) scale(1,-1)">recursively.</text>
+			<text x="48" y="135.2499999999999" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,270) scale(1,-1)">Passing-parent trial children do not count as map leaves until accepted.</text>
+			<text x="48" y="120.29999999999984" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,240) scale(1,-1)">Cancelled/incomplete trials leave that parent intact.</text>
+			<text x="48" y="101.3499999999998" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,202) scale(1,-1)">Map totals use current leaf areas; subdivided parents and rejected probes are excluded.</text>
+			<rect x="618" y="617" width="548" height="155" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(94%,96%,96%); fill-rule: evenodd;"/>
+			<text x="632" y="751" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1502) scale(1,-1)">Reweight an existing map</text>
+			<text x="632" y="730.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1460) scale(1,-1)">In-memory compressed candidate pools retain explored fits, including rejected fits.</text>
+			<text x="632" y="715.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1430) scale(1,-1)">Changing scale penalty λ or peak weight η recomputes ranks, labels, symbols and totals</text>
+			<text x="632" y="700.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1400) scale(1,-1)">without another FFT.</text>
+			<text x="632" y="681.25" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1362) scale(1,-1)">Cell boundaries and selected detected profiles stay fixed. Reweighting is not a fresh</text>
+			<text x="632" y="666.3000000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1332) scale(1,-1)">scale/rotation/strength search; rerun the grid when those choices need optimizing again.</text>
+			<rect x="618" y="469" width="548" height="116" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="632" y="564" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1128) scale(1,-1)">Basic preferences and linked folders</text>
+			<text x="632" y="543.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1086) scale(1,-1)">Browser localStorage remembers basic analysis/display settings and per-image</text>
+			<text x="632" y="528.1500000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1056) scale(1,-1)">diffraction choices. Folder links are stored separately in .tem-paths.json.</text>
+			<text x="632" y="509.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1018) scale(1,-1)">Preferences are not a backup of the source data or a saved analysis.</text>
+			<rect x="618" y="284" width="548" height="153" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="632" y="416" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,832) scale(1,-1)">Reusable named regions</text>
+			<text x="632" y="395.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,790) scale(1,-1)">tem_workbench.project.json stores image identity, ROI coordinates, settings, name, tags</text>
+			<text x="632" y="380.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,760) scale(1,-1)">and notes. Writes use a revision check and atomic replacement.</text>
+			<text x="632" y="361.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,722) scale(1,-1)">Reopening recomputes the analysis. The project does not embed an FFT bitmap. Hover</text>
+			<text x="632" y="346.2499999999999" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,692) scale(1,-1)">previews are a cache, not the scientific record. Original images stay in their linked data</text>
+			<text x="632" y="331.29999999999984" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,662) scale(1,-1)">locations.</text>
+			<rect x="618" y="64" width="548" height="188" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(91%,95%,95%); fill-rule: evenodd;"/>
+			<text x="632" y="231" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,462) scale(1,-1)">Exports and provenance</text>
+			<text x="632" y="210.10000000000002" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,420) scale(1,-1)">Numerical result/grid exports preserve settings, observations, fit evidence,</text>
+			<text x="632" y="195.14999999999998" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,390) scale(1,-1)">classifications, source pixel checksum and engine hash. PNG/GIF exports separately</text>
+			<text x="632" y="180.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,360) scale(1,-1)">capture the rendered view.</text>
+			<text x="632" y="161.2499999999999" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,322) scale(1,-1)">The browser draws the same axes and overlays for original FFT and processed detector</text>
+			<text x="632" y="146.29999999999984" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,292) scale(1,-1)">signal. Diagnostic exports identify the Processed view; changing display never changes</text>
+			<text x="632" y="131.3499999999998" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,262) scale(1,-1)">the numerical fit.</text>
+			<text x="632" y="112.39999999999975" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,224) scale(1,-1)">This atlas is versioned alongside the source. A hash check flags relevant code changes</text>
+			<text x="632" y="97.4499999999997" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,194) scale(1,-1)">for diagram review; regeneration does not infer algorithm changes automatically.</text>
+			<rect x="319.8607177734375" y="610" width="24.278564453125" height="17" rx="2" ry="2" style="stroke: rgb(100%,100%,100%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="324.8607177734375" y="615" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 10.5px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,1230) scale(1,-1)">No</text>
+			<path d="M 34,28 L 1166,28 Z" style="stroke: rgb(84%,88%,90%); stroke-linecap: butt; stroke-width: 0.8;"/>
+			<text x="34" y="13" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 9px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,26) scale(1,-1)">Source: server.py grid jobs · adaptive_refinement.py · engine.rescore · workbench_project.py · web/app.js</text>
+			<text x="989.73974609375" y="13" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 9px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,26) scale(1,-1)">Implementation snapshot · 2026-10-30</text>
+		</g>
+	</g>
+</svg>

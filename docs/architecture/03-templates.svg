@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="1200" height="900" preserveAspectRatio="xMinYMin meet" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+<title>Generate, rotate and scale allowed patterns</title>
+<desc>Predictions move to match observations. Image pixels, reciprocal axes and measured peak coordinates do not stretch.</desc>
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="1200" height="900"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-900)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="0" width="1200" height="900" style="stroke: rgb(100%,100%,100%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="34" y="870" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 10px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1740) scale(1,-1)">TEM WORKBENCH / METHODS ATLAS</text>
+			<text x="1130.82421875" y="870" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 10px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,1740) scale(1,-1)">03 / 06</text>
+			<text x="34" y="832" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 26px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1664) scale(1,-1)">Generate, rotate and scale allowed patterns</text>
+			<text x="34" y="807" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.8px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,1614) scale(1,-1)">Predictions move to match observations. Image pixels, reciprocal axes and measured peak coordinates do not stretch.</text>
+			<polyline points="209 635, 209 605" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="209 605, 205.9318 610.7303, 212.0682 610.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="209 407, 209 377" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="209 377, 205.9318 382.7303, 212.0682 382.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="209 234, 209 204" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="209 204, 205.9318 209.7303, 212.0682 209.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="597 602, 597 572" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="597 572, 593.9318 577.7303, 600.0682 577.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="597 398, 597 368" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="597 368, 593.9318 373.7303, 600.0682 373.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="597 191, 597 161" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="597 161, 593.9318 166.7303, 600.0682 166.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="384 306, 401 306, 401 688, 418 688" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="418 688, 412.2697 684.9318, 412.2697 691.0682" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="988 621, 988 591" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="988 591, 984.9318 596.7303, 991.0682 596.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="776 280, 793 280, 793 410, 988 410, 988 438" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd; stroke-dasharray: 4, 3;"/>
+			<polygon points="988 438, 991.0682 432.2697, 984.9318 432.2697" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<rect x="34" y="635" width="350" height="137" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="48" y="751" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1502) scale(1,-1)">1 Reference unit cells</text>
+			<text x="48" y="730.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1460) scale(1,-1)">Material presets supply editable a₀ and c₀. Cubic: a = b</text>
+			<text x="48" y="715.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1430) scale(1,-1)">= c. HCP: a = b, γ = 120°.</text>
+			<text x="48" y="696.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1392) scale(1,-1)">Only enabled phases enter the search. Zone directions</text>
+			<text x="48" y="681.25" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1362) scale(1,-1)">form a finite library; this is not an exhaustive</text>
+			<text x="48" y="666.3000000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1332) scale(1,-1)">orientation search.</text>
+			<rect x="34" y="407" width="350" height="198" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="48" y="584" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1168) scale(1,-1)">2 Enumerate integer reflections</text>
+			<text x="48" y="563.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1126) scale(1,-1)">Cubic: g(hkl) = (h, k, l) / a.</text>
+			<text x="48" y="544.1500000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1088) scale(1,-1)">HCP: g(hkl) = ((2h+k)/(√3·a), k/a, l/c). Internal indices</text>
+			<text x="48" y="529.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1058) scale(1,-1)">use three coordinates.</text>
+			<text x="48" y="510.25000000000006" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1020) scale(1,-1)">BCC: h+k+l even. FCC: h,k,l all even or all odd. HCP:</text>
+			<text x="48" y="495.30000000000007" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,990) scale(1,-1)">exclude odd l when (h−k) is divisible by 3.</text>
+			<text x="48" y="476.3500000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,952) scale(1,-1)">Keep zone-law hu+kv+lw = 0; project onto its</text>
+			<text x="48" y="461.4000000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,922) scale(1,-1)">reciprocal plane.</text>
+			<rect x="34" y="234" width="350" height="143" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="48" y="356" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,712) scale(1,-1)">3 Supply enough reciprocal nodes</text>
+			<text x="48" y="335.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,670) scale(1,-1)">Integer bounds depend on reference dimensions, outer</text>
+			<text x="48" y="320.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,640) scale(1,-1)">radius and smallest allowed scale; no fixed shell count.</text>
+			<text x="48" y="301.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,602) scale(1,-1)">Each scored prediction is filtered again to the current</text>
+			<text x="48" y="286.2499999999999" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,572) scale(1,-1)">radial band. q and −q represent one profile.</text>
+			<rect x="34" y="64" width="350" height="140" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(94%,96%,96%); fill-rule: evenodd;"/>
+			<text x="48" y="183" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,366) scale(1,-1)">Allowed does not mean visible</text>
+			<text x="48" y="162.10000000000002" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,324) scale(1,-1)">These rules generate positions, not simulated</text>
+			<text x="48" y="147.14999999999998" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,294) scale(1,-1)">intensities. Thickness, excitation, contrast transfer and</text>
+			<text x="48" y="132.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,264) scale(1,-1)">masking can hide reflections.</text>
+			<text x="48" y="113.24999999999989" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,226) scale(1,-1)">No multislice, dynamical-intensity, ring-indexing or</text>
+			<text x="48" y="98.29999999999984" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,196) scale(1,-1)">stacking-fault model is used.</text>
+			<rect x="418" y="602" width="358" height="170" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="432" y="751" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1502) scale(1,-1)">4 Apply a physically defined metric</text>
+			<text x="432" y="730.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1460) scale(1,-1)">Cubic / uniform mode: one reciprocal multiplier s. HCP</text>
+			<text x="432" y="715.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1430) scale(1,-1)">dual mode: sa and sc where c is visible. Bounds:</text>
+			<text x="432" y="700.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1400) scale(1,-1)">0.85–1.15.</text>
+			<text x="432" y="681.25" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1362) scale(1,-1)">For plane basis P and D = diag(sa,sa,sc), use the plane</text>
+			<text x="432" y="666.3000000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1332) scale(1,-1)">metric M = PᵀD²P and transform √M.</text>
+			<text x="432" y="647.35" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1294) scale(1,-1)">Model dimensions: a = a₀/sa; c = c₀/sc.</text>
+			<rect x="418" y="398" width="358" height="174" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="432" y="551" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1102) scale(1,-1)">5 Seed orientations and scales</text>
+			<text x="432" y="530.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1060) scale(1,-1)">Use up to 16 strongest observed profiles to seed</text>
+			<text x="432" y="515.1500000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1030) scale(1,-1)">in-plane rotation and reciprocal scales.</text>
+			<text x="432" y="496.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,992) scale(1,-1)">HCP dual search scans 11 c*/a* ratios plus 1, then</text>
+			<text x="432" y="481.25000000000006" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,962) scale(1,-1)">continuous refinement. Fast nearest-neighbour quality</text>
+			<text x="432" y="466.30000000000007" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,932) scale(1,-1)">must reach 0.20.</text>
+			<text x="432" y="447.3500000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,894) scale(1,-1)">Retain up to 4 dual-scale or 3 single-scale seeds per</text>
+			<text x="432" y="432.4000000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,864) scale(1,-1)">template.</text>
+			<rect x="418" y="191" width="358" height="177" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="432" y="347" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,694) scale(1,-1)">6 Alternate assignment and refinement</text>
+			<text x="432" y="326.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,652) scale(1,-1)">Assign peaks one-to-one (right), then solve weighted</text>
+			<text x="432" y="311.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,622) scale(1,-1)">positional least squares for rotation and visible scales.</text>
+			<text x="432" y="292.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,584) scale(1,-1)">Up to 3 rounds; rotation moves at most ±0.06 rad per</text>
+			<text x="432" y="277.2499999999999" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,554) scale(1,-1)">round. Accept a new solution only if its position score</text>
+			<text x="432" y="262.29999999999984" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,524) scale(1,-1)">does not decrease.</text>
+			<text x="432" y="243.3499999999998" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,486) scale(1,-1)">Scale penalties are applied after this positional</text>
+			<text x="432" y="228.39999999999975" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,456) scale(1,-1)">optimization.</text>
+			<rect x="418" y="64" width="358" height="97" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(91%,95%,95%); fill-rule: evenodd;"/>
+			<text x="432" y="140" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,280) scale(1,-1)">7 Retain distinct fits</text>
+			<text x="432" y="119.10000000000002" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,238) scale(1,-1)">Rank by the adjusted score (panel 4). Keep up to 5 per</text>
+			<text x="432" y="104.14999999999998" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,208) scale(1,-1)">phase; suppress near-identical profile assignments</text>
+			<text x="432" y="89.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,178) scale(1,-1)">within the same zone in automatic mode.</text>
+			<rect x="810" y="621" width="356" height="151" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="824" y="751" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1502) scale(1,-1)">One-to-one profile assignment</text>
+			<text x="824" y="730.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1460) scale(1,-1)">For observed oi and predicted pj:</text>
+			<text x="824" y="711.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1422) scale(1,-1)">dij = min(||oi − pj||, ||oi + pj||)</text>
+			<text x="824" y="692.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1384) scale(1,-1)">Qij = exp[−½(dij/(τ/2))²] if dij ≤ τ; otherwise Qij = 0.</text>
+			<text x="824" y="673.25" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1346) scale(1,-1)">The same tolerance is used for every structure.</text>
+			<rect x="810" y="438" width="356" height="153" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="824" y="570" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1140) scale(1,-1)">Hungarian assignment</text>
+			<text x="824" y="549.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1098) scale(1,-1)">Minimize costs −wi·Qij, with zero-cost dummy columns</text>
+			<text x="824" y="534.1500000000001" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1068) scale(1,-1)">for unmatched observations.</text>
+			<text x="824" y="515.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1030) scale(1,-1)">A measured profile can support only one node within a</text>
+			<text x="824" y="500.25000000000006" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1000) scale(1,-1)">candidate; a prediction cannot claim several profiles.</text>
+			<text x="824" y="481.30000000000007" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,962) scale(1,-1)">Matched opposite spots count once.</text>
+			<rect x="810" y="191" width="356" height="177" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(94%,96%,96%); fill-rule: evenodd;"/>
+			<text x="824" y="347" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,694) scale(1,-1)">Fixed-scale path</text>
+			<text x="824" y="326.1" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,652) scale(1,-1)">Stored/custom scale uses fixed dimensions. Seed</text>
+			<text x="824" y="311.15" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,622) scale(1,-1)">rotations at 0.5° increments; refine rotation twice,</text>
+			<text x="824" y="296.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,592) scale(1,-1)">capped at 2° per step.</text>
+			<text x="824" y="277.2499999999999" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,554) scale(1,-1)">The best 2 quick seeds per template are evaluated.</text>
+			<text x="824" y="262.29999999999984" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,524) scale(1,-1)">Fixed-mode retention suppresses duplicate support</text>
+			<text x="824" y="247.3499999999998" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,494) scale(1,-1)">within a phase, even across equivalent zones.</text>
+			<text x="824" y="228.39999999999975" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,456) scale(1,-1)">No automatic scale cost applies.</text>
+			<rect x="810" y="64" width="356" height="97" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(94%,96%,96%); fill-rule: evenodd;"/>
+			<text x="824" y="140" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 13px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,280) scale(1,-1)">Search limits</text>
+			<text x="824" y="119.10000000000002" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,238) scale(1,-1)">Finite zone library and seed budget: “best” means best</text>
+			<text x="824" y="104.14999999999998" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,208) scale(1,-1)">retained candidate found by this search, not a</text>
+			<text x="824" y="89.19999999999993" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.5px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,178) scale(1,-1)">guaranteed global crystallographic solution.</text>
+			<path d="M 34,28 L 1166,28 Z" style="stroke: rgb(84%,88%,90%); stroke-linecap: butt; stroke-width: 0.8;"/>
+			<text x="34" y="13" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 9px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,26) scale(1,-1)">Source: crystal_templates.py · scale_fitting.py · analysis_core.search / score_hypothesis</text>
+			<text x="989.73974609375" y="13" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 9px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,26) scale(1,-1)">Implementation snapshot · 2026-10-30</text>
+		</g>
+	</g>
+</svg>

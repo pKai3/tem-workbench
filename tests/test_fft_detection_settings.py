@@ -1,5 +1,9 @@
 """Detector controls change peak selection, never the measured FFT pixels."""
 import unittest
+import base64
+import json
+from io import BytesIO
+from PIL import Image
 import numpy as np
 import analysis_core as core
 from engine import Engine
@@ -31,8 +35,29 @@ class FFTDetectionChecks(unittest.TestCase):
         self.assertEqual(wider['minimum_peak_separation_nm_inv'],3.0)
         resolution=core.spectrum(self.image,self.pixel,self.pixel,minimum_separation=0)
         self.assertEqual(resolution['minimum_peak_separation_nm_inv'],resolution['peak_width_nm_inv'])
+        self.assertFalse(np.array_equal(baseline['detector_signal'],core.spectrum(self.image,self.pixel,self.pixel,smoothing_sigma=1.5)['detector_signal']))
         self.assertNotEqual([p['log_radial_enrichment'] for p in baseline['peaks']],
                             [p['log_radial_enrichment'] for p in core.spectrum(self.image,self.pixel,self.pixel,smoothing_sigma=0)['peaks']])
+
+    def test_detector_view_encodes_actual_signed_signal_without_changing_results(self):
+        engine=Engine({})
+        item=dict(array=self.image,info=dict(image_kind='real_space',pixel_x_nm=self.pixel,pixel_y_nm=self.pixel),limits=[-8,8])
+        roi=dict(x=0,y=0,w=256,h=256)
+        settings=dict(enabled_phases=[],fft_smoothing_sigma=1.5)
+        result=engine.analyze(item,roi,settings,images=True)
+        expected=core.spectrum(self.image,self.pixel,self.pixel,smoothing_sigma=1.5)['detector_signal']
+        lo,hi=result['images']['detector_signal_limits']
+        self.assertLess(lo,0)
+        self.assertEqual([lo,hi],[float(expected.min()),float(expected.max())])
+        raw=base64.b64decode(result['images']['detector_signal16'].split(',',1)[1])
+        rgb=np.asarray(Image.open(BytesIO(raw)),dtype=np.uint16)
+        decoded=((rgb[...,0]<<8)|rgb[...,1])/65535*(hi-lo)+lo
+        np.testing.assert_allclose(decoded,expected,atol=(hi-lo)/65535+1e-6,rtol=0)
+        numerical=engine.analyze(item,roi,settings,images=False)
+        self.assertEqual(result['spectrum'],numerical['spectrum'])
+        self.assertEqual(result['models'],numerical['models'])
+        self.assertNotIn('detector_signal',result['spectrum'])
+        json.dumps(result,allow_nan=False)
 
     def test_old_defaults_unchanged(self):
         # Explicit settings must also reproduce implicit defaults exactly.

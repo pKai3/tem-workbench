@@ -52,7 +52,7 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
   if any(np.hypot(p['qx']-v['qx'],p['qy']-v['qy'])<max(minimum_separation,window_width) for v in clean):continue
   p['profile_id']=len(clean)+1;clean.append(p)
   if len(clean)>=max_peaks:break
- return {'g_min':float(g_min),'g_max':float(g_max),'log':lg,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
+ return {'g_min':float(g_min),'g_max':float(g_max),'log':lg,'detector_signal':wh,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
 
 def rotation(q,ang):
  c=np.cos(ang);s=np.sin(ang);return q@np.array([[c,s],[-s,c]])

@@ -224,7 +224,10 @@ class Engine:
         remove_mean = settings.get('remove_mean', True)
         if window not in ('hann', 'none') or not isinstance(remove_mean, bool):
             raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
-        values.update(fft_window=window, remove_mean=remove_mean)
+        auto_strength = settings.get('fft_auto_strength', False)
+        if not isinstance(auto_strength, bool):
+            raise ValueError('Auto peak strength must be enabled or disabled.')
+        values.update(fft_window=window, remove_mean=remove_mean, fft_auto_strength=auto_strength)
         if direct:
             values['diffraction'] = diffraction.validate(item['info'], settings.get('diffraction', {}))
             values['g_min'] = values['diffraction']['exclude_radius_nm_inv']
@@ -232,29 +235,10 @@ class Engine:
             raise ValueError('Central exclusion must be smaller than the outer fitting limit.')
         return {'x': x, 'y': y, 'w': w, 'h': h}, values
 
-    def analyze(self, item, roi, settings, images=True, cache_candidates=False):
-        roi, settings = self.validate(item, roi, settings)
-        started = time.perf_counter()
-        x, y, w, h = [roi[k] for k in ['x', 'y', 'w', 'h']]
-        info = item['info']
-        direct = info.get('image_kind') == 'diffraction'
-        crop = item['array'][y:y+h, x:x+w]
-        if direct:
-            s, context = diffraction.spectrum(crop, settings['diffraction'], cache=item.setdefault('_diffraction_cache', {}), g_max=settings['g_max'])
-            width_nm = height_nm = None
-            can_index = s['can_index']
-        else:
-            sx, sy = info['pixel_x_nm'], info['pixel_y_nm']
-            width_nm, height_nm = w*sx, h*sy
-            s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'],
-                              window=settings['fft_window'], remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'],
-                              smoothing_sigma=settings['fft_smoothing_sigma'], threshold_floor=settings['fft_threshold_floor'],
-                              minimum_enrichment=settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
-                              max_peaks=settings['fft_max_peaks'])
-            can_index = min(.5/sx, .5/sy) >= settings['g_max']
+    def _fit_spectrum(self, s, settings, templates, can_index, context):
+        """Compare one detected profile set; the FFT pixels are already prepared."""
         tol = max(.10, core.peak_width(s))
         candidates = []
-        templates = self.templates_for(settings)
         if not can_index:
             models = []
         elif settings['scale_mode'] == 'fixed':
@@ -273,16 +257,79 @@ class Engine:
                                           scale_penalty_strength=settings['scale_penalty_strength'],
                                           candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'])
         if can_index:
-            if not direct:
-                context = peak_evidence.prepare(s, crop.shape, sx, sy)
             s['weak_maxima'] = context['maxima']
             for model in candidates:
                 peak_evidence.inspect(model, context)
                 peak_evidence.apply(model, settings['peak_evidence_weight'])
             models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
+        return models, candidates
+
+    def analyze(self, item, roi, settings, images=True, cache_candidates=False):
+        roi, settings = self.validate(item, roi, settings)
+        started = time.perf_counter()
+        x, y, w, h = [roi[k] for k in ['x', 'y', 'w', 'h']]
+        info = item['info']
+        direct = info.get('image_kind') == 'diffraction'
+        crop = item['array'][y:y+h, x:x+w]
+        if direct:
+            s, context = diffraction.spectrum(crop, settings['diffraction'], cache=item.setdefault('_diffraction_cache', {}), g_max=settings['g_max'])
+            width_nm = height_nm = None
+            can_index = s['can_index']
+        else:
+            sx, sy = info['pixel_x_nm'], info['pixel_y_nm']
+            width_nm, height_nm = w*sx, h*sy
+            can_index = min(.5/sx, .5/sy) >= settings['g_max']
+            auto_strength = settings['fft_auto_strength'] and can_index and bool(settings['enabled_phases'])
+            s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'],
+                              window=settings['fft_window'], remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'],
+                              smoothing_sigma=settings['fft_smoothing_sigma'], threshold_floor=settings['fft_threshold_floor'],
+                              minimum_enrichment=0. if auto_strength else settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
+                              max_peaks=settings['fft_max_peaks'])
+        templates = self.templates_for(settings)
+        if direct:
+            models, candidates = self._fit_spectrum(s, settings, templates, can_index, context)
+        else:
+            # Minimum strength only filters the existing connected components.
+            # Reuse one FFT and test every distinct admitted profile set, including
+            # stricter cutoffs. Other detector controls and the fit screen stay fixed.
+            pool = s['peaks']
+            levels = ([s['profile_threshold']] + sorted({p['log_radial_enrichment'] for p in pool})
+                      if auto_strength else [settings['fft_minimum_enrichment']])
+            best, attempts, last_count = None, [], None
+            for strength in levels:
+                peaks = [p for p in pool if p['log_radial_enrichment'] >= strength]
+                if auto_strength and len(pool) >= 4 and len(peaks) < 4:
+                    break
+                if len(peaks) == last_count:
+                    continue
+                last_count = len(peaks)
+                trial = {**s, 'peaks': peaks, 'minimum_peak_enrichment': float(strength)}
+                context = peak_evidence.prepare(trial, crop.shape, sx, sy) if can_index else None
+                trial_models, trial_candidates = self._fit_spectrum(trial, settings, templates, can_index, context)
+                passing = [m for m in trial_models if m['valid']]
+                leader = max(passing or trial_models, key=lambda m: m['score'], default=None)
+                rank = leader['score'] if leader else None
+                # Prefer an accepted fit; if none passes anywhere, retain the best
+                # rejected fit honestly. Ties retain the larger detected profile set.
+                merit = (bool(passing), rank if rank is not None else -float('inf'), len(peaks))
+                attempts.append({'strength': float(strength), 'profiles': len(peaks),
+                                 'rank': rank, 'passing': bool(passing)})
+                if best is None or merit > best[0]:
+                    best = (merit, trial, trial_models, trial_candidates)
+            _, s, models, candidates = best
+            if settings['fft_auto_strength']:
+                s['auto_peak_strength'] = {
+                    'status': 'optimized' if auto_strength else 'skipped',
+                    'selected_strength': s['minimum_peak_enrichment'],
+                    'tested_sets': len(attempts) if auto_strength else 0,
+                    'selection': 'passing' if best[0][0] else 'below_threshold' if models else 'no_fit',
+                    'trials': attempts if auto_strength else [],
+                }
+        tol = max(.10, core.peak_width(s))
         classification = self.classify(s, models, settings, width_nm, height_nm, can_index)
         periodicity = core.purity(s['peaks'], tol, g_max=settings['g_max'], g_min=settings['g_min']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False}
         log = s.pop('log')
+        detector_signal = s.pop('detector_signal', None)
         # Return an encoded log-power field; display contrast is adjusted in the browser only.
         if images:
             lo, hi = float(log.min()), float(log.max())
@@ -302,6 +349,17 @@ class Engine:
             packed[..., 1] = values & 255
             stream = BytesIO(); Image.fromarray(packed).save(stream, format='PNG')
             encoded.update({'fft_log16': data_url(stream.getvalue()), 'fft_log_limits': [lo, hi]})
+            if detector_signal is not None:
+                signal_lo, signal_hi = float(detector_signal.min()), float(detector_signal.max())
+                signal = Image.fromarray(np.uint16(np.clip(
+                    (detector_signal-signal_lo)/max(signal_hi-signal_lo, 1e-12), 0, 1)*65535))
+                signal.thumbnail((768, 768), Image.Resampling.NEAREST)
+                values = np.asarray(signal, dtype=np.uint16)
+                packed = np.zeros((*values.shape, 3), dtype=np.uint8)
+                packed[..., 0] = values >> 8; packed[..., 1] = values & 255
+                stream = BytesIO(); Image.fromarray(packed).save(stream, format='PNG')
+                encoded.update(detector_signal16=data_url(stream.getvalue()),
+                               detector_signal_limits=[signal_lo, signal_hi])
         else:
             encoded = {}
         result = {'roi': roi, 'image_kind': info.get('image_kind', 'real_space'),
@@ -352,6 +410,13 @@ class Engine:
             if s['mask_count']:
                 classification['flags'].append('Manual exclusion rectangles remove spots from detection and leave obscured prediction profiles unchecked when neither opposite position is visible.')
             return classification
+        auto = s.get('auto_peak_strength')
+        if auto and auto['status'] == 'optimized':
+            classification['flags'].append(
+                f"Auto peak strength used {auto['selected_strength']:.3f}, comparing {auto['tested_sets']} detected-profile sets. "
+                'Rank was used to select the cutoff; it is not independent confirmation. Cached reweighting keeps these profiles; rerun to optimize the cutoff again.')
+        elif auto:
+            classification['flags'].append('Auto peak strength was skipped: enable a phase and ensure the image samples the fitting band.')
         window = settings.get('fft_window', 'hann')
         if s['df'] > .15:
             window_name = 'Hann' if window == 'hann' else 'rectangular'

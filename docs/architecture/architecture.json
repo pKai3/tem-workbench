@@ -1,0 +1,1702 @@
+{
+  "size": [
+    1200,
+    900
+  ],
+  "review_date": "2026-10-30",
+  "reviewed_sources": {
+    "analysis_core.py": "81ef98cda00044e18503d4f203c8f4ee4496f21cfbdf25077db8487b1cdbe76e",
+    "engine.py": "8cab8b87fd0a95d03f91cc28372e7c2633e9d2dbd416fe369e48777d8c1f4d10",
+    "crystal_templates.py": "27a1af94e7a073846939ab3d0443d5b342dc0c419ee24c45a26bdad021c9178d",
+    "scale_fitting.py": "030bcc3ecd305b0f314563d795c1305be67dcf4f064bfa87f97f909eb3d93546",
+    "peak_evidence.py": "52649ef8d16f9d2a260f0c00700d6448306220f2bcbf88653c56749c9941224f",
+    "phase_comparison.py": "e48c304e8c0590648061db3d56f81a2835bb57b693fe9b806c8d6b48c3b9beb0",
+    "diffraction.py": "9ec963a0c5f14fa94f7040105f753413d2d3ff7a38011e7e137c1cd3cdddde1c",
+    "adaptive_refinement.py": "196613d7ecadf1d62a003f402474df600c01eeb82e9465ebf05c2c31b32175a7",
+    "materials.py": "9c5d92e9641048e454915c478c6b019aebb6272116340a16331648e2ad19fa31",
+    "server.py": "9384127a98afd2190779f89af9ec3ee8a2fde99ecd2acd944c796fb5ebb253ef",
+    "workbench_project.py": "a21d3401ef2ba0354b32758fff4692c427a23b5ce5d310d7250b722c6ca726db",
+    "folder_paths.py": "ba976aec569acfcc7265451425576bca741c61c6e26984c9f0b6eb88be75d4bd",
+    "web/app.js": "06504b98b29b58601c5e045424d840b576449c817c20cbf1813f8564060f8984",
+    "web/index.html": "427b798ac5cd9082524cd2e2a8b5d6dd1b6971f2479d363f7a238583e2e4e742",
+    "templates.json": "300661c6c2467120aad5db321f68b9077ead969f2d7e44dcb135fa1de5d10a85"
+  },
+  "pages": [
+    {
+      "slug": "01-system",
+      "title": "From image to inspectable candidate fits",
+      "subtitle": "Local browser interface → Python analysis → evidence, candidate labels and reproducible exports.",
+      "sources": "Source: web/app.js · server.py · engine.py · workbench_project.py · folder_paths.py",
+      "nodes": [
+        {
+          "id": "browser",
+          "x": 370,
+          "y": 126,
+          "w": 450,
+          "h": 83,
+          "title": "1  Select an image and analysis settings",
+          "body": [
+            "Browser controls the image/ROI, enabled phases, detector settings, reference cells and display. Requests carry an explicit settings snapshot."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "http",
+          "x": 370,
+          "y": 243,
+          "w": 450,
+          "h": 79,
+          "title": "2  Local HTTP service",
+          "body": [
+            "server.py validates requests, serializes engine access and manages grid jobs, saved entries and exports."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "engine",
+          "x": 370,
+          "y": 355,
+          "w": 450,
+          "h": 85,
+          "title": "3  Validate and load calibrated pixels",
+          "body": [
+            "Engine loads finite 2D DM4 or bundled demo arrays. Calibration units choose real-space FFT or direct diffraction."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "extract",
+          "x": 370,
+          "y": 473,
+          "w": 450,
+          "h": 96,
+          "title": "4  Extract observed profiles  →  panel 2",
+          "body": [
+            "FFT: crop, window, transform and detect peaks.",
+            "Diffraction: detect spots in recorded pixels; optionally refine one shared beam centre."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "fit",
+          "x": 370,
+          "y": 602,
+          "w": 450,
+          "h": 103,
+          "title": "5  Compare periodic structures  →  panels 3–5",
+          "body": [
+            "Generate allowed HCP/BCC/FCC predictions; fit rotation/scale, assign peaks, score and screen.",
+            "A separate freely fitted reciprocal-grid check reports one or two periodic patterns."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "return",
+          "x": 370,
+          "y": 736,
+          "w": 450,
+          "h": 100,
+          "title": "6  Return numerical results and display fields",
+          "body": [
+            "Profiles, candidate models, rank components, geometry, flags, settings, timings and engine hash.",
+            "Browser renders overlays, tables, previews and exports."
+          ],
+          "kind": "result"
+        },
+        {
+          "id": "files",
+          "x": 34,
+          "y": 243,
+          "w": 300,
+          "h": 155,
+          "title": "Image collection",
+          "body": [
+            "data/ and output/ point to chosen locations; .tem-paths.json records the choices.",
+            "DM4 metadata supplies calibration. Bundled NPZ/JSON demos include pixel checksums."
+          ],
+          "kind": "note"
+        },
+        {
+          "id": "references",
+          "x": 34,
+          "y": 602,
+          "w": 300,
+          "h": 137,
+          "title": "Material and structure inputs",
+          "body": [
+            "materials.py: editable nominal cells and phase defaults.",
+            "templates.json + crystal_templates.py: a finite set of zone axes and reflection rules."
+          ],
+          "kind": "note"
+        },
+        {
+          "id": "display",
+          "x": 854,
+          "y": 126,
+          "w": 312,
+          "h": 146,
+          "title": "Display is separate from fitting",
+          "body": [
+            "Palette, contrast, marker shape/motion and Raw FFT / Processed view do not rerun fitting.",
+            "Processed view exposes the smoothed background-subtracted signal; the original FFT remains available."
+          ],
+          "kind": "note"
+        },
+        {
+          "id": "grid",
+          "x": 854,
+          "y": 473,
+          "w": 312,
+          "h": 171,
+          "title": "Many ROIs  →  panel 6",
+          "body": [
+            "A background grid job calls the same analysis for each cell. Adaptive refinement decides which children replace a parent.",
+            "Current implementation: sequential cell analysis. SciPy FFT uses two workers; grid parallelization is not implemented."
+          ],
+          "kind": "note"
+        },
+        {
+          "id": "persist",
+          "x": 854,
+          "y": 710,
+          "w": 312,
+          "h": 126,
+          "title": "Keep and reproduce",
+          "body": [
+            "Browser storage: basic preferences.",
+            "Project: named ROIs, source identities, tags and settings. Exports: numerical JSON and separate PNG/GIF visuals."
+          ],
+          "kind": "note"
+        },
+        {
+          "id": "interpret",
+          "x": 34,
+          "y": 778,
+          "w": 300,
+          "h": 58,
+          "title": "Interpretation",
+          "body": [
+            "Candidate labels are not confirmed phases."
+          ],
+          "kind": "result",
+          "font_size": 11.5,
+          "title_size": 12.5
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              595,
+              209
+            ],
+            [
+              595,
+              243
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              595,
+              322
+            ],
+            [
+              595,
+              355
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              595,
+              440
+            ],
+            [
+              595,
+              473
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              595,
+              569
+            ],
+            [
+              595,
+              602
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              595,
+              705
+            ],
+            [
+              595,
+              736
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              334,
+              355
+            ],
+            [
+              352,
+              355
+            ],
+            [
+              352,
+              396
+            ],
+            [
+              370,
+              396
+            ]
+          ],
+          "dashed": true
+        },
+        {
+          "points": [
+            [
+              334,
+              651
+            ],
+            [
+              370,
+              651
+            ]
+          ],
+          "dashed": true
+        },
+        {
+          "points": [
+            [
+              854,
+              550
+            ],
+            [
+              820,
+              550
+            ]
+          ],
+          "dashed": true
+        },
+        {
+          "points": [
+            [
+              820,
+              786
+            ],
+            [
+              854,
+              786
+            ]
+          ],
+          "dashed": true
+        }
+      ]
+    },
+    {
+      "slug": "02-signals",
+      "title": "Two routes to measured reciprocal-space profiles",
+      "subtitle": "Coordinates are in nm⁻¹ (cycles per nm, without a 2π factor). Detection uses calibrated source pixels.",
+      "sources": "Source: analysis_core.spectrum · diffraction.spectrum · diffraction.py centre and spot helpers",
+      "nodes": [
+        {
+          "id": "fft1",
+          "x": 34,
+          "y": 128,
+          "w": 548,
+          "h": 114,
+          "title": "REAL SPACE  /  ROI → FFT",
+          "body": [
+            "z = (I − mean(I)) × W; mean removal and Hann W are optional.",
+            "L = log(1 + |fftshift(FFT₂(z))|²). Frequency bins follow the crop: Δg = max[1/(w·sx), 1/(h·sy)]. Display spans ±1.05·gmax."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "direct1",
+          "x": 618,
+          "y": 128,
+          "w": 548,
+          "h": 114,
+          "title": "DIRECT DIFFRACTION  /  detector → coordinates",
+          "body": [
+            "No FFT: qx = (x − cx)·sx; qy = (cy − y)·sy.",
+            "Initial centre: clusters of opposite-spot midpoints, with a central prior and beam-stop shadow cue; detector midpoint is the labelled fallback."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "fft2",
+          "x": 34,
+          "y": 270,
+          "w": 548,
+          "h": 111,
+          "title": "Remove radial background and smooth",
+          "body": [
+            "Bin radius by floor(|q|/Δg); subtract the mean L in each radial bin.",
+            "D = Gaussianσ(L − radial_mean). Default σ = 0.65 FFT bins. The Raw FFT / Processed toggle shows L or D with the same coordinates."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "direct2",
+          "x": 618,
+          "y": 270,
+          "w": 548,
+          "h": 111,
+          "title": "Find spots across position and size",
+          "body": [
+            "Masked Gaussian differences at σ and 2σ; check successive scales (2, 4, 8, 16, 32 detector pixels by default).",
+            "Find spatial/scale maxima; compare filtered response AND native intensity against local annular background."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "fft3",
+          "x": 34,
+          "y": 409,
+          "w": 548,
+          "h": 122,
+          "title": "Threshold connected profiles",
+          "body": [
+            "Within gmin ≤ |q| ≤ gmax: T = max(Tfloor, f·max(D)).",
+            "Default Tfloor = 1.8; f = 0.35. One maximum per connected component of D > T; require maximum ≥ minimum strength.",
+            "Auto strength searches subsets of this pool (panel 4). It does not lower T or change σ."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "direct3",
+          "x": 618,
+          "y": 409,
+          "w": 548,
+          "h": 122,
+          "title": "Local contrast, centroid and deduplication",
+          "body": [
+            "Background annulus: 4σ–8σ. Strong spots must exceed the user contrast cutoff in both response and intensity (default 9).",
+            "Positive-core centroids and spot widths refine positions. Strongest-first suppression merges nearby detections of the same spot across scales."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "fft4",
+          "x": 34,
+          "y": 559,
+          "w": 548,
+          "h": 112,
+          "title": "Refine positions and keep independent evidence",
+          "body": [
+            "Parabolic x/y refinement, limited to ±0.5 bin. Fold q and −q to one profile; strongest-first merge below the larger of the user separation and window width.",
+            "Default cap: 70 profiles. Weight w = clip(Dpeak − 2, 1, 6)."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "direct4",
+          "x": 618,
+          "y": 559,
+          "w": 548,
+          "h": 112,
+          "title": "Optional shared translation refinement",
+          "body": [
+            "At least 3 opposite pairs spanning directions: robust least squares fits their common midpoint, within the shift limit (default 50 px).",
+            "Redetect once if the centre changes. Reject inconsistent/competing origins; HCP, BCC and FCC share the same centre."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "fft5",
+          "x": 34,
+          "y": 699,
+          "w": 548,
+          "h": 137,
+          "title": "FFT matching tolerance",
+          "body": [
+            "Approximate window power width: 1.44·Δg (Hann), 0.886·Δg (rectangular crop).",
+            "Matching radius τ = max(0.10 nm⁻¹, window width). Default fitting band is 3–10 nm⁻¹, adjustable. Full outer-band Nyquist coverage is required for phase fitting."
+          ],
+          "kind": "result"
+        },
+        {
+          "id": "direct5",
+          "x": 618,
+          "y": 699,
+          "w": 548,
+          "h": 137,
+          "title": "Direct-spot profiles and tolerance",
+          "body": [
+            "Group observed opposite spots once; never invent a missing partner. Weight w = clip(log(1 + contrast), 1, 6); default cap 70.",
+            "τ = max(0.10 nm⁻¹, estimated spot width). Default band: 2.5–10 nm⁻¹; centre/masks exclude obscured areas. Only observed spots are marked."
+          ],
+          "kind": "result"
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              308,
+              242
+            ],
+            [
+              308,
+              270
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              308,
+              381
+            ],
+            [
+              308,
+              409
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              308,
+              531
+            ],
+            [
+              308,
+              559
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              308,
+              671
+            ],
+            [
+              308,
+              699
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              892,
+              242
+            ],
+            [
+              892,
+              270
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              892,
+              381
+            ],
+            [
+              892,
+              409
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              892,
+              531
+            ],
+            [
+              892,
+              559
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              892,
+              671
+            ],
+            [
+              892,
+              699
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "03-templates",
+      "title": "Generate, rotate and scale allowed patterns",
+      "subtitle": "Predictions move to match observations. Image pixels, reciprocal axes and measured peak coordinates do not stretch.",
+      "sources": "Source: crystal_templates.py · scale_fitting.py · analysis_core.search / score_hypothesis",
+      "nodes": [
+        {
+          "id": "refs",
+          "x": 34,
+          "y": 128,
+          "w": 350,
+          "h": 137,
+          "title": "1  Reference unit cells",
+          "body": [
+            "Material presets supply editable a₀ and c₀. Cubic: a = b = c. HCP: a = b, γ = 120°.",
+            "Only enabled phases enter the search. Zone directions form a finite library; this is not an exhaustive orientation search."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "reflection",
+          "x": 34,
+          "y": 295,
+          "w": 350,
+          "h": 198,
+          "title": "2  Enumerate integer reflections",
+          "body": [
+            "Cubic: g(hkl) = (h, k, l) / a.",
+            "HCP: g(hkl) = ((2h+k)/(√3·a), k/a, l/c). Internal indices use three coordinates.",
+            "BCC: h+k+l even. FCC: h,k,l all even or all odd. HCP: exclude odd l when (h−k) is divisible by 3.",
+            "Keep zone-law hu+kv+lw = 0; project onto its reciprocal plane."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "band",
+          "x": 34,
+          "y": 523,
+          "w": 350,
+          "h": 143,
+          "title": "3  Supply enough reciprocal nodes",
+          "body": [
+            "Integer bounds depend on reference dimensions, outer radius and smallest allowed scale; no fixed shell count.",
+            "Each scored prediction is filtered again to the current radial band. q and −q represent one profile."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "absences",
+          "x": 34,
+          "y": 696,
+          "w": 350,
+          "h": 140,
+          "title": "Allowed does not mean visible",
+          "body": [
+            "These rules generate positions, not simulated intensities. Thickness, excitation, contrast transfer and masking can hide reflections.",
+            "No multislice, dynamical-intensity, ring-indexing or stacking-fault model is used."
+          ],
+          "kind": "note"
+        },
+        {
+          "id": "metric",
+          "x": 418,
+          "y": 128,
+          "w": 358,
+          "h": 170,
+          "title": "4  Apply a physically defined metric",
+          "body": [
+            "Cubic / uniform mode: one reciprocal multiplier s. HCP dual mode: sa and sc where c is visible. Bounds: 0.85–1.15.",
+            "For plane basis P and D = diag(sa,sa,sc), use the plane metric M = PᵀD²P and transform √M.",
+            "Model dimensions: a = a₀/sa; c = c₀/sc."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "seeds",
+          "x": 418,
+          "y": 328,
+          "w": 358,
+          "h": 174,
+          "title": "5  Seed orientations and scales",
+          "body": [
+            "Use up to 16 strongest observed profiles to seed in-plane rotation and reciprocal scales.",
+            "HCP dual search scans 11 c*/a* ratios plus 1, then continuous refinement. Fast nearest-neighbour quality must reach 0.20.",
+            "Retain up to 4 dual-scale or 3 single-scale seeds per template."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "refine",
+          "x": 418,
+          "y": 532,
+          "w": 358,
+          "h": 177,
+          "title": "6  Alternate assignment and refinement",
+          "body": [
+            "Assign peaks one-to-one (right), then solve weighted positional least squares for rotation and visible scales.",
+            "Up to 3 rounds; rotation moves at most ±0.06 rad per round. Accept a new solution only if its position score does not decrease.",
+            "Scale penalties are applied after this positional optimization."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "retained",
+          "x": 418,
+          "y": 739,
+          "w": 358,
+          "h": 97,
+          "title": "7  Retain distinct fits",
+          "body": [
+            "Rank by the adjusted score (panel 4). Keep up to 5 per phase; suppress near-identical profile assignments within the same zone in automatic mode."
+          ],
+          "kind": "result",
+          "font_size": 11.5
+        },
+        {
+          "id": "distance",
+          "x": 810,
+          "y": 128,
+          "w": 356,
+          "h": 151,
+          "title": "One-to-one profile assignment",
+          "body": [
+            "For observed oi and predicted pj:",
+            "dij = min(||oi − pj||, ||oi + pj||)",
+            "Qij = exp[−½(dij/(τ/2))²] if dij ≤ τ; otherwise Qij = 0.",
+            "The same tolerance is used for every structure."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "hungarian",
+          "x": 810,
+          "y": 309,
+          "w": 356,
+          "h": 153,
+          "title": "Hungarian assignment",
+          "body": [
+            "Minimize costs −wi·Qij, with zero-cost dummy columns for unmatched observations.",
+            "A measured profile can support only one node within a candidate; a prediction cannot claim several profiles.",
+            "Matched opposite spots count once."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "fixed",
+          "x": 810,
+          "y": 532,
+          "w": 356,
+          "h": 177,
+          "title": "Fixed-scale path",
+          "body": [
+            "Stored/custom scale uses fixed dimensions. Seed rotations at 0.5° increments; refine rotation twice, capped at 2° per step.",
+            "The best 2 quick seeds per template are evaluated. Fixed-mode retention suppresses duplicate support within a phase, even across equivalent zones.",
+            "No automatic scale cost applies."
+          ],
+          "kind": "note",
+          "font_size": 11.5
+        },
+        {
+          "id": "limits",
+          "x": 810,
+          "y": 739,
+          "w": 356,
+          "h": 97,
+          "title": "Search limits",
+          "body": [
+            "Finite zone library and seed budget: “best” means best retained candidate found by this search, not a guaranteed global crystallographic solution."
+          ],
+          "kind": "note",
+          "font_size": 11.5
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              209,
+              265
+            ],
+            [
+              209,
+              295
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              209,
+              493
+            ],
+            [
+              209,
+              523
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              209,
+              666
+            ],
+            [
+              209,
+              696
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              597,
+              298
+            ],
+            [
+              597,
+              328
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              597,
+              502
+            ],
+            [
+              597,
+              532
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              597,
+              709
+            ],
+            [
+              597,
+              739
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              384,
+              594
+            ],
+            [
+              401,
+              594
+            ],
+            [
+              401,
+              212
+            ],
+            [
+              418,
+              212
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              988,
+              279
+            ],
+            [
+              988,
+              309
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              776,
+              620
+            ],
+            [
+              793,
+              620
+            ],
+            [
+              793,
+              490
+            ],
+            [
+              988,
+              490
+            ],
+            [
+              988,
+              462
+            ]
+          ],
+          "dashed": true
+        }
+      ]
+    },
+    {
+      "slug": "04-scores",
+      "title": "Build the rank, screen the fit, select peak strength",
+      "subtitle": "All scores are heuristics. Peak coverage is weighted detected-profile coverage, not an intensity fraction or phase probability.",
+      "sources": "Source: analysis_core.score_hypothesis · scale_fitting.scale_cost · peak_evidence.py · engine.analyze",
+      "nodes": [
+        {
+          "id": "position",
+          "x": 34,
+          "y": 128,
+          "w": 722,
+          "h": 147,
+          "title": "1  Positional evidence minus chance agreement",
+          "body": [
+            "Let W = Σi wi and M be the one-to-one matched pairs. Coverage C = Σ(i,j)∈M wi / W.",
+            "Position score P = Σ(i,j)∈M wi·Qij / W − Σi wi·ci / W.",
+            "ci = min(1, Σj 1[||oi|−|pj|| < τ] · (2/π)·asin(min(τ/max(|oi|,0.1),1))).",
+            "RMS = √mean(dij²) over matched pairs, without intensity weighting. Chance correction accounts for prediction density."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "scale",
+          "x": 34,
+          "y": 299,
+          "w": 722,
+          "h": 101,
+          "title": "2  Scale preference",
+          "body": [
+            "S = λ · meanₖ[((sₖ − 1)/0.05)²], over visible fitted reciprocal-scale parameters.",
+            "One uniform 5% adjustment costs λ; 10% costs 4λ. Fixed mode costs zero. This adjustable preference is not a measured strain limit or a parameter-count correction."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "sites",
+          "x": 34,
+          "y": 424,
+          "w": 722,
+          "h": 183,
+          "title": "3  Check additional weak maxima and unsupported predictions",
+          "body": [
+            "Search unmatched prediction sites within r = max(0.10, window/spot width). Exclude strong-peak neighbourhoods; use one-to-one weak assignments. In FFT mode this separate weak detector uses σ = 0.65 bins, a 1.8 floor and local annular median/MAD contrast.",
+            "For assessable sites, weak qualities include distance and bounded local contrast. B = max(0, weak quality per predicted node − mean of 11 rotated-control values).",
+            "F = unsupported predictions / assessable predictions. Edge, masked or unreliable sites are unchecked rather than penalized. Missing predictions are not proof of absent reflections."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "rank",
+          "x": 34,
+          "y": 631,
+          "w": 722,
+          "h": 78,
+          "title": "4  Adjusted rank",
+          "body": [
+            "R = P − S + η·B − η·F. λ controls scale preference; η controls weak/missing-peak evidence. Default λ = 0.10 and η = 0.10."
+          ],
+          "kind": "result"
+        },
+        {
+          "id": "screen",
+          "x": 34,
+          "y": 733,
+          "w": 722,
+          "h": 103,
+          "title": "5  Acceptance screen",
+          "body": [
+            "Require ≥4 original strong matched profiles, directional spread max|sin(θi−θj)| > 0.5, C > 0.30, P > 0.20 and final R > 0.20.",
+            "Weak maxima change rank but do not count toward four strong profiles. Passing is compatibility evidence, not a confirmed phase."
+          ],
+          "kind": "result",
+          "font_size": 11.5
+        },
+        {
+          "id": "auto1",
+          "x": 790,
+          "y": 128,
+          "w": 376,
+          "h": 119,
+          "title": "AUTO STRENGTH  /  reuse one FFT",
+          "body": [
+            "Build the strongest-first component pool with minimum strength set to zero. Other thresholds, smoothing, separation and profile cap remain active.",
+            "Each distinct component strength defines a possible retained peak set."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "auto2",
+          "x": 790,
+          "y": 277,
+          "w": 376,
+          "h": 129,
+          "title": "Fit every admissible distinct set",
+          "body": [
+            "Sweep the admitted strengths, including cutoffs stricter than the manual value. Recompute matching and weak-site evidence for each set.",
+            "Do not stop at the first passing fit. If ≥4 profiles exist, do not explore subsets with fewer than four."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "auto3",
+          "x": 790,
+          "y": 436,
+          "w": 376,
+          "h": 136,
+          "title": "Select the best passing rank",
+          "body": [
+            "Prefer sets with a passing candidate; among them maximize R. If none passes, keep the highest-ranked rejected result.",
+            "Equal ranks retain more profiles. Report selected strength, number of sets and trial scores."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "auto4",
+          "x": 790,
+          "y": 602,
+          "w": 376,
+          "h": 105,
+          "title": "Apply per ROI or per grid cell",
+          "body": [
+            "The chosen set supplies the displayed profiles, classification and saved result. Selecting a threshold cannot manufacture an independent confirmation."
+          ],
+          "kind": "result",
+          "font_size": 11.5
+        },
+        {
+          "id": "cache",
+          "x": 790,
+          "y": 737,
+          "w": 376,
+          "h": 99,
+          "title": "Cached reweighting",
+          "body": [
+            "Changing λ or η can rerank stored candidates without repeating the FFT. It keeps the chosen profile set; rerun Auto analysis/grid to re-optimize the strength."
+          ],
+          "kind": "note",
+          "font_size": 11.5
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              395,
+              275
+            ],
+            [
+              395,
+              299
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              395,
+              400
+            ],
+            [
+              395,
+              424
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              395,
+              607
+            ],
+            [
+              395,
+              631
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              395,
+              709
+            ],
+            [
+              395,
+              733
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              978,
+              247
+            ],
+            [
+              978,
+              277
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              978,
+              406
+            ],
+            [
+              978,
+              436
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              978,
+              572
+            ],
+            [
+              978,
+              602
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              978,
+              707
+            ],
+            [
+              978,
+              737
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "05-decisions",
+      "title": "Interpret competing fits and periodic geometry",
+      "subtitle": "Passing candidates can describe the same evidence or separate evidence. Those cases produce different labels.",
+      "sources": "Source: analysis_core.classify / gridfit / purity · phase_comparison.classify",
+      "nodes": [
+        {
+          "id": "any",
+          "x": 34,
+          "y": 128,
+          "w": 272,
+          "h": 82,
+          "title": "Any passing candidate?",
+          "body": [],
+          "kind": "decision"
+        },
+        {
+          "id": "no",
+          "x": 342,
+          "y": 128,
+          "w": 420,
+          "h": 82,
+          "title": "No phase assignment",
+          "body": [
+            "Fewer than 4 detected profiles → Insufficient evidence. Otherwise → Phase unresolved."
+          ],
+          "kind": "result"
+        },
+        {
+          "id": "primary",
+          "x": 34,
+          "y": 246,
+          "w": 728,
+          "h": 91,
+          "title": "Choose the highest-ranked passing fit",
+          "body": [
+            "Its matched profile IDs form the primary evidence set. Search other passing candidates for independent evidence beyond this set."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "independent",
+          "x": 34,
+          "y": 368,
+          "w": 340,
+          "h": 100,
+          "title": "Independent second pattern?",
+          "body": [],
+          "kind": "decision"
+        },
+        {
+          "id": "second",
+          "x": 414,
+          "y": 368,
+          "w": 348,
+          "h": 100,
+          "title": "Separate-evidence result",
+          "body": [
+            "Require ≥3 new strong profiles, nonparallel spread >0.5 and >15% of total profile weight. Different phase → Two candidates; same phase → Multiple orientations."
+          ],
+          "kind": "result",
+          "font_size": 11.2,
+          "title_size": 13
+        },
+        {
+          "id": "rival",
+          "x": 34,
+          "y": 507,
+          "w": 340,
+          "h": 100,
+          "title": "Close competing phase?",
+          "body": [],
+          "kind": "decision"
+        },
+        {
+          "id": "ambiguous",
+          "x": 414,
+          "y": 507,
+          "w": 348,
+          "h": 100,
+          "title": "Shared-evidence result",
+          "body": [
+            "Rank gap <0.08 and >60% of primary IDs shared with another phase → Ambiguous. No separate population is established."
+          ],
+          "kind": "result",
+          "font_size": 11.5
+        },
+        {
+          "id": "compatible",
+          "x": 34,
+          "y": 646,
+          "w": 728,
+          "h": 85,
+          "title": "Otherwise: compatibility or unresolved",
+          "body": [
+            "Primary weighted coverage >45% → compatible with that structure. Otherwise → Phase unresolved. The independent-evidence test takes precedence over near-tie ambiguity."
+          ],
+          "kind": "result",
+          "font_size": 11.5
+        },
+        {
+          "id": "tradeoff",
+          "x": 34,
+          "y": 758,
+          "w": 728,
+          "h": 78,
+          "title": "Additional shared-evidence ambiguity check",
+          "body": [
+            "If a compatible leader and another passing phase match exactly the same profiles, but the leader uses more scale parameters or more unsupported prediction positions, retain Ambiguous."
+          ],
+          "kind": "note",
+          "font_size": 11.5,
+          "title_size": 13
+        },
+        {
+          "id": "geo1",
+          "x": 802,
+          "y": 128,
+          "w": 364,
+          "h": 155,
+          "title": "PARALLEL CHECK  /  geometry only",
+          "body": [
+            "Seed two reciprocal basis vectors from the 16 strongest profiles. Round observations to integer coefficients and fit the basis by weighted least squares (up to 3 rounds).",
+            "Search is bounded by basis length, area, angular spread and coefficients −4…4. No crystal structure is assigned."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "geo2",
+          "x": 802,
+          "y": 315,
+          "w": 364,
+          "h": 144,
+          "title": "Primary reciprocal grid",
+          "body": [
+            "Require ≥4 matched profiles, nonparallel spread ≥0.5 and at least one coupled basis coefficient.",
+            "Geometry score = position-weighted coverage − chance allowance − 0.03. Primary passes with score >0.25 and coverage ≥50%."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "geo3",
+          "x": 802,
+          "y": 491,
+          "w": 364,
+          "h": 144,
+          "title": "Secondary reciprocal grid",
+          "body": [
+            "A second grid must pass score >0.20 and coverage ≥30%, with ≥3 new strong profiles in nonparallel directions.",
+            "Rejected or duplicate support is not exposed as a detected secondary geometry. Identical primary evidence does not establish another pattern."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "geo4",
+          "x": 802,
+          "y": 667,
+          "w": 364,
+          "h": 169,
+          "title": "Dominance and downstream use",
+          "body": [
+            "Dominance = primary coverage / (primary coverage + unique secondary weight fraction). A valid secondary is substantial when dominance <80%.",
+            "Geometry supplies an independent explanation and can trigger adaptive refinement. It does not choose the HCP/BCC/FCC phase winner.",
+            "Candidate-labelled image area is not a measured phase fraction."
+          ],
+          "kind": "note",
+          "font_size": 11.5
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              306,
+              169
+            ],
+            [
+              342,
+              169
+            ]
+          ],
+          "label": "No",
+          "label_at": [
+            324,
+            162
+          ]
+        },
+        {
+          "points": [
+            [
+              170,
+              210
+            ],
+            [
+              170,
+              246
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              374,
+              418
+            ],
+            [
+              414,
+              418
+            ]
+          ],
+          "label": "Yes",
+          "label_at": [
+            394,
+            410
+          ]
+        },
+        {
+          "points": [
+            [
+              170,
+              337
+            ],
+            [
+              170,
+              368
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              204,
+              468
+            ],
+            [
+              204,
+              507
+            ]
+          ],
+          "label": "No",
+          "label_at": [
+            220,
+            493
+          ]
+        },
+        {
+          "points": [
+            [
+              374,
+              557
+            ],
+            [
+              414,
+              557
+            ]
+          ],
+          "label": "Yes",
+          "label_at": [
+            394,
+            548
+          ]
+        },
+        {
+          "points": [
+            [
+              204,
+              607
+            ],
+            [
+              204,
+              646
+            ]
+          ],
+          "label": "No",
+          "label_at": [
+            220,
+            632
+          ]
+        },
+        {
+          "points": [
+            [
+              398,
+              731
+            ],
+            [
+              398,
+              758
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              984,
+              283
+            ],
+            [
+              984,
+              315
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              984,
+              459
+            ],
+            [
+              984,
+              491
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              984,
+              635
+            ],
+            [
+              984,
+              667
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "06-grid-state",
+      "title": "Adaptive regions, cached fits and saved state",
+      "subtitle": "Every accepted grid cell runs the same numerical pipeline. Refinement changes the map partition, not the detector physics.",
+      "sources": "Source: server.py grid jobs · adaptive_refinement.py · engine.rescore · workbench_project.py · web/app.js",
+      "nodes": [
+        {
+          "id": "queue",
+          "x": 34,
+          "y": 128,
+          "w": 550,
+          "h": 84,
+          "title": "1  Create a breadth-first region queue",
+          "body": [
+            "Start with an n×n uniform grid (2–24 per side). Analyse each region using the submitted settings; maintain the currently accepted map leaves."
+          ],
+          "kind": "process"
+        },
+        {
+          "id": "size",
+          "x": 34,
+          "y": 243,
+          "w": 280,
+          "h": 101,
+          "title": "Adaptive and children large enough?",
+          "body": [],
+          "kind": "decision"
+        },
+        {
+          "id": "leaf",
+          "x": 350,
+          "y": 243,
+          "w": 234,
+          "h": 101,
+          "title": "Keep current leaf",
+          "body": [
+            "No split if adaptive is off, a child is <32 px, or its physical width would fall below the chosen stopping limit."
+          ],
+          "kind": "result",
+          "font_size": 11.3,
+          "title_size": 13
+        },
+        {
+          "id": "trigger",
+          "x": 34,
+          "y": 376,
+          "w": 550,
+          "h": 113,
+          "title": "2  Split uncertain or multiple-pattern regions",
+          "body": [
+            "Unresolved, insufficient, ambiguous, two-candidate or multiple-orientation results request subdivision. A substantial geometry-only second pattern also requests subdivision.",
+            "Queue four children when size limits allow."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "lookahead",
+          "x": 34,
+          "y": 521,
+          "w": 550,
+          "h": 120,
+          "title": "3  Optional “Check passing regions”",
+          "body": [
+            "Even a passing parent can test four children. Keep them if a child supports a new phase/zone, a separate pattern, or if the children mix passing and unassigned results.",
+            "A new phase/zone must beat the parent family on that same child by ≥0.08 rank, or the parent family must be absent/below screen."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "accept",
+          "x": 34,
+          "y": 674,
+          "w": 550,
+          "h": 162,
+          "title": "4  Commit a subdivision or retain the parent",
+          "body": [
+            "All four merely lose evidence → retain the parent. Same interpretation without a split trigger → retain the parent. Accepted subdivisions replace the parent and can refine recursively.",
+            "Passing-parent trial children do not count as map leaves until accepted. Cancelled/incomplete trials leave that parent intact.",
+            "Map totals use current leaf areas; subdivided parents and rejected probes are excluded."
+          ],
+          "kind": "result",
+          "font_size": 11.5
+        },
+        {
+          "id": "reweight",
+          "x": 618,
+          "y": 128,
+          "w": 548,
+          "h": 155,
+          "title": "Reweight an existing map",
+          "body": [
+            "In-memory compressed candidate pools retain explored fits, including rejected fits. Changing scale penalty λ or peak weight η recomputes ranks, labels, symbols and totals without another FFT.",
+            "Cell boundaries and selected detected profiles stay fixed. Reweighting is not a fresh scale/rotation/strength search; rerun the grid when those choices need optimizing again."
+          ],
+          "kind": "note",
+          "font_size": 11.5
+        },
+        {
+          "id": "prefs",
+          "x": 618,
+          "y": 315,
+          "w": 548,
+          "h": 116,
+          "title": "Basic preferences and linked folders",
+          "body": [
+            "Browser localStorage remembers basic analysis/display settings and per-image diffraction choices. Folder links are stored separately in .tem-paths.json.",
+            "Preferences are not a backup of the source data or a saved analysis."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "project",
+          "x": 618,
+          "y": 463,
+          "w": 548,
+          "h": 153,
+          "title": "Reusable named regions",
+          "body": [
+            "tem_workbench.project.json stores image identity, ROI coordinates, settings, name, tags and notes. Writes use a revision check and atomic replacement.",
+            "Reopening recomputes the analysis. The project does not embed an FFT bitmap. Hover previews are a cache, not the scientific record. Original images stay in their linked data locations."
+          ],
+          "kind": "process",
+          "font_size": 11.5
+        },
+        {
+          "id": "export",
+          "x": 618,
+          "y": 648,
+          "w": 548,
+          "h": 188,
+          "title": "Exports and provenance",
+          "body": [
+            "Numerical result/grid exports preserve settings, observations, fit evidence, classifications, source pixel checksum and engine hash. PNG/GIF exports separately capture the rendered view.",
+            "The browser draws the same axes and overlays for original FFT and processed detector signal. Diagnostic exports identify the Processed view; changing display never changes the numerical fit.",
+            "This atlas is versioned alongside the source. A hash check flags relevant code changes for diagram review; regeneration does not infer algorithm changes automatically."
+          ],
+          "kind": "result",
+          "font_size": 11.5
+        }
+      ],
+      "edges": [
+        {
+          "points": [
+            [
+              314,
+              294
+            ],
+            [
+              350,
+              294
+            ]
+          ],
+          "label": "No",
+          "label_at": [
+            332,
+            285
+          ]
+        },
+        {
+          "points": [
+            [
+              174,
+              212
+            ],
+            [
+              174,
+              243
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              174,
+              344
+            ],
+            [
+              174,
+              376
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              309,
+              489
+            ],
+            [
+              309,
+              521
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              309,
+              641
+            ],
+            [
+              309,
+              674
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              34,
+              761
+            ],
+            [
+              22,
+              761
+            ],
+            [
+              22,
+              164
+            ],
+            [
+              34,
+              164
+            ]
+          ],
+          "dashed": true
+        },
+        {
+          "points": [
+            [
+              892,
+              283
+            ],
+            [
+              892,
+              315
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              892,
+              431
+            ],
+            [
+              892,
+              463
+            ]
+          ]
+        },
+        {
+          "points": [
+            [
+              892,
+              616
+            ],
+            [
+              892,
+              648
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

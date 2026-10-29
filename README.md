@@ -117,11 +117,15 @@ The **FFT processing** row above Material and Scale fitting controls **Hann wind
 | --- | --- | --- |
 | Smoothing σ | 0.65 bins | Gaussian smoothing of background-subtracted log power; zero disables it. |
 | Threshold floor | 1.8 | Lower bound for the profile cutoff. The cutoff is max(floor, threshold fraction × strongest signal). |
-| Minimum peak strength | 3.0 | Minimum height above radial background for a detected profile. |
+| Minimum peak strength | Manual, 3.0 | Minimum height above radial background for a detected profile. Auto searches the admitted profile sets for the best passing rank. |
 | Minimum separation | 0.12 nm⁻¹ | Nearby profiles merge, retaining the strongest. The effective minimum is at least the crop-window peak width. |
 | Maximum profiles | 70 | Strongest independent profiles retained; opposite spots count once. |
 
 Threshold floor and peak strength are in background-subtracted natural-log-power units, not intensity percentages. These controls select original strong profiles; prediction-site checks for additional weak maxima are a separate ranking step. Windowing and mean removal default to on, preserving the original computation. Turning Hann off uses the rectangular crop. Changing these controls recalculates the selected region and clears the previous grid. The ↺ button beside **FFT processing** restores all controls in that row to their defaults. Settings persist across images and restarts, and saved analyses record them. Detection-only controls leave the FFT pixels and axes unchanged. Display controls remain separate.
+
+**Raw FFT / Processed** above the FFT image switches between original log power and the background-subtracted, smoothed signal actually used to detect peaks. The diagnostic view shows the connected-profile cutoff and selected minimum strength; the axes, fitted patterns and measured markers are shared. Brightness curves are disabled for the detector response because it is already a processed signal. Contrast and palette still affect display only. Enlarged views and PNG/GIF exports follow the chosen view, with processed exports explicitly labelled. Switching views does not rerun detection or change results.
+
+**Auto · best rank** varies minimum peak strength independently for each region. It computes the FFT once, then compares every distinct set of at least four profiles admitted by the current threshold fraction, threshold floor, separation and maximum-profile controls. It selects the highest-ranked passing candidate; if none passes, it keeps the best rejected result and leaves it below threshold. Equal ranks prefer more detected profiles. It can raise or lower the minimum strength, continues after the first passing fit, and reports the selected cutoff and number of comparisons. Other detection settings and the acceptance rules remain unchanged. This is rank optimization on the same data, not independent confirmation of a phase; rank can increase by excluding poorly matched profiles. Auto is opt-in and can require multiple fits per grid cell. Cached grid reweighting retains the selected detected profiles; rerun the grid to optimize the cutoff under new weights. Saved regions and exports preserve the Auto setting and results.
 
 Window widths used for matching and weak-peak checks follow the selected window (approximately 1.44 FFT bins for Hann or 0.886 for a rectangular crop, with existing minimum tolerances). Windowing suppresses side lobes at the cost of a wider central peak; see the [SciPy spectral-analysis guide](https://docs.scipy.org/doc/scipy/tutorial/signal.html#spectral-analysis).
 
@@ -308,3 +312,7 @@ A lower-priority performance follow-up is parallel window/grid execution, with b
 ## License
 
 [MIT](LICENSE). The macOS launcher includes code adapted from Tensile Workbench; its attribution is retained in [macos/TENSILE-LICENSE](macos/TENSILE-LICENSE). Colour-table attribution is in [web/colormaps.LICENSE](web/colormaps.LICENSE). Third-party dependencies retain their respective licences.
+
+## Architecture and numerical workflow
+
+The versioned [methods atlas](docs/architecture/README.md) documents the implementation with equations, flowcharts, acceptance decisions and adaptive-grid rules. Read the [six-page PDF](docs/architecture/tem-workbench-architecture.pdf) or the individual editable SVG panels. Its [JSON source](docs/architecture/architecture.json) and [renderer](tools/render_architecture.py) live in this repository; a source-hash check flags relevant code changes for review before regeneration.

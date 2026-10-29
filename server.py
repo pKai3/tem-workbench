@@ -57,7 +57,7 @@ class Workbench:
         return {'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
-                'delete_regions': True, 'fft_detection_controls': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
+                'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
