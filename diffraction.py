@@ -274,21 +274,23 @@ def _prepare_detector(array, settings):
     sigma = settings['spot_sigma_px']
     scales = _spot_scales(sigma)
     pad = int(np.ceil(8*scales[-1]))
-    x0, x1 = max(0, int(cx-10.5/sx)-pad), min(w, int(np.ceil(cx+10.5/sx))+pad+1)
-    y0, y1 = max(0, int(cy-10.5/sy)-pad), min(h, int(np.ceil(cy+10.5/sy))+pad+1)
+    g_max = settings.get('g_max', BAND[1])
+    span = g_max*1.05
+    x0, x1 = max(0, int(cx-span/sx)-pad), min(w, int(np.ceil(cx+span/sx))+pad+1)
+    y0, y1 = max(0, int(cy-span/sy)-pad), min(h, int(np.ceil(cy+span/sy))+pad+1)
     raw = array[y0:y1, x0:x1].astype(np.float32)
     yy, xx = np.indices(raw.shape)
     qx, qy = (xx+x0-cx)*sx, (cy-yy-y0)*sy
     g = np.hypot(qx, qy)
     valid = visible(np.c_[qx.ravel(), qy.ravel()], settings, array.shape).reshape(raw.shape)
-    band = valid & (g >= BAND[0]) & (g <= BAND[1])
+    band = valid & (g >= BAND[0]) & (g <= g_max)
     candidates = _spot_candidates(raw, valid, band, scales)
     deduplicated = _deduplicate_spots(candidates, sigma)
     spots = []
     for spot in deduplicated:
         px, py = spot['x_px']+x0, spot['y_px']+y0
         q = np.array([(px-cx)*sx, (cy-py)*sy])
-        if not BAND[0] <= np.linalg.norm(q) <= BAND[1] or not visible([q], settings, array.shape)[0]:
+        if not BAND[0] <= np.linalg.norm(q) <= g_max or not visible([q], settings, array.shape)[0]:
             continue
         spot.update(q=q.tolist(), x_px=px, y_px=py,
                     enrichment=float(np.log1p(spot['local_contrast'])),
@@ -296,7 +298,7 @@ def _prepare_detector(array, settings):
                     intensity=float(array[int(round(py)), int(round(px))]))
         spots.append(spot)
     # Display resampling is separate from the native-pixel detector and fitting.
-    axis = np.linspace(-10.5, 10.5, 768)
+    axis = np.linspace(-span, span, 768)
     ax, ay = np.meshgrid(axis, axis[::-1])
     image = map_coordinates(array, [cy-ay/sy, cx+ax/sx], order=1, mode='constant', cval=0., prefilter=False)
     log = np.log1p(np.maximum(image, 0))
@@ -306,7 +308,7 @@ def _prepare_detector(array, settings):
 
 def _cached_detector(array, settings, cache):
     sx, sy = settings['pixel_x_nm_inv'], settings['pixel_y_nm_inv']
-    key = (array.__array_interface__['data'][0], array.shape, array.strides,
+    key = (settings.get('g_max', BAND[1]), array.__array_interface__['data'][0], array.shape, array.strides,
            settings['center_x'], settings['center_y'], sx, sy, settings['spot_sigma_px'],
            settings['exclude_radius_nm_inv'],
            tuple(tuple(r[k] for k in ('x', 'y', 'w', 'h')) for r in settings['masks']))
@@ -413,17 +415,18 @@ def refine_translation(spots, settings, shape):
                   pair_count=len(chosen), rms_before_px=before, rms_after_px=best['rms'],
                   pair_midpoints_px=midpoints[chosen].tolist(),
                   near_limit=bool(np.linalg.norm(shift) >= .95*limit),
-                  reason='One shared translation fitted from opposite-spot positions before HCP/BCC rotation and scale fitting.')
+                  reason='One shared translation fitted from opposite-spot positions before crystal rotation and scale fitting.')
     return report
 
 
-def spectrum(array, settings, cache=None):
+def spectrum(array, settings, cache=None, g_max=10.):
     """Analyze detector spots, optionally refining a shared translation first.
 
     Keep input settings as the reproducible starting point. Only the working
     centre changes; native pixels and reciprocal pixel calibration are untouched.
     """
     h, w = array.shape
+    settings = {**settings, 'g_max': g_max}
     prepared = _cached_detector(array, settings, cache)
     translation = refine_translation(prepared['spots'], settings, array.shape)
     if translation['applied']:
@@ -457,11 +460,11 @@ def spectrum(array, settings, cache=None):
                        'observed_spots': [s['q'] for s in p['spots']],
                        'strength': min(.5, (strongest['local_contrast']-1)/6),
                        'local_contrast': strongest['local_contrast'], 'enrichment': strongest['enrichment']})
-    context = {'maxima': maxima, 'radius': radius, 'x_limit': max(cx, w-1-cx)*sx,
+    context = {'maxima': maxima, 'radius': radius, 'g_max': g_max, 'x_limit': max(cx, w-1-cx)*sx,
                'y_limit': max(cy, h-1-cy)*sy,
                'visible': lambda q: visible(q, settings, array.shape, radius) | visible(-q, settings, array.shape, radius)}
-    complete_band = min(cx*sx, (w-1-cx)*sx, cy*sy, (h-1-cy)*sy) >= BAND[1]
-    result = {'kind': 'diffraction', 'log': prepared['log'], 'extent': [-10.5, 10.5, -10.5, 10.5],
+    complete_band = min(cx*sx, (w-1-cx)*sx, cy*sy, (h-1-cy)*sy) >= g_max
+    result = {'kind': 'diffraction', 'log': prepared['log'], 'extent': [-g_max*1.05, g_max*1.05, -g_max*1.05, g_max*1.05], 'g_min': BAND[0], 'g_max': g_max,
               'peaks': peaks, 'df': max(sx, sy), 'peak_width_nm_inv': width,
               'weak_maxima': maxima, 'profile_threshold': settings['spot_snr'],
               'observed_spot_count': sum(len(p['observed_spots']) for p in peaks),

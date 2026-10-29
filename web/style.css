@@ -96,3 +96,6 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 
 .file-search-label{flex:0 1 210px;min-width:150px;position:relative}.file-search-label input{width:100%;min-width:0}#file-search-count{font-size:10px;color:var(--muted);position:absolute;right:2px;top:0}.image-caption #export-map{min-height:24px;padding:3px 8px;font-size:11px}.diffraction #export-map{display:none}
 #export-notice{position:fixed;bottom:18px;right:18px;z-index:80;width:min(480px,calc(100vw - 36px));padding:14px 40px 14px 16px;border:1px solid #59d4cb;border-radius:8px;background:#10232c;box-shadow:0 5px 26px #0009;color:#e7f4f7}#export-notice[hidden]{display:none}#export-notice strong{display:block;font-size:14px;overflow-wrap:anywhere}#export-notice-detail{font-size:12px;color:#b6c8d4;margin-top:6px;overflow-wrap:anywhere}#export-notice-close{position:absolute;top:6px;right:7px;border:0;background:transparent;padding:3px 6px;min-height:24px;font-size:20px}#export-notice[data-state=error]{background:#30191e;border-color:#ff8a98}button[data-export-state=saved]{border-color:#64e2b0;color:#64e2b0}button[data-export-state=busy]{color:#9debe1}button[data-export-state=error]{color:#ff9aa1}
+
+.fcc{color:var(--fcc-color,#ff8ac3)}
+.calibration-bar .reference-input{flex:0 0 158px;min-width:158px}.calibration-bar .reference-input input{width:100%}

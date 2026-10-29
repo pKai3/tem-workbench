@@ -18,8 +18,10 @@ const SPECTRUM_PALETTES={
 };
 const PHASE_COLOR_OPTIONS={blue:['Blue','#79bafa'],gold:['Gold','#f4b75e'],mint:['Mint','#64e2b0'],green:['Vivid green','#39ff5a'],pink:['Pink','#ff8ac3'],white:['White','#f4f7fb']};
 const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
-const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'HCP / BCC ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
-const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
+const PHASES=['HCP','BCC','FCC'];
+const phaseMaps=()=>Object.fromEntries(PHASES.map(phase=>[phase,new Map()]));
+const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',fcc_compatible:'FCC compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'Phase ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
+const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',fcc_compatible:'#ff8ac3',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
 let mapExportBusy=false;
 let config, meta, roi={x:0,y:0,w:684,h:684}, fileId, result=null, fftRaw=null, grid=null, jobId=null;
 let diffractionSettings=null, maskDrag=null;
@@ -28,9 +30,9 @@ let chosenFits=new Set(), favorites=new Set();
 let regionProject={revision:0,regions:[]},selectedRegionId=null,regionRequest=0;
 let folderTarget=null,folderListing=null,folderBrowseVersion=0;
 let rescoreTimer=null, rescoreBusy=false, rescorePending=false, rescoreRevision=0, scalePenalty=.10, peakEvidenceWeight=.10;
-let zoneJob=null, zoneSymbols={HCP:new Map(),BCC:new Map()};
+let zoneJob=null, zoneSymbols=phaseMaps();
 const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢','◀','▶','✦','✳','◉','⊞','⊠','✧'];
-const phaseColors={HCP:colors.hcp_compatible,BCC:colors.bcc_compatible};
+const phaseColors=Object.fromEntries(PHASES.map(phase=>[phase,colors[phase.toLowerCase()+'_compatible']]));
 let generation=0, busy=false, pending=false, timer=null, drag=null, sourceRequest=0, opened=false;
 function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error)}
 async function api(path,body,signal){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,{...options,signal});const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
@@ -41,9 +43,9 @@ function readPreference(key,fallback){
  }catch{return fallback}
 }
 function writePreference(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch{message('Browser storage is unavailable; these preferences will last until this page closes.',true)}}
-const BASIC_NUMBERS={"threshold":[0.15,0.7],"grid-count":[2,24,true],"grid-min":[0,null]};
+const BASIC_NUMBERS={"g-max":[4,30],"fcc-a":[0.30,0.65],"threshold":[0.15,0.7],"grid-count":[2,24,true],"grid-min":[0,null]};
 const BASIC_FLAGS=['adaptive','check-passing','show-grid','fft-hann','fft-mean'];
-const OVERLAY_MODES=['none','HCP','BCC','both','geometry','custom'];
+const OVERLAY_MODES=['none',...PHASES,'both','all','geometry','custom'];
 let preferredRegionNm=readPreference('tem-region-width-nm',20);
 if(typeof preferredRegionNm!=='number'||!Number.isFinite(preferredRegionNm)||preferredRegionNm<=0)preferredRegionNm=20;
 function validControlNumber(id,value){
@@ -139,19 +141,19 @@ $('favorite-toggle').onclick=()=>{
  writePreference(favoriteKey(),[...favorites]);renderFavorites();
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){clearFileSearch();$('file').value=id;openFile()}};
-function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:JSON.parse(JSON.stringify(diffractionSettings))}:{})}}
+function settings(){const mode=$('scenario').value;return {scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:JSON.parse(JSON.stringify(diffractionSettings))}:{})}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
  field.closest('.scale-input').style.display=automatic?'none':'';
  if(automatic){field.value='1.000';field.readOnly=true;$('bcc-a').value=.330;
-  $('calibration-note').textContent=(v==='auto_uniform'?'Each region fits one prediction scale separately for HCP and BCC; HCP c/a stays fixed.':'Each region fits one BCC prediction scale and independent HCP a/c scales where visible.')+' Range ×0.85–1.15 relative to nominal dimensions. Measured reciprocal axes stay unchanged. Candidate model dimensions are shown below.';return}
+  $('calibration-note').textContent=(v==='auto_uniform'?'Each region fits one prediction scale separately for HCP, BCC and FCC; HCP c/a stays fixed.':'Each region fits one BCC/FCC prediction scale and independent HCP a/c scales where visible.')+' Range ×0.85–1.15 relative to nominal dimensions. Measured reciprocal axes stay unchanged. Candidate model dimensions are shown below.';return}
 
  if(v!=='custom')field.value='1.000';
  field.readOnly=v!=='custom';$('bcc-a').value=.330;
  const scale=Number(field.value).toFixed(3);
  const explanation=v==='1'?'Nominal model sizes; stored DM4 calibration.':'Manual comparison; a better fit is not a measurement of calibration or strain.';
- $('calibration-note').textContent=`Model size ×${scale} for both structures · BCC a = ${Number($('bcc-a').value).toFixed(5)} nm. ${explanation} Measured reciprocal axes stay unchanged.`;
+ $('calibration-note').textContent=`Model size ×${scale} for all structures · BCC a = ${Number($('bcc-a').value).toFixed(5)} nm. ${explanation} Measured reciprocal axes stay unchanged.`;
 }
 function restoreCalibration(){
  const saved=readPreference('tem-scale-last',readPreference('tem-scale:'+meta.sha256_pixels,{}));
@@ -222,17 +224,17 @@ for(const [id,key]of [['roi-x','x'],['roi-y','y'],['roi-nm','w']])$(id).addEvent
 $('centre').onclick=()=>{if(!meta)return;roi.x=(meta.width-roi.w)/2;roi.y=(meta.height-roi.h)/2;updateBox();schedule(0)};
 function patternExplanation(data){
  const label=data.classification.label;
- if(label==='coexisting_candidates')return 'Separate peak sets support HCP and BCC candidates; their proportions are unknown.';
+ if(label==='coexisting_candidates')return 'Separate peak sets support candidates of different structures; their proportions are unknown.';
  if(label==='multiple_orientations')return 'Separate peak sets support multiple orientations of the same candidate structure.';
  if(data.classification.ambiguity_reason==='shared_peaks_model_tradeoff')return 'Both structures explain the same detected peaks. The leading fit also uses extra flexibility or more unsupported predictions; the phase remains ambiguous.';
- if(label==='ambiguous')return 'HCP and BCC fit overlapping evidence; the phase assignment remains ambiguous.';
+ if(label==='ambiguous')return 'Different structures fit overlapping evidence; the phase assignment remains ambiguous.';
  if(data.periodicity.status==='multiple_periodic_patterns')return 'Additional periodicity is supported, but a second phase assignment remains unresolved.';
- if(data.periodicity.status==='predominantly_one_periodic_pattern')return ['hcp_compatible','bcc_compatible'].includes(label)?'One periodic pattern predominates in the geometry check.':'A periodic pattern is supported, but its phase remains unresolved.';
+ if(data.periodicity.status==='predominantly_one_periodic_pattern')return ['hcp_compatible','bcc_compatible','fcc_compatible'].includes(label)?'One periodic pattern predominates in the geometry check.':'A periodic pattern is supported, but its phase remains unresolved.';
  return 'The geometry check could not resolve the number of periodic patterns.';
 }
 function scaleSummary(settings){
- const label=settings.scale_mode==='auto_uniform'?'automatic single scale per candidate and region':settings.scale_mode==='auto_hcp_ac'?'automatic BCC single / HCP a+c per region':`fixed prediction scale ×${settings.scale.toFixed(3)}`;
- return label+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'')+` · peak evidence ${(settings.peak_evidence_weight??0).toFixed(2)}`;
+ const label=settings.scale_mode==='auto_uniform'?'automatic single scale per candidate and region':settings.scale_mode==='auto_hcp_ac'?'automatic BCC/FCC single / HCP a+c per region':`fixed prediction scale ×${settings.scale.toFixed(3)}`;
+ return label+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'')+` · peak evidence ${(settings.peak_evidence_weight??0).toFixed(2)} · FCC reference ${(settings.fcc_a??.417).toFixed(3)} nm · fitting band 3–${settings.g_max??10} nm⁻¹`;
 }
 function fittedDimensions(model){
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
@@ -307,7 +309,7 @@ function geometryDescription(data){
  return 'Geometry check: pattern count remains unresolved.';
 }
 // Shared column definitions keep both candidate tables aligned.
-const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axis: HCP [u v t w], BCC [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","a / c\nnm","Candidate model lattice dimensions, assuming the image calibration used"],["scale","Scale Δ\n%","100 × (reciprocal prediction multiplier − 1); HCP shows a* and c* separately. Model lattice dimensions change inversely."]];
+const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axis: HCP [u v t w], BCC/FCC [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","a / c\nnm","Candidate model lattice dimensions, assuming the image calibration used"],["scale","Scale Δ\n%","100 × (reciprocal prediction multiplier − 1); HCP shows a* and c* separately. Model lattice dimensions change inversely."]];
 function renderFitHeader(head, showToggle=false){
  const row=document.createElement('tr');
  const columns=showToggle?[['show','Show','Toggle this overlay'],...FIT_COLUMNS]:FIT_COLUMNS;
@@ -336,7 +338,7 @@ function appendFitCells(row,m,{name,geometry=false,rotation=false}){
   const cell=document.createElement('td');cell.className='col-'+key;cell.dataset.column=key;
   cell.textContent=values[key];cell.title=help;
   if(m){
-   if(key==='candidate')cell.className+=' '+(geometry?'geometry-fit':m.phase==='HCP'?'hcp':'bcc');
+   if(key==='candidate')cell.className+=' '+(geometry?'geometry-fit':m.phase.toLowerCase());
    if(key==='rank')cell.title=geometry?'Geometry-only score':rankDescription(m);
    if(key==='peaks')cell.title=geometry?'Profiles matched by a freely fitted reciprocal grid':evidenceDescription(m);
    if(key==='screen')cell.title=m.valid?'Passes the screen':geometry?'Below threshold':screenReasons(m).join('; ');
@@ -348,7 +350,7 @@ function appendFitCells(row,m,{name,geometry=false,rotation=false}){
 renderFitHeader($('model-head'));
 function renderModels(data){
  $('models').replaceChildren();
- const ranked=['HCP','BCC'].map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>compareRank(a.m,b.m));
+ const ranked=PHASES.map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>compareRank(a.m,b.m));
  for(const {phase,m}of ranked){
   const row=document.createElement('tr');
   appendFitCells(row,m,{name:m?`${phase} ${zoneLabel(m)}`:phase});
@@ -386,12 +388,12 @@ function weakMarker(x,y,id){
 }
 function rememberMarkerStyles(){
  const value={motion:$('marker-motion').value};
- for(const id of ['hcp-marker','bcc-marker','primary-geometry-marker','secondary-geometry-marker','weak-marker'])value[id]=$(id).value;
+ for(const id of ['hcp-marker','bcc-marker','fcc-marker','primary-geometry-marker','secondary-geometry-marker','weak-marker'])value[id]=$(id).value;
  writePreference('tem-marker-styles',value);
 }
 function applyMarkerAnimation(){const mode=$('marker-motion').value;document.body.classList.toggle('marker-pulse',mode==='pulse');document.body.classList.toggle('marker-bounce',mode==='bounce');document.body.classList.toggle('marker-wobble',mode==='wobble')}
 function applyPhaseColors(redraw=true){
- for(const [phase,id,key,fallback]of [['HCP','hcp-color','hcp_compatible','blue'],['BCC','bcc-color','bcc_compatible','gold']]){
+ for(const [phase,id,key,fallback]of [['HCP','hcp-color','hcp_compatible','blue'],['BCC','bcc-color','bcc_compatible','gold'],['FCC','fcc-color','fcc_compatible','pink']]){
   const choice=Object.hasOwn(PHASE_COLOR_OPTIONS,$(id).value)?$(id).value:fallback;
   const color=PHASE_COLOR_OPTIONS[choice][1];$(id).value=choice;$(id).style.color=color;
   phaseColors[phase]=color;colors[key]=color;document.documentElement.style.setProperty('--'+id,color);
@@ -430,14 +432,37 @@ function colourSpectrum(raw,imageKind){
  for(let i=0;i<out.data.length;i+=4){const code=precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i];out.data[i]=lookup[code*3];out.data[i+1]=lookup[code*3+1];out.data[i+2]=lookup[code*3+2];out.data[i+3]=255}
  ctx.putImageData(out,0,0);return canvas.toDataURL();
 }
+function spectrumTicks(extent){
+ const limit=Math.min(Math.abs(extent[0]),Math.abs(extent[1]));
+ const step=limit<=5.5?2:limit<=12?5:10;
+ const count=Math.floor(limit/step);
+ return Array.from({length:count*2+1},(_,i)=>(i-count)*step);
+}
+function drawFittingBand(qp){
+ const outer=result.spectrum.g_max??result.settings.g_max??10;
+ const inner=Math.max(result.spectrum.g_min??3,result.settings.diffraction?.exclude_radius_nm_inv??0);
+ const [cx,cy]=qp(0,0),rx=Math.abs(qp(outer,0)[0]-cx),ry=Math.abs(qp(0,outer)[1]-cy);
+ const ix=Math.abs(qp(inner,0)[0]-cx),iy=Math.abs(qp(0,inner)[1]-cy);
+ const group=el('svg',{x:0,y:0,width:420,height:420,viewBox:'0 0 420 420',overflow:'hidden','pointer-events':'none','data-fitting-band':`${inner}-${outer}`});
+ const ellipse=`M${cx-rx} ${cy}a${rx} ${ry} 0 1 0 ${2*rx} 0a${rx} ${ry} 0 1 0 ${-2*rx} 0Z`;
+ group.append(el('path',{d:'M0 0H420V420H0Z'+ellipse,fill:'#000','fill-opacity':.25,'fill-rule':'evenodd'}));
+ group.append(el('ellipse',{cx,cy,rx:ix,ry:iy,fill:'#000','fill-opacity':.16}));
+ for(const [r,xr,yr,description]of [[outer,rx,ry,'Outer fitting limit'],[inner,ix,iy,'Central exclusion']]){
+  const boundary=el('ellipse',{cx,cy,rx:xr,ry:yr,fill:'none',stroke:'#b3c2d0','stroke-width':.7,'stroke-dasharray':'3 3',opacity:.8});
+  boundary.append(el('title',{},`${description}: ${r} nm⁻¹. Shaded areas are excluded from fitting.`));group.append(boundary);
+  const x=r===outer?cx+xr*.70:cx,y=r===outer?cy-yr*.70-4:cy-yr-4;
+  group.append(el('text',{x:clamp(x,38,382),y:clamp(y,10,410),fill:'#c2cfda','font-size':8,'text-anchor':'middle',stroke:'#05090e','stroke-width':2.5,'paint-order':'stroke'},`${r} nm⁻¹`));
+ }
+ $('fft-overlay').append(group);
+}
 function drawFFT(){
  if(!result||!fftRaw)return;
  $('fft-image').setAttribute('href',colourSpectrum(fftRaw,result.image_kind));$('contrast-value').textContent=$('contrast').value+'%';
- const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();for(const q of [-10,-5,0,5,10]){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off')for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const attrs={stroke:'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} nm⁻¹`));$('fft-overlay').append(shape)}}const fits=[];
-if(['HCP','BCC','both'].includes(overlay)){for(const phase of overlay==='both'?['HCP','BCC']:[overlay]){const m=bestModel(result,phase);if(m)fits.push({model:m,color:phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}}
+ const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();drawFittingBand(qp);for(const q of spectrumTicks(ex)){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off')for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const attrs={stroke:'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} nm⁻¹`));$('fft-overlay').append(shape)}}const fits=[];
+if([...PHASES,'both','all'].includes(overlay)){for(const phase of overlay==='all'?PHASES:overlay==='both'?['HCP','BCC']:[overlay]){const m=bestModel(result,phase);if(m)fits.push({model:m,color:phaseColors[phase],geometry:false})}}
 if(overlay==='geometry')fits.push(...geometryFits(result));
 if(overlay==='custom'){
- for(const key of chosenFits){if(key.startsWith('phase-')){const m=result.models[Number(key.slice(6))];if(m)fits.push({model:m,color:m.phase==='HCP'?colors.hcp_compatible:colors.bcc_compatible,geometry:false})}else{const fit=geometryFits(result).find(f=>f.key===key);if(fit)fits.push(fit)}}
+ for(const key of chosenFits){if(key.startsWith('phase-')){const m=result.models[Number(key.slice(6))];if(m)fits.push({model:m,color:phaseColors[m.phase],geometry:false})}else{const fit=geometryFits(result).find(f=>f.key===key);if(fit)fits.push(fit)}}
 }
 const shownWeak=new Set();
 for(const f of fits){
@@ -450,7 +475,7 @@ for(const f of fits){
    const attrs={stroke:f.color,'stroke-width':1.2,fill:'none'};
    if(weak)attrs['stroke-dasharray']='5 3';else if(!f.model.valid)attrs['stroke-dasharray']='2 2';else if(!supported)attrs['stroke-dasharray']='1 3';
    if(evidence?.status==='unassessable')attrs.opacity=.35;
-   const styleId=f.geometry?(f.model===result.periodicity.primary_lattice?'primary-geometry-marker':'secondary-geometry-marker'):(f.model.phase==='HCP'?'hcp-marker':'bcc-marker');
+   const styleId=f.geometry?(f.model===result.periodicity.primary_lattice?'primary-geometry-marker':'secondary-geometry-marker'):(f.model.phase.toLowerCase()+'-marker');
    const shape=markerShape(x,y,$(styleId).value,{...attrs,'data-marker-kind':'prediction','data-marker-phase':f.geometry?'geometry':f.model.phase},7);
    const evidenceText=supported?'matched original detected profile':weak?`weak local maximum ${evidence.weak_id}, local contrast ${evidence.local_contrast.toFixed(1)}, offset ${evidence.offset_nm_inv.toFixed(3)} nm⁻¹`:evidence?.status==='unassessable'?'not reliably assessable':'no strong or qualifying weak maximum assigned';
    if(shape){shape.append(el('title',{},f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.model.phase} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${evidenceText}`));$('fft-overlay').append(shape)}
@@ -501,14 +526,14 @@ if(['log','linear'].includes(displayPreference.curve))$('fft-curve').value=displ
 if(Number.isFinite(displayPreference.background))$('contrast').value=clamp(displayPreference.background,0,90);
 if(Number.isFinite(displayPreference.white))$('fft-white').value=clamp(displayPreference.white,91,100);
 const savedPhaseColors=readPreference('tem-phase-colors',{});
-for(const [phase,id,fallback]of [['HCP','hcp-color','blue'],['BCC','bcc-color','gold']]){
+for(const [phase,id,fallback]of [['HCP','hcp-color','blue'],['BCC','bcc-color','gold'],['FCC','fcc-color','pink']]){
  for(const [value,[name]]of Object.entries(PHASE_COLOR_OPTIONS))$(id).append(new Option(name,value));
  $(id).value=Object.hasOwn(PHASE_COLOR_OPTIONS,savedPhaseColors?.[phase])?savedPhaseColors[phase]:fallback;
- $(id).onchange=()=>{writePreference('tem-phase-colors',{HCP:$('hcp-color').value,BCC:$('bcc-color').value});applyPhaseColors()};
+ $(id).onchange=()=>{writePreference('tem-phase-colors',Object.fromEntries(PHASES.map(phase=>[phase,$(phase.toLowerCase()+'-color').value])));applyPhaseColors()};
 }
 applyPhaseColors(false);
 const savedMarkerStyles=readPreference('tem-marker-styles',{});
-for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'circle','primary-geometry-marker':'diamond','secondary-geometry-marker':'diamond','weak-marker':'diamond'})){
+for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'circle','fcc-marker':'circle','primary-geometry-marker':'diamond','secondary-geometry-marker':'diamond','weak-marker':'diamond'})){
  const choices=id==='weak-marker'?[...MARKER_SHAPES,'follow','dot']:MARKER_SHAPES;
  $(id).value=choices.includes(savedMarkerStyles?.[id])?savedMarkerStyles[id]:fallback;
  $(id).onchange=()=>{rememberMarkerStyles();drawFFT()};
@@ -548,7 +573,7 @@ function renderZoneBreakdown(phase,totalArea,open){
  const count=entries.reduce((sum,e)=>sum+e.count,0),passing=entries.reduce((sum,e)=>sum+e.passing,0);
  summary.textContent=`${phase} zone axes · ${count} candidate fits · ${passing} pass`;summary.style.color=phaseColors[phase];details.append(summary);
  const note=document.createElement('p');note.className='hint';
- note.textContent='Best fit for this structure in each current map region, including below-threshold alternatives. Regions may appear in both HCP and BCC lists; image area here is not a phase fraction.';
+ note.textContent='Best fit for this structure in each current map region, including below-threshold alternatives. Regions may appear in more than one structure list; image area here is not a phase fraction.';
  details.append(note);
  const table=document.createElement('table'),head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
  for(const label of ['Zone axis','Regions','Pass','Below','Image area']){
@@ -595,7 +620,7 @@ function renderGridSummary(){
  if(grid.rescore&&grid.grid.adaptive)note.textContent+=` Labels have been reweighted within the existing cells. Subdivision decisions and stopping reasons remain from the original run. Run a new grid to change its boundaries.`;
  if(grid.lookahead?.checked)note.textContent+=` Child checks: ${grid.lookahead.refined} parents subdivided, ${grid.lookahead.retained} retained. Trial-only children are excluded from map totals.`;
  container.append(heading,summary,table,note);
- for(const phase of ['HCP','BCC'])container.append(renderZoneBreakdown(phase,totalArea,expanded.has(phase)));
+ for(const phase of PHASES)container.append(renderZoneBreakdown(phase,totalArea,expanded.has(phase)));
 }
 function zoneKey(model){return zoneIndices(model).join(',')}
 function zoneSymbol(phase,key){
@@ -611,12 +636,12 @@ function renderClassLegend(){
  for(const item of legend.children)item.hidden=!shown.has(item.dataset.label);
 }
 function renderZoneLegend(found){
- const legend=$('zone-legend');legend.replaceChildren();legend.hidden=!found.HCP.size&&!found.BCC.size;
+ const legend=$('zone-legend');legend.replaceChildren();legend.hidden=PHASES.every(phase=>!found[phase].size);
  if(legend.hidden)return;
  const hint=document.createElement('p');hint.className='hint';
- hint.textContent='Best candidate for each structure in every cell: HCP on the left, BCC on the right. Faded symbols are below the screen threshold. These are alternative fits, not proof that both phases are present. Ordered by image area, largest first.';
+ hint.textContent='Best candidate for each structure in every cell: HCP left, BCC middle, FCC right. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Ordered by image area, largest first.';
  legend.append(hint);
- for(const phase of ['HCP','BCC']){
+ for(const phase of PHASES){
   if(!found[phase].size)continue;
   const group=document.createElement('div');group.className='zone-legend-group';group.style.color=phaseColors[phase];
   const title=document.createElement('strong');title.textContent=phase;group.append(title);
@@ -633,8 +658,8 @@ function renderZoneLegend(found){
 }
 function drawGrid(){
  hideRegionPreview();renderClassLegend();
- if(zoneJob!==grid?.id){zoneJob=grid?.id;zoneSymbols={HCP:new Map(),BCC:new Map()}}
- const shown={HCP:new Map(),BCC:new Map()};
+ if(zoneJob!==grid?.id){zoneJob=grid?.id;zoneSymbols=phaseMaps()}
+ const shown=phaseMaps();
  const group=$('grid-map');group.replaceChildren();
  const showGrid=$('show-grid').checked,showZones=$('show-zones').checked&&!$('show-zones').disabled;
  if(!grid||(!showGrid&&!showZones)){renderZoneLegend(shown);renderGridSummary();updatePenaltyControls();return}
@@ -642,13 +667,13 @@ function drawGrid(){
   if(!r.leaf)continue;
   const e=el('rect',{x:r.roi.x,y:r.roi.y,width:r.roi.w,height:r.roi.h,fill:colors[r.label]||'#aaa',stroke:showGrid?(colors[r.label]||'#aaa'):'none',class:'grid-cell','data-id':r.id,'fill-opacity':showGrid?Number($('grid-opacity').value)/100:0});
   const descriptions=[labels[r.label]];
-  for(const phase of ['HCP','BCC']){const m=r.best_zones?.[phase];if(m)descriptions.push(`${phase} ${zoneLabel(m)} · ${m.valid?'passes screen':'below threshold'}`)}
+  for(const phase of PHASES){const m=r.best_zones?.[phase];if(m)descriptions.push(`${phase} ${zoneLabel(m)} · ${m.valid?'passes screen':'below threshold'}`)}
   e.setAttribute('role','img');e.setAttribute('aria-label',descriptions.join(' · '));group.append(e);
-  if(showZones)for(const [i,phase]of ['HCP','BCC'].entries()){
+  if(showZones)for(const [i,phase]of PHASES.entries()){
    const model=r.best_zones?.[phase];if(!model)continue;
    const key=zoneKey(model),symbol=zoneSymbol(phase,key);
-   const size=Math.min(r.roi.w,r.roi.h)*.30;
-   const marker=el('text',{x:r.roi.x+r.roi.w*(i ? .72 : .28),y:r.roi.y+r.roi.h*.5,
+   const size=Math.min(r.roi.w,r.roi.h)*.25;
+   const marker=el('text',{x:r.roi.x+r.roi.w*([.2,.5,.8][i]),y:r.roi.y+r.roi.h*.5,
     fill:phaseColors[phase],'font-size':size,'stroke-width':size*.12,
     class:'zone-marker','data-phase':phase,'data-zone-key':key,'fill-opacity':model.valid?1:.38,'stroke-opacity':model.valid ? .85 : .38,
     'aria-hidden':'true'},symbol);
@@ -775,13 +800,15 @@ $('peak-evidence-weight').value=peakEvidenceWeight;$('peak-evidence-slider').val
 $('peak-evidence-weight').onblur=()=>{$('peak-evidence-weight').value=peakEvidenceWeight};
 for(const id of ['scale-penalty','scale-penalty-slider','peak-evidence-weight','peak-evidence-slider'])$(id).oninput=()=>penaltyChanged($(id));
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=scalePenalty};
-for(const id of ['scenario','model-scale','threshold','fft-hann','fft-mean'])$(id).onchange=()=>{
+for(const id of ['scenario','model-scale','fcc-a','g-max','threshold','fft-hann','fft-mean'])$(id).onchange=()=>{
  if(!meta)return;
  if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
   restoreCalibration();message('Use a model size between 0.850 and 1.150.',true);return;
  }
+ if(['fcc-a','g-max'].includes(id)&&!validControlNumber(id,Number($(id).value))){message(id==='fcc-a'?'Use an FCC reference between 0.300 and 0.650 nm.':'Use an outer fitting limit between 4 and 30 nm⁻¹.',true);return}
  if(id==='threshold'&&!validControlNumber('threshold',Number($('threshold').value))){message('Use a peak threshold between 0.15 and 0.70.',true);return}
  if(id==='scenario'||id==='model-scale'){calibrationView();rememberCalibration()}
+ if(id==='g-max'&&isDiffraction())syncDetectorControls();
  if(isGridRunning())api('cancel',{job_id:jobId}).catch(e=>message(e.message,true));
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);jobId=null;grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=isDiffraction();$('cancel-grid').disabled=true;
  $('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(0);
@@ -791,7 +818,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('file-search').value='';$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('file-search').value='';$('engine-note').hidden=Boolean(config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('FCC')&&config.adjustable_fitting_band);for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_processing?'Changes recalculate the region; run a new grid afterwards.':'Restart TEM Workbench to enable FFT processing controls.';$('g-max').disabled=!config.adjustable_fitting_band;$('fcc-a').disabled=!config.fcc_reference;$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('No images found. Check the workbench installation and configured TEM folder.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 function syncFFTZoom(){
@@ -895,6 +922,7 @@ async function loadSavedRegions(){
  catch(e){$('saved-region-note').textContent=e.message;$('store-region').disabled=true;$('copy-region').disabled=true}
 }
 function applyRegionSettings(saved){
+ $('fcc-a').value=saved.fcc_a??.417;$('g-max').value=saved.g_max??10;
  if(isDiffraction()&&saved.diffraction){diffractionSettings=withTranslationDefaults(JSON.parse(JSON.stringify(saved.diffraction)));syncDetectorControls();rememberDiffraction();}
  $('scenario').value=saved.scale_mode==='fixed'?(saved.scale===1?'1':'custom'):saved.scale_mode;
  $('model-scale').value=saved.scale??1;$('threshold').value=saved.threshold??.35;
@@ -980,7 +1008,7 @@ function syncDetectorControls(){
  $('diff-shift-limit').disabled=!config.diffraction_translation||!diffractionSettings.refine_center;
  $('diff-cx').max=meta.width-1;$('diff-cy').max=meta.height-1;
  const c=meta.beam_center;
- $('diffraction-note').textContent=(c.pairs?`Initial centre estimate: ${c.pairs} opposite-spot pairs; pair residual ${c.residual_px.toFixed(1)} px${c.beamstop_prior?'; beam-stop shadow used to choose the centre':''}. Verify visually. `:'No reliable opposite-spot centre found: set the beam centre manually. ')+`${diffractionSettings.masks.length} exclusion rectangle(s). Calibration and centre are remembered for this image. Save a named entry to keep a reusable analysis. Fitting band: 3–10 nm⁻¹.`;
+ $('diffraction-note').textContent=(c.pairs?`Initial centre estimate: ${c.pairs} opposite-spot pairs; pair residual ${c.residual_px.toFixed(1)} px${c.beamstop_prior?'; beam-stop shadow used to choose the centre':''}. Verify visually. `:'No reliable opposite-spot centre found: set the beam centre manually. ')+`${diffractionSettings.masks.length} exclusion rectangle(s). Calibration and centre are remembered for this image. Save a named entry to keep a reusable analysis. Fitting band: 3–${Number($('g-max').value)} nm⁻¹.`;
  $('diff-undo-mask').disabled=$('diff-clear-masks').disabled=!diffractionSettings.masks.length;drawDetector();renderTranslation();
 }
 function currentTranslation(){
@@ -998,7 +1026,7 @@ function renderTranslation(){
  if(!r){note.textContent='Fitting a shared centre within '+diffractionSettings.max_center_shift_px+' px of the starting position…';return}
  if(!r.applied){note.textContent=r.reason;return}
  const sign=n=>(n>=0?'+':'')+n.toFixed(2),[x,y]=r.fitted_center_px,[dx,dy]=r.shift_px;
- note.textContent=`Fitted centre ${x.toFixed(2)}, ${y.toFixed(2)} px · shift X ${sign(dx)}, Y ${sign(dy)} px (Y down) · ${r.pair_count} opposite pairs · pair RMS ${r.rms_before_px.toFixed(2)} → ${r.rms_after_px.toFixed(2)} px.`+(r.near_limit?' Near the shift limit.':'')+' Shared by HCP and BCC; diffraction coordinates use this centre.';
+ note.textContent=`Fitted centre ${x.toFixed(2)}, ${y.toFixed(2)} px · shift X ${sign(dx)}, Y ${sign(dy)} px (Y down) · ${r.pair_count} opposite pairs · pair RMS ${r.rms_before_px.toFixed(2)} → ${r.rms_after_px.toFixed(2)} px.`+(r.near_limit?' Near the shift limit.':'')+' Shared by all structures; diffraction coordinates use this centre.';
 }
 function drawDetector(){
  const group=$('detector-overlay');group.replaceChildren();if(!isDiffraction()||!diffractionSettings)return;
@@ -1018,7 +1046,6 @@ function drawDetectorExclusions(qp){
  const [cxPx,cyPx]=result.spectrum.beam_center_px||[starting.center_x,starting.center_y];
  const d={...starting,center_x:cxPx,center_y:cyPx};
  const overlay=$('fft-overlay'),extent=result.spectrum.extent,pixels=420/(extent[1]-extent[0]);
- const [cx,cy]=qp(0,0);overlay.append(el('circle',{cx,cy,r:d.exclude_radius_nm_inv*pixels,fill:'none',stroke:'#94a5b8','stroke-width':.6,'stroke-dasharray':'3 3',opacity:.5}));
  for(const r of d.masks){
   const [left,top]=qp((r.x-d.center_x)*d.pixel_x_nm_inv,(d.center_y-r.y)*d.pixel_y_nm_inv);
   const [right,bottom]=qp((r.x+r.w-d.center_x)*d.pixel_x_nm_inv,(d.center_y-r.y-r.h)*d.pixel_y_nm_inv);
@@ -1121,7 +1148,7 @@ function previewKey(r,values){
 }
 function analysisPreview(data){
  return {roi:data.roi,settings:data.settings,label:data.classification.label,
-  models:Object.fromEntries(['HCP','BCC'].map(phase=>[phase,bestModel(data,phase)])),
+  models:Object.fromEntries(PHASES.map(phase=>[phase,bestModel(data,phase)])),
   crop:data.images.crop,images:data.images,extent:data.spectrum.extent};
 }
 function cacheRegionPreview(key,preview){
@@ -1149,7 +1176,7 @@ function renderRegionPreviewDetails(region){
  const name=$('region-hover-name');name.textContent=region.name||'';name.hidden=!region.name;
  const rows=$('region-hover-models');rows.replaceChildren();
  if(!region.label){rows.textContent='Loading saved analysis…';return}
- const candidates=['HCP','BCC'].map(phase=>({phase,model:region.models[phase]}));
+ const candidates=PHASES.map(phase=>({phase,model:region.models[phase]}));
  candidates.sort((a,b)=>Number(Boolean(b.model?.valid))-Number(Boolean(a.model?.valid))||compareRank(a.model,b.model));
  for(const {phase,model}of candidates){
   const row=document.createElement('div'),name=document.createElement('span'),rank=document.createElement('span'),status=document.createElement('span');
@@ -1173,7 +1200,7 @@ async function setRegionPreviewFFT(region,version){
  const raw=await decodeSpectrumImage(region.images);if(version!==hoverVersion)return;
  $('region-hover-fft-image').setAttribute('href',colourSpectrum(raw,'real_space'));
  const axes=$('region-hover-fft-axes'),ex=region.extent;axes.replaceChildren();
- for(const q of [-10,-5,0,5,10]){
+ for(const q of spectrumTicks(ex)){
   if(q>=ex[0]&&q<=ex[1])axes.append(el('text',{x:(q-ex[0])/(ex[1]-ex[0])*420,y:437,'text-anchor':'middle'},q));
   if(q>=ex[2]&&q<=ex[3])axes.append(el('text',{x:-7,y:(ex[3]-q)/(ex[3]-ex[2])*420+4,'text-anchor':'end'},q));
  }
@@ -1410,8 +1437,8 @@ function vectorLabelPosition(x,y,w,h,occupied,anchors){
 }
 function drawReflectionVectors(qp){
  const mode=$('reflection-vectors').value,fitted=mode.startsWith('fitted_'),choice=fitted?mode.slice(7):mode;
- if(!['HCP','BCC','both'].includes(choice))return;
- const phases=choice==='both'?['HCP','BCC']:[choice],occupied=[],groups=[];
+ if(![...PHASES,'both','all'].includes(choice))return;
+ const phases=choice==='all'?PHASES:choice==='both'?['HCP','BCC']:[choice],occupied=[],groups=[];
  for(const [phaseNumber,phase]of phases.entries()){
   const model=bestModel(result,phase);if(!model)continue;
   const vectors=fitted?fittedReferenceVectors(model):matchedReflectionVectors(model);if(!vectors.length)continue;
@@ -1420,7 +1447,7 @@ function drawReflectionVectors(qp){
     [phase+' '+zoneLabel(model),10,12,phaseColors[phase]],
     [fittedVectorSummary(vectors),9,26,'#dce6ef']
    ],33,.92);
-   const lx=phases.length===2&&phaseNumber===1?415-label.w:5,ly=382;
+   const lx=phases.length===2&&phaseNumber===1?415-label.w:5,ly=phases.length>2?382-37*phaseNumber:382;
    label.group.setAttribute('transform',`translate(${lx} ${ly})`);
    occupied.push({x:lx,y:ly,w:label.w,h:label.h});
   }
@@ -1450,7 +1477,7 @@ function drawReflectionVectors(qp){
   }
  }
 }
-const VECTOR_MODES=['off','fitted_HCP','fitted_BCC','fitted_both','HCP','BCC','both'];
+const VECTOR_MODES=['off','fitted_HCP','fitted_BCC','fitted_FCC','fitted_both','fitted_all',...PHASES,'both','all'];
 const savedVectors=readPreference('tem-reflection-vectors','off');
 $('reflection-vectors').value=VECTOR_MODES.includes(savedVectors)?savedVectors:'off';
 $('reflection-vectors').onchange=()=>{writePreference('tem-reflection-vectors',$('reflection-vectors').value);drawFFT()};

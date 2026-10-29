@@ -19,6 +19,7 @@ import traceback
 import uuid
 import webbrowser
 import numpy as np
+from crystal_templates import PHASES
 from engine import Engine
 import demo_data
 import adaptive_refinement
@@ -54,7 +55,8 @@ class Workbench:
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
-                'engine': self.engine.version[:12], 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
+                'engine': self.engine.version[:12], 'phases': list(PHASES), 'adjustable_fitting_band': True,
+                'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
                 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
@@ -100,7 +102,7 @@ class Workbench:
     def grid(self, item, settings, count, adaptive, minimum, check_passing=False):
         if item['info'].get('image_kind') == 'diffraction':
             raise ValueError('A detector diffraction pattern is not a real-space phase map. Use whole-pattern analysis with exclusions.')
-        if not item['info']['can_index']:
+        if min(.5/item['info']['pixel_x_nm'], .5/item['info']['pixel_y_nm']) < settings.get('g_max', 10.):
             raise ValueError('This image does not sample the full phase-fitting band.')
         if item['info']['width'] != item['info']['height']:
             raise ValueError('Automatic grids currently require a square source image.')
@@ -213,7 +215,7 @@ class Workbench:
     @staticmethod
     def best_zones(region):
         zones = {}
-        for phase in ('HCP', 'BCC'):
+        for phase in PHASES:
             options = [m for m in region['models'] if m['phase'] == phase]
             model = next((m for m in options if m['valid']), options[0] if options else None)
             if model:

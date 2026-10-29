@@ -16,8 +16,9 @@ DEFAULT_WEIGHT = .10
 def prepare(spectrum, shape, sx, sy):
     log = spectrum['log']
     h, w = shape
-    fx = core.fftshift(core.fftfreq(w, sx)); fx = fx[abs(fx) <= 10.5]
-    fy = -core.fftshift(core.fftfreq(h, sy)); fy = fy[abs(fy) <= 10.5]
+    g_max = spectrum.get('g_max', 10.)
+    fx = core.fftshift(core.fftfreq(w, sx)); fx = fx[abs(fx) <= g_max*1.05]
+    fy = -core.fftshift(core.fftfreq(h, sy)); fy = fy[abs(fy) <= g_max*1.05]
     xx, yy = np.meshgrid(fx, fy)
     g = np.hypot(xx, yy); df = spectrum['df']
     radial_bin = np.floor(g/df).astype(int)
@@ -26,7 +27,7 @@ def prepare(spectrum, shape, sx, sy):
     residual = gaussian_filter(log-radial_mean[radial_bin], .65)
     radius = max(.10, core.peak_width(spectrum))
     mask = ((residual == maximum_filter(residual, size=3, mode='nearest')) &
-            (residual >= 1.8) & (g >= 3) & (g <= 10) &
+            (residual >= 1.8) & (g >= 3) & (g <= g_max) &
             ((yy > 1e-8) | ((abs(yy) < 1e-8) & (xx > 0))))
     strong = np.array([[p['qx'], p['qy']] for p in spectrum['peaks']]).reshape(-1, 2)
     candidates = []
@@ -59,7 +60,7 @@ def prepare(spectrum, shape, sx, sy):
             continue
         peak['weak_id'] = len(maxima)+1
         maxima.append(peak)
-    return {'maxima': maxima, 'radius': radius,
+    return {'maxima': maxima, 'radius': radius, 'g_max': g_max,
             'x_limit': float(min(abs(fx[0]), abs(fx[-1]))),
             'y_limit': float(min(abs(fy[0]), abs(fy[-1])))}
 
@@ -83,7 +84,7 @@ def inspect(model, context):
                              np.linalg.norm(points[:, None]+points[None], axis=2))
     np.fill_diagonal(separations, np.inf)
     radii = np.linalg.norm(points, axis=1)
-    assessable = ((radii-radius >= 3) & (radii+radius <= 10) &
+    assessable = ((radii-radius >= 3) & (radii+radius <= context.get('g_max', 10.)) &
                   (abs(points[:, 0])+radius <= context['x_limit']) &
                   (abs(points[:, 1])+radius <= context['y_limit']) &
                   (separations.min(axis=1) >= radius))

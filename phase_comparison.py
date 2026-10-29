@@ -26,7 +26,7 @@ def classify(peaks, models, df):
     result['comparison_version'] = VERSION
     result['score_only_label'] = result['label']
     # Keep separate-pattern evidence and the original near-tied ambiguity rule.
-    if result['label'] not in ('hcp_compatible', 'bcc_compatible'):
+    if result['label'] not in ('hcp_compatible', 'bcc_compatible', 'fcc_compatible'):
         return result
     leading = result['primary_model']
     ids = {m['profile_id'] for m in leading['matches']}
