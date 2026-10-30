@@ -67,8 +67,10 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 .marker-pulse .spectrum-marker{animation:tem-marker-pulse 1.8s ease-in-out infinite;animation-delay:calc(-1.8s * var(--marker-motion-offset,0))}
 @keyframes tem-marker-wobble{0%,100%{transform:translate(0,0) scale(1.35)}25%{transform:translate(1px,-1px) scale(1.1)}50%{transform:translate(0,1px) scale(.85)}75%{transform:translate(-1px,-.5px) scale(1.1)}}
 @keyframes tem-marker-bounce{0%,100%{transform:scale(1.35)}25%,75%{transform:scale(1.1)}50%{transform:scale(.85)}}
-.marker-bounce .spectrum-marker,.marker-wobble .spectrum-marker{transform-box:fill-box;transform-origin:center;animation:tem-marker-bounce 1.2s ease-in-out infinite;animation-delay:calc(-1.2s * var(--marker-motion-offset,0))}.marker-wobble .spectrum-marker{animation-name:tem-marker-wobble}
-@media(prefers-reduced-motion:reduce){.marker-pulse .spectrum-marker,.marker-bounce .spectrum-marker,.marker-wobble .spectrum-marker{animation:none}}
+.marker-bounce .spectrum-marker,.marker-wobble .spectrum-marker,.marker-rotate .spectrum-marker{transform-box:fill-box;transform-origin:center;animation:tem-marker-bounce 1.2s ease-in-out infinite;animation-delay:calc(-1.2s * var(--marker-motion-offset,0))}.marker-wobble .spectrum-marker{animation-name:tem-marker-wobble}
+@keyframes tem-marker-rotate{0%,100%{transform:rotate(0deg) scale(1.35)}25%,75%{transform:rotate(45deg) scale(1.1)}50%{transform:rotate(90deg) scale(.85)}}
+.marker-rotate .spectrum-marker{animation-name:tem-marker-rotate}
+@media(prefers-reduced-motion:reduce){.marker-pulse .spectrum-marker,.marker-bounce .spectrum-marker,.marker-wobble .spectrum-marker,.marker-rotate .spectrum-marker{animation:none}}
 
 .image-caption,.previews figcaption{min-height:28px;margin-bottom:8px;font-size:12px;color:#c9d6e3;display:flex;align-items:center;justify-content:space-between}.spectrum-actions{display:flex;align-items:center;gap:6px}.spectrum-actions button{min-height:24px;padding:3px 7px;font-size:11px}
 

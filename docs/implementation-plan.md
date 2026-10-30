@@ -93,6 +93,10 @@ Parallel grid execution is tracked separately above and can support this mapping
 
 30 October 2026: added Windows double-click installer and launcher, private `.venv\Scripts\python.exe`, installed-Python discovery, and a desktop shortcut. Uses the existing browser interface and Windows directory junctions for data/output. Python 3.10–3.14 supported, 3.12 preferred; no automatic Python download. Runtime regression checks run on macOS; actual Windows installation and DM4/grid/export smoke testing remain to be confirmed on a Windows computer. This packaging work does not change the analysis roadmap order.
 
+## Display updates
+
+30 October 2026: added Bounce + rotate marker motion (0° → 90° → 0°), preserving phase timing offsets, reduced-motion preferences and GIF export support.
+
 ## Maintaining this plan
 
 Update this document when a task's scope, priority, decisions or implementation status changes. Keep proposals distinct from agreed behaviour and mark work complete only after implementation and relevant verification. Add the completion date and commit reference when closing a task; keep a short completed-work record as tasks leave the active list.

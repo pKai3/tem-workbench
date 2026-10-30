@@ -452,7 +452,7 @@ function rememberMarkerStyles(){
  for(const id of ['hcp-marker','bcc-marker','fcc-marker','primary-geometry-marker','secondary-geometry-marker','weak-marker'])value[id]=$(id).value;
  writePreference('tem-marker-styles',value);
 }
-function applyMarkerAnimation(){const mode=$('marker-motion').value;document.body.classList.toggle('marker-pulse',mode==='pulse');document.body.classList.toggle('marker-bounce',mode==='bounce');document.body.classList.toggle('marker-wobble',mode==='wobble')}
+function applyMarkerAnimation(){const mode=$('marker-motion').value;document.body.classList.toggle('marker-pulse',mode==='pulse');document.body.classList.toggle('marker-bounce',mode==='bounce');document.body.classList.toggle('marker-wobble',mode==='wobble');document.body.classList.toggle('marker-rotate',mode==='rotate')}
 function applyPhaseColors(redraw=true){
  for(const [phase,id,key,fallback]of [['HCP','hcp-color','hcp_compatible','blue'],['BCC','bcc-color','bcc_compatible','gold'],['FCC','fcc-color','fcc_compatible','pink']]){
   const choice=phaseColorChoices[phase]||fallback;
@@ -628,7 +628,7 @@ for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'ci
  $(id).value=choices.includes(savedMarkerStyles?.[id])?savedMarkerStyles[id]:fallback;
  $(id).onchange=()=>{rememberMarkerStyles();drawFFT()};
 }
-$('marker-motion').value=['off','pulse','bounce','wobble'].includes(savedMarkerStyles?.motion)?savedMarkerStyles.motion:savedMarkerStyles?.pulse===true?'bounce':'off';applyMarkerAnimation();
+$('marker-motion').value=['off','pulse','bounce','wobble','rotate'].includes(savedMarkerStyles?.motion)?savedMarkerStyles.motion:savedMarkerStyles?.pulse===true?'bounce':'off';applyMarkerAnimation();
 $('marker-motion').onchange=()=>{rememberMarkerStyles();applyMarkerAnimation()};
 $('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
 const oldPalette=readPreference('tem-palette',null),savedPalette=({ice:'viridis',violet:'plasma',green:'viridis'})[oldPalette]||oldPalette;if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;syncIntensityKey();
@@ -1552,9 +1552,10 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape')hideRegionPr
 function markerMotionAt(mode,phase){
  phase=((phase%1)+1)%1;
  if(mode==='pulse')return {scale:1,x:0,y:0,opacity:.675+.325*Math.cos(phase*Math.PI*2)};
- if(!['bounce','wobble'].includes(mode))return {scale:1,x:0,y:0,opacity:1};
+ if(!['bounce','wobble','rotate'].includes(mode))return {scale:1,x:0,y:0,opacity:1};
  const stops=[[1.35,0,0],[1.1,1,-1],[.85,0,1],[1.1,-1,-.5],[1.35,0,0]],i=Math.floor(phase*4),f=phase*4-i,t=f*f*(3-2*f),a=stops[i],b=stops[i+1];
- return {scale:a[0]+(b[0]-a[0])*t,x:mode==='wobble'?a[1]+(b[1]-a[1])*t:0,y:mode==='wobble'?a[2]+(b[2]-a[2])*t:0,opacity:1};
+ const angles=[0,45,90,45,0],rotation=mode==='rotate'?angles[i]+(angles[i+1]-angles[i])*t:0;
+ return {rotation,scale:a[0]+(b[0]-a[0])*t,x:mode==='wobble'?a[1]+(b[1]-a[1])*t:0,y:mode==='wobble'?a[2]+(b[2]-a[2])*t:0,opacity:1};
 }
 function spectrumSnapshot(){
  const svg=$('fft').cloneNode(true),markers=[...$('fft').querySelectorAll('.spectrum-marker')].map(m=>{const b=m.getBBox();return {x:b.x+b.width/2,y:b.y+b.height/2,offset:Number(m.getAttribute('data-motion-offset'))||0}});
@@ -1569,7 +1570,7 @@ function spectrumFrameSVG(snapshot,width,mode,phase){
  const svg=snapshot.svg.cloneNode(true);svg.setAttribute('width',width);svg.setAttribute('height',Math.round(width*452/464));
  [...svg.querySelectorAll('.spectrum-marker')].forEach((marker,i)=>{
   const centre=snapshot.markers[i],motion=markerMotionAt(mode,phase+centre.offset);
-  marker.removeAttribute('class');marker.setAttribute('transform',`translate(${motion.x} ${motion.y}) translate(${centre.x} ${centre.y}) scale(${motion.scale}) translate(${-centre.x} ${-centre.y})`);
+  marker.removeAttribute('class');marker.setAttribute('transform',`translate(${motion.x} ${motion.y}) translate(${centre.x} ${centre.y}) rotate(${motion.rotation||0}) scale(${motion.scale}) translate(${-centre.x} ${-centre.y})`);
   marker.setAttribute('stroke-opacity',motion.opacity);marker.setAttribute('fill-opacity',motion.opacity);
  });
  return new XMLSerializer().serializeToString(svg);
