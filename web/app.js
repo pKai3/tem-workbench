@@ -861,8 +861,8 @@ function penaltyChanged(input){
  if(!input.value)return;
  const value=Number(input.value);
  if(!Number.isFinite(value)||value<0||value>.5){message('Use a ranking weight from 0 to 0.5.',true);return}
- if(['peak-evidence-weight','peak-evidence-slider'].includes(input.id)){peakEvidenceWeight=value;if(input.id==='peak-evidence-slider')$('peak-evidence-weight').value=value;else $('peak-evidence-slider').value=value;writePreference('tem-peak-evidence-weight',value)}
- else{scalePenalty=value;if(input.id==='scale-penalty-slider')$('scale-penalty').value=value;else $('scale-penalty-slider').value=value;writePreference('tem-scale-penalty',value)}
+ if(['peak-evidence-weight','peak-evidence-slider'].includes(input.id)){peakEvidenceWeight=value;if(input.id==='peak-evidence-slider')$('peak-evidence-weight').value=value.toFixed(2);else $('peak-evidence-slider').value=value;writePreference('tem-peak-evidence-weight',value)}
+ else{scalePenalty=value;if(input.id==='scale-penalty-slider')$('scale-penalty').value=value.toFixed(2);else $('scale-penalty-slider').value=value;writePreference('tem-scale-penalty',value)}
  rescoreRevision++;clearTimeout(rescoreTimer);
  rescorePending=Boolean(jobId&&grid?.can_rescore);
  updatePenaltyControls();if(meta)schedule(150);
