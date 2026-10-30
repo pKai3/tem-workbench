@@ -62,7 +62,7 @@ These are candidate-labelled image-area percentages, not validated volume fracti
 
 ## Parallel grid execution
 
-Implemented 30 October 2026 on `perf/parallel-analysis`, following explicit approval to proceed independently of the remaining analysis tasks.
+Implemented 30 October 2026 on `perf/parallel-analysis`, following explicit approval to proceed independently of the remaining analysis tasks. Implementation commit: `8f7aa0c`.
 
 - Uniform and adaptive grids use a bounded spawn-process pool. **Workers: Auto / 1 / 2 / 4 / 8** is remembered in the browser; Auto uses at most four workers, leaves one logical CPU free, and all choices are capped by CPU count. Each worker owns its analysis engine and caches. One read-only memory-mapped copy of the source is shared per job; only ROIs and results cross the queue.
 - Results are committed in submission order, preserving deterministic region IDs, tie ordering and subdivision decisions. All four children must finish before replacing a parent, including ordinary unresolved-parent subdivision. Cancellation/errors retain the parent and mark incomplete child probes as trial-only. Initial cells not yet analysed remain uncovered.
