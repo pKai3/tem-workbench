@@ -1087,6 +1087,7 @@ function setupFolderControls(){
  $('folder-data').value=config.data_root;$('folder-output').value=config.output_root;
  if(!config.folder_picker)$('folders-note').textContent='Restart TEM Workbench to enable folder selection.';
  $('browse-images').disabled=false;
+ $('acquisition-map-open').disabled=!config.acquisition_map||!config.files.length;
  renderPreviewProgress(config.preview_job);
  if(config.preview_job?.state==='running')pollPreviewGeneration();
 }

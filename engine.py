@@ -9,6 +9,7 @@ import json
 import time
 import os
 import folder_paths
+from acquisition_map import MetadataIndex, stage_position
 from preview_files import sidecar_path
 import zlib
 import numpy as np
@@ -56,6 +57,7 @@ class Engine:
             ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'engine.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
+        self.acquisition_index = MetadataIndex()
 
     def templates_for(self, settings):
         key = tuple(settings[k] for k in ('g_max', 'g_min', 'hcp_a', 'hcp_c', 'bcc_a', 'fcc_a'))
@@ -88,7 +90,7 @@ class Engine:
                              'has_preview': sidecar_path(path).is_file()})
         return rows
 
-    def read_dm4(self, path):
+    def dm_reader(self):
         if self.reader is None:
             if self.settings.get('dm_reader'):
                 reader = Path(self.settings['dm_reader']).expanduser().resolve()
@@ -102,10 +104,34 @@ class Engine:
                     self.reader = importlib.import_module('ncempy.io.dm')
                 except ImportError as exc:
                     raise ValueError('Install ncempy in the app Python environment to open DM4 files, or configure dm_reader in .tem-paths.json. The optional demo pack uses original DM4 files and needs the same reader.') from exc
-        with self.reader.fileDM(path, on_memory=False) as f:
+        return self.reader
+
+    def read_dm4(self, path):
+        with self.dm_reader().fileDM(path, on_memory=False) as f:
             meta = f.getMetadata(0)
             array = np.asarray(f.getDataset(0)['data'])
         return array, meta
+
+    def acquisition_locations(self, file_id):
+        catalog = self.catalog()
+        current = next((row for row in catalog if row['id'] == file_id), None)
+        if current is None:
+            raise ValueError('Choose an image before opening the acquisition map.')
+        rows, errors = [], []
+        for entry in catalog:
+            if entry['sample'] != current['sample']:
+                continue
+            path = self.files.get(entry['id']) or demo_data.DEMOS.get(entry['id'], {}).get('source')
+            if path is None:
+                errors.append({'name': entry['name'], 'error': 'No original DM4 metadata available.'})
+                continue
+            try:
+                info = self.acquisition_index.read(path, self.dm_reader())
+                rows.append({**entry, **info, 'folder': str(Path(entry['id']).parent)})
+            except Exception as exc:
+                errors.append({'name': entry['name'], 'error': str(exc)})
+        return {'sample': current['sample'], 'files': rows, 'errors': errors,
+                'stage_units': None}
 
     def file_preview(self, file_id):
         path = self.files.get(file_id)
@@ -156,7 +182,8 @@ class Engine:
                 'sha256_pixels': hashlib.sha256(array.tobytes()).hexdigest(),
                 'date': str(meta.get('DataBar Acquisition Date', '')),
                 'time': str(meta.get('DataBar Acquisition Time', '')),
-                'device': str(meta.get('Acquisition Device Name', ''))}
+                'device': str(meta.get('Acquisition Device Name', '')),
+                'stage_position': stage_position(meta)}
         limits = np.percentile(array, [.3, 99.7])
         if is_diffraction:
             info.update(pixel_x_nm_inv=sx, pixel_y_nm_inv=sy, field_nm_inv=[w*sx, h*sy],

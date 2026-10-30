@@ -60,7 +60,7 @@ class Workbench:
 
 
     def config_info(self):
-        return {'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'acquisition_map': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -455,6 +455,18 @@ def make_handler(app):
                     self.send(app.demo_download.status())
                 elif url.path == '/api/previews':
                     self.send(app.preview_status())
+                elif url.path == '/api/acquisition-map':
+                    with app.lock:
+                        data = app.engine.acquisition_locations(query['id'][0])
+                    self.send(data)
+                elif url.path == '/api/acquisition-preview':
+                    with app.lock:
+                        file_id = query['id'][0]
+                        if file_id in demo_data.DEMOS:
+                            preview = app.file_preview(file_id)
+                        else:
+                            preview = app.engine.file_preview(file_id)
+                    self.send(preview, 'image/png')
                 elif url.path == '/api/file-preview':
                     self.send(app.file_preview(query['id'][0]), 'image/png')
                 elif url.path == '/api/job':
@@ -472,7 +484,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/style.css': ROOT/'web/style.css'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')

@@ -19,6 +19,8 @@ All pages are SVG with editable text and paths. The PDF includes bookmarks and e
 
 ## Update workflow
 
+Refresh this atlas only when explicitly requested. It is a reviewed snapshot, not a diagram regenerated for every feature change. The freshness check can identify intervening code changes; that alone does not require a refresh.
+
 1. Review the numerical or architectural code change. Update the relevant nodes and arrows in `architecture.json`, plus its `review_date`.
 2. Regenerate from the repository root. The renderer requires ReportLab (a documentation dependency, not an app runtime dependency) and a Unicode TrueType font:
 

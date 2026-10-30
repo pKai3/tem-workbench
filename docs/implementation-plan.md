@@ -118,3 +118,11 @@ Update this document when a task's scope, priority, decisions or implementation 
 The README links here instead of maintaining a second plan. Update the [architecture and methods documentation](architecture/README.md) when implemented numerical or execution changes affect it. This plan is a roadmap, not a description of features already available.
 
 30 October 2026: corrected GIF export limits for the full 72-frame Bounce + rotate cycle at 30 fps and 2800-pixel width. Older running servers are detected before rendering frames and prompt a restart.
+
+## Approximate acquisition map — implemented 30 October 2026
+
+The file toolbar opens a stage-metadata map for the current labelled sample. It defaults to the current folder and acquisition date; users can expand to the whole sample, change date and select an overview. The largest calibrated real-space field on that date is the initial backdrop, including overview images in sibling folders. Click a location or list entry to open the image; pan, zoom, and fit all locations or the overview extent.
+
+Only DM4 metadata is read for indexing; cached entries invalidate on file size/mtime changes. One overview preview is loaded on demand without analysis or changing the loaded source. Calibrated real-space images have physical footprints; diffraction/uncalibrated images have location points only. Missing positions and read failures are reported. Raw stage X/Y/tilts are also retained in newly exported source metadata.
+
+This is a schematic location aid, not registration: stage units are undeclared in these files (µm is a visible, adjustable assumption), and stage-to-image rotation/flips are manual display controls. Stage rounding, drift, image shifts and tilt are not corrected. Coincident positions remain available in the list. ST/STA folder labels are retained as recorded; suspected sample swaps are not resolved by this feature. No image alignment, batch-grid work or parallel execution is included.

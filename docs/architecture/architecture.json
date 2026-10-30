@@ -6,7 +6,7 @@
   "review_date": "2026-10-30",
   "reviewed_sources": {
     "analysis_core.py": "81ef98cda00044e18503d4f203c8f4ee4496f21cfbdf25077db8487b1cdbe76e",
-    "engine.py": "d6ad2319d9bc3f37bc89cd4946dc33bdd1f677d572c6366e9de2424c26181f43",
+    "engine.py": "67b6fb314630d655476053e070d8fca593fbd14b7978f0216f6d48e6757f3082",
     "crystal_templates.py": "02818e5889c39539955f511eb910969ebf14b6a7e6e02470fc6f0b6ad47dd578",
     "scale_fitting.py": "9779eeff75f4396598a70a5b2b4a75620004bf7b4f5e76e86d94e72ade9205a7",
     "peak_evidence.py": "52649ef8d16f9d2a260f0c00700d6448306220f2bcbf88653c56749c9941224f",
@@ -14,12 +14,14 @@
     "diffraction.py": "9ec963a0c5f14fa94f7040105f753413d2d3ff7a38011e7e137c1cd3cdddde1c",
     "adaptive_refinement.py": "196613d7ecadf1d62a003f402474df600c01eeb82e9465ebf05c2c31b32175a7",
     "materials.py": "52fb41c08b888adf39eefbc3926dc2c18a2b8b4ed1ebcb2cb6e5e0eb56a7b4f0",
-    "server.py": "735b21d7ed4228541b6e2697824d818c15eadfee840652d40efc6f41ad3f1a92",
+    "server.py": "3f6386046d5bd873b5937c85c9adc154d820dfe1f2a1766bee9a2b500d5276c2",
     "workbench_project.py": "a21d3401ef2ba0354b32758fff4692c427a23b5ce5d310d7250b722c6ca726db",
     "folder_paths.py": "ba976aec569acfcc7265451425576bca741c61c6e26984c9f0b6eb88be75d4bd",
-    "web/app.js": "685016e2669f05114da6cff60cb5bceb6de30d6d04ea257c4215561fe601b8fd",
-    "web/index.html": "0d5bad36215c497f25aff450de3fce5ca5a6580c7b8618ef61ff54c2ff4e4eb7",
-    "templates.json": "300661c6c2467120aad5db321f68b9077ead969f2d7e44dcb135fa1de5d10a85"
+    "web/app.js": "338b78a872b27ac36de0ade699c2081471ccf4e2b8ec54e0a360c484b59b874b",
+    "web/index.html": "e769b3618adf4df421f3b081b654d8f5a12a01cfcb06f344f3d4121e6019bc46",
+    "templates.json": "300661c6c2467120aad5db321f68b9077ead969f2d7e44dcb135fa1de5d10a85",
+    "acquisition_map.py": "175cda5b66825b59577fcd6f37dade106e31061f6556fe910f61008bb64c4691",
+    "web/acquisition-map.js": "b77a618ff9784cb8f9493e7be62069b83a728d245a4934debc537bf6d105b3a6"
   },
   "pages": [
     {
@@ -111,8 +113,8 @@
           "h": 155,
           "title": "Image collection",
           "body": [
-            "data/ and output/ point to chosen locations; .tem-paths.json records the choices.",
-            "DM4 metadata supplies calibration. Bundled NPZ/JSON demos include pixel checksums."
+            "data/ and output/ link chosen folders. DM4 supplies calibration; optional downloads supply demo DM4s.",
+            "Stage metadata feeds an approximate acquisition map, separately from pixel analysis. Units/orientation are user assumptions."
           ],
           "kind": "note"
         },
