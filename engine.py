@@ -9,7 +9,7 @@ import json
 import time
 import os
 import folder_paths
-from acquisition_map import MetadataIndex, stage_position
+from acquisition_map import MetadataIndex, stage_position, reference_crop, LENGTH_NM
 from preview_files import sidecar_path
 import zlib
 import numpy as np
@@ -132,6 +132,18 @@ class Engine:
                 errors.append({'name': entry['name'], 'error': str(exc)})
         return {'sample': current['sample'], 'files': rows, 'errors': errors,
                 'stage_units': None}
+
+    def acquisition_reference_crop(self, file_id, bounds):
+        if file_id in demo_data.DEMOS:
+            array, metadata = demo_data.load(file_id, reader=self.read_dm4)
+        else:
+            path = self.files.get(file_id)
+            if not path or not path.resolve().is_relative_to(self.data_root):
+                raise ValueError('Choose a reference from the configured data folder.')
+            array, metadata = self.read_dm4(path)
+        if any(str(metadata.get(f'Calibrations Dimension {d} Units', '')).strip() not in LENGTH_NM for d in (1, 2)):
+            raise ValueError('Reference crops require a real-space image.')
+        return reference_crop(array, bounds)
 
     def file_preview(self, file_id):
         path = self.files.get(file_id)

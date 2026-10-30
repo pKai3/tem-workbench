@@ -320,6 +320,8 @@ The versioned [methods atlas](docs/architecture/README.md) documents the impleme
 
 ### Acquisition locations
 
-**Acquisition map** beside the file browser plots recorded DM4 stage positions over a selectable real-space overview. It starts with the current folder/date and the widest calibrated overview from the same labelled sample/date. Choose **Whole labelled sample** to include other folders. Click an image footprint or list entry to open it; drag to pan and scroll to zoom.
+**Acquisition map** beside the file browser plots recorded DM4 stage positions over a selectable real-space overview. It starts with the current folder/date and the widest calibrated overview from the same labelled sample/date. Choose a **Folder** in the map or **Whole labelled sample** to include all its folders. Click a calibrated image footprint or list entry to make it the new reference; **Back** returns one level, restoring the previous view. **Open** beside a list entry opens it for analysis. Drag to pan and scroll to zoom.
+
+Enable **Compare on hover** to see the full acquired image beside its predicted crop from the current reference. Crops use original reference pixels, preserve full-image contrast, and show out-of-frame areas in black. Hovering the reference itself does not show a comparison. Stage rounding can exceed the size of a high-magnification field, so use these comparisons to inspect placement rather than assume image registration.
 
 This is approximate. The stage tags do not declare units: µm is the initial assumption, with units, rotation and flips adjustable in the dialog. Camera orientation, image shifts, stage rounding, drift and tilt can displace the schematic footprints. Diffraction images are points only. Missing locations are listed, not invented. Newly saved results include the raw stage coordinates when available.

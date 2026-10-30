@@ -60,7 +60,7 @@ class Workbench:
 
 
     def config_info(self):
-        return {'acquisition_map': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -459,6 +459,10 @@ def make_handler(app):
                     with app.lock:
                         data = app.engine.acquisition_locations(query['id'][0])
                     self.send(data)
+                elif url.path == '/api/acquisition-crop':
+                    with app.lock:
+                        preview = app.engine.acquisition_reference_crop(query['id'][0], {k: query[k][0] for k in ('x', 'y', 'w', 'h')})
+                    self.send(preview, 'image/png')
                 elif url.path == '/api/acquisition-preview':
                     with app.lock:
                         file_id = query['id'][0]

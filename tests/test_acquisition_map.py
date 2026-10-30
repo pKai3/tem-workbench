@@ -4,7 +4,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from acquisition_map import MetadataIndex, describe, stage_position
+from acquisition_map import MetadataIndex, describe, stage_position, reference_crop
+from io import BytesIO
+import numpy as np
+from PIL import Image
 
 
 def metadata():
@@ -53,5 +56,30 @@ class AcquisitionMetadata(unittest.TestCase):
             path.write_bytes(b'changed')
             index.read(path, reader)
             self.assertEqual(len(calls), 2)
+
+class ReferenceCrop(unittest.TestCase):
+    def setUp(self):
+        self.array = np.arange(100, dtype=float).reshape(10, 10)
+
+    def crop(self, **bounds):
+        return np.asarray(Image.open(BytesIO(reference_crop(self.array, bounds))))
+
+    def test_original_pixels_and_full_reference_contrast(self):
+        lo, hi = np.percentile(self.array, [.3, 99.7])
+        expected = np.uint8(np.clip((self.array-lo)/(hi-lo), 0, 1)*255)
+        np.testing.assert_array_equal(self.crop(x=.2, y=.3, w=.3, h=.4), expected[3:7, 2:5])
+
+    def test_outside_padding_and_bounded_size(self):
+        crop = self.crop(x=-.2, y=0, w=.4, h=.4)
+        self.assertEqual(crop.shape, (4, 4))
+        self.assertFalse(crop[:, :2].any())
+        self.assertTrue(crop[:, 2:].any())
+        image = self.crop(x=-1, y=-1, w=1000, h=500)
+        self.assertEqual(image.shape, (384, 768))
+
+    def test_invalid_bounds_rejected(self):
+        for key, value in [('x', float('nan')), ('w', 0), ('h', -1), ('y', float('inf'))]:
+            bounds = dict(x=0, y=0, w=1, h=1); bounds[key] = value
+            with self.assertRaises(ValueError): self.crop(**bounds)
 
 if __name__ == '__main__': unittest.main()
