@@ -1,14 +1,14 @@
 {
-  "diagram_sha256": "026e6e5f2d16cb8ab4ec7d3e14f86beec4dd9b902a5b5f4ac9a8d2f335a40bfd",
+  "diagram_sha256": "52d17c9ad3e93526dbb8c8c9e02ac3d987d2450918e057bd5173b5ac9d8b1286",
   "renderer_sha256": "10e47264ec37eb30808e58995e9db11ae2704f1012b8fa79b0d97a7b47132347",
   "font": "DejaVuSans.ttf",
   "artifacts": {
     "01-system.svg": "7fe186a5d9f54c45776105fc061f69f2fa76cb26d2c29293996d37f33f0ad8fb",
     "02-signals.svg": "dbb3a1c3dd77996435cf6f18078a7969050ec7bd2759eb7260f83eeeb1d3e214",
-    "03-templates.svg": "014d4b36e5345d839d0f7233261829ad460606fd32d0b4ebf94836f10e5bf0ad",
-    "04-scores.svg": "12b504014a73cf3bea918746b5bb131efd6f37d1320a63f6c41835f1de61d33b",
+    "03-templates.svg": "e4d33acc49540733b88b2a6ac8403bd09387fdebfaa58275c6d4553472876f69",
+    "04-scores.svg": "bf7a3b054a7042d8ec4ef8fce201a2bdcefd21f10273d474bf4b3a36d29d778a",
     "05-decisions.svg": "87596f55fb4008db2c4731f408da7e4dccabe4d44748f0ba2ff7c3ea67226719",
-    "06-grid-state.svg": "81918a9ae4c1c69a10cbd4b21865068dfa535ef00dd12cb1d557a210930f4402",
-    "tem-workbench-architecture.pdf": "b93845d8c2c3cafdfa433f8895f3480713bf690914e6d21fad69b2f8fed856b5"
+    "06-grid-state.svg": "d9c0ece9930089b673e5c25d7baeef96614eff866e9020a2aced50f03a8b6e29",
+    "tem-workbench-architecture.pdf": "25ea6722448b3860624fd7ae8c3bb2b1066f0d365b60d78260f0bf97195af8f3"
   }
 }

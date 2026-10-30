@@ -8,18 +8,22 @@ This is the maintained plan for upcoming analysis and performance work. The next
 
 | Order | Task | Status |
 | --- | --- | --- |
-| 1 | Revise fully free HCP fitting | Design discussion pending |
+| 1 | Revise fully free HCP fitting | First-pass optional mode implemented; data validation pending |
 | 2 | Revise automatic minimum peak strength selection to retain weaker separate patterns | Design discussion pending |
 | 3 | Batch grid analysis across qualifying images, with per-image and ST/STA summaries | Planned after the fitting and peak-selection changes |
 
 ### 1 HCP fitting
 
-Revisit the current independent HCP a/c scaling. The proposed approach separates a common overall scale from a change in c/a:
+Implemented 30 October 2026: **Auto: overall scale + HCP c/a**, alongside the original modes. The agreed first pass uses broad existing reciprocal-axis bounds (0.85–1.15), without an additional tight c/a cap or an assumed stronger shape penalty.
 
-- Overall scale accommodates a shared size or calibration discrepancy.
-- c/a adjustment has a tighter material-specific range and a stronger penalty for changing the pattern proportions.
+- Let sa and sc be the reciprocal a* and c* multipliers. Overall reciprocal scale s = sqrt(sa × sc); real-space c/a multiplier r = sa/sc. Model dimensions remain a0/sa and c0/sc.
+- Scale cost = λ[ln(s)/ln(1.05)]² + μ[ln(r)/ln(1.05)]². Both weights default to 0.10; independent number boxes and sliders use 0.01 slider steps. A factor 1.05 (or its reciprocal) costs the relevant weight. These are exploratory preferences, not measured material limits.
+- Cubic fits use the same overall log-scale cost, with no ratio term. HCP zones insensitive to c fit only the observed basal scale and report c/a as unconstrained.
+- The same positional search/refinement is reused; the separate costs rank explored candidates before retention. This is not a penalty-aware continuous optimizer. Equal defaults do not reproduce the old independent-axis cost exactly, because the new shape coordinate measures the full c/a change.
+- Costs and multipliers are retained in results; table tooltips show the decomposition. Both weights can reweight a completed grid's cached candidates without changing matches or cell boundaries. Changing fitting mode requires a new grid.
+- All top-level processing settings are grouped in one persistent collapsible section. Previous/next file buttons follow the current filtered and sorted file list, stopping at its ends.
 
-Decide the parameterization, material-specific bounds, penalties and user controls before implementation. No numerical bounds or penalty strengths are agreed yet. Preserve the distinction between reciprocal prediction scaling, real-space lattice dimensions and calibration error.
+Material-specific priors and extra parameter-count corrections remain unvalidated; no such constraints were added.
 
 Compare the revised fitting with the current single-scale and independent-a/c modes on ambiguous HCP/BCC examples and the stronger ST1203 BCC candidate. Report positional agreement, scale costs and phase/zone stability so a more flexible model does not win simply by changing its proportions excessively.
 

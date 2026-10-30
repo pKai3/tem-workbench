@@ -7,7 +7,8 @@ import analysis_core as core
 from crystal_templates import reciprocal, allowed, TEMPLATE_BASE_A
 
 BOUNDS = (.85, 1.15)
-MODES = ('fixed', 'auto_uniform', 'auto_hcp_ac')
+MODES = ('fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio')
+DEFAULT_CA_PENALTY = .10
 DEFAULT_SCALE_PENALTY = .10
 
 
@@ -24,10 +25,32 @@ def scale_cost(scale_a, scale_c=None, strength=DEFAULT_SCALE_PENALTY):
     return strength*cost
 
 
-def penalize(result, scale_a, scale_c, strength):
+def decomposed_cost(scale_a, scale_c, strength, ca_strength):
+    """Separate common reciprocal size and real-space c/a, in log coordinates.
+
+    s = sqrt(sa*sc), r = sa/sc = (c/a)/(c0/a0). A factor 1.05 in either
+    coordinate costs its respective weight; reciprocal changes cost equally.
+    No tighter ratio bound or material-specific physical prior is imposed.
+    With c invisible, only the observed basal scale is charged.
+    """
+    overall = float(np.sqrt(scale_a*scale_c)) if scale_c is not None else float(scale_a)
+    ratio = float(scale_a/scale_c) if scale_c is not None else None
+    unit = np.log(1.05)
+    return overall, ratio, float(strength*(np.log(overall)/unit)**2), (
+        float(ca_strength*(np.log(ratio)/unit)**2) if ratio is not None else 0.)
+
+
+def penalize(result, scale_a, scale_c, strength, ca_strength=DEFAULT_CA_PENALTY):
     if result is None:
         return None
-    cost = float(scale_cost(scale_a, scale_c, strength))
+    if result.get('scale_mode') == 'auto_hcp_ratio':
+        overall, ratio, size_cost, ratio_cost = decomposed_cost(scale_a, scale_c, strength, ca_strength)
+        result.update(overall_prediction_scale=overall, ca_ratio_multiplier=ratio,
+                      overall_scale_penalty=size_cost, ca_ratio_penalty=ratio_cost,
+                      ca_penalty_strength=ca_strength)
+        cost = size_cost + ratio_cost
+    else:
+        cost = float(scale_cost(scale_a, scale_c, strength))
     result.update(position_score=result.get('position_score', result['score']),
                   position_valid=result.get('position_valid', result['valid']),
                   scale_penalty=cost, scale_penalty_strength=strength)
@@ -156,7 +179,7 @@ def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weight
     return selected
 
 
-def _refine(peaks, template, seed, tol, bcc_a, double, strength, fcc_a, g_max, g_min):
+def _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min):
     _, angle, sa, sc = seed
     low, high = BOUNDS
 
@@ -209,16 +232,18 @@ def _refine(peaks, template, seed, tol, bcc_a, double, strength, fcc_a, g_max, g
                    'c_axis_visible': c_visible,
                    'scale_at_bound': any(min(abs(v-low), abs(v-high)) < .001 for v in ([sa, sc] if double else [sa]))})
     # Keep fitted coordinates inspectable and unaltered by the ranking preference.
-    # Apply cost to every fitted hypothesis BEFORE deduplication/zone selection.
-    return penalize(result, sa, sc if double else None, strength)
+    return result
 
 
-def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10., g_min=3.):
-    if mode not in ('auto_uniform', 'auto_hcp_ac'):
+def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10., g_min=3., ca_penalty_strength=DEFAULT_CA_PENALTY):
+    if mode not in MODES[1:]:
         raise ValueError('Unknown automatic scale mode.')
     strength = float(scale_penalty_strength)
     if not np.isfinite(strength) or not 0 <= strength <= .5:
         raise ValueError('Scale penalty must be between 0 and 0.5.')
+    ca_penalty_strength = float(ca_penalty_strength)
+    if not np.isfinite(ca_penalty_strength) or not 0 <= ca_penalty_strength <= .5:
+        raise ValueError('c/a penalty must be between 0 and 0.5.')
     if len(peaks) < 4:
         return []
     observed = np.array([[p['qx'], p['qy']] for p in peaks])
@@ -226,16 +251,18 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
     tree = cKDTree(np.r_[observed, -observed])
     candidates = []
     for template in templates:
-        double = (mode == 'auto_hcp_ac' and template['phase'] == 'HCP' and
+        double = (mode in ('auto_hcp_ac', 'auto_hcp_ratio') and template['phase'] == 'HCP' and
                   float(template['c_direction'] @ template['c_direction']) > 1e-10)
         if len(template['q']) < 4:
             continue
         seeds = _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min)
         for seed in seeds:
-            result = _refine(peaks, template, seed, tol, bcc_a, double, strength, fcc_a, g_max, g_min)
+            result = _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min)
             if result:
+                # Rank each positional fit before penalty-dependent retention.
                 result['scale_mode'] = mode
-                if mode == 'auto_hcp_ac' and template['phase'] == 'HCP' and not double:
+                penalize(result, result['scale_a'], result['scale_c'] if double else None, strength, ca_penalty_strength)
+                if mode in ('auto_hcp_ac', 'auto_hcp_ratio') and template['phase'] == 'HCP' and not double:
                     result.update({'scale_c': None, 'fitted_c_nm': None,
                                    'scale_note': 'This zone does not constrain c; only a is fitted.'})
                 candidates.append(result)
@@ -259,14 +286,17 @@ def retain(candidates, topn=5):
     return retained
 
 
-def rerank(candidates, strength, topn=5):
+def rerank(candidates, strength, topn=5, ca_penalty_strength=DEFAULT_CA_PENALTY):
     """Reweight cached positional fits without changing coordinates or matches."""
     strength = float(strength)
     if not np.isfinite(strength) or not 0 <= strength <= .5:
         raise ValueError('Scale penalty must be between 0 and 0.5.')
+    ca_penalty_strength = float(ca_penalty_strength)
+    if not np.isfinite(ca_penalty_strength) or not 0 <= ca_penalty_strength <= .5:
+        raise ValueError('c/a penalty must be between 0 and 0.5.')
     ranked = []
     for original in candidates:
         model = original.copy()
         c = model.get('scale_c') if model.get('scale_parameter_count') == 2 else None
-        ranked.append(penalize(model, model['scale_a'], c, strength))
+        ranked.append(penalize(model, model['scale_a'], c, strength, ca_penalty_strength))
     return retain(ranked, topn)

@@ -172,3 +172,13 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 
 /* Native Windows menus otherwise inherit the selected phase colour. */
 .phase-color-controls select option{color:#edf5fc;background:#172332}
+
+/* One collapsible analysis setup; display and grid controls remain by their views. */
+#processing-controls{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:14px}
+#processing-controls>summary{font-weight:600}
+#processing-controls[open]>summary{margin-bottom:10px}
+#ca-penalty-field[hidden]{display:none}
+.file-label>label{margin-bottom:6px}
+.file-navigation{display:flex;gap:5px;min-width:0}
+.file-navigation select{flex:1;min-width:0;width:100%}
+.file-navigation button{padding:6px 9px;flex:none}

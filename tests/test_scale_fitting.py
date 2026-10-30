@@ -97,6 +97,52 @@ class ScaleFits(unittest.TestCase):
                          [(m['profile_id'], m['hkl']) for m in after['matches']])
         self.assertAlmostEqual(after['score'], before['score']-after['scale_penalty'])
 
+    def test_overall_and_ratio_costs_have_equal_factor_defaults(self):
+        # Pure size vs pure shape, each changed by ×1.05, each costs 0.10.
+        _, r, size, shape = fitting.decomposed_cost(1.05, 1.05, .1, .1)
+        self.assertEqual(r, 1.)
+        self.assertAlmostEqual(size, .1)
+        self.assertEqual(shape, 0.)
+        _, r, size, shape = fitting.decomposed_cost(np.sqrt(1.05), 1/np.sqrt(1.05), .1, .1)
+        self.assertAlmostEqual(r, 1.05)
+        self.assertAlmostEqual(size, 0.)
+        self.assertAlmostEqual(shape, .1)
+        # Log costs treat reciprocal increases/decreases symmetrically.
+        self.assertAlmostEqual(fitting.decomposed_cost(1/1.05, 1/1.05, .1, .1)[2], .1)
+
+    def test_ratio_mode_recovers_broad_distortion_and_reports_real_ca(self):
+        template = self.template('HCP', [1, -1, -2])
+        result = self.fit(template, .96, 1.035, 'auto_hcp_ratio')
+        self.assertAlmostEqual(result['overall_prediction_scale'], np.sqrt(.96*1.035), places=3)
+        self.assertAlmostEqual(result['ca_ratio_multiplier'], .96/1.035, places=3)
+        ratio = (result['fitted_c_nm']/result['fitted_a_nm'])/(result['nominal_c_nm']/result['nominal_a_nm'])
+        self.assertAlmostEqual(result['ca_ratio_multiplier'], ratio)
+        self.assertGreater(abs(ratio-1), .03)  # no imposed ±3% limit
+
+    def test_ratio_cost_is_absent_for_cubic_and_invisible_c(self):
+        for phase, zone in [('BCC', [1, -3, -1]), ('HCP', [0, 0, 1])]:
+            result = self.fit(self.template(phase, zone), 1.027, 1.027, 'auto_hcp_ratio')
+            self.assertIsNone(result['ca_ratio_multiplier'])
+            self.assertEqual(result['ca_ratio_penalty'], 0.)
+            self.assertEqual(result['scale_parameter_count'], 1)
+            if phase == 'HCP':
+                self.assertIsNone(result['fitted_c_nm'])
+
+    def test_ratio_reweight_is_independent_and_repeatable(self):
+        result = self.fit(self.template('HCP', [1, -1, -2]), .96, 1.035, 'auto_hcp_ratio')
+        ranked = fitting.rerank([result], .1, ca_penalty_strength=.2)[0]
+        self.assertAlmostEqual(ranked['score'], result['position_score']-ranked['overall_scale_penalty']-ranked['ca_ratio_penalty'])
+        self.assertEqual(ranked, fitting.rerank([ranked], .1, ca_penalty_strength=.2)[0])
+        no_ratio = fitting.rerank([result], .1, ca_penalty_strength=0)[0]
+        self.assertAlmostEqual(no_ratio['score']-ranked['score'], ranked['ca_ratio_penalty'])
+        np.testing.assert_allclose([n['q'] for n in result['predicted_nodes']], [n['q'] for n in ranked['predicted_nodes']])
+        self.assertEqual(result['matches'], ranked['matches'])
+
+    def test_ratio_penalty_api_validation(self):
+        for weight in [-.01, .51, float('nan'), float('inf')]:
+            with self.assertRaises(ValueError):
+                fitting.search([], [], .1, 'auto_hcp_ratio', ca_penalty_strength=weight)
+
 
 
 if __name__ == '__main__':

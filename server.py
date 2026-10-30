@@ -63,7 +63,7 @@ class Workbench:
                 'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
-                'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac'],
+                'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
                 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
@@ -280,7 +280,7 @@ class Workbench:
                                    'best_zones': self.best_zones(r)} for r in regions])
             return result
 
-    def rescore(self, job_id, strength, evidence_weight=None):
+    def rescore(self, job_id, strength, evidence_weight=None, ca_penalty_strength=None):
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= .5:
             raise ValueError('Scale penalty must be between 0 and 0.5.')
@@ -293,12 +293,15 @@ class Workbench:
             evidence_weight = float(job['settings'].get('peak_evidence_weight', .10) if evidence_weight is None else evidence_weight)
             if not np.isfinite(evidence_weight) or not 0 <= evidence_weight <= .5:
                 raise ValueError('Peak evidence weight must be between 0 and 0.5.')
+            ca_penalty_strength = float(job['settings'].get('ca_penalty_strength', .10) if ca_penalty_strength is None else ca_penalty_strength)
+            if not np.isfinite(ca_penalty_strength) or not 0 <= ca_penalty_strength <= .5:
+                raise ValueError('c/a penalty must be between 0 and 0.5.')
             started = time.perf_counter()
             # Build a replacement before publishing, so a failure cannot leave
             # half the map at the new penalty. Parent/child boundaries stay fixed.
-            regions = [self.engine.rescore(region, strength, evidence_weight) for region in job['regions']]
-            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight},
-                       rescore={'strength': strength, 'peak_evidence_weight': evidence_weight, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
+            regions = [self.engine.rescore(region, strength, evidence_weight, ca_penalty_strength) for region in job['regions']]
+            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight, 'ca_penalty_strength': ca_penalty_strength},
+                       rescore={'strength': strength, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_weight': evidence_weight, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                                 'region_count': len(regions), 'reused_fits': True, 'boundaries_unchanged': True,
                                 'at': datetime.now().astimezone().isoformat()})
             LOG.info('Grid %s reweighted: scale penalty %.3f; peak evidence %.3f', job_id[:8], strength, evidence_weight)
@@ -530,7 +533,7 @@ def make_handler(app):
                         started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)))
                     self.send(started)
                 elif self.path == '/api/rescore-grid':
-                    self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight')))
+                    self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight'), body.get('ca_penalty_strength')))
                 elif self.path == '/api/cancel':
                     app.jobs[body['job_id']]['cancel']=True
                     LOG.info('Grid %s cancellation requested', body['job_id'][:8])

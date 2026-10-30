@@ -199,10 +199,10 @@ class Engine:
             raise ValueError('Direct diffraction analyses use the full detector image; use exclusion masks for unwanted areas.')
         if min(w, h) < 32 or x < 0 or y < 0 or x+w > iw or y+h > ih or (not direct and abs(w-h) > 1):
             raise ValueError('Choose a square region within the image, at least 32 pixels wide.')
-        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('g_min', 3.), ('g_max', 10.), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT)]}
+        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('g_min', 3.), ('g_max', 10.), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('ca_penalty_strength', scale_fitting.DEFAULT_CA_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT)]}
         if not all(np.isfinite(v) for v in values.values()):
             raise ValueError('Analysis settings must be finite numbers.')
-        if not (.85 <= values['scale'] <= 1.15 and 0 <= values['g_min'] < 30 and 4 <= values['g_max'] <= 30 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
+        if not (.85 <= values['scale'] <= 1.15 and 0 <= values['g_min'] < 30 and 4 <= values['g_max'] <= 30 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['ca_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
             raise ValueError('Analysis settings are outside the supported range.')
         detector_defaults = {'fft_smoothing_sigma': .65, 'fft_threshold_floor': 1.8,
                              'fft_minimum_enrichment': 3., 'fft_minimum_separation': .12,
@@ -255,6 +255,7 @@ class Engine:
             models = scale_fitting.search(s['peaks'], templates, tol,
                                           settings['scale_mode'], bcc_a=settings['bcc_a'],
                                           scale_penalty_strength=settings['scale_penalty_strength'],
+                                          ca_penalty_strength=settings['ca_penalty_strength'],
                                           candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'])
         if can_index:
             s['weak_maxima'] = context['maxima']
@@ -377,9 +378,16 @@ class Engine:
         classification = phase_comparison.classify(s['peaks'], models, s['df'])
         if settings['scale_mode'] != 'fixed':
             classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the image calibration used.')
-            if settings['scale_mode'] == 'auto_hcp_ac' and 'HCP' in settings.get('enabled_phases', PHASES):
+            if settings['scale_mode'] in ('auto_hcp_ac', 'auto_hcp_ratio') and 'HCP' in settings.get('enabled_phases', PHASES):
                 classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scale penalties discourage large adjustments; the separate shared-evidence check retains unresolved model tradeoffs.')
-            if settings['scale_penalty_strength']:
+            if settings['scale_mode'] == 'auto_hcp_ratio':
+                classification['flags'].append(
+                    f"Separate scale costs: overall weight {settings['scale_penalty_strength']:.3f}, "
+                    f"c/a weight {settings.get('ca_penalty_strength', .10):.3f}. "
+                    'Each charges squared log change normalized to log(1.05). '
+                    'Overall reciprocal scale is sqrt(a* scale × c* scale); real c/a multiplier is a* scale / c* scale. '
+                    'Both are ranking preferences, not measured strain limits. Fits retain the 0.85–1.15 per-axis bounds.')
+            elif settings['scale_penalty_strength']:
                 classification['flags'].append(
                     f"Scale penalty strength {settings['scale_penalty_strength']:.3f}: scale cost subtracts "
                     'the mean squared reciprocal-scale deviation, normalized to 5%. This is an adjustable preference, not a measured strain limit.')
@@ -435,11 +443,11 @@ class Engine:
         for model in candidates:
             if settings['scale_mode'] != 'fixed':
                 c = model.get('scale_c') if model.get('scale_parameter_count') == 2 else None
-                scale_fitting.penalize(model, model['scale_a'], c, settings['scale_penalty_strength'])
+                scale_fitting.penalize(model, model['scale_a'], c, settings['scale_penalty_strength'], settings.get('ca_penalty_strength', .10))
             peak_evidence.apply(model, settings.get('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT))
         return candidates
 
-    def rescore(self, result, strength, evidence_weight=None):
+    def rescore(self, result, strength, evidence_weight=None, ca_penalty_strength=None):
         """Only ranking/classification changes; all measured evidence is reused."""
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= .5:
@@ -447,6 +455,11 @@ class Engine:
         settings = {**result['settings'], 'scale_penalty_strength': strength}
         if evidence_weight is not None:
             settings['peak_evidence_weight'] = float(evidence_weight)
+        if ca_penalty_strength is not None:
+            ca_penalty_strength = float(ca_penalty_strength)
+            if not np.isfinite(ca_penalty_strength) or not 0 <= ca_penalty_strength <= .5:
+                raise ValueError('c/a penalty must be between 0 and 0.5.')
+            settings['ca_penalty_strength'] = ca_penalty_strength
         candidates = self.cached_models(result, settings)
         models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
         classification = self.classify(result['spectrum'], models, settings,

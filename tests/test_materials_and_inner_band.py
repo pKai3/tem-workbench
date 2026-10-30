@@ -70,7 +70,7 @@ class MaterialReferences(unittest.TestCase):
         for item, enabled in ((direct, ['BCC']), (fft, ['FCC'])):
             h, w = item['array'].shape
             roi = dict(x=0, y=0, w=w, h=h)
-            for mode in ('fixed', 'auto_uniform', 'auto_hcp_ac'):
+            for mode in ('fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'):
                 module = core if mode == 'fixed' else fitting
                 with patch.object(module, 'search', wraps=module.search) as search:
                     result = engine.analyze(item, roi, dict(enabled_phases=enabled, scale_mode=mode), images=False, cache_candidates=True)
@@ -78,7 +78,11 @@ class MaterialReferences(unittest.TestCase):
                 if item is fft or mode != 'fixed':
                     self.assertTrue(result['models'], mode)
                 self.assertFalse({m['phase'] for m in result['models']} - set(enabled))
-                reranked = engine.rescore(result, .2, .3)
+                reranked = engine.rescore(result, .2, .3, .17)
+                self.assertEqual(reranked['settings']['ca_penalty_strength'], .17)
+                if mode == 'auto_hcp_ratio':
+                    for model in reranked['models']:
+                        self.assertAlmostEqual(model['scale_penalty'], model['overall_scale_penalty']+model['ca_ratio_penalty'])
                 self.assertEqual(reranked['settings']['enabled_phases'], enabled)
                 self.assertFalse({m['phase'] for m in reranked['models']} - set(enabled))
                 self.assertEqual(engine.cached_models(result, {**result['settings'], 'enabled_phases': []}), [])

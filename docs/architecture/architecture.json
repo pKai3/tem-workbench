@@ -6,19 +6,19 @@
   "review_date": "2026-10-30",
   "reviewed_sources": {
     "analysis_core.py": "81ef98cda00044e18503d4f203c8f4ee4496f21cfbdf25077db8487b1cdbe76e",
-    "engine.py": "8cab8b87fd0a95d03f91cc28372e7c2633e9d2dbd416fe369e48777d8c1f4d10",
-    "crystal_templates.py": "27a1af94e7a073846939ab3d0443d5b342dc0c419ee24c45a26bdad021c9178d",
-    "scale_fitting.py": "030bcc3ecd305b0f314563d795c1305be67dcf4f064bfa87f97f909eb3d93546",
+    "engine.py": "d6ad2319d9bc3f37bc89cd4946dc33bdd1f677d572c6366e9de2424c26181f43",
+    "crystal_templates.py": "02818e5889c39539955f511eb910969ebf14b6a7e6e02470fc6f0b6ad47dd578",
+    "scale_fitting.py": "9779eeff75f4396598a70a5b2b4a75620004bf7b4f5e76e86d94e72ade9205a7",
     "peak_evidence.py": "52649ef8d16f9d2a260f0c00700d6448306220f2bcbf88653c56749c9941224f",
     "phase_comparison.py": "e48c304e8c0590648061db3d56f81a2835bb57b693fe9b806c8d6b48c3b9beb0",
     "diffraction.py": "9ec963a0c5f14fa94f7040105f753413d2d3ff7a38011e7e137c1cd3cdddde1c",
     "adaptive_refinement.py": "196613d7ecadf1d62a003f402474df600c01eeb82e9465ebf05c2c31b32175a7",
-    "materials.py": "9c5d92e9641048e454915c478c6b019aebb6272116340a16331648e2ad19fa31",
-    "server.py": "9384127a98afd2190779f89af9ec3ee8a2fde99ecd2acd944c796fb5ebb253ef",
+    "materials.py": "52fb41c08b888adf39eefbc3926dc2c18a2b8b4ed1ebcb2cb6e5e0eb56a7b4f0",
+    "server.py": "735b21d7ed4228541b6e2697824d818c15eadfee840652d40efc6f41ad3f1a92",
     "workbench_project.py": "a21d3401ef2ba0354b32758fff4692c427a23b5ce5d310d7250b722c6ca726db",
     "folder_paths.py": "ba976aec569acfcc7265451425576bca741c61c6e26984c9f0b6eb88be75d4bd",
-    "web/app.js": "06504b98b29b58601c5e045424d840b576449c817c20cbf1813f8564060f8984",
-    "web/index.html": "427b798ac5cd9082524cd2e2a8b5d6dd1b6971f2479d363f7a238583e2e4e742",
+    "web/app.js": "685016e2669f05114da6cff60cb5bceb6de30d6d04ea257c4215561fe601b8fd",
+    "web/index.html": "0d5bad36215c497f25aff450de3fce5ca5a6580c7b8618ef61ff54c2ff4e4eb7",
     "templates.json": "300661c6c2467120aad5db321f68b9077ead969f2d7e44dcb135fa1de5d10a85"
   },
   "pages": [
@@ -612,9 +612,9 @@
           "h": 170,
           "title": "4  Apply a physically defined metric",
           "body": [
-            "Cubic / uniform mode: one reciprocal multiplier s. HCP dual mode: sa and sc where c is visible. Bounds: 0.85–1.15.",
-            "For plane basis P and D = diag(sa,sa,sc), use the plane metric M = PᵀD²P and transform √M.",
-            "Model dimensions: a = a₀/sa; c = c₀/sc."
+            "Cubic / uniform: one multiplier. HCP dual modes: sa and sc where c is visible. Each remains within 0.85–1.15.",
+            "For plane basis P and D = diag(sa,sa,sc), use metric M = PᵀD²P and transform √M. Model a = a₀/sa; c = c₀/sc.",
+            "New overall + c/a coordinates: s = √(sa·sc); r = (c/a)/(c₀/a₀) = sa/sc. No extra tight ratio cap."
           ],
           "kind": "process",
           "font_size": 11.5
@@ -881,13 +881,15 @@
           "x": 34,
           "y": 299,
           "w": 722,
-          "h": 101,
+          "h": 119,
           "title": "2  Scale preference",
           "body": [
-            "S = λ · meanₖ[((sₖ − 1)/0.05)²], over visible fitted reciprocal-scale parameters.",
-            "One uniform 5% adjustment costs λ; 10% costs 4λ. Fixed mode costs zero. This adjustable preference is not a measured strain limit or a parameter-count correction."
+            "Existing modes: S = λ mean[((sₖ − 1)/0.05)²]. Fixed mode: S = 0.",
+            "Overall + c/a: S = λ[ln(s)/ln(1.05)]² + μ[ln(r)/ln(1.05)]²; s = √(sa·sc), r = sa/sc.",
+            "λ = μ = 0.10 initially. No ratio cost if c is invisible. Ranking preferences, not strain limits or parameter-count corrections."
           ],
-          "kind": "process"
+          "kind": "process",
+          "font_size": 10.5
         },
         {
           "id": "sites",
@@ -912,7 +914,7 @@
           "h": 78,
           "title": "4  Adjusted rank",
           "body": [
-            "R = P − S + η·B − η·F. λ controls scale preference; η controls weak/missing-peak evidence. Default λ = 0.10 and η = 0.10."
+            "R = P − S + η·B − η·F. λ controls overall scale; μ controls c/a in ratio mode; η controls peak evidence. Default λ = 0.10 and η = 0.10."
           ],
           "kind": "result"
         },
@@ -993,7 +995,7 @@
           "h": 99,
           "title": "Cached reweighting",
           "body": [
-            "Changing λ or η can rerank stored candidates without repeating the FFT. It keeps the chosen profile set; rerun Auto analysis/grid to re-optimize the strength."
+            "Changing λ, μ or η can rerank stored candidates without repeating the FFT. It keeps the chosen profile set; rerun Auto analysis/grid to re-optimize the strength."
           ],
           "kind": "note",
           "font_size": 11.5
@@ -1523,7 +1525,7 @@
           "h": 155,
           "title": "Reweight an existing map",
           "body": [
-            "In-memory compressed candidate pools retain explored fits, including rejected fits. Changing scale penalty λ or peak weight η recomputes ranks, labels, symbols and totals without another FFT.",
+            "Compressed candidate pools retain explored fits, including rejected fits. Changing overall/axis penalty λ, c/a penalty μ or peak weight η recomputes ranks, labels, symbols and totals without another FFT.",
             "Cell boundaries and selected detected profiles stay fixed. Reweighting is not a fresh scale/rotation/strength search; rerun the grid when those choices need optimizing again."
           ],
           "kind": "note",
