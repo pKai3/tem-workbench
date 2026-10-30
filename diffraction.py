@@ -108,7 +108,7 @@ def defaults(info):
     return {'center_x': centre['x'], 'center_y': centre['y'],
             'pixel_x_nm_inv': info['pixel_x_nm_inv'], 'pixel_y_nm_inv': info['pixel_y_nm_inv'],
             'exclude_radius_nm_inv': 2.5, 'spot_sigma_px': 2., 'spot_snr': 9.,
-            'refine_center': True, 'max_center_shift_px': 50., 'masks': []}
+            'refine_center': True, 'max_center_shift_px': 50., 'smoothing_workers': 0, 'masks': []}
 
 
 def validate(info, supplied):
@@ -118,7 +118,9 @@ def validate(info, supplied):
     value['refine_center'] = supplied.get('refine_center', value['refine_center'])
     if not isinstance(value['refine_center'], bool):
         raise ValueError('Translation refinement must be on or off.')
-    for key in value.keys()-{'masks', 'refine_center'}:
+    value['smoothing_workers'] = supplied.get('smoothing_workers', 0)
+    smoothing_worker_count(value['smoothing_workers'])
+    for key in value.keys()-{'masks', 'refine_center', 'smoothing_workers'}:
         value[key] = float(supplied.get(key, value[key]))
     if not all(np.isfinite(v) for k, v in value.items() if k != 'masks'):
         raise ValueError('Diffraction settings must be finite.')
@@ -204,35 +206,39 @@ def _deduplicate_spots(spots, minimum):
 
 
 # Native Gaussian filters release the GIL. Bound both threads and queued arrays.
-DETECTOR_WORKERS = min(2, os.cpu_count() or 1)
+def smoothing_worker_count(requested=0):
+    if isinstance(requested, bool) or not isinstance(requested, int) or not 0 <= requested <= 8:
+        raise ValueError('Use Auto (0) or 1–8 diffraction smoothing threads.')
+    return min(requested or 2, os.cpu_count() or 1)
 
 
-def _scale_blurs(raw, valid, widths):
+def _scale_blurs(raw, valid, widths, workers=0):
     from concurrent.futures import ThreadPoolExecutor
     from collections import deque
+    workers = smoothing_worker_count(workers)
     weighted = raw*valid
     mask = valid.astype(np.float32)
     def blur(width):
         return gaussian_filter(weighted, width)/np.maximum(gaussian_filter(mask, width), 1e-6)
-    if DETECTOR_WORKERS <= 1:
+    if workers <= 1:
         yield from map(blur, widths)
         return
-    with ThreadPoolExecutor(max_workers=DETECTOR_WORKERS, thread_name_prefix='tem-spots') as pool:
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='tem-spots') as pool:
         pending = deque()
         widths = iter(widths)
         for width in widths:
             pending.append(pool.submit(blur, width))
-            if len(pending) >= DETECTOR_WORKERS:
+            if len(pending) >= workers:
                 yield pending.popleft().result()
         while pending:
             yield pending.popleft().result()
 
 
-def _spot_candidates(raw, valid, band, scales):
+def _spot_candidates(raw, valid, band, scales, workers=0):
     # Compare blob responses across sizes. A small annulus inside a broad spot
     # mistakes the spot itself for noisy background; each size gets its own
     # background annulus outside that feature. No crystal predictions enter here.
-    blurred = _scale_blurs(raw, valid, [scales[0], *(2*s for s in scales)])
+    blurred = _scale_blurs(raw, valid, [scales[0], *(2*s for s in scales)], workers)
     smooth = next(blurred)
     previous = smooth
     fields = []
@@ -308,7 +314,7 @@ def _prepare_detector(array, settings):
     g = np.hypot(qx, qy)
     valid = visible(np.c_[qx.ravel(), qy.ravel()], settings, array.shape).reshape(raw.shape)
     band = valid & (g > 0) & (g >= settings['exclude_radius_nm_inv']) & (g <= g_max)
-    candidates = _spot_candidates(raw, valid, band, scales)
+    candidates = _spot_candidates(raw, valid, band, scales, settings.get('smoothing_workers', 0))
     deduplicated = _deduplicate_spots(candidates, sigma)
     spots = []
     for spot in deduplicated:

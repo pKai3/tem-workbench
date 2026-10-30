@@ -102,7 +102,7 @@ function restoreBasicControls(){
  const saved=readPreference('tem-basic-settings',{});if(!saved||typeof saved!=='object')return;
  for(const id of Object.keys(BASIC_NUMBERS))if(validControlNumber(id,saved[id]))$(id).value=saved[id];
  for(const id of BASIC_FLAGS)if(typeof saved[id]==='boolean')$(id).checked=saved[id];
- if(['manual','auto'].includes(saved['fft-strength-mode']))$('fft-strength-mode').value=saved['fft-strength-mode'];
+ if(['manual','auto','geometry'].includes(saved['fft-strength-mode']))$('fft-strength-mode').value=saved['fft-strength-mode'];
  if(['titanium','iron','custom'].includes(saved.material))$('material').value=saved.material;
  setPhaseSelection(Array.isArray(saved.enabled_phases)&&saved.enabled_phases.every(phase=>PHASES.includes(phase))?saved.enabled_phases:materialPhases());
  if(Number($('fft-g-min').value)>=Number($('g-max').value))$('fft-g-min').value=3;
@@ -209,7 +209,7 @@ $('favorite-toggle').onclick=()=>{
  if($('image-browser').open)renderImageBrowser();
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){clearFileSearch();$('file').value=id;openFile()}};
-function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value==='auto'),...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,ca_penalty_strength:caPenalty,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:JSON.parse(JSON.stringify(diffractionSettings))}:{})}}
+function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value!=='manual'),fft_auto_objective:$('fft-strength-mode').value==='geometry'?'geometry':'rank',...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?scalePenalty:0,ca_penalty_strength:caPenalty,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:{...JSON.parse(JSON.stringify(diffractionSettings)),smoothing_workers:Number($('diff-workers').value)}}:{})}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
@@ -932,7 +932,9 @@ function invalidateAnalysisSettings(){
  $('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(0);
 }
 function updateStrengthMode(){
- const automatic=$('fft-strength-mode').value==='auto';
+ $('fft-strength-mode').querySelector('option[value=geometry]').disabled=!config?.fft_auto_geometry;
+ if(config&&!config.fft_auto_geometry&&$('fft-strength-mode').value==='geometry')$('fft-strength-mode').value='auto';
+ const automatic=$('fft-strength-mode').value!=='manual';
  $('fft-strength-mode').disabled=!config?.fft_auto_strength;
  $('fft-min-strength').disabled=!config?.fft_detection_controls||automatic;
  $('fft-min-strength').hidden=automatic;
@@ -946,7 +948,7 @@ function renderAutoStrength(data){
  output.hidden=!info||data.image_kind==='diffraction';
  if(!info)return;
  $('fft-auto-strength-value').textContent=info.status==='optimized'?`Selected ${info.selected_strength.toFixed(3)}`:'Unavailable';
- output.textContent=info.status==='optimized'?`Auto strength: ${info.selected_strength.toFixed(3)} · ${info.tested_sets} peak sets compared${info.selection==='passing'?'':' · no passing fit'}`:'Auto strength unavailable: check enabled phases and image sampling.';
+ output.textContent=info.status==='optimized'?`Auto strength: ${info.selected_strength.toFixed(3)} · ${info.tested_sets} peak sets compared${info.objective==='geometry'?' · geometry objective'+(info.selection==='no_geometry'?' · no supported geometry':''):(info.selection==='passing'?'':' · no passing fit')}`:'Auto strength unavailable: check enabled phases and image sampling.';
 }
 function resetFFTControls(){
  let changed=false;
@@ -983,7 +985,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('file-search').value='';$('engine-note').hidden=Boolean(config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('FCC')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES)$(phase.toLowerCase()+'-color').querySelector('option[value=disabled]').disabled=!config.phase_selection;for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('Choose a data folder or download the optional demo images above.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');configureDiffractionWorkers();$('file-search').value='';$('engine-note').hidden=Boolean(config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('FCC')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES)$(phase.toLowerCase()+'-color').querySelector('option[value=disabled]').disabled=!config.phase_selection;for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('Choose a data folder or download the optional demo images above.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 // Reuse the displayed spectrum and overlays; hovering never requests analysis.
@@ -1239,7 +1241,7 @@ function applyRegionSettings(saved){
  $('scenario').value=saved.scale_mode==='fixed'?(saved.scale===1?'1':'custom'):saved.scale_mode;
  $('model-scale').value=saved.scale??1;$('threshold').value=saved.threshold??.35;
  for(const [id,[key,defaultValue]]of Object.entries(FFT_DETECTOR_CONTROLS))$(id).value=saved[key]??defaultValue;
- $('fft-strength-mode').value=saved.fft_auto_strength?'auto':'manual';updateStrengthMode();
+ $('fft-strength-mode').value=saved.fft_auto_strength?(saved.fft_auto_objective==='geometry'?'geometry':'auto'):'manual';updateStrengthMode();
  $('fft-hann').checked=(saved.fft_window??'hann')==='hann';$('fft-mean').checked=saved.remove_mean!==false;
  caPenalty=saved.ca_penalty_strength??.10;$('ca-penalty').value=caPenalty;$('ca-penalty-slider').value=caPenalty;writePreference('tem-ca-penalty',caPenalty);
  scalePenalty=saved.scale_penalty_strength??.1;peakEvidenceWeight=saved.peak_evidence_weight??.1;
@@ -1308,6 +1310,9 @@ function validDiffraction(d){
  return Array.isArray(d.masks)&&d.masks.length<=20&&d.masks.every(r=>['x','y','w','h'].every(k=>Number.isFinite(r[k]))&&r.x>=0&&r.y>=0&&r.w>0&&r.h>0&&r.x+r.w<=meta.width&&r.y+r.h<=meta.height);
 }
 function setupImageKind(){
+ const limits=document.querySelector('.fitting-limits');
+ const limitHost=isDiffraction()?$('diffraction-controls'):document.querySelector('.fft-processing');
+ limitHost.insertBefore(limits,isDiffraction()?$('diffraction-note'):$('fft-auto-strength-status'));
  const direct=isDiffraction();syncSignalToggle();applyInspectorLayout();hideRegionPreview();document.body.classList.toggle('diffraction',direct);$('diffraction-controls').hidden=!direct;
  $('source-title').textContent=direct?'Diffraction detector':'Real space';$('inspector-title').textContent=direct?'Pattern analysis':'Selected region';
  $('source-caption').textContent=direct?'Diffraction space':'Real space';$('spectrum-title').textContent=direct?'Diffraction space':'FFT space';$('brightness-title').textContent=direct?'Brightness':'FFT brightness';
@@ -1366,6 +1371,9 @@ function drawDetector(){
   mark.append(el('title',{},'Starting centre → fitted centre'));group.append(mark);
  }
  group.append(el('ellipse',{cx:d.center_x,cy:d.center_y,rx:d.exclude_radius_nm_inv/d.pixel_x_nm_inv,ry:d.exclude_radius_nm_inv/d.pixel_y_nm_inv,class:'detector-centre','stroke-dasharray':'5 4'}));
+ const outer=Number($('g-max').value);
+ const outerCircle=el('ellipse',{cx:d.center_x,cy:d.center_y,rx:outer/d.pixel_x_nm_inv,ry:outer/d.pixel_y_nm_inv,class:'detector-centre','data-boundary':'outer','stroke-dasharray':'9 5'});
+ outerCircle.append(el('title',{},`Outer fitting limit: ${outer} nm⁻¹`));group.append(outerCircle);
  group.append(el('path',{d:`M${d.center_x-cross},${d.center_y}h${2*cross}M${d.center_x},${d.center_y-cross}v${2*cross}`,class:'detector-centre'}));
  for(const rect of [...d.masks,...(maskDrag?.rect?[maskDrag.rect]:[])])group.append(el('rect',{x:rect.x,y:rect.y,width:rect.w,height:rect.h,class:'detector-mask'}));
 }
@@ -1380,6 +1388,15 @@ function drawDetectorExclusions(qp){
   const x=clamp(left,0,420),y=clamp(top,0,420),width=clamp(right,0,420)-x,height=clamp(bottom,0,420)-y;
   if(width>0&&height>0)overlay.append(el('rect',{x,y,width,height,fill:'#f4b75e','fill-opacity':.12,stroke:'#f4b75e','stroke-width':.6}));
  }
+}
+const savedDiffWorkers=readPreference('tem-diffraction-workers',0);
+$('diff-workers').value=[0,1,2,4,8].includes(savedDiffWorkers)?String(savedDiffWorkers):'0';
+$('diff-workers').onchange=()=>{writePreference('tem-diffraction-workers',Number($('diff-workers').value));if(isDiffraction())schedule(0)};
+function configureDiffractionWorkers(){
+ const select=$('diff-workers');select.disabled=!config.diffraction_workers;
+ select.options[0].textContent=`Auto (${config.diffraction_workers_default||2})`;
+ for(const option of select.options)option.disabled=Number(option.value)>(config.diffraction_workers_max||8);
+ if(select.selectedOptions[0]?.disabled)select.value='0';
 }
 function commitDetector(delay=0){syncDetectorControls();rememberDiffraction();schedule(delay)}
 $('diff-refine-center').onchange=()=>{if(!isDiffraction()||!config.diffraction_translation)return;diffractionSettings.refine_center=$('diff-refine-center').checked;commitDetector()};

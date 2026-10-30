@@ -29,7 +29,7 @@ STA1096 was analysed from a fresh detector cache for every run, including the st
 | 2 | 9.03 / 8.79 s | 18 |
 | 4 | 7.83 s | 18 |
 
-All runs returned identical analysis fingerprints. The default is **two** threads to limit temporary-array memory and leave capacity for interactive/grid work. It improves this example by about 1.37×. The fitting stage remains sequential.
+All runs returned identical analysis fingerprints. The selectable Auto default is **two** threads (the Direct diffraction controls also offer 1 / 2 / 4 / 8) to limit temporary-array memory and leave capacity for interactive/grid work. It improves this example by about 1.37×. The fitting stage remains sequential.
 
 ## Resource use and lifecycle
 

@@ -114,8 +114,10 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 .phase-color-controls label{flex:1 1 90px;min-width:0}
 .phase-color-controls select{width:100%}
 .phase-color-controls .hint{flex-basis:100%;margin:0;font-size:11px;line-height:1.4}
-.calibration-bar .fitting-limits{display:flex;flex:0 1 340px;gap:12px;align-items:end;min-width:0}
-.calibration-bar .fitting-limits .reference-input{flex:1 1 0;min-width:0}
+.fitting-limits{display:flex;flex:0 1 auto;flex-wrap:wrap;gap:12px;align-items:end;min-width:0;width:fit-content;max-width:100%}
+.fitting-limits .reference-input{flex:0 0 auto;min-width:0}
+#diffraction-controls .fitting-limits{margin-top:10px}
+#diffraction-controls .hint{min-width:0;white-space:normal;overflow-wrap:anywhere}
 .fitting-limits .diffraction-fitting-limit{display:none}
 body.diffraction .fitting-limits .diffraction-fitting-limit{display:flex}
 body.diffraction .fitting-limits .fft-fitting-limit{display:none}

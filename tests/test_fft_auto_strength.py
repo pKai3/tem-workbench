@@ -63,6 +63,36 @@ class AutoStrengthChecks(unittest.TestCase):
         self.assertEqual(rescored['spectrum']['peaks'],auto['spectrum']['peaks'])
         self.assertTrue(rescored['settings']['fft_auto_strength'])
 
+    def test_geometry_selects_independent_pair_then_matches_crystals_once(self):
+        def geometry(peaks, *args, **kwargs):
+            n=len(peaks)
+            def grid(subset):
+                return dict(valid=True,chance_density_penalty=0.,matches=[dict(profile_id=p['profile_id'],residual_nm_inv=0.) for p in subset])
+            # The faintest set contains noise. Seven profiles support two grids;
+            # stricter cutoffs retain only the dominant grid.
+            if n>7:return {}
+            return dict(primary_lattice=grid(peaks[:4]),secondary_lattice=grid(peaks[4:]) if n==7 else None)
+        with patch.object(self.engine,'_fit_spectrum',return_value=([],[])) as fit, \
+             patch.object(self.engine,'classify',return_value={'label':'unresolved','flags':[]}), \
+             patch.object(core,'purity',side_effect=geometry):
+            result=self.engine.analyze(self.item,self.roi,dict(fft_auto_strength=True,fft_auto_objective='geometry'),images=False)
+        self.assertEqual(fit.call_count,1)
+        self.assertEqual(len(result['spectrum']['peaks']),7)
+        report=result['spectrum']['auto_peak_strength']
+        self.assertEqual(report['objective'],'geometry')
+        self.assertEqual(report['selection'],'geometry_supported')
+        self.assertTrue(any(t['pattern_count']==2 for t in report['trials']))
+        self.assertNotIn('rank',report['trials'][0])
+        with self.assertRaises(ValueError):self.engine.validate(self.item,self.roi,dict(fft_auto_objective='unknown'))
+
+    def test_geometry_manual_cutoff_reproduces_crystal_result(self):
+        settings=dict(fft_auto_strength=True,fft_auto_objective='geometry')
+        auto=self.engine.analyze(self.item,self.roi,settings,images=False)
+        manual=self.engine.analyze(self.item,self.roi,{**settings,'fft_auto_strength':False,
+            'fft_minimum_enrichment':auto['spectrum']['minimum_peak_enrichment']},images=False)
+        self.assertEqual(auto['models'],manual['models'])
+        self.assertEqual(auto['spectrum']['peaks'],manual['spectrum']['peaks'])
+
     def test_auto_validation_and_disabled_phase_search(self):
         with self.assertRaises(ValueError):
             self.engine.validate(self.item,self.roi,dict(fft_auto_strength='true'))

@@ -36,6 +36,21 @@ class SecondaryGeometry(unittest.TestCase):
         self.assertTrue(result['substantial_second_pattern'])
         self.assertAlmostEqual(result['explained_fraction'], 1.)
 
+    def test_threshold_objective_rewards_independent_grid_not_duplicate(self):
+        coords=np.r_[self.grid,core.rotation(self.grid,.43)]
+        peaks=[dict(profile_id=i+1,qx=float(q[0]),qy=float(q[1]),weight=1.,log_radial_enrichment=4.)
+               for i,q in enumerate(core.canonical(coords))]
+        geometry=core.purity(peaks,.1)
+        pair=core.geometry_strength_score(peaks,geometry,12.,.1)
+        single=core.geometry_strength_score(peaks,{**geometry,'secondary_lattice':None},12.,.1)
+        duplicate=core.geometry_strength_score(peaks,{**geometry,'secondary_lattice':geometry['primary_lattice']},12.,.1)
+        self.assertEqual(pair['pattern_count'],2)
+        self.assertGreater(pair['score'],single['score'])
+        self.assertEqual(duplicate,single)
+        # Adding unmatched noise cannot improve the fixed-pool objective.
+        noisy=core.geometry_strength_score(peaks+[dict(profile_id=99,weight=1.)],geometry,13.,.1)
+        self.assertLess(noisy['score'],pair['score'])
+
     def test_insufficient_primary_stays_unresolved(self):
         result = self.analyze(self.grid[:3])
         self.assertIsNone(result['primary_lattice'])

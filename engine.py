@@ -269,7 +269,10 @@ class Engine:
         auto_strength = settings.get('fft_auto_strength', False)
         if not isinstance(auto_strength, bool):
             raise ValueError('Auto peak strength must be enabled or disabled.')
-        values.update(fft_window=window, remove_mean=remove_mean, fft_auto_strength=auto_strength)
+        objective = settings.get('fft_auto_objective', 'rank')
+        if objective not in ('rank', 'geometry'):
+            raise ValueError('Choose rank or geometry for automatic peak strength.')
+        values.update(fft_window=window, remove_mean=remove_mean, fft_auto_strength=auto_strength, fft_auto_objective=objective)
         if direct:
             values['diffraction'] = diffraction.validate(item['info'], settings.get('diffraction', {}))
             values['g_min'] = values['diffraction']['exclude_radius_nm_inv']
@@ -338,6 +341,8 @@ class Engine:
             pool = s['peaks']
             levels = ([s['profile_threshold']] + sorted({p['log_radial_enrichment'] for p in pool})
                       if auto_strength else [settings['fft_minimum_enrichment']])
+            geometry_auto = auto_strength and settings['fft_auto_objective'] == 'geometry'
+            pool_weight = sum(p['weight'] for p in pool)
             best, attempts, last_count = None, [], None
             for strength in levels:
                 if cancel_event is not None and cancel_event.is_set():
@@ -349,6 +354,15 @@ class Engine:
                     continue
                 last_count = len(peaks)
                 trial = {**s, 'peaks': peaks, 'minimum_peak_enrichment': float(strength)}
+                if geometry_auto:
+                    tolerance = max(.10, core.peak_width(trial))
+                    geometry = core.purity(peaks, tolerance, g_max=settings['g_max'], g_min=settings['g_min'])
+                    evidence = core.geometry_strength_score(peaks, geometry, pool_weight, tolerance)
+                    merit = (evidence['pattern_count'] > 0, evidence['score'], len(peaks))
+                    attempts.append({'strength': float(strength), 'profiles': len(peaks), **evidence})
+                    if best is None or merit > best[0]:
+                        best = (merit, trial, None, None)
+                    continue
                 context = peak_evidence.prepare(trial, crop.shape, sx, sy) if can_index else None
                 trial_models, trial_candidates = self._fit_spectrum(trial, settings, templates, can_index, context)
                 passing = [m for m in trial_models if m['valid']]
@@ -362,12 +376,16 @@ class Engine:
                 if best is None or merit > best[0]:
                     best = (merit, trial, trial_models, trial_candidates)
             _, s, models, candidates = best
+            if geometry_auto:
+                context = peak_evidence.prepare(s, crop.shape, sx, sy)
+                models, candidates = self._fit_spectrum(s, settings, templates, can_index, context)
             if settings['fft_auto_strength']:
                 s['auto_peak_strength'] = {
                     'status': 'optimized' if auto_strength else 'skipped',
                     'selected_strength': s['minimum_peak_enrichment'],
                     'tested_sets': len(attempts) if auto_strength else 0,
-                    'selection': 'passing' if best[0][0] else 'below_threshold' if models else 'no_fit',
+                    'objective': settings['fft_auto_objective'],
+                    'selection': ('geometry_supported' if best[0][0] else 'no_geometry') if geometry_auto else ('passing' if best[0][0] else 'below_threshold' if models else 'no_fit'),
                     'trials': attempts if auto_strength else [],
                 }
         tol = max(.10, core.peak_width(s))

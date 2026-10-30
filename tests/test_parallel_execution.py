@@ -47,11 +47,24 @@ class SpawnChecks(unittest.TestCase):
             self.assertEqual(worker_count(),1)
             self.assertEqual(worker_count(8),2)
 
+    def test_detector_worker_validation_and_cache(self):
+        from test_diffraction import pattern
+        array,info,_=pattern()
+        for value in [-1,9,True,2.5,'2']:
+            with self.assertRaises(ValueError):diffraction.validate(info,{'smoothing_workers':value})
+        with patch('diffraction.os.cpu_count',return_value=1):
+            self.assertEqual(diffraction.smoothing_worker_count(8),1)
+        settings=diffraction.validate(info,{'smoothing_workers':1}); cache={}
+        with patch.object(diffraction,'_prepare_detector',return_value={'spots':[]}) as prepare:
+            a=diffraction._cached_detector(array,settings,cache)
+            b=diffraction._cached_detector(array,{**settings,'smoothing_workers':4},cache)
+            self.assertIs(a,b);self.assertEqual(prepare.call_count,1)
+
     def test_detector_threads_are_numerically_identical(self):
         from test_diffraction import pattern
         array,info,_=pattern(); settings=diffraction.defaults(info)
-        with patch.object(diffraction,'DETECTOR_WORKERS',1):a=diffraction._prepare_detector(array,settings)
-        with patch.object(diffraction,'DETECTOR_WORKERS',2):b=diffraction._prepare_detector(array,settings)
+        a=diffraction._prepare_detector(array,{**settings,'smoothing_workers':1})
+        b=diffraction._prepare_detector(array,{**settings,'smoothing_workers':2})
         np.testing.assert_array_equal(a.pop('log'),b.pop('log'))
         self.assertEqual(a,b)
 

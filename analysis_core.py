@@ -181,3 +181,36 @@ def purity(peaks,tol,g_max=10.,g_min=3.):
  out.update({'secondary_lattice':second,'secondary_unique_fraction':unique,'explained_fraction':min(1,primary['coverage']+unique),'dominance':dominance,'strong_profile_weight_fraction':strongcoverage,'substantial_second_pattern':bool(second and second['valid'] and dominance<.80),'unexplained_residual_fraction':max(0,1-primary['coverage']-unique)})
  out['status']='multiple_periodic_patterns' if out['substantial_second_pattern'] else 'predominantly_one_periodic_pattern'
  return out
+
+
+def geometry_strength_score(peaks, geometry, pool_weight, tol):
+ """Fixed-pool positional evidence, with chance and per-grid complexity costs.
+
+ Shared profiles contribute at most once. Only an independently screened
+ secondary grid may be added, and only when it improves the union score.
+ This is an exploratory selection objective, not a phase probability.
+ """
+ primary=geometry.get('primary_lattice')
+ if not primary or not primary['valid']:
+  return {'score':0.,'pattern_count':0,'explained_profiles':0}
+ total=sum(p['weight'] for p in peaks)
+ weights={p['profile_id']:p['weight'] for p in peaks}
+ denominator=max(pool_weight,1e-12)
+ def evaluate(grids):
+  quality={}
+  for grid in grids:
+   for match in grid['matches']:
+    ident=match['profile_id']
+    q=float(np.exp(-.5*(match['residual_nm_inv']/(tol/2))**2))
+    quality[ident]=max(quality.get(ident,0.),q)
+  evidence=sum(weights[i]*q for i,q in quality.items())/denominator
+  chance=sum(g['chance_density_penalty'] for g in grids)*total/denominator
+  return {'score':evidence-chance-.03*len(grids),'pattern_count':len(grids),
+          'explained_profiles':len(quality),'positional_evidence':evidence,
+          'chance_cost':chance,'grid_cost':.03*len(grids)}
+ best=evaluate([primary])
+ secondary=geometry.get('secondary_lattice')
+ if secondary and secondary['valid']:
+  pair=evaluate([primary,secondary])
+  if pair['score']>best['score']:best=pair
+ return best
