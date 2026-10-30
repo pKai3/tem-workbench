@@ -53,6 +53,7 @@ try {
         $temShortcut.TargetPath = Join-Path $temRoot '.venv\Scripts\pythonw.exe'
         $temShortcut.Arguments = '"' + (Join-Path $temRoot 'tools\windows_app.py') + '"'
         $temShortcut.WorkingDirectory = $temRoot
+        $temShortcut.IconLocation = (Join-Path $temRoot 'windows\TEMWorkbench.ico') + ',0'
         $temShortcut.Description = 'Start TEM Workbench in your browser'
         $temShortcut.Save()
         Write-Host 'Desktop shortcut created.'

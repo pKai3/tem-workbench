@@ -9,7 +9,7 @@ import webbrowser
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG = ROOT / 'tem-workbench.log'
-URL_LINE = re.compile(r'^TEM Workbench: (http://127\.0\.0\.1:\d+/)$', re.MULTILINE)
+URL_LINE = re.compile(r'^TEM Workbench: (http://127\.0\.0\.1:\d+/)\r?$', re.MULTILINE)
 
 
 def log_tail():
@@ -106,7 +106,12 @@ class ServerProcess:
 def main():
     import tkinter as tk
     from tkinter import ttk
+    if sys.platform == 'win32':
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('TEMWorkbench.Desktop')
     window = tk.Tk()
+    if sys.platform == 'win32':
+        window.iconbitmap(default=str(ROOT / 'windows/TEMWorkbench.ico'))
     window.title('TEM Workbench')
     window.geometry('510x225')
     window.minsize(480, 225)

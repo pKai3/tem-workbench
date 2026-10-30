@@ -47,6 +47,15 @@ class WindowsAppChecks(unittest.TestCase):
             self.assertEqual(spawn.call_count, 3)
             self.assertEqual(app.LOG.read_text(), '')
 
+    def test_windows_crlf_ready_line_enables_running_state(self):
+        process = Mock(); process.poll.return_value = None
+        self.server.process = process
+        self.server.state = 'Starting…'
+        app.LOG.write_bytes(b'Loading dependencies...\r\nTEM Workbench: http://127.0.0.1:8769/\r\nData: C:\\TEM\r\n')
+        self.server.poll()
+        self.assertEqual(self.server.state, 'Running')
+        self.assertEqual(self.server.url, 'http://127.0.0.1:8769/')
+
     def test_failed_dependencies_never_launch_server(self):
         check = Mock(); check.poll.return_value = 1
         with patch.object(app.subprocess, 'Popen', return_value=check) as spawn:
