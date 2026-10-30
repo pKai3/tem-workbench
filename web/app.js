@@ -100,7 +100,7 @@ function validControlNumber(id,value){
 }
 function restoreBasicControls(){
  const saved=readPreference('tem-basic-settings',{});if(!saved||typeof saved!=='object')return;
- for(const id of Object.keys(BASIC_NUMBERS))if(validControlNumber(id,saved[id]))$(id).value=saved[id];
+ for(const id of Object.keys(BASIC_NUMBERS))if(validControlNumber(id,saved[id]))$(id).value=id==='batch-cutoff'?saved[id]/1000:saved[id];
  for(const id of BASIC_FLAGS)if(typeof saved[id]==='boolean')$(id).checked=saved[id];
  if(['manual','auto','geometry'].includes(saved['fft-strength-mode']))$('fft-strength-mode').value=saved['fft-strength-mode'];
  if(['titanium','iron','custom'].includes(saved.material))$('material').value=saved.material;
@@ -112,7 +112,7 @@ function restoreBasicControls(){
 function rememberBasicControls(){
  const previous=readPreference('tem-basic-settings',{}),saved={};
  for(const id of Object.keys(BASIC_NUMBERS)){
-  const value=$(id).value===''?NaN:Number($(id).value);
+  const value=$(id).value===''?NaN:Number($(id).value)*(id==='batch-cutoff'?1000:1);
   if(validControlNumber(id,value))saved[id]=value;
   else if(previous&&validControlNumber(id,previous[id]))saved[id]=previous[id];
  }
@@ -2056,16 +2056,26 @@ function showBatchHover(row,x,y){
   host.hidden=false;positionBatchHover(x,y);
  },180);
 }
+function matchingBatchFiles(){
+ const terms=$('batch-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+ return batchFiles.filter(row=>terms.every(term=>`${row.sample} ${row.name}`.toLocaleLowerCase().includes(term)));
+}
 function syncBatchSelection(){
  const eligible=batchFiles.filter(row=>row.eligible),selected=eligible.filter(row=>batchSelected.has(row.id)).length;
  $('batch-selection-count').textContent=batchFiles.length?`${selected} / ${eligible.length} eligible images selected${batchReviewReady?'':' · Review again after changing the cutoff'}`:'';
  $('batch-start').disabled=batchRunning||!batchReviewReady||selected===0;
+ const shown=matchingBatchFiles().filter(row=>row.eligible),shownSelected=shown.filter(row=>batchSelected.has(row.id)).length;
+ if($('batch-search').value.trim()&&batchFiles.length)$('batch-selection-count').textContent+=` · ${shownSelected} / ${shown.length} eligible matches selected · Selection buttons apply to matches`;
+ $('batch-select-all').disabled=!shown.length||shownSelected===shown.length;
+ $('batch-deselect-all').disabled=shownSelected===0;
 }
 function renderBatchFiles(){
  hideBatchHover();const host=$('batch-files');host.replaceChildren();
  host.classList.toggle('batch-preview-grid',batchListView==='previews');
  for(const view of ['names','previews'])$('batch-view-'+view).setAttribute('aria-pressed',String(batchListView===view));
- for(const row of batchFiles){
+ const shown=matchingBatchFiles();
+ if(batchFiles.length&&!shown.length){const empty=elHTML('p','No matching images.');empty.className='hint';host.append(empty)}
+ for(const row of shown){
   const card=document.createElement('label');card.className=batchListView==='previews'?'batch-preview-card':'batch-name-row';
   card.classList.toggle('unavailable',!row.eligible);card.classList.toggle('selected',batchSelected.has(row.id));
   const check=document.createElement('input');check.type='checkbox';check.checked=batchSelected.has(row.id);check.disabled=!row.eligible;check.dataset.fileId=row.id;
@@ -2094,11 +2104,14 @@ function renderBatchFiles(){
  syncBatchSelection();
 }
 for(const view of ['names','previews'])$('batch-view-'+view).onclick=()=>{batchListView=view;writePreference('tem-batch-list-view',view);renderBatchFiles()};
+$('batch-search').oninput=renderBatchFiles;
+$('batch-select-all').onclick=()=>{for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);renderBatchFiles()};
+$('batch-deselect-all').onclick=()=>{for(const row of matchingBatchFiles())batchSelected.delete(row.id);renderBatchFiles()};
 $('batch-files').addEventListener('scroll',hideBatchHover);
 $('batch-panel').addEventListener('toggle',()=>{if(!$('batch-panel').open)hideBatchHover()});
 window.addEventListener('scroll',hideBatchHover,true);window.addEventListener('resize',hideBatchHover);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')hideBatchHover()});
-function batchOptions(){return {cutoff:Number($('batch-cutoff').value),inclusive:true}}
+function batchOptions(){return {cutoff:Number($('batch-cutoff').value)*1000,inclusive:true}}
 $('batch-preview').onclick=async()=>{
  try{
   if(!config.batch_grids)throw new Error('Restart TEM Workbench to enable batch grids.');
