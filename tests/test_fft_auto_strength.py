@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 import analysis_core as core
+import demo_data
 from engine import Engine
 
 
@@ -44,6 +45,7 @@ class AutoStrengthChecks(unittest.TestCase):
         self.assertFalse(result['models'][0]['valid'])
         self.assertEqual(len(result['spectrum']['peaks']),max(t['profiles'] for t in result['spectrum']['auto_peak_strength']['trials']))
 
+    @unittest.skipUnless(demo_data.ID in demo_data.DEMOS, 'Install the optional demo pack for this integration test')
     def test_real_fits_reproduce_selected_manual_cutoff_and_cached_reweight(self):
         item=self.engine.load('demo/st1221')
         roi=dict(x=2662,y=3891,w=205,h=205)

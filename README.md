@@ -19,7 +19,7 @@ The interface pairs real-space images with reciprocal-space previews and support
 - Choose data and output folders through the interface, with local directory links.
 - Save named, tagged regions linked to their source images and analysis settings.
 - Export region and grid results as JSON with source pixel hashes and engine provenance.
-- Explore bundled, full-resolution ST1221 imaging and ST1144 diffraction examples without external data.
+- Download optional full-resolution TEM and diffraction examples separately.
 
 ## Quick start
 
@@ -38,7 +38,7 @@ Substitute another installed compatible Python version if needed. On Windows, cr
 
 The server normally listens at **http://127.0.0.1:8767**. Use `--port 8768` to select another port. Stop a terminal-launched server with Ctrl+C. This application is intended for local use, not public web hosting.
 
-Without `.tem-paths.json`, the application starts with the bundled demo and defaults to `./data` and `./output`. `--demo` hides external images until folders are applied, even when a configuration file exists.
+Without `.tem-paths.json`, the application starts with any installed demos and defaults to `./data` and `./output`. `--demo` hides external images until folders are applied, even when a configuration file exists.
 
 ### macOS launcher
 
@@ -62,7 +62,7 @@ The app maintains `./data` and `./output` directory links to those locations (sy
 
 The catalog finds `.dm4` files recursively beneath the selected data folder, including files at its root. `STA` and `ST` folders retain their sample grouping; other folders also work. The selected output directory is skipped during scanning. Output may be outside the data directory.
 
-**Generate PNG previews** under Folders creates missing same-name sidecars (`image.dm4` → `image.png`) throughout the linked collection. Previews are greyscale, contrast-adjusted, and up to 1400 pixels along the longest side; direct diffraction uses log intensity. This does not run a fit or estimate a beam centre. Existing PNGs are skipped, source files are unchanged, and the progress display reports saved, skipped and failed files. Cancellation stops after the current file. Bundled demos already include PNG previews and are excluded from sidecar generation.
+**Generate PNG previews** under Folders creates missing same-name sidecars (`image.dm4` → `image.png`) throughout the linked collection. Previews are greyscale, contrast-adjusted, and up to 1400 pixels along the longest side; direct diffraction uses log intensity. This does not run a fit or estimate a beam centre. Existing PNGs are skipped, source files are unchanged, and the progress display reports saved, skipped and failed files. Cancellation stops after the current file. Downloaded demo packs include PNG previews and are excluded from sidecar generation.
 
 **Visual image browser** opens a searchable thumbnail gallery, ordered by filename or acquisition number. It uses existing sidecar PNGs; files without a preview remain selectable. Choose a thumbnail to load that image for analysis. The gallery can also start generation of missing previews. A ★ marks favourites in both the gallery and the image lists.
 
@@ -72,7 +72,7 @@ External DM4 loading uses the [openNCEM DM reader](https://openncem.readthedocs.
 python -m pip install ncempy
 ```
 
-An installed reader is detected automatically. A specific reader module can instead be set through `dm_reader` in `.tem-paths.json`. The bundled demo does not require ncempy. Source microscope files are read only.
+An installed reader is detected automatically. A specific reader module can instead be set through `dm_reader` in `.tem-paths.json`. Downloaded demos use the same DM4 reader as local images. Source microscope files are read only.
 
 For manual configuration, copy [tem-paths.example.json](tem-paths.example.json) to `.tem-paths.json`:
 
@@ -89,17 +89,20 @@ Expand **Saved regions** below the image controls. Give a box a name, optional c
 
 Definitions live in the ignored `tem_workbench.project.json` beside the app. Each entry records the relative image path, pixel checksum, dimensions, calibration, coordinates, settings and annotations. Reopening checks the image identity and calibration before applying coordinates. The file is replaced atomically and remains available after restarting; stale concurrent edits are rejected until refreshed. There is no automatic backup history.
 
-**Export result** and **Export grid results** write numerical JSON files to `./output`, independently of the region definitions. Browser preferences, project definitions, folder settings and numerical exports serve separate purposes. Only app source and the bundled demos belong in Git.
+**Export result** and **Export grid results** write numerical JSON files to `./output`, independently of the region definitions. Browser preferences, project definitions, folder settings and numerical exports serve separate purposes. Only app source belongs in Git; downloaded demo pixels and previews are ignored.
 
 ### Activity log
 
 The launcher’s **View log** shows image opens, region previews (limited to one entry per second), grid progress and completion, rescoring, saved regions, exports, folder changes and errors. A terminal-launched server writes the same activity to its terminal. Routine browser asset requests are omitted.
 
-### Bundled demos
+### Optional demo images
 
-The **Demo** image group contains ST1221 for real-space FFT inspection and ST1144 for direct diffraction. Both Grade 9 titanium examples contain their original **4096 × 4096 float32 pixels** and stored calibration. The archives are losslessly compressed; loading verifies the reconstructed pixel checksums. They are inspection examples, not labelled phase-identification standards. See [demo/README.md](demo/README.md) for format and provenance details.
+Images are distributed separately so GitHub ZIP downloads stay small. In **Optional demo images**, paste an HTTPS demo-pack link and click **Download demo images**. Dropbox share links work directly; Dropbox shared folders are supported too; other hosts must return a ZIP file. Downloading starts only when requested, shows progress, and can be cancelled. Installed demos appear in the **Demo** group alongside local images and remain available after restarting.
 
-Exports use the configured output directory, defaulting to `./output` beside the app. Both demos are always available alongside configured external images and work without a DM4 reader.
+Packs contain unchanged original DM4 files, including their microscope metadata, plus PNG previews. The downloader checks file sizes and SHA-256 checksums before installing under `demo/packs/` (ignored by Git). These are inspection examples, not labelled phase-identification standards. The desktop installer includes the required DM4 reader (`ncempy`). See [demo/README.md](demo/README.md) for pack creation and hosting.
+
+Exports use the configured output directory, defaulting to `./output` beside the app. No demo download is needed to use your own data. For a small Git clone, use `git clone --depth 1`; older repository history still contains the former bundled images.
+
 
 ## Workflow
 
@@ -278,7 +281,7 @@ Supported input is finite, two-dimensional DM4 data with length or reciprocal-le
 | `engine.py` | Image loading, region analysis, previews and fit caches. |
 | `server.py` | Local HTTP endpoints, grid jobs and JSON exports. |
 | `web/` | Buildless browser interface. |
-| `demo_data.py`, `demo/` | Bundled example and lossless decoder. |
+| `demo_data.py`, `demo/` | Optional demo catalog and legacy decoder. |
 | `engine_provenance.json` | Numerical provenance and recorded limitations. |
 
 Run the focused numerical checks with:

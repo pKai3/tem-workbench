@@ -101,7 +101,7 @@ class Engine:
                 try:
                     self.reader = importlib.import_module('ncempy.io.dm')
                 except ImportError as exc:
-                    raise ValueError('Install ncempy in the app Python environment to open DM4 files, or configure dm_reader in .tem-paths.json. The bundled demo works without it.') from exc
+                    raise ValueError('Install ncempy in the app Python environment to open DM4 files, or configure dm_reader in .tem-paths.json. The optional demo pack uses original DM4 files and needs the same reader.') from exc
         with self.reader.fileDM(path, on_memory=False) as f:
             meta = f.getMetadata(0)
             array = np.asarray(f.getDataset(0)['data'])
@@ -124,12 +124,12 @@ class Engine:
             return self.loaded[file_id]
         is_demo = file_id in demo_data.DEMOS
         if is_demo:
-            array, meta = demo_data.load(file_id)
+            array, meta = demo_data.load(file_id, reader=self.read_dm4)
             name = demo_data.DEMOS[file_id]['name']
         else:
             path = self.files.get(file_id)
             if not path or not path.resolve().is_relative_to(self.data_root):
-                raise ValueError('Choose the bundled demo or a DM4 from the configured TEM folder.')
+                raise ValueError('Choose an installed demo or a DM4 from the configured TEM folder.')
             array, meta = self.read_dm4(path)
             name = path.stem
         if array.ndim != 2 or min(array.shape) < 32 or not np.isfinite(array).all():

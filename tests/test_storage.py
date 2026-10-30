@@ -72,6 +72,7 @@ class StorageChecks(unittest.TestCase):
             self.assertEqual(image.read_bytes(),b'original data')
             self.assertEqual(export.read_text(),'existing export')
 
+    @unittest.skipUnless(demo_data.ID in demo_data.DEMOS, 'Install the optional demo pack for this integration test')
     def test_reopen_checks_image_identity_and_calibration(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory).resolve()

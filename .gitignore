@@ -18,3 +18,7 @@ outputs/
 /tem_workbench.project.json
 /.*-link-*
 /.*.tmp
+
+/demo/packs/
+/demo/*.npz
+/demo/*.png

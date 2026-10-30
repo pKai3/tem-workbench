@@ -165,3 +165,5 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 
 .signal-toggle.inspector-layout{margin:0}
 .signal-toggle.inspector-layout button{min-height:28px;padding:5px 8px;font-size:11px}
+
+#demo-pack-url{width:100%;min-width:0}#demo-pack-panel{margin-bottom:14px}
