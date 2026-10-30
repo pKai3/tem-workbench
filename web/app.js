@@ -66,6 +66,7 @@ const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',fc
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',fcc_compatible:'#ff8ac3',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
 let mapExportBusy=false;
 let detectorRaw=null,showDetectorSignal=false;
+let demoPromptShown=false;
 let config, meta, roi={x:0,y:0,w:684,h:684}, fileId, result=null, fftRaw=null, grid=null, jobId=null;
 let diffractionSettings=null, maskDrag=null;
 function isDiffraction(){return meta?.image_kind==='diffraction'}
@@ -1051,9 +1052,10 @@ $('fft-zoom').addEventListener('close',()=>{if($('fft-zoom').open)return;hideSpe
 
 function setupFolderControls(){
  $('download-demo-pack').disabled=!config.demo_download;
- $('demo-pack-url').value=readPreference('tem-demo-pack-url','');
+ const savedDemoLink=readPreference('tem-demo-pack-url','');
+ $('demo-pack-url').value=typeof savedDemoLink==='string'&&savedDemoLink.trim()?savedDemoLink:$('demo-pack-url').defaultValue;
  if(config.demo_download){renderDemoDownload(config.demo_job);if(config.demo_job?.state==='running')pollDemoDownload()}
- if(!config.files.length)$('demo-pack-panel').open=true;
+ if(!config.files.length){$('folders-panel').open=true;offerDemoDownload()}
  for(const id of ['browse-data','browse-output','apply-folders','refresh-files'])$(id).disabled=!config.folder_picker;
  $('folder-data').value=config.data_root;$('folder-output').value=config.output_root;
  if(!config.folder_picker)$('folders-note').textContent='Restart TEM Workbench to enable folder selection.';
@@ -1809,3 +1811,16 @@ $('download-demo-pack').onclick=async()=>{
  catch(e){$('demo-pack-status').textContent=e.message;$('download-demo-pack').disabled=false}
 };
 $('cancel-demo-pack').onclick=async()=>{try{await api('demo-pack/cancel',{})}catch(e){$('demo-pack-status').textContent=e.message}};
+
+function offerDemoDownload(){
+ if(demoPromptShown||!config?.demo_download||config.files.length||config.demo_job?.state==='running')return;
+ demoPromptShown=true;
+ $('demo-download-prompt').showModal();
+}
+$('demo-prompt-later').onclick=()=>$('demo-download-prompt').close();
+$('demo-prompt-folder').onclick=()=>{
+ $('demo-download-prompt').close();$('folders-panel').open=true;chooseFolder('folder-data');
+};
+$('demo-prompt-download').onclick=()=>{
+ $('demo-download-prompt').close();$('folders-panel').open=true;$('download-demo-pack').click();
+};

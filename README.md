@@ -62,7 +62,7 @@ The app maintains `./data` and `./output` directory links to those locations (sy
 
 The catalog finds `.dm4` files recursively beneath the selected data folder, including files at its root. `STA` and `ST` folders retain their sample grouping; other folders also work. The selected output directory is skipped during scanning. Output may be outside the data directory.
 
-**Generate PNG previews** under Folders creates missing same-name sidecars (`image.dm4` → `image.png`) throughout the linked collection. Previews are greyscale, contrast-adjusted, and up to 1400 pixels along the longest side; direct diffraction uses log intensity. This does not run a fit or estimate a beam centre. Existing PNGs are skipped, source files are unchanged, and the progress display reports saved, skipped and failed files. Cancellation stops after the current file. Downloaded demo packs include PNG previews and are excluded from sidecar generation.
+**Generate PNG previews** under Data Sources and Outputs creates missing same-name sidecars (`image.dm4` → `image.png`) throughout the linked collection. Previews are greyscale, contrast-adjusted, and up to 1400 pixels along the longest side; direct diffraction uses log intensity. This does not run a fit or estimate a beam centre. Existing PNGs are skipped, source files are unchanged, and the progress display reports saved, skipped and failed files. Cancellation stops after the current file. Downloaded demo packs include PNG previews and are excluded from sidecar generation.
 
 **Visual image browser** opens a searchable thumbnail gallery, ordered by filename or acquisition number. It uses existing sidecar PNGs; files without a preview remain selectable. Choose a thumbnail to load that image for analysis. The gallery can also start generation of missing previews. A ★ marks favourites in both the gallery and the image lists.
 
@@ -97,7 +97,7 @@ The launcher’s **View log** shows image opens, region previews (limited to one
 
 ### Optional demo images
 
-Images are distributed separately so GitHub ZIP downloads stay small. In **Optional demo images**, paste an HTTPS demo-pack link and click **Download demo images**. Dropbox share links work directly; Dropbox shared folders are supported too; other hosts must return a ZIP file. Downloading starts only when requested, shows progress, and can be cancelled. Installed demos appear in the **Demo** group alongside local images and remain available after restarting.
+Images are distributed separately so GitHub ZIP downloads stay small. When no images are available, the app offers to download the three demo images or choose a data folder. The Dropbox demo link is prefilled under **Data Sources and Outputs**; it can be replaced with another HTTPS pack link. Click **Download demo images** to start. Dropbox share links work directly; Dropbox shared folders are supported too; other hosts must return a ZIP file. Downloading starts only when requested, shows progress, and can be cancelled. Installed demos appear in the **Demo** group alongside local images and remain available after restarting.
 
 Packs contain unchanged original DM4 files, including their microscope metadata, plus PNG previews. The downloader checks file sizes and SHA-256 checksums before installing under `demo/packs/` (ignored by Git). These are inspection examples, not labelled phase-identification standards. The desktop installer includes the required DM4 reader (`ncempy`). See [demo/README.md](demo/README.md) for pack creation and hosting.
 
