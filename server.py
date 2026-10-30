@@ -522,6 +522,8 @@ def make_handler(app):
                     self.send(app.project.read())
                 elif url.path == '/api/demo-pack':
                     self.send(app.demo_download.status())
+                elif url.path == '/api/batch-image':
+                    self.send(app.batch.preview(query['id'][0]), 'image/png')
                 elif url.path == '/api/previews':
                     self.send(app.preview_status())
                 elif url.path == '/api/acquisition-map':
@@ -618,15 +620,20 @@ def make_handler(app):
                             LOG.info('Region %s at %s,%s (%s px): %s; %.0f ms', item['info']['name'], result['roi']['x'], result['roi']['y'], result['roi']['w'], result['classification']['label'], result['elapsed_ms'])
                     self.send(result)
                 elif self.path == '/api/diffraction/snap':
-                    with app.lock:
-                        item=app.engine.load(body['file_id'])
-                        if item['info']['image_kind'] != 'diffraction':
-                            raise ValueError('Peak editing currently applies to diffraction only.')
-                        d=diffraction.validate(item['info'], body.get('diffraction', {}))
-                        gmax=float(body.get('g_max',10))
-                        if not 4<=gmax<=30:raise ValueError('Invalid fitting limit.')
-                        d['g_max']=gmax
-                        self.send(diffraction.snap_peak(item['array'],d,float(body['x']),float(body['y']),float(body.get('radius_px',12))))
+                    # Loaded detector arrays are immutable. Retain a local reference so a
+                    # small snap search need not wait for the long analysis lock. A cache
+                    # miss still uses the lock; switching sources cannot invalidate item.
+                    item = app.engine.loaded.get(body['file_id'])
+                    if item is None:
+                        with app.lock:
+                            item = app.engine.load(body['file_id'])
+                    if item['info']['image_kind'] != 'diffraction':
+                        raise ValueError('Peak editing currently applies to diffraction only.')
+                    d=diffraction.validate(item['info'], body.get('diffraction', {}))
+                    gmax=float(body.get('g_max',10))
+                    if not 4<=gmax<=30:raise ValueError('Invalid fitting limit.')
+                    d['g_max']=gmax
+                    self.send(diffraction.snap_peak(item['array'],d,float(body['x']),float(body['y']),float(body.get('radius_px',50))))
                 elif self.path == '/api/batch/preview':
                     cutoff=float(body.get('cutoff',400000))
                     if not 0<=cutoff<=100000000:raise ValueError('Invalid magnification cutoff.')

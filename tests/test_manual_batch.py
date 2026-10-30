@@ -35,6 +35,25 @@ class ManualPeaks(unittest.TestCase):
         self.assertEqual(duplicate['observed_spot_count'],baseline['observed_spot_count'])
         refined,_=diffraction.spectrum(array,{**d,'refine_center':True,'peak_edits':[dict(action='add',x=x,y=y,radius_px=4)]},cache)
         self.assertEqual(refined['observed_spot_count'],baseline['observed_spot_count'])
+    def test_snap_search_metadata_and_larger_radius(self):
+        array, info, _ = pattern()
+        edit = dict(action='add', x=200, y=210, radius_px=50,
+                    snap_x=195, snap_y=205, snap_radius_px=80)
+        d = diffraction.validate(info, {'peak_edits': [edit]})
+        self.assertEqual(d['peak_edits'][0], edit)
+        self.assertEqual(diffraction.validate(info, d), d)
+        for key, value in [('snap_radius_px', 201), ('snap_x', -1), ('snap_y', float('nan'))]:
+            with self.assertRaises(ValueError):
+                diffraction.validate(info, {'peak_edits': [{**edit, key: value}]})
+        # A wider search can reach a real spot missed by the old 12 px default.
+        d = diffraction.validate(info, {'refine_center': False})
+        spectrum, _ = diffraction.spectrum(array, d)
+        q = spectrum['peaks'][0]['observed_spots'][0]
+        x = d['center_x'] + q[0] / d['pixel_x_nm_inv']
+        y = d['center_y'] - q[1] / d['pixel_y_nm_inv']
+        snap = diffraction.snap_peak(array, {**d, 'g_max': 10}, x + 25, y, 50)
+        self.assertLess(np.hypot(snap['x'] - x, snap['y'] - y), 2)
+
     def test_bounds_masks_persistence(self):
         array,info,_=pattern()
         for edits in [[dict(action='add',x=-1,y=20,radius_px=4)], [dict(action='virtual',x=10,y=10,radius_px=4)], [dict(action='add',x=10,y=10,radius_px=float('nan'))]]:
@@ -93,6 +112,10 @@ class BatchSummaries(unittest.TestCase):
             with patch('batch_grids.Engine',LocalEngine),patch('server.RegionPool',Pool):
                 app.batch.start(dict(file_ids=['first','second','third'],count=2,minimum_nm=1,adaptive=False,workers=1))
                 self.assertTrue(reached.wait(10))
+                live=app.batch.status()['live_grid']
+                self.assertEqual(live['source']['id'],'second')
+                self.assertEqual(live['state'],'running')
+                self.assertIn('regions',live)
                 with self.assertRaisesRegex(ValueError,'batch'):app.grid(image(),{},2,False,1)
                 app.batch.cancel_run();release.set();app.batch.thread.join(15)
             status=app.batch.status();self.assertEqual(status['state'],'cancelled')
@@ -122,6 +145,11 @@ class BatchSummaries(unittest.TestCase):
             folder=Path(status['output_directory']);self.assertEqual(len(list(folder.glob('*_grid.json'))),2)
             self.assertEqual(len(list(folder.glob('*_grid.png'))),2)
             self.assertTrue((folder/'zones.csv').is_file());self.assertEqual(len(status['samples']),2)
+            live=status['live_grid'];self.assertEqual(live['source']['id'],'b')
+            self.assertEqual(live['state'],'complete');self.assertEqual(len(live['regions']),4)
+            with Image.open(BytesIO(app.batch.preview('b'))) as preview:
+                self.assertLessEqual(max(preview.size),480)
+            with self.assertRaises(ValueError):app.batch.preview('a')
             app.close()
 
 if __name__=='__main__':unittest.main()

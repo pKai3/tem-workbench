@@ -257,11 +257,11 @@ function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
 function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi={x:0,y:0,w:meta.width,h:meta.height};$('region-size').textContent=`${meta.width} × ${meta.height} px · full detector`;drawDetector();return;}const min=32,max=Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=preserveHeight?roi.h:roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`;rememberRegionSize()}
 // Invalidate the old result immediately; never attach it to a newly moved region.
 function schedule(delay=120){generation++;pending=true;result=null;updateStrengthMode();hideRegionPreview();beginSpectrumLoading();syncSpectrumExportControls();if(isDiffraction()){drawDetector();renderTranslation()}$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
-async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true;const version=generation,body=requestBody();try{const data=await api('analyze',body);if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}}catch(e){if(version===generation){result=null;message(e.message,true);$('phase-label').textContent='Analysis unavailable'}}finally{busy=false;if(version===generation&&!pending)finishSpectrumLoading();syncSpectrumExportControls();if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20)}}
+async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true;const version=generation,body=requestBody();try{const data=await api('analyze',body);if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}}catch(e){if(version===generation){result=null;message(e.message,true);$('phase-label').textContent='Analysis unavailable'}}finally{busy=false;syncPeakEditControls();if(version===generation&&!pending)finishSpectrumLoading();syncSpectrumExportControls();if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20)}}
 async function openFile(){
  const id=$('file').value;if(!id)return;updateFileNavigation();
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
- const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;detectorRaw=null;opened=false;drag=null;maskDrag=null;
+ const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;detectorRaw=null;opened=false;drag=null;maskDrag=null;displayedDiffraction=null;snapPointer=null;radiusDrag=null;peakUndo=[];document.body.classList.remove('editing-peaks');
  finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
  message('Opening source image…');
  try{
@@ -436,7 +436,7 @@ function renderModels(data){
  }
  $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank = position − scale cost + weak-peak bonus − missing-prediction cost. S+W separates strong profiles from weak maxima; peak coverage is the weighted share of original detected profiles matched by the candidate. Prediction-site evidence below shows the separate adjustments. Model dimensions assume the image calibration used; these scores are not phase probabilities.';
 }
-async function renderResult(data,version,body){renderAutoStrength(data);if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const [raw,detector]=await Promise.all([decodeSpectrumImage(data.images),data.images.detector_signal16?decodeSpectrumImage({fft_log16:data.images.detector_signal16,fft_log_limits:data.images.detector_signal_limits}).then(raw=>({...raw,detector:true})):null]);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;fftRaw=raw;detectorRaw=detector;syncSignalToggle();if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
+async function renderResult(data,version,body){renderAutoStrength(data);if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}$('peaks').replaceChildren();for(const p of data.spectrum.peaks){const tr=document.createElement('tr');for(const v of [p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('peaks').append(tr)}$('peak-count').textContent=`(${data.spectrum.peaks.length})`;renderFitChoices(data);const [raw,detector]=await Promise.all([decodeSpectrumImage(data.images),data.images.detector_signal16?decodeSpectrumImage({fft_log16:data.images.detector_signal16,fft_log_limits:data.images.detector_signal_limits}).then(raw=>({...raw,detector:true})):null]);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;if(data.image_kind==='diffraction')displayedDiffraction=data;fftRaw=raw;detectorRaw=detector;syncSignalToggle();if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
 const MARKER_SHAPES=['circle','diamond','square','triangle','crosshair','open-crosshair','off'];
 // Fraction of one animation cycle; the same value drives live CSS and GIF frames.
 function markerMotionOffset(kind,phase){
@@ -572,7 +572,7 @@ for(const f of fits){
 }
  drawReflectionVectors(qp);
  if(result.image_kind==='diffraction')drawDetectorExclusions(qp);
- syncFFTZoom();
+ syncFFTZoom();drawSnapOverlays();
 }
 function renderFitChoices(data){
  chosenFits=new Set();$('fit-list').replaceChildren();
@@ -647,7 +647,7 @@ for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'ci
 }
 $('marker-motion').value=['off','pulse','bounce','wobble','rotate'].includes(savedMarkerStyles?.motion)?savedMarkerStyles.motion:savedMarkerStyles?.pulse===true?'bounce':'off';applyMarkerAnimation();
 $('marker-motion').onchange=()=>{rememberMarkerStyles();applyMarkerAnimation()};
-$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
+$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT();if(isDiffraction())drawDetector()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
 const oldPalette=readPreference('tem-palette',null),savedPalette=({ice:'viridis',violet:'plasma',green:'viridis'})[oldPalette]||oldPalette;if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;syncIntensityKey();
 function updateGridSizeNote(){
  $('check-passing').disabled=!config?.check_passing||!$('adaptive').checked;
@@ -1037,6 +1037,7 @@ function showSpectrumHover(){
  });
 }
 function hoverSpectrum(event){
+ if(peakEditing()){hideSpectrumHover();return}
  if(event.pointerType==='touch'||event.buttons){hideSpectrumHover();return}
  const source=event.currentTarget===$('fft')?$('fft'):$('fft-zoom-view').querySelector('svg');
  if(spectrumHoverPointer?.source!==source)hideSpectrumHover();
@@ -1055,16 +1056,16 @@ window.addEventListener('blur',hideSpectrumHover);
 document.addEventListener('keydown',event=>{if(event.key==='Escape')hideSpectrumHover()});
 
 function syncFFTZoom(){
- if(!$('fft-zoom').open)return;
+ if(!$('fft-zoom').open||radiusDrag)return;
  hideSpectrumHover();
  const copy=$('fft').cloneNode(true);
  for(const attribute of ['id','tabindex','aria-haspopup','aria-controls'])copy.removeAttribute(attribute);
  copy.setAttribute('role','img');copy.setAttribute('aria-label',isDiffraction()?'Enlarged diffraction pattern with current spots and crystal overlays':'Enlarged FFT with current peaks and crystal overlays');
  for(const child of copy.querySelectorAll('[id]'))child.removeAttribute('id');
- copy.classList.add('fft-enlarged');$('fft-zoom-view').replaceChildren(copy);
+ copy.classList.add('fft-enlarged');$('fft-zoom-view').replaceChildren(copy);drawSnapOverlays();
 }
 function openFFTZoom(){
- if(!result||!fftRaw||!$('fft-image').getAttribute('href'))return;
+ if(!(result||displayedDiffraction)||!fftRaw||!$('fft-image').getAttribute('href'))return;
  hideSpectrumHover();
  if(!$('fft-zoom').open)$('fft-zoom').showModal();
  syncFFTZoom();$('fft-zoom-close').focus();
@@ -1312,7 +1313,7 @@ function validDiffraction(d){
 }
 function setupImageKind(){
  const limits=document.querySelector('.fitting-limits');
- const limitHost=isDiffraction()?$('diffraction-controls'):document.querySelector('.fft-processing');
+ const limitHost=isDiffraction()?document.querySelector('.diffraction-main'):document.querySelector('.fft-processing');
  limitHost.insertBefore(limits,isDiffraction()?$('diffraction-note'):$('fft-auto-strength-status'));
  const direct=isDiffraction();syncSignalToggle();applyInspectorLayout();hideRegionPreview();document.body.classList.toggle('diffraction',direct);$('diffraction-controls').hidden=!direct;
  $('source-title').textContent=direct?'Diffraction detector':'Real space';$('inspector-title').textContent=direct?'Pattern analysis':'Selected region';
@@ -1323,7 +1324,7 @@ function setupImageKind(){
  $('fft-curve').querySelector('option[value="log"]').textContent=direct?'Log intensity':'Log power';
  $('fft-curve').querySelector('option[value="linear"]').textContent=direct?'Linear intensity':'Linear amplitude';
  document.querySelector('.compact-display-note').textContent=direct?'Recorded detector intensity; no FFT. Display controls change brightness only. Centre, calibration and spot settings affect the analysis.':'Brightness controls affect the display only. FFT processing is set above; scaling moves prediction points.';
- $('detector-overlay').replaceChildren();diffractionSettings=null;$('diff-tool').value='view';hideCentreLoupe();$('centre-loupe-image').removeAttribute('href');
+ $('detector-overlay').replaceChildren();diffractionSettings=null;$('diff-tool').value='view';syncPeakTool();hideCentreLoupe();$('centre-loupe-image').removeAttribute('href');
  if(direct){
   const c=meta.beam_center;
   diffractionSettings={center_x:c.x,center_y:c.y,pixel_x_nm_inv:meta.pixel_x_nm_inv,pixel_y_nm_inv:meta.pixel_y_nm_inv,exclude_radius_nm_inv:2.5,spot_sigma_px:2,spot_snr:9,refine_center:true,max_center_shift_px:50,masks:[]};
@@ -1377,15 +1378,13 @@ function drawDetector(){
  const outerCircle=el('ellipse',{cx:d.center_x,cy:d.center_y,rx:outer/d.pixel_x_nm_inv,ry:outer/d.pixel_y_nm_inv,class:'detector-centre','data-boundary':'outer','stroke-dasharray':'9 5'});
  outerCircle.append(el('title',{},`Outer fitting limit: ${outer} nm⁻¹`));group.append(outerCircle);
  group.append(el('path',{d:`M${d.center_x-cross},${d.center_y}h${2*cross}M${d.center_x},${d.center_y-cross}v${2*cross}`,class:'detector-centre'}));
- if(['add','remove'].includes($('diff-tool').value)&&result?.image_kind==='diffraction'){
-  for(const peak of result.spectrum.peaks||[])for(const q of peak.observed_spots||[]){
-   const [px,py]=result.spectrum.beam_center_px;
-   const x=px+q[0]/d.pixel_x_nm_inv,y=py-q[1]/d.pixel_y_nm_inv;
-   const manual=(peak.manual_observed_spots||[]).some(m=>Math.hypot(m[0]-q[0],m[1]-q[1])<1e-8);
-   const circle=el('circle',{cx:x,cy:y,r:Math.max(8,meta.width/180),fill:'none',stroke:manual?'#ff8ac3':'white','stroke-width':1.5,'vector-effect':'non-scaling-stroke'});
-   circle.append(el('title',{},manual?'Manually added observation':'Detected observation'));group.append(circle);
+ if(peakEditing()){
+  for(const peak of editableObservations()){
+   const shape=markerShape(peak.x,peak.y,$('peak-marker').value,{class:'detector-observation',fill:'none',stroke:'#c58aff','stroke-width':1.5,'vector-effect':'non-scaling-stroke'},Math.max(8,meta.width/180));
+   if(shape){shape.append(el('title',{},peak.manual?'Manually added observation':'Detected observation'));group.append(shape)}
   }
  }
+ drawSnapOverlays();
  for(const rect of [...d.masks,...(maskDrag?.rect?[maskDrag.rect]:[])])group.append(el('rect',{x:rect.x,y:rect.y,width:rect.w,height:rect.h,class:'detector-mask'}));
 }
 function drawDetectorExclusions(qp){
@@ -1443,9 +1442,9 @@ function moveCentreLoupe(p){
  $('centre-loupe-cross').setAttribute('d',`M${x-56},${y}h53M${x+3},${y}h53M${x},${y-56}v53M${x},${y+3}v53`);
  $('centre-loupe-coords').textContent=`${x.toFixed(1)}, ${y.toFixed(1)} px`;
 }
-$('diff-tool').onchange=()=>{maskDrag=null;hideCentreLoupe();drawDetector();if($('diff-tool').value==='center')prepareCentreLoupe()};
+$('diff-tool').onchange=()=>{maskDrag=null;snapPointer=null;hideCentreLoupe();syncPeakTool();drawDetector();drawSnapOverlays();if($('diff-tool').value==='center')prepareCentreLoupe()};
 $('overview').addEventListener('pointerleave',hideCentreLoupe);
-$('overview').addEventListener('keydown',e=>{if(e.key==='Escape'&&isDiffraction()){$('diff-tool').value='view';maskDrag=null;hideCentreLoupe();drawDetector()}});
+$('overview').addEventListener('keydown',e=>{if(e.key==='Escape'&&isDiffraction()){$('diff-tool').value='view';maskDrag=null;hideCentreLoupe();syncPeakTool();drawDetector();drawSnapOverlays()}});
 function detectorPointerDown(e){
  const tool=$('diff-tool').value;if(tool==='view')return;e.preventDefault();
  const p=point(e),x=clamp(p.x,0,meta.width-1),y=clamp(p.y,0,meta.height-1);
@@ -1477,7 +1476,7 @@ function syncSpectrumExportControls(){
  syncMapExportControls();
  for(const id of ['export-png','export-gif']){$(id).disabled=spectrumExportBusy||mapExportBusy||busy||pending||!result||!fftRaw||!config?.spectrum_exports;$(id).title=config?.spectrum_exports?'Save the current view to the output folder':'Restart TEM Workbench to enable image exports'}
 }
-function setSpectrumSpinner(show){for(const id of ['fft-loading','fft-zoom-loading'])$(id).hidden=!show}
+function setSpectrumSpinner(show){show=show&&!peakEditing();for(const id of ['fft-loading','fft-zoom-loading'])$(id).hidden=!show}
 function beginSpectrumLoading(){
  hideSpectrumHover();
  if(spectrumLoading)return;spectrumLoading=true;$('fft-stage').setAttribute('aria-busy','true');
@@ -1620,6 +1619,7 @@ function markerMotionAt(mode,phase){
 }
 function spectrumSnapshot(){
  const svg=$('fft').cloneNode(true),markers=[...$('fft').querySelectorAll('.spectrum-marker')].map(m=>{const b=m.getBBox();return {x:b.x+b.width/2,y:b.y+b.height/2,offset:Number(m.getAttribute('data-motion-offset'))||0}});
+ svg.querySelectorAll('.manual-snap-overlay').forEach(n=>n.remove());
  svg.setAttribute('font-family','Arial, sans-serif');
  for(const node of [svg,...svg.querySelectorAll('[id]')])node.removeAttribute('id');
  for(const attribute of ['tabindex','role','aria-controls','aria-haspopup','aria-label'])svg.removeAttribute(attribute);
@@ -1888,59 +1888,150 @@ $('demo-prompt-download').onclick=()=>{
  $('demo-download-prompt').close();$('folders-panel').open=true;$('download-demo-pack').click();
 };
 
-// Manual diffraction observations are stored in original detector coordinates.
-let peakEditBusy=false;
+// Editing uses the last displayed coordinate system, never stale analysis as a new result.
+let peakEditBusy=false,displayedDiffraction=null,snapPointer=null,radiusDrag=null,peakUndo=[];
+function peakEditing(){return isDiffraction()&&['add','remove'].includes($('diff-tool').value)}
+function syncPeakTool(){
+ document.body.classList.toggle('editing-peaks',peakEditing());
+ for(const button of document.querySelectorAll('[data-detector-tool]'))button.setAttribute('aria-pressed',String(button.dataset.detectorTool===$('diff-tool').value));
+ setSpectrumSpinner(spectrumLoading&&spectrumLoadingTimer===null);
+}
+for(const button of document.querySelectorAll('[data-detector-tool]'))button.onclick=()=>{$('diff-tool').value=button.dataset.detectorTool;$('diff-tool').onchange()};
+for(const id of ['diff-snap-radius','diff-dedupe-radius']){
+ const saved=readPreference('tem-'+id,50);$(id).value=Number.isFinite(saved)&&saved>=1&&saved<=200?saved:50;
+ $(id).onchange=()=>{const value=Number($(id).value);if(Number.isFinite(value)&&value>=1&&value<=200)writePreference('tem-'+id,value);drawSnapOverlays()};
+}
+$('diff-snap').onchange=drawSnapOverlays;
 function syncPeakEditControls(){
  const edits=diffractionSettings?.peak_edits||[];
- $('diff-undo-peak').disabled=!edits.length||peakEditBusy;
+ $('diff-undo-peak').disabled=(!edits.length&&!peakUndo.length)||peakEditBusy;
  $('diff-reset-peaks').disabled=!edits.length||peakEditBusy;
- if(isDiffraction())$('diff-peak-note').textContent=`${edits.length} peak edit(s). Add/Remove: click either image; Enter on the plot opens its enlarged view. Manual additions count as measured evidence and are pink; snapping finds the brightest smoothed pixel within the radius.`;
+ if(isDiffraction())$('diff-peak-note').textContent=`${edits.length} peak edit(s). Click either image. Drag a search ring to resize and snap again. Manual additions count as measured evidence. ${busy||pending?'Updating fits in the background…':''}`;
 }
+function editSnapshot(){return result?.image_kind==='diffraction'?result:displayedDiffraction}
 function effectiveDetector(){
- const d={...diffractionSettings};const t=currentTranslation();
+ const d={...diffractionSettings},t=currentTranslation();
  if(t?.applied)[d.center_x,d.center_y]=t.fitted_center_px;
+ else if(peakEditing()&&editSnapshot()) [d.center_x,d.center_y]=editSnapshot().spectrum.beam_center_px;
  return d;
 }
+function editableObservations(includeWeak=false){
+ const snapshot=editSnapshot();let points=[];
+ if(snapshot){const [cx,cy]=snapshot.spectrum.beam_center_px,d=snapshot.settings.diffraction;
+  points=[...(snapshot.spectrum.peaks||[]),...(includeWeak?snapshot.spectrum.weak_maxima||[]:[])].flatMap(p=>(p.observed_spots||[]).map(q=>({x:cx+q[0]/d.pixel_x_nm_inv,y:cy-q[1]/d.pixel_y_nm_inv})));
+ }
+ (diffractionSettings?.peak_edits||[]).forEach((edit,index)=>{
+  points=points.filter(p=>Math.hypot(p.x-edit.x,p.y-edit.y)>edit.radius_px);
+  if(edit.action==='add')points.push({...edit,index,manual:true});
+ });
+ return points;
+}
+function rememberPeakUndo(){peakUndo.push(structuredClone(diffractionSettings.peak_edits||[]));if(peakUndo.length>200)peakUndo.shift()}
+function inDetectorBand(x,y,d){const g=Math.hypot((x-d.center_x)*d.pixel_x_nm_inv,(d.center_y-y)*d.pixel_y_nm_inv);return x>=0&&y>=0&&x<meta.width&&y<meta.height&&g>=d.exclude_radius_nm_inv&&g<=Number($('g-max').value)&&!d.masks.some(m=>x>=m.x&&x<=m.x+m.w&&y>=m.y&&y<=m.y+m.h)}
 async function editDetectorPeak(x,y){
  if(peakEditBusy||!isDiffraction())return;
  if(!config.manual_diffraction_peaks){message('Restart TEM Workbench to enable peak editing.',true);return}
- const tool=$('diff-tool').value,d=effectiveDetector(),version=sourceRequest;
- const radius=Number($('diff-snap-radius').value);
- if(!Number.isFinite(radius)||radius<1||radius>50){message('Use a snap radius of 1–50 pixels.',true);return}
+ const tool=$('diff-tool').value,d=effectiveDetector(),version=sourceRequest,origin={x,y};
+ const radius=Number($('diff-snap-radius').value),dedupeRadius=Number($('diff-dedupe-radius').value);
+ if(!Number.isFinite(radius)||radius<1||radius>200||!Number.isFinite(dedupeRadius)||dedupeRadius<1||dedupeRadius>200){message('Use snap and deduplication radii of 1–200 pixels.',true);return}
  if((diffractionSettings.peak_edits||[]).length>=200){message('Undo or reset peak edits before adding more.',true);return}
  peakEditBusy=true;syncPeakEditControls();
  try{
+  const snapped=tool==='add'&&$('diff-snap').checked;
   if(tool==='remove'){
-   if(busy||pending||!result||result.image_kind!=='diffraction')throw new Error('Wait for the current analysis before removing a peak.');
-   const [cx,cy]=result.spectrum.beam_center_px;
-   const candidates=[...(result.spectrum.peaks||[]),...(result.spectrum.weak_maxima||[])].flatMap(p=>(p.observed_spots||[]).map(q=>({x:cx+q[0]/d.pixel_x_nm_inv,y:cy-q[1]/d.pixel_y_nm_inv})));
-   const nearest=candidates.sort((a,b)=>Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y))[0];
-   if(!nearest||Math.hypot(nearest.x-x,nearest.y-y)>Math.max(12,meta.width/100))throw new Error('Click closer to a detected spot.');
+   const nearest=editableObservations(true).sort((a,b)=>Math.hypot(a.x-x,a.y-y)-Math.hypot(b.x-x,b.y-y))[0];
+   if(!nearest||Math.hypot(nearest.x-x,nearest.y-y)>dedupeRadius)throw new Error('Click closer to a detected spot.');
    ({x,y}=nearest);
   }else if(tool==='add'){
-   if($('diff-snap').checked)({x,y}=await api('diffraction/snap',{file_id:fileId,diffraction:d,x,y,radius_px:radius,g_max:Number($('g-max').value)}));
-   const qx=(x-d.center_x)*d.pixel_x_nm_inv,qy=(d.center_y-y)*d.pixel_y_nm_inv,g=Math.hypot(qx,qy);
-   if(g<d.exclude_radius_nm_inv||g>Number($('g-max').value)||d.masks.some(m=>x>=m.x&&x<=m.x+m.w&&y>=m.y&&y<=m.y+m.h))throw new Error('Choose a point inside the fitting band and outside exclusions.');
+   if(snapped)({x,y}=await api('diffraction/snap',{file_id:fileId,diffraction:d,x,y,radius_px:radius,g_max:Number($('g-max').value)}));
+   if(!inDetectorBand(x,y,d))throw new Error('Choose a point inside the fitting band and outside exclusions.');
   }else return;
   if(version!==sourceRequest)return;
-  diffractionSettings.peak_edits??=[];
-  diffractionSettings.peak_edits.push({action:tool,x,y,radius_px:Math.min(10,Math.max(2,d.spot_sigma_px*1.5))});
+  rememberPeakUndo();diffractionSettings.peak_edits??=[];
+  diffractionSettings.peak_edits.push({action:tool,x,y,radius_px:dedupeRadius,...(tool==='add'?{snap_x:origin.x,snap_y:origin.y,snap_radius_px:radius}:{})});
   commitDetector();message(`${tool==='add'?'Added':'Removed'} observation at ${x.toFixed(1)}, ${y.toFixed(1)} px.`);
- }catch(error){message(error.message,true)}finally{peakEditBusy=false;syncPeakEditControls()}
+ }catch(error){message(error.message,true)}finally{peakEditBusy=false;syncPeakEditControls();drawSnapOverlays()}
+}
+function detectorPoint(event,svg){
+ const p=new DOMPoint(event.clientX,event.clientY).matrixTransform(svg.getScreenCTM().inverse());
+ if(svg===$('overview'))return p;
+ const snapshot=editSnapshot();if(!snapshot||p.x<0||p.x>420||p.y<0||p.y>420)return null;
+ const e=snapshot.spectrum.extent,[cx,cy]=snapshot.spectrum.beam_center_px,d=snapshot.settings.diffraction;
+ return {x:cx+(e[0]+p.x/420*(e[1]-e[0]))/d.pixel_x_nm_inv,y:cy-(e[3]-p.y/420*(e[3]-e[2]))/d.pixel_y_nm_inv};
 }
 function editSpectrumPeak(event,svg){
- if(!isDiffraction()||!['add','remove'].includes($('diff-tool').value)||!svg||!result)return false;
- event.preventDefault();const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(svg.getScreenCTM().inverse());
- if(point.x<0||point.x>420||point.y<0||point.y>420)return true;
- const e=result.spectrum.extent,[cx,cy]=result.spectrum.beam_center_px,d=result.settings.diffraction;
- const qx=e[0]+point.x/420*(e[1]-e[0]),qy=e[3]-point.y/420*(e[3]-e[2]);
- editDetectorPeak(cx+qx/d.pixel_x_nm_inv,cy-qy/d.pixel_y_nm_inv);return true;
+ if(!peakEditing()||!svg)return false;
+ event.preventDefault();const p=detectorPoint(event,svg);if(p)editDetectorPeak(p.x,p.y);return true;
 }
-$('diff-undo-peak').onclick=()=>{diffractionSettings?.peak_edits?.pop();commitDetector()};
-$('diff-reset-peaks').onclick=()=>{if(diffractionSettings){diffractionSettings.peak_edits=[];commitDetector()}};
+function drawSnapOverlays(){
+ for(const svg of [$('overview'),$('fft'),$('fft-zoom-view').querySelector('svg')].filter(Boolean)){
+  svg.querySelectorAll('.manual-snap-overlay').forEach(n=>n.remove());
+  if(!peakEditing())continue;
+  const source=svg===$('overview'),snapshot=editSnapshot();if(!source&&!snapshot)continue;
+  const d=snapshot?.settings.diffraction,e=snapshot?.spectrum.extent,c=snapshot?.spectrum.beam_center_px;
+  const sx=source?1:420*d.pixel_x_nm_inv/(e[1]-e[0]),sy=source?1:420*d.pixel_y_nm_inv/(e[3]-e[2]);
+  const project=(x,y)=>source?[x,y]:[((x-c[0])*d.pixel_x_nm_inv-e[0])/(e[1]-e[0])*420,(e[3]-(c[1]-y)*d.pixel_y_nm_inv)/(e[3]-e[2])*420];
+  const group=el('g',{class:'manual-snap-overlay','pointer-events':'none'});svg.append(group);
+  const ring=(x,y,r,index)=>{
+   const [cx,cy]=project(x,y),attrs={cx,cy,rx:r*sx,ry:r*sy,fill:'none',stroke:'#c58aff','stroke-width':1.3,'vector-effect':'non-scaling-stroke'};
+   if(index!==null){
+    // Wide invisible stroke is an easy hit target; the visible search boundary stays thin.
+    group.append(el('ellipse',{...attrs,stroke:'transparent','stroke-width':12,'pointer-events':'stroke','data-snap-index':index,class:'snap-radius-handle'}));
+    const handleSize=source?Math.max(meta.width/350,4):2.8;
+    group.append(el('rect',{x:cx+r*sx-handleSize,y:cy-handleSize,width:handleSize*2,height:handleSize*2,fill:'#c58aff',stroke:'#101925','stroke-width':1,'vector-effect':'non-scaling-stroke','pointer-events':'all','data-snap-index':index,class:'snap-radius-handle'}));
+   }
+   group.append(el('ellipse',{...attrs,'stroke-dasharray':index===null?'3 3':'5 3'}));
+   if(index===null||radiusDrag?.index===index)group.append(el('text',{x:cx+r*sx+(source?12:4),y:cy,fill:'#c58aff','font-size':source?Math.max(28,meta.width/85):8,stroke:'#0a1119','stroke-width':source?6:1,'paint-order':'stroke'},`${Math.round(r)} px`));
+  };
+  if($('diff-tool').value==='add')for(const p of editableObservations().filter(p=>p.manual)){
+   ring(p.snap_x??p.x,p.snap_y??p.y,radiusDrag?.index===p.index?radiusDrag.radius:(p.snap_radius_px??50),p.index);
+  }
+  if(snapPointer?.svg===svg&&!radiusDrag&&$('diff-tool').value==='add'&&$('diff-snap').checked){const r=Number($('diff-snap-radius').value);if(r>=1&&r<=200)ring(snapPointer.x,snapPointer.y,r,null)}
+ }
+}
+async function finishRadiusDrag(cancel=false){
+ const drag=radiusDrag;if(!drag)return;radiusDrag=null;snapPointer=null;
+ if(cancel||drag.radius===drag.original){drawSnapOverlays();return}
+ const edit=diffractionSettings?.peak_edits?.[drag.index];if(!edit)return;
+ const version=sourceRequest;peakEditBusy=true;
+ try{
+  const d=effectiveDetector(),p=await api('diffraction/snap',{file_id:fileId,diffraction:d,x:drag.x,y:drag.y,radius_px:drag.radius,g_max:Number($('g-max').value)});
+  if(version!==sourceRequest)return;
+  rememberPeakUndo();diffractionSettings.peak_edits[drag.index]={...edit,...p,snap_x:drag.x,snap_y:drag.y,snap_radius_px:drag.radius};commitDetector();message(`Snap radius ${drag.radius} px; observation updated.`);
+ }catch(error){message(error.message,true)}finally{peakEditBusy=false;syncPeakEditControls();drawSnapOverlays()}
+}
+for(const id of ['overview','fft','fft-zoom-view']){
+ const host=$(id),svg=()=>id==='fft-zoom-view'?host.querySelector('svg'):host;
+ host.addEventListener('pointermove',event=>{
+  if(!peakEditing())return;
+  const p=detectorPoint(event,svg());if(!p)return;
+  if(radiusDrag?.host===host){radiusDrag.radius=Math.round(clamp(Math.hypot(p.x-radiusDrag.x,p.y-radiusDrag.y),1,200));event.preventDefault();event.stopImmediatePropagation()}
+  else snapPointer={...p,svg:svg()};
+  drawSnapOverlays();
+ },true);
+ host.addEventListener('pointerdown',event=>{
+  const target=event.target.closest('[data-snap-index]');if(!target||!peakEditing()||peakEditBusy)return;
+  event.preventDefault();event.stopImmediatePropagation();const index=Number(target.dataset.snapIndex),edit=diffractionSettings.peak_edits[index];
+  radiusDrag={host,index,x:edit.snap_x??edit.x,y:edit.snap_y??edit.y,radius:edit.snap_radius_px??50,original:edit.snap_radius_px??50};host.setPointerCapture(event.pointerId);
+ },true);
+ for(const name of ['pointerup','pointercancel'])host.addEventListener(name,event=>{
+  if(radiusDrag?.host!==host)return;event.preventDefault();event.stopImmediatePropagation();
+  host.dataset.suppressPeakClick='1';setTimeout(()=>delete host.dataset.suppressPeakClick,0);finishRadiusDrag(name==='pointercancel');
+ },true);
+ host.addEventListener('click',event=>{if(host.dataset.suppressPeakClick||event.target.closest('[data-snap-index]')){event.preventDefault();event.stopImmediatePropagation()}},true);
+ host.addEventListener('pointerleave',()=>{snapPointer=null;drawSnapOverlays()});
+}
+$('diff-undo-peak').onclick=()=>{if(peakUndo.length)diffractionSettings.peak_edits=peakUndo.pop();else diffractionSettings?.peak_edits?.pop();commitDetector()};
+$('diff-reset-peaks').onclick=()=>{if(diffractionSettings){rememberPeakUndo();diffractionSettings.peak_edits=[];commitDetector()}};
+$('reset-diffraction').onclick=()=>{
+ if(!isDiffraction())return;
+ const edits=diffractionSettings.peak_edits||[],c=meta.beam_center;
+ diffractionSettings={center_x:c.x,center_y:c.y,pixel_x_nm_inv:meta.pixel_x_nm_inv,pixel_y_nm_inv:meta.pixel_y_nm_inv,exclude_radius_nm_inv:2.5,spot_sigma_px:2,spot_snr:9,refine_center:true,max_center_shift_px:50,masks:[],peak_edits:edits};
+ $('g-max').value=10;$('diff-workers').value='0';writePreference('tem-diffraction-workers',0);rememberBasicControls();commitDetector();message('Diffraction settings reset; peak edits kept.');
+};
 
 let batchFiles=[],batchPollTimer=null;
-function batchOptions(){return {cutoff:Number($('batch-cutoff').value),inclusive:$('batch-inclusive').checked}}
+function batchOptions(){return {cutoff:Number($('batch-cutoff').value),inclusive:true}}
 $('batch-preview').onclick=async()=>{
  try{
   if(!config.batch_grids)throw new Error('Restart TEM Workbench to enable batch grids.');
@@ -1954,19 +2045,32 @@ $('batch-preview').onclick=async()=>{
   $('batch-status').textContent=`${batchFiles.filter(r=>r.eligible).length} eligible images. Uncheck any to omit. Calibration and sampling are checked when each image loads.`;
  }catch(e){message(e.message,true)}
 };
-for(const id of ['batch-cutoff','batch-inclusive'])$(id).onchange=()=>{$('batch-start').disabled=true;$('batch-status').textContent='Review images again after changing the cutoff.'};
+for(const id of ['batch-cutoff'])$(id).onchange=()=>{$('batch-start').disabled=true;$('batch-status').textContent='Review images again after changing the cutoff.'};
 function renderBatch(data){
  const running=data.state==='running';$('batch-cancel').disabled=!running;$('batch-start').disabled=running||!batchFiles.length;$('batch-preview').disabled=running;
  $('batch-status').textContent=`${data.state} · ${data.finished||0}/${data.total||0} images · ${data.current||''}${data.current_grid?' · '+data.current_grid.processed+' regions analysed':''}${data.failures?.length?' · '+data.failures.length+' failure(s)':''}${data.error?' · '+data.error:''}${data.output_directory?' · Saved to '+data.output_directory:''}`;
- const host=$('batch-summary');host.replaceChildren();
+ renderBatchMap(data);
+ const phases=analysisPhases(data.settings),host=$('batch-summary');host.replaceChildren();
  if(data.samples?.length){
   const table=document.createElement('table'),head=document.createElement('tr');
-  for(const text of ['Sample','Images','Coverage','HCP area','BCC area','FCC area'])head.append(elHTML('th',text));table.append(head);
-  for(const sample of data.samples){const tr=document.createElement('tr');for(const text of [sample.sample,sample.images,sample.coverage_percent.toFixed(1)+'%',...['hcp','bcc','fcc'].map(p=>(sample.pooled_image_percent[p+'_compatible']||0).toFixed(1)+'%')])tr.append(elHTML('td',String(text)));table.append(tr)}
+  for(const text of ['Sample','Images','Coverage',...phases.map(p=>p+' area')])head.append(elHTML('th',text));table.append(head);
+  for(const sample of data.samples){const tr=document.createElement('tr');for(const text of [sample.sample,sample.images,sample.coverage_percent.toFixed(1)+'%',...phases.map(p=>(sample.pooled_image_percent[p.toLowerCase()+'_compatible']||0).toFixed(1)+'%')])tr.append(elHTML('td',String(text)));table.append(tr)}
   host.append(table,elHTML('p','Pooled acquired-image area; ambiguous and unresolved areas remain separate in the summaries. These are candidate labels, not confirmed phase fractions.'));
  }
  for(const failure of data.failures||[])host.append(elHTML('p',failure.file_id+' · '+failure.stage+': '+failure.error));
  if(running){clearTimeout(batchPollTimer);batchPollTimer=setTimeout(pollBatch,1000)}
+}
+function renderBatchMap(data){
+ const live=data.live_grid,host=$('batch-live');host.hidden=!live;
+ if(!live)return;
+ const source=live.source,svg=$('batch-live-map'),img=$('batch-live-image'),group=$('batch-live-regions');
+ $('batch-live-title').textContent=source.name;
+ svg.setAttribute('viewBox',`0 0 ${source.width} ${source.height}`);img.setAttribute('width',source.width);img.setAttribute('height',source.height);
+ const url='/api/batch-image?id='+encodeURIComponent(source.id);if(img.getAttribute('href')!==url)img.setAttribute('href',url);
+ group.replaceChildren();const used=new Set(),palette={...colors,...data.options?.colors};
+ for(const region of live.regions||[]){const r=region.roi,color=palette[region.label]||'#94a5b8';used.add(region.label);group.append(el('rect',{x:r.x,y:r.y,width:r.w,height:r.h,fill:color,'fill-opacity':data.options?.opacity??.2,stroke:color,'stroke-width':.8,'vector-effect':'non-scaling-stroke'}))}
+ $('batch-live-progress').textContent=`${live.state} · ${live.processed} regions analysed · ${live.pending} pending`;
+ const legend=$('batch-live-legend');legend.replaceChildren();for(const key of used){const item=elHTML('span','● '+(labels[key]||key));item.style.color=palette[key];legend.append(item)}
 }
 function elHTML(tag,text){const node=document.createElement(tag);node.textContent=text;return node}
 async function pollBatch(){try{const response=await fetch('/api/batch');if(!response.ok)return;const data=await response.json();if(data.state!=='idle')renderBatch(data)}catch(e){$('batch-status').textContent='Batch status unavailable; reconnecting…';batchPollTimer=setTimeout(pollBatch,3000)}}

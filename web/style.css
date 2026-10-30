@@ -197,4 +197,28 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 
 .grid-run-actions{display:flex;gap:10px;align-items:center}
 
-.batch-files{max-height:260px;overflow:auto;display:grid;gap:5px;margin:10px 0}.batch-files label{justify-content:flex-start}#batch-panel{margin:10px 0;padding:10px;border:1px solid #30404e;border-radius:6px}#batch-summary p,#batch-status{overflow-wrap:anywhere}.peak-edit-controls .hint{flex:1;min-width:220px}#diffraction-controls #diff-snap-radius{width:75px}#diffraction-controls #diff-snap{width:auto;min-height:0;padding:0}
+.batch-files{max-height:260px;overflow:auto;display:grid;gap:5px;margin:10px 0}.batch-files label{justify-content:flex-start}#batch-panel{margin:10px 0;padding:10px;border:1px solid #30404e;border-radius:6px}#batch-summary p,#batch-status{overflow-wrap:anywhere}.peak-edit-controls .hint{flex:1;min-width:220px}#diffraction-controls #diff-snap-radius,#diffraction-controls #diff-dedupe-radius{width:75px}#diffraction-controls #diff-snap{width:auto;min-height:0;padding:0}
+
+/* Separate detection settings from interactive peak corrections. */
+#diffraction-controls{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px;align-items:start}
+.diffraction-main{min-width:0}
+#diffraction-controls .diffraction-main .row{flex-wrap:wrap}
+#diffraction-controls .translation-controls .hint{flex:1 1 300px;min-width:0;white-space:normal;overflow-wrap:anywhere}
+#diffraction-controls .fitting-limits{justify-content:flex-start;gap:16px}
+.peak-edit-panel{border-left:1px solid var(--line);padding-left:16px;min-width:0}
+.detector-tool-buttons{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
+.detector-tool-buttons [aria-pressed="true"]{border-color:var(--accent,#5ddcd3);color:var(--accent,#5ddcd3);background:#18353a}
+.peak-edit-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.peak-edit-controls>.check,.peak-edit-controls>.hint{grid-column:1/-1}
+#diffraction-controls .peak-edit-panel .row{flex-wrap:wrap;gap:6px;margin-top:10px}
+#diffraction-controls .peak-edit-panel .hint{white-space:normal;line-height:1.45}
+#diff-tool[hidden]{display:none}
+.editing-peaks .previews.stale #crop,.editing-peaks .previews.stale #fft{opacity:1}
+.snap-radius-handle{cursor:ew-resize}
+.manual-snap-overlay{touch-action:none}
+@media(max-width:1000px){#diffraction-controls{grid-template-columns:1fr}.peak-edit-panel{border-left:0;border-top:1px solid var(--line);padding:12px 0 0}.peak-edit-controls{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+#batch-live{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:7px;max-width:360px}
+#batch-live[hidden]{display:none}#batch-live-title{font-size:12px;overflow-wrap:anywhere;margin-bottom:6px}
+#batch-live-map{display:block;width:100%;max-height:340px;background:#0c121a;aspect-ratio:1}
+#batch-live-legend{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10px}

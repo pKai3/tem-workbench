@@ -149,9 +149,15 @@ def validate(info, supplied):
         if not isinstance(edit, dict) or edit.get('action') not in ('add', 'remove'):
             raise ValueError('Peak edits must add or remove an observation.')
         x, y, radius = [float(edit[k]) for k in ('x', 'y', 'radius_px')]
-        if not all(np.isfinite([x,y,radius])) or not (0 <= x < info['width'] and 0 <= y < info['height'] and 1 <= radius <= 50):
-            raise ValueError('Peak edits need detector coordinates and a radius of 1–50 pixels.')
-        value['peak_edits'].append(dict(action=edit['action'], x=x, y=y, radius_px=radius))
+        if not all(np.isfinite([x,y,radius])) or not (0 <= x < info['width'] and 0 <= y < info['height'] and 1 <= radius <= 200):
+            raise ValueError('Peak edits need detector coordinates and a radius of 1–200 pixels.')
+        record = dict(action=edit['action'], x=x, y=y, radius_px=radius)
+        if edit['action'] == 'add' and 'snap_radius_px' in edit:
+            sr, ox, oy = [float(edit[k]) for k in ('snap_radius_px', 'snap_x', 'snap_y')]
+            if not np.isfinite([sr, ox, oy]).all() or not (1 <= sr <= 200 and 0 <= ox < info['width'] and 0 <= oy < info['height']):
+                raise ValueError('Saved snap searches need an in-image origin and a radius of 1–200 pixels.')
+            record.update(snap_radius_px=sr, snap_x=ox, snap_y=oy)
+        value['peak_edits'].append(record)
     return value
 
 
@@ -188,11 +194,11 @@ def edit_spots(array, settings, spots):
     return result
 
 
-def snap_peak(array, settings, x, y, radius=12):
+def snap_peak(array, settings, x, y, radius=50):
     """Bounded native-pixel search with light smoothing; no model prediction involved."""
     h,w=array.shape
-    if not np.isfinite([x,y,radius]).all() or not (0<=x<w and 0<=y<h and 1<=radius<=50):
-        raise ValueError('Choose a point inside the detector and a snap radius of 1–50 px.')
+    if not np.isfinite([x,y,radius]).all() or not (0<=x<w and 0<=y<h and 1<=radius<=200):
+        raise ValueError('Choose a point inside the detector and a snap radius of 1–200 px.')
     x0,x1=max(0,int(x-radius)-3),min(w,int(x+radius)+4)
     y0,y1=max(0,int(y-radius)-3),min(h,int(y+radius)+4)
     from scipy.ndimage import gaussian_filter

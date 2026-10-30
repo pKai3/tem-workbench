@@ -106,7 +106,7 @@ def map_png(item, job, target, colors=None, opacity=.2):
 class BatchGrids:
     def __init__(self, app):
         self.app=app;self.lock=threading.RLock();self.cancel=threading.Event();self.thread=None
-        self.data={'state':'idle','images':[],'failures':[]}
+        self.data={'state':'idle','images':[],'failures':[]};self.live=None;self.live_preview=None
     def running(self):
         return self.thread is not None and self.thread.is_alive()
     def status(self):
@@ -115,7 +115,22 @@ class BatchGrids:
             try:
                 job=self.app.status(result['job_id']);result['current_grid']={k:job[k] for k in ('state','processed','pending','execution')}
             except ValueError:pass
+        with self.lock:
+            live=copy.deepcopy(self.live)
+        if live:
+            if live.get('job_id'):
+                try:
+                    job=self.app.status(live['job_id'])
+                    live.update({k:job[k] for k in ('state','processed','pending')})
+                    live['regions']=[{k:r[k] for k in ('roi','label')} for r in job['regions'] if r['leaf']]
+                except ValueError:pass
+            result['live_grid']=live
         return result
+    def preview(self,file_id):
+        with self.lock:
+            if not self.live or self.live['source']['id']!=file_id or self.live_preview is None:
+                raise ValueError('That batch preview is no longer current.')
+            return self.live_preview
     def cancel_run(self):
         self.cancel.set()
         if self.running():
@@ -146,7 +161,7 @@ class BatchGrids:
             engine=Engine(copy.deepcopy(app.config));engine.catalog()
             folder=Path(app.config['output_root'])/('batch_'+datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:6])
             folder.mkdir(parents=True)
-            self.cancel.clear()
+            self.cancel.clear();self.live=None;self.live_preview=None
             self.data=dict(state='running',total=len(chosen),finished=0,images=[],failures=[],current=None,job_id=None,
                 output_directory=str(folder),settings=copy.deepcopy(options.get('settings',{})),options=options,
                 engine_sha256=engine.version,eligibility=rows,selected_file_ids=chosen,
@@ -158,15 +173,27 @@ class BatchGrids:
                     for key in chosen:
                         if self.cancel.is_set():break
                         row=eligible[key]
-                        with self.lock:self.data.update(current=row['name'],job_id=None)
+                        with self.lock:
+                            self.data.update(current=row['name'],job_id=None)
+                            self.live=None;self.live_preview=None
                         try:
                             item=engine.load(key);info=item['info']
                             if info['image_kind']!='real_space':raise ValueError('Reciprocal calibration identifies diffraction; skipped.')
+                            # A small independent preview avoids loading the batch source into
+                            # the interactive engine or contending with its analysis lock.
+                            preview=None
+                            if item.get('preview'):
+                                with Image.open(BytesIO(item['preview'])) as image:
+                                    image.thumbnail((480,480));stream=BytesIO();image.save(stream,format='PNG');preview=stream.getvalue()
+                            with self.lock:
+                                self.live=dict(source={k:info[k] for k in ('id','name','width','height')},state='starting',processed=0,pending=0,regions=[])
+                                self.live_preview=preview
                             roi=dict(x=0,y=0,w=info['width'],h=info['height'])
                             _,settings=engine.validate(item,roi,options.get('settings',{}))
                             if self.cancel.is_set():break
                             started=app.grid(item,settings,count,bool(options.get('adaptive',True)),minimum,bool(options.get('check_passing',False)),options.get('workers',0),batch=True,engine=engine)
-                            with self.lock:self.data['job_id']=started['id']
+                            with self.lock:
+                                self.data['job_id']=started['id'];self.live['job_id']=started['id']
                             while app.grid_thread.is_alive():
                                 if self.cancel.is_set():app.cancel_grid(started['id'])
                                 app.grid_thread.join(.2)
