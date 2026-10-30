@@ -88,7 +88,7 @@ function readPreference(key,fallback){
 }
 function writePreference(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch{message('Browser storage is unavailable; these preferences will last until this page closes.',true)}}
 const FFT_DETECTOR_CONTROLS={'fft-smoothing':['fft_smoothing_sigma',.65,0,3],'fft-threshold-floor':['fft_threshold_floor',1.8,0,20],'fft-min-strength':['fft_minimum_enrichment',3,0,20],'fft-min-separation':['fft_minimum_separation',.12,0,3],'fft-max-peaks':['fft_max_peaks',70,4,200,true]};
-const BASIC_NUMBERS={"g-max":[4,30],"fft-g-min":[0,29.9],"hcp-a":[0.15,0.65],"hcp-c":[0.20,1.20],"bcc-a":[0.20,0.65],"fcc-a":[0.20,0.65],"threshold":[0.15,0.7],"grid-workers":[0,8,true],"grid-count":[2,24,true],"grid-min":[0,null]};
+const BASIC_NUMBERS={"g-max":[4,30],"fft-g-min":[0,29.9],"hcp-a":[0.15,0.65],"hcp-c":[0.20,1.20],"bcc-a":[0.20,0.65],"fcc-a":[0.20,0.65],"threshold":[0.15,0.7],"grid-workers":[0,8,true],"grid-count":[2,24,true],"grid-min":[0,null],"batch-cutoff":[0,100000000]};
 Object.assign(BASIC_NUMBERS,Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value,min,max,integer]])=>[id,[min,max,integer]])));
 const BASIC_FLAGS=['adaptive','check-passing','show-grid','fft-hann','fft-mean'];
 const OVERLAY_MODES=['none','winner','winner_any',...PHASES,'both','all','geometry','custom'];
