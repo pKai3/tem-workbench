@@ -45,10 +45,13 @@ try {
     Write-Host 'Preparing Python dependencies. The first installation needs an internet connection.'
     & $temPython (Join-Path $PSScriptRoot 'python_runtime.py') --prepare
     if ($LASTEXITCODE -ne 0) { throw 'Python setup failed. Resolve the error above and rerun this installer.' }
+    & (Join-Path $temRoot '.venv\Scripts\python.exe') -c 'import tkinter; root = tkinter.Tk(); root.withdraw(); root.destroy()'
+    if ($LASTEXITCODE -ne 0) { throw 'The control window needs Tcl/Tk. Modify your Python installation to include Tcl/Tk, then rerun this installer.' }
     try {
         $temShell = New-Object -ComObject WScript.Shell
         $temShortcut = $temShell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'TEM Workbench.lnk'))
-        $temShortcut.TargetPath = Join-Path $temRoot 'Launch TEM Workbench.cmd'
+        $temShortcut.TargetPath = Join-Path $temRoot '.venv\Scripts\pythonw.exe'
+        $temShortcut.Arguments = '"' + (Join-Path $temRoot 'tools\windows_app.py') + '"'
         $temShortcut.WorkingDirectory = $temRoot
         $temShortcut.Description = 'Start TEM Workbench in your browser'
         $temShortcut.Save()
@@ -57,7 +60,7 @@ try {
         Write-Warning "Could not create a desktop shortcut: $_"
     }
     Write-Host 'Ready. Double-click Launch TEM Workbench.cmd or the desktop shortcut.'
-    Write-Host 'Keep the server window open while using the app; Ctrl+C stops it.'
+    Write-Host 'The control window provides Start/Stop, Open Workbench and View log. Closing it stops its server.'
     exit 0
 } catch {
     Write-Host "Could not install TEM Workbench: $_" -ForegroundColor Red

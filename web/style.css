@@ -169,3 +169,6 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .signal-toggle.inspector-layout button{min-height:28px;padding:5px 8px;font-size:11px}
 
 #demo-pack-url{width:100%;min-width:0}#demo-pack-panel{margin-bottom:14px}
+
+/* Native Windows menus otherwise inherit the selected phase colour. */
+.phase-color-controls select option{color:#edf5fc;background:#172332}
