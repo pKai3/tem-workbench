@@ -1551,11 +1551,14 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape')hideRegionPr
 // PNG freezes exact marker positions; GIF renders one cycle of the chosen motion.
 function markerMotionAt(mode,phase){
  phase=((phase%1)+1)%1;
+ if(mode==='rotate'){
+  const angles=[0,45,0,-45,0],sizes=[1.35,.85,1.35,.85,1.35],i=Math.floor(phase*4),f=phase*4-i,t=f*f*(3-2*f);
+  return {rotation:angles[i]+(angles[i+1]-angles[i])*t,scale:sizes[i]+(sizes[i+1]-sizes[i])*t,x:0,y:0,opacity:1};
+ }
  if(mode==='pulse')return {scale:1,x:0,y:0,opacity:.675+.325*Math.cos(phase*Math.PI*2)};
- if(!['bounce','wobble','rotate'].includes(mode))return {scale:1,x:0,y:0,opacity:1};
+ if(!['bounce','wobble'].includes(mode))return {scale:1,x:0,y:0,opacity:1};
  const stops=[[1.35,0,0],[1.1,1,-1],[.85,0,1],[1.1,-1,-.5],[1.35,0,0]],i=Math.floor(phase*4),f=phase*4-i,t=f*f*(3-2*f),a=stops[i],b=stops[i+1];
- const angles=[0,45,90,45,0],rotation=mode==='rotate'?angles[i]+(angles[i+1]-angles[i])*t:0;
- return {rotation,scale:a[0]+(b[0]-a[0])*t,x:mode==='wobble'?a[1]+(b[1]-a[1])*t:0,y:mode==='wobble'?a[2]+(b[2]-a[2])*t:0,opacity:1};
+ return {rotation:0,scale:a[0]+(b[0]-a[0])*t,x:mode==='wobble'?a[1]+(b[1]-a[1])*t:0,y:mode==='wobble'?a[2]+(b[2]-a[2])*t:0,opacity:1};
 }
 function spectrumSnapshot(){
  const svg=$('fft').cloneNode(true),markers=[...$('fft').querySelectorAll('.spectrum-marker')].map(m=>{const b=m.getBBox();return {x:b.x+b.width/2,y:b.y+b.height/2,offset:Number(m.getAttribute('data-motion-offset'))||0}});
@@ -1569,7 +1572,7 @@ function spectrumSnapshot(){
 function spectrumFrameSVG(snapshot,width,mode,phase){
  const svg=snapshot.svg.cloneNode(true);svg.setAttribute('width',width);svg.setAttribute('height',Math.round(width*452/464));
  [...svg.querySelectorAll('.spectrum-marker')].forEach((marker,i)=>{
-  const centre=snapshot.markers[i],motion=markerMotionAt(mode,phase+centre.offset);
+  const centre=snapshot.markers[i],motion=markerMotionAt(mode,phase+centre.offset/(mode==='rotate'?2:1));
   marker.removeAttribute('class');marker.setAttribute('transform',`translate(${motion.x} ${motion.y}) translate(${centre.x} ${centre.y}) rotate(${motion.rotation||0}) scale(${motion.scale}) translate(${-centre.x} ${-centre.y})`);
   marker.setAttribute('stroke-opacity',motion.opacity);marker.setAttribute('fill-opacity',motion.opacity);
  });
@@ -1582,7 +1585,7 @@ async function renderSpectrumFrame(snapshot,width,mode,phase){
 async function exportSpectrum(format){
  if(!result||!fftRaw||spectrumExportBusy||mapExportBusy||pending||busy)return;
  if(!config?.spectrum_exports){message('Restart TEM Workbench to enable PNG and GIF exports.',true);return}
- const mode=format==='gif'?$('marker-motion').value:'off',cycleMs=mode==='pulse'?1800:1200,count=mode==='off'?1:Math.round(cycleMs*30/1000);
+ const mode=format==='gif'?$('marker-motion').value:'off',cycleMs=mode==='pulse'?1800:mode==='rotate'?2400:1200,count=mode==='off'?1:Math.round(cycleMs*30/1000);
  if(count>1&&config.spectrum_export_fps!==30){message('Restart TEM Workbench, then reload the page to enable 30 fps GIF exports.',true);return}
  // GIF delays have 10 ms precision. Rounded frame boundaries alternate
  // 30/40 ms delays for 30 fps on average without changing the cycle length.

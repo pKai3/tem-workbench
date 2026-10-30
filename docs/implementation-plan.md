@@ -95,7 +95,7 @@ Parallel grid execution is tracked separately above and can support this mapping
 
 ## Display updates
 
-30 October 2026: added Bounce + rotate marker motion (0° → 90° → 0°), preserving phase timing offsets, reduced-motion preferences and GIF export support.
+30 October 2026: added Bounce + rotate marker motion (−45° to +45°, largest at 0°; 2.4-second rotation cycle with the original 1.2-second bounce timing), preserving phase timing offsets, reduced-motion preferences and GIF export support.
 
 ## Maintaining this plan
 
