@@ -196,3 +196,5 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 #acquisition-canvas.adjusting .location{cursor:move}#acquisition-canvas .location[data-selected] rect{stroke-width:3;stroke:#65fff0}#acquisition-canvas .location[data-manual] rect{stroke-dasharray:5 2}
 
 .grid-run-actions{display:flex;gap:10px;align-items:center}
+
+.batch-files{max-height:260px;overflow:auto;display:grid;gap:5px;margin:10px 0}.batch-files label{justify-content:flex-start}#batch-panel{margin:10px 0;padding:10px;border:1px solid #30404e;border-radius:6px}#batch-summary p,#batch-status{overflow-wrap:anywhere}.peak-edit-controls .hint{flex:1;min-width:220px}#diffraction-controls #diff-snap-radius{width:75px}#diffraction-controls #diff-snap{width:auto;min-height:0;padding:0}

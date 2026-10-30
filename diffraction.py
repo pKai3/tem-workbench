@@ -108,7 +108,7 @@ def defaults(info):
     return {'center_x': centre['x'], 'center_y': centre['y'],
             'pixel_x_nm_inv': info['pixel_x_nm_inv'], 'pixel_y_nm_inv': info['pixel_y_nm_inv'],
             'exclude_radius_nm_inv': 2.5, 'spot_sigma_px': 2., 'spot_snr': 9.,
-            'refine_center': True, 'max_center_shift_px': 50., 'smoothing_workers': 0, 'masks': []}
+            'refine_center': True, 'max_center_shift_px': 50., 'smoothing_workers': 0, 'masks': [], 'peak_edits': []}
 
 
 def validate(info, supplied):
@@ -120,9 +120,9 @@ def validate(info, supplied):
         raise ValueError('Translation refinement must be on or off.')
     value['smoothing_workers'] = supplied.get('smoothing_workers', 0)
     smoothing_worker_count(value['smoothing_workers'])
-    for key in value.keys()-{'masks', 'refine_center', 'smoothing_workers'}:
+    for key in value.keys()-{'masks', 'peak_edits', 'refine_center', 'smoothing_workers'}:
         value[key] = float(supplied.get(key, value[key]))
-    if not all(np.isfinite(v) for k, v in value.items() if k != 'masks'):
+    if not all(np.isfinite(v) for k, v in value.items() if k not in {'masks', 'peak_edits'}):
         raise ValueError('Diffraction settings must be finite.')
     if not (0 <= value['center_x'] < info['width'] and 0 <= value['center_y'] < info['height']):
         raise ValueError('Beam centre must lie inside the detector image.')
@@ -141,7 +141,69 @@ def validate(info, supplied):
         if not all(np.isfinite([x, y, w, h])) or min(x, y) < 0 or min(w, h) <= 0 or x+w > info['width'] or y+h > info['height']:
             raise ValueError('Exclusion rectangles must lie inside the detector image.')
         value['masks'].append(dict(x=x, y=y, w=w, h=h))
+    edits = supplied.get('peak_edits', [])
+    if not isinstance(edits, list) or len(edits) > 200:
+        raise ValueError('Use at most 200 peak edits; undo or reset edits first.')
+    value['peak_edits'] = []
+    for edit in edits:
+        if not isinstance(edit, dict) or edit.get('action') not in ('add', 'remove'):
+            raise ValueError('Peak edits must add or remove an observation.')
+        x, y, radius = [float(edit[k]) for k in ('x', 'y', 'radius_px')]
+        if not all(np.isfinite([x,y,radius])) or not (0 <= x < info['width'] and 0 <= y < info['height'] and 1 <= radius <= 50):
+            raise ValueError('Peak edits need detector coordinates and a radius of 1–50 pixels.')
+        value['peak_edits'].append(dict(action=edit['action'], x=x, y=y, radius_px=radius))
     return value
+
+
+def manual_spot(array, settings, x, y):
+    """Measure local contrast at an operator-selected coordinate, without inventing intensity."""
+    h,w = array.shape
+    radius = max(5, int(4*settings['spot_sigma_px']))
+    x0,x1=max(0,int(x)-radius),min(w,int(x)+radius+1)
+    y0,y1=max(0,int(y)-radius),min(h,int(y)+radius+1)
+    yy,xx=np.mgrid[y0:y1,x0:x1]; patch=array[y0:y1,x0:x1]
+    annulus=patch[np.hypot(xx-x,yy-y)>=radius*.65]
+    background=float(np.median(annulus))
+    spread=max(float(1.4826*np.median(abs(annulus-background))), 1e-6)
+    intensity=float(map_coordinates(array,[[y],[x]],order=1)[0])
+    contrast=max(0.,(intensity-background)/spread)
+    sx,sy=settings['pixel_x_nm_inv'],settings['pixel_y_nm_inv']
+    return dict(x_px=x,y_px=y,q=[(x-settings['center_x'])*sx,(settings['center_y']-y)*sy],
+                local_contrast=contrast,enrichment=float(np.log1p(contrast)),intensity=intensity,
+                width_nm_inv=2.355*settings['spot_sigma_px']*max(sx,sy),
+                width_px=2.355*settings['spot_sigma_px'],manual=True)
+
+
+def edit_spots(array, settings, spots):
+    """Replay ordered pixel-coordinate edits on a copy; never mutate cached detections."""
+    result=list(spots)
+    for edit in settings.get('peak_edits', []):
+        x,y,r=edit['x'],edit['y'],edit['radius_px']
+        result=[p for p in result if np.hypot(p['x_px']-x,p['y_px']-y)>r]
+        if edit['action']=='add':
+            spot=manual_spot(array,settings,x,y)
+            q=spot['q']; g=np.linalg.norm(q)
+            if g>0 and settings['exclude_radius_nm_inv'] <= g <= settings.get('g_max',10.) and visible([q],settings,array.shape)[0]:
+                result.append(spot)
+    return result
+
+
+def snap_peak(array, settings, x, y, radius=12):
+    """Bounded native-pixel search with light smoothing; no model prediction involved."""
+    h,w=array.shape
+    if not np.isfinite([x,y,radius]).all() or not (0<=x<w and 0<=y<h and 1<=radius<=50):
+        raise ValueError('Choose a point inside the detector and a snap radius of 1–50 px.')
+    x0,x1=max(0,int(x-radius)-3),min(w,int(x+radius)+4)
+    y0,y1=max(0,int(y-radius)-3),min(h,int(y+radius)+4)
+    from scipy.ndimage import gaussian_filter
+    signal=gaussian_filter(array[y0:y1,x0:x1].astype(float),1.)
+    yy,xx=np.mgrid[y0:y1,x0:x1]
+    sx,sy=settings['pixel_x_nm_inv'],settings['pixel_y_nm_inv']
+    q=np.c_[((xx-settings['center_x'])*sx).ravel(),((settings['center_y']-yy)*sy).ravel()]
+    good=(np.hypot(xx-x,yy-y)<=radius)&visible(q,settings,array.shape).reshape(xx.shape)&(np.linalg.norm(q,axis=1).reshape(xx.shape)<=settings.get('g_max',10.))
+    if not good.any():raise ValueError('That location is outside the fitting band or inside an exclusion.')
+    iy,ix=np.unravel_index(np.argmax(np.where(good,signal,-np.inf)),signal.shape)
+    return dict(x=float(ix+x0),y=float(iy+y0))
 
 
 def visible(points, settings, shape, margin=0.):
@@ -461,7 +523,7 @@ def spectrum(array, settings, cache=None, g_max=10.):
     if not 0 <= g_min < g_max:
         raise ValueError('Central exclusion must be smaller than the outer fitting limit.')
     prepared = _cached_detector(array, settings, cache)
-    translation = refine_translation(prepared['spots'], settings, array.shape)
+    translation = refine_translation(edit_spots(array, settings, prepared['spots']), settings, array.shape)
     if translation['applied']:
         cx, cy = translation['fitted_center_px']
         settings = {**settings, 'center_x': cx, 'center_y': cy}
@@ -470,8 +532,8 @@ def spectrum(array, settings, cache=None, g_max=10.):
     sx, sy = settings['pixel_x_nm_inv'], settings['pixel_y_nm_inv']
     cx, cy = settings['center_x'], settings['center_y']
     sigma = settings['spot_sigma_px']
-    spots = [p for p in prepared['spots'] if p['local_contrast'] >= min(3., settings['spot_snr'])]
-    strong = [p for p in spots if p['local_contrast'] >= settings['spot_snr']]
+    spots = [p for p in edit_spots(array, settings, prepared['spots']) if p.get('manual') or p['local_contrast'] >= min(3., settings['spot_snr'])]
+    strong = [p for p in spots if p.get('manual') or p['local_contrast'] >= settings['spot_snr']]
     width = float(np.median([p['width_nm_inv'] for p in strong])) if strong else 2.355*sigma*max(sx, sy)
     width = float(np.clip(width, 2*max(sx, sy), .30))
     radius = max(.10, width)
@@ -483,9 +545,10 @@ def spectrum(array, settings, cache=None, g_max=10.):
                       'g_nm_inv': float(np.linalg.norm(q)), 'local_contrast': strength,
                       'log_local_contrast': float(np.log1p(strength)),
                       'weight': float(np.clip(np.log1p(strength), 1, 6)),
-                      'observed_spots': [s['q'] for s in p['spots']]})
+                      'observed_spots': [s['q'] for s in p['spots']],
+                      'manual_observed_spots': [s['q'] for s in p['spots'] if s.get('manual')]})
     maxima = []
-    for p in _profiles([s for s in spots if s['local_contrast'] < settings['spot_snr']], radius):
+    for p in _profiles([s for s in spots if not s.get('manual') and s['local_contrast'] < settings['spot_snr']], radius):
         if any(min(np.linalg.norm(p['q']-[s['qx'], s['qy']]), np.linalg.norm(p['q']+[s['qx'], s['qy']])) < radius for s in peaks):
             continue
         strongest = max(p['spots'], key=lambda s: s['local_contrast'])
@@ -498,7 +561,7 @@ def spectrum(array, settings, cache=None, g_max=10.):
                'visible': lambda q: visible(q, settings, array.shape, radius) | visible(-q, settings, array.shape, radius)}
     complete_band = min(cx*sx, (w-1-cx)*sx, cy*sy, (h-1-cy)*sy) >= g_max
     result = {'kind': 'diffraction', 'log': prepared['log'], 'extent': [-g_max*1.05, g_max*1.05, -g_max*1.05, g_max*1.05], 'g_min': g_min, 'g_max': g_max,
-              'peaks': peaks, 'df': max(sx, sy), 'peak_width_nm_inv': width,
+              'peak_edit_count': len(settings.get('peak_edits', [])), 'peaks': peaks, 'df': max(sx, sy), 'peak_width_nm_inv': width,
               'weak_maxima': maxima, 'profile_threshold': settings['spot_snr'],
               'observed_spot_count': sum(len(p['observed_spots']) for p in peaks),
               'beam_center_px': [cx, cy], 'center_refinement': translation, 'reciprocal_pixel_size': [sx, sy],

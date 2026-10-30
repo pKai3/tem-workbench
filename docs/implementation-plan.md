@@ -1,8 +1,8 @@
 # TEM Workbench implementation plan
 
-Last updated: 30 October 2026
+Last updated: 31 October 2026
 
-This is the maintained plan for upcoming analysis and performance work. The next three analysis tasks have an agreed order. The user authorized parallel grid execution ahead of the remaining analysis tasks on 30 October 2026; that implementation is on `perf/parallel-analysis`. The order of the three analysis tasks below is otherwise unchanged.
+This is the maintained plan for upcoming analysis and performance work. The next three analysis tasks have an agreed order. The user authorized parallel grid execution ahead of the remaining analysis tasks on 30 October 2026; that implementation is on `perf/parallel-analysis`. On 31 October 2026 the user explicitly brought forward batch grids alongside manual diffraction peak addition/removal. The remaining analysis work below is unchanged.
 
 ## Next tasks in agreed order
 
@@ -10,7 +10,7 @@ This is the maintained plan for upcoming analysis and performance work. The next
 | --- | --- | --- |
 | 1 | Revise fully free HCP fitting | First-pass optional mode implemented; data validation pending |
 | 2 | Revise automatic minimum peak strength selection to retain weaker separate patterns | Design discussion pending |
-| 3 | Batch grid analysis across qualifying images, with per-image and ST/STA summaries | Planned after the fitting and peak-selection changes |
+| 3 | Batch grid analysis across qualifying images, with per-image and ST/STA summaries | Implemented 31 October 2026; validation recorded below |
 
 ### 1 HCP fitting
 
@@ -46,21 +46,30 @@ Evaluate aligned HCP/BCC alternatives, a strong single BCC example, and multiple
 
 ### 3 Batch grids
 
-Run the usual grid analysis over all qualifying images using one captured parameter set. Compile the usual classifications, image-area percentages and zone-axis breakdowns for each image and for each sample group, including ST and STA.
+Implemented 31 October 2026 following explicit approval to proceed now. **Automatic grid → Batch grids** reviews and selects images, captures the current FFT/fitting/grid parameter set, and exports results automatically into a unique batch folder in the configured output directory.
 
-Eligibility should cover OneView real-space images, excluding direct diffraction. The requested magnification cutoff is around 400,000×; confirm whether 400kX itself is included and how missing or ambiguous magnification metadata should be handled. Show the eligible list and exclusions before running.
+- Filename eligibility: OneView, no “diffraction”, and a parseable magnification. Default ≥400,000×; cutoff and inclusion of the boundary are explicit controls. Missing/ambiguous magnification is excluded and shown with a reason. Calibration, real-space mode, square shape, grid cell size and sampling are checked when each selected file loads; failures are reported per image.
+- Images run sequentially with the existing bounded parallel region pool for each grid. No nested per-image pools. Uniform/adaptive settings, stopping size, passing-region checks and worker choice are captured. A separate source engine avoids replacing the interactive image cache. Settings changes during a run do not change the batch.
+- Progress and cancellation retain completed image exports and the interrupted grid's current leaves. Errors on individual files do not discard other results. Folder changes and competing grid starts are blocked during the batch. Status survives page reload while the backend remains running; interrupted batches are not resumed after backend shutdown.
+- Every image writes the usual full grid JSON with source name, settings, engine version, classifications, models and measured evidence. Optional PNG maps show classification colours and passing zone labels where cells have room; PNG zone indices are explicitly three-index. PNG rendering is server-side and does not depend on keeping a browser tab open.
+- `summary.json`, `images.csv`, `samples.csv`, `zones.csv` and `sample_zones.csv` are updated throughout the run. Per-image summaries use current leaf regions only. All classification categories, coverage and passing phase/zone support are retained.
+- Sample summaries separate pooled physical image area from the unweighted mean of per-image percentages. Denominators are full areas of images with grid results, including partial grids; coverage and completion state are explicit. Failed images without grids are excluded and listed separately. ST/STA labels are retained as stored. Acquired fields may overlap; pooled area is not unique specimen coverage.
+- Classification percentages are disjoint; passing zone/phase support can overlap and must not be summed as phase fractions. Results remain candidate-labelled image-area percentages, not validated volume fractions.
+- Grid and region JSON export filenames now include the source image name alongside timestamp and unique suffix.
 
-Retain the selected uniform/adaptive settings, stopping size and passing-region checks. Record the complete analysis settings and engine version with each run. Provide progress, cancellation and per-image failures without discarding completed results.
+Validation: automated tests cover eligibility, leaf-only areas, overlapping support, pooled versus mean denominators, PNG rendering, actual spawn-grid exports, per-image errors and cancellation retaining completed output. The full suite passed 111 tests. Browser verification covered add/remove, snapping, undo/reset and persistence, plus a two-worker batch of ST1203 and STA1114 with complete coverage, per-image JSON/PNG and sample summaries. JavaScript syntax and diff checks passed. Native Windows verification remains pending.
 
-Summaries should include:
+## Manual diffraction peak editing
 
-- Per-image analyzed area and coverage, all classification categories, passing phase candidates and zone-axis breakdowns.
-- ST/STA summaries with explicit denominators. Distinguish pooled physical image area from an unweighted mean of image percentages.
-- Current adaptive leaf regions only, excluding superseded parents and discarded trial children.
-- Ambiguous, unresolved, insufficient and multiple-pattern area. Do not double-count overlapping phase support as two disjoint areas.
-- Machine-readable per-image and sample summaries, with the underlying grid results retained for inspection and reweighting.
+Implemented 31 October 2026: **Detector tool → Add peak / Remove peak**, usable on the source detector, reciprocal plot and enlarged reciprocal plot. Add optionally snaps to the brightest lightly smoothed native detector pixel within an adjustable 1–50 px radius (default 12 px). Disable snapping for exact placement. This is a local image search, not a crystal-model prediction or confirmation that a reflection exists.
 
-These are candidate-labelled image-area percentages, not validated volume fractions. Independently acquired fields may overlap; sample summaries must not imply unique specimen coverage unless that is established.
+Ordered edits use original detector coordinates and are remembered per image, included in saved-region settings and numerical exports. Removal suppresses a small neighbourhood of the selected observation, leaving its opposite partner intact. Adding replaces nearby detections to avoid double counting, bypasses the automatic contrast cutoff, measures local contrast for its weight, and records manual provenance. Manual markers are pink; analysis flags explicitly identify manual evidence. Edits respect masks and the fitting band. Undo last edit and reset all peak edits are available. Centre refinement rechecks the edited observations; cached automatic detections remain unchanged.
+
+Deferred explicitly by the user on 31 October 2026 (do not implement in this change):
+
+- Partially obscured peaks: estimate centre from visible signal with appropriate positional uncertainty, without snapping blindly to an exposed edge.
+- Fully hidden opposite spots: distinct inferred markers, not additional measured evidence. Treat verified beam-stop-obscured locations as unobservable rather than missing reflections; avoid duplicate profile/coverage/rank credit.
+- Extend manual editing to real-space FFT mode after the diffraction interaction is established.
 
 ## Parallel grid execution
 
@@ -74,7 +83,7 @@ Implemented 30 October 2026 on `perf/parallel-analysis`, following explicit appr
 - Validation: 104 tests passed, including actual spawn equivalence and cached reweighting, serial/threaded detector equivalence, adaptive child decisions, cancellation and injected worker errors. Browser checks covered worker preference persistence, progress, cancellation and manual analysis during a grid. Terminating the isolated test backend left no analysis workers. Windows uses spawn and a windowless interpreter when available; native Windows runtime testing is still pending.
 - Benchmarks on an 11-core Apple M3 Pro: 100-cell ST1203 grid with automatic strength and HCP overall/c/a fitting was about 3× faster with four workers; adaptive testing returned identical regions and classifications. Direct diffraction 1096 improved from about 12.2 to 8.9 seconds with two smoothing threads. See [benchmark details](parallel-performance.md) and `tools/benchmark_parallel.py` for reproduction and limits.
 
-Remaining: native Windows smoke test; broader memory/load measurements on smaller computers; reuse this pool in future batch grids without nested per-image pools. Batch grids and the weaker-second-pattern objective remain separate tasks, not implemented here. Architecture diagrams were intentionally not refreshed.
+Remaining: native Windows smoke test; broader memory/load measurements on smaller computers; batch grids now reuse this pool sequentially across images without nested per-image pools. Further validation of the weaker-second-pattern objective remains separate. Architecture diagrams were intentionally not refreshed.
 
 ## Overlapping window phase candidate map
 
@@ -114,7 +123,7 @@ Parallel grid execution is implemented separately above and can support this fut
 
 Update this document when a task's scope, priority, decisions or implementation status changes. Keep proposals distinct from agreed behaviour and mark work complete only after implementation and relevant verification. Add the completion date and commit reference when closing a task; keep a short completed-work record as tasks leave the active list.
 
-The README links here instead of maintaining a second plan. Update the [architecture and methods documentation](architecture/README.md) when implemented numerical or execution changes affect it. This plan is a roadmap, not a description of features already available.
+The README links here instead of maintaining a second plan. Update the [architecture and methods documentation](architecture/README.md) when the user requests a refresh. This plan is a roadmap, not a description of features already available.
 
 30 October 2026: corrected GIF export limits for the full 72-frame Bounce + rotate cycle at 30 fps and 2800-pixel width. Older running servers are detected before rendering frames and prompt a restart.
 

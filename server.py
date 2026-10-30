@@ -27,6 +27,8 @@ import numpy as np
 from crystal_templates import PHASES
 from materials import MATERIAL_PRESETS
 from engine import Engine
+import diffraction
+from batch_grids import BatchGrids, eligibility, safe_name
 import demo_data
 from demo_packs import DemoDownload
 import adaptive_refinement
@@ -64,10 +66,11 @@ class Workbench:
         self.closing = False
         self.job_lock = threading.RLock()
         self.engine.catalog()
+        self.batch = BatchGrids(self)
 
 
     def config_info(self):
-        return {'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': worker_limit(), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'manual_diffraction_peaks': True, 'batch_grids': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': worker_limit(), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -81,6 +84,8 @@ class Workbench:
 
     def set_folders(self, data, output):
         with self.lock, self.job_lock:
+            if self.batch.running():
+                raise ValueError('Finish or cancel batch grids before changing folders.')
             if self.preview_batch and self.preview_status()['state'] == 'running':
                 raise ValueError('Finish or cancel PNG preview generation before changing folders.')
             if any(j['state'] == 'running' for j in self.jobs.values()):
@@ -153,10 +158,12 @@ class Workbench:
         LOG.info('Saved region deleted: %s (%s)', deleted['region']['name'], deleted['region']['id'])
         return deleted
 
-    def grid(self, item, settings, count, adaptive, minimum, check_passing=False, workers=0):
+    def grid(self, item, settings, count, adaptive, minimum, check_passing=False, workers=0, batch=False, engine=None):
         workers = worker_count(workers)
         settings = copy.deepcopy(settings)
-        engine = self.engine  # Snapshot even if the open image changes.
+        engine = engine or self.engine  # Snapshot even if the open image changes.
+        if not batch and getattr(self, 'batch', None) and self.batch.running():
+            raise ValueError('Finish or cancel batch grids first.')
         if item['info'].get('image_kind') == 'diffraction':
             raise ValueError('A detector diffraction pattern is not a real-space phase map. Use whole-pattern analysis with exclusions.')
         if min(.5/item['info']['pixel_x_nm'], .5/item['info']['pixel_y_nm']) < settings.get('g_max', 10.):
@@ -309,12 +316,16 @@ class Workbench:
             self.jobs[job_id]['cancel'] = True
 
     def close(self):
+        if getattr(self, 'batch', None):
+            self.batch.cancel_run()
         with self.job_lock:
             self.closing = True
             for job in self.jobs.values():
                 job['cancel'] = True
         if self.grid_thread is not None:
             self.grid_thread.join()
+        if getattr(self, 'batch', None) and self.batch.thread:
+            self.batch.thread.join()
 
     @staticmethod
     def best_zones(region):
@@ -462,7 +473,7 @@ class Workbench:
         output = Path(self.config['output_root']).expanduser().resolve()
         output.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
-        target = output/f'{stamp}_{kind}_{uuid.uuid4().hex[:6]}.json'
+        target = output/f"{stamp}_{safe_name(result['source']['name'])}_{kind}_{uuid.uuid4().hex[:6]}.json"
         result['saved_at'] = datetime.now().astimezone().isoformat()
         result['engine_sha256'] = self.engine.version
         result['limits'] = json.loads((ROOT/'engine_provenance.json').read_text())['limits']
@@ -531,6 +542,8 @@ def make_handler(app):
                     self.send(preview, 'image/png')
                 elif url.path == '/api/file-preview':
                     self.send(app.file_preview(query['id'][0]), 'image/png')
+                elif url.path == '/api/batch':
+                    self.send(app.batch.status())
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
                 elif url.path == '/api/region-preview':
@@ -604,6 +617,26 @@ def make_handler(app):
                         else:
                             LOG.info('Region %s at %s,%s (%s px): %s; %.0f ms', item['info']['name'], result['roi']['x'], result['roi']['y'], result['roi']['w'], result['classification']['label'], result['elapsed_ms'])
                     self.send(result)
+                elif self.path == '/api/diffraction/snap':
+                    with app.lock:
+                        item=app.engine.load(body['file_id'])
+                        if item['info']['image_kind'] != 'diffraction':
+                            raise ValueError('Peak editing currently applies to diffraction only.')
+                        d=diffraction.validate(item['info'], body.get('diffraction', {}))
+                        gmax=float(body.get('g_max',10))
+                        if not 4<=gmax<=30:raise ValueError('Invalid fitting limit.')
+                        d['g_max']=gmax
+                        self.send(diffraction.snap_peak(item['array'],d,float(body['x']),float(body['y']),float(body.get('radius_px',12))))
+                elif self.path == '/api/batch/preview':
+                    cutoff=float(body.get('cutoff',400000))
+                    if not 0<=cutoff<=100000000:raise ValueError('Invalid magnification cutoff.')
+                    with app.lock:
+                        self.send({'files':[eligibility(row,cutoff,body.get('inclusive',True)) for row in app.engine.catalog()]})
+                elif self.path == '/api/batch/start':
+                    self.send(app.batch.start(body))
+                elif self.path == '/api/batch/cancel':
+                    app.batch.cancel_run()
+                    self.send(app.batch.status())
                 elif self.path == '/api/grid':
                     with app.lock:
                         item=app.engine.load(body['file_id'])

@@ -479,6 +479,8 @@ class Engine:
                 classification['flags'].append('The detector does not cover the entire fitting band. Predictions outside the detector or inside exclusions are unchecked.')
             if s['mask_count']:
                 classification['flags'].append('Manual exclusion rectangles remove spots from detection and leave obscured prediction profiles unchecked when neither opposite position is visible.')
+            if s.get('peak_edit_count'):
+                classification['flags'].append(f"{s['peak_edit_count']} manual peak edit(s) applied. Manually added observations bypass the automatic contrast cutoff and count as measured profiles; review their positions.")
             return classification
         auto = s.get('auto_peak_strength')
         if auto and auto['status'] == 'optimized':
