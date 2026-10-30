@@ -3,7 +3,20 @@
  const byId=id=>document.getElementById(id), dialog=byId('acquisition-map'), svg=byId('acquisition-canvas');
  const node=(name,attrs={},text)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',name);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;return n};
  let data=null, originId='', selectedFolder='', visible=[], reference=null, view=null, busy=false, drag=null, moved=false, request=0;
- const previews=new Map(), hoverCache=new Map();
+ const previews=new Map(), hoverCache=new Map(), rotations=new Map();
+ const rotationKey=()=>`tem-acquisition-rotation:${JSON.stringify([config.data_root,reference.id])}`;
+ function restoreRotation(){
+  if(!reference)return;
+  const key=rotationKey(), saved=rotations.has(key)?rotations.get(key):readPreference(key,0);
+  const value=typeof saved==='number'&&Number.isFinite(saved)?saved:0;
+  rotations.set(key,value);byId('acquisition-rotation').value=value;
+ }
+ function rememberRotation(){
+  if(!reference)return;
+  const value=byId('acquisition-rotation').valueAsNumber;
+  if(!Number.isFinite(value)){restoreRotation();return}
+  rotations.set(rotationKey(),value);writePreference(rotationKey(),value);update(false);
+ }
  let history=[], compare=false, hoverTimer=0, hoverTicket=0;
  const card=byId('acquisition-hover');
  function hideHover(){clearTimeout(hoverTimer);hoverTicket++;card.hidden=true}
@@ -89,6 +102,7 @@
   options(byId('acquisition-reference'),refs.map(f=>[f.id,`${f.name} · ${fmt(f.field_nm[0])} nm wide`]),old);
   reference=refs.find(f=>f.id===byId('acquisition-reference').value)||null;
   if(!reference)reference=visible.find(positioned)||null;
+  restoreRotation();
   const placed=visible.filter(positioned);
   byId('acquisition-status').textContent=`${data.sample} (as labelled) · ${placed.length}/${visible.length} images have stage X/Y · ${visible.length-placed.length} without locations. Units assumed ${byId('acquisition-units').selectedOptions[0].text}; verify for your microscope. ${reference&&field(reference)?'Overview anchored at its recorded stage position.':'No calibrated overview available; showing stage locations only.'}`;
   const list=byId('acquisition-list');list.replaceChildren();
@@ -181,7 +195,8 @@
  byId('acquisition-folder').onchange=()=>{selectedFolder=byId('acquisition-folder').value;byId('acquisition-scope').value='folder';update()};
  for(const id of ['acquisition-scope','acquisition-date'])byId(id).onchange=()=>{history=[];byId('acquisition-reference').replaceChildren();update()};
  byId('acquisition-reference').onchange=()=>{history=[];update(false);fit(true)};
- for(const id of ['acquisition-units','acquisition-rotation','acquisition-flip-x','acquisition-flip-y'])byId(id).onchange=()=>{history=[];update()};
+ byId('acquisition-rotation').onchange=rememberRotation;
+ for(const id of ['acquisition-units','acquisition-flip-x','acquisition-flip-y'])byId(id).onchange=()=>{history=[];update()};
  byId('acquisition-fit').onclick=()=>fit(false);byId('acquisition-overview').onclick=()=>fit(true);
  function zoom(factor,px=400,py=310){if(!view||view.w*factor<1e-7||view.w*factor>1e10)return;view.x+=px/800*view.w*(1-factor);view.y+=py/620*view.h*(1-factor);view.w*=factor;view.h*=factor;draw()}
  byId('acquisition-zoom-in').onclick=()=>zoom(.65);byId('acquisition-zoom-out').onclick=()=>zoom(1/.65);
