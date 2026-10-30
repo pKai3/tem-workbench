@@ -14,12 +14,20 @@ The interface pairs real-space images with reciprocal-space previews and support
 - Fit a uniform prediction scale, or independent HCP basal and c-axis scales.
 - Adjust a scale penalty and reweight a completed grid from cached fits.
 - Map candidate labels and zone axes, with separate HCP/BCC/FCC symbols and legends.
-- Run uniform or adaptive grids and inspect area-weighted result summaries.
+- Run uniform or adaptive grids with parallel workers and inspect area-weighted result summaries.
 - Adjust FFT colour, brightness and contrast independently of numerical analysis.
 - Choose data and output folders through the interface, with local directory links.
 - Save named, tagged regions linked to their source images and analysis settings.
 - Export region and grid results as JSON with source pixel hashes and engine provenance.
 - Download optional full-resolution TEM and diffraction examples separately.
+
+## Parallel analysis
+
+Under **Automatic grid**, choose **Workers**: Auto, 1, 2, 4 or 8. Auto uses up to four workers and leaves one logical CPU free. Lower counts reduce CPU and memory use. The choice is remembered and applies to the next run. Progress includes worker count and elapsed time; manual region inspection remains available during a grid.
+
+Each grid uses separate Python processes with private fit caches and one shared, read-only temporary source image. Results and adaptive decisions are applied in a fixed order. Cancel stops queued work and checks between automatic-strength trials; the current trial may finish first. A partially checked subdivision retains its parent. Completed grids can still be reweighted from cached fits.
+
+Diffraction spot smoothing automatically uses two threads where available. These execution changes preserve the detector and matcher calculations. Process startup adds overhead to very small grids; speedup depends on the image, settings, CPU and memory. Windows and macOS use the same spawn-based design; the initial performance measurements and live UI checks were on macOS. See [measurements and validation](docs/parallel-performance.md).
 
 ## Quick start
 

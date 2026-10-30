@@ -9,6 +9,8 @@ from scipy.ndimage import gaussian_filter, label
 from scipy.spatial import cKDTree
 from scipy.optimize import linear_sum_assignment
 
+FFT_WORKERS = 2  # Grid processes use one FFT thread each.
+
 def canonical(q):
  q=np.array(q,copy=True);flip=(q[:,1]<-1e-8)|((abs(q[:,1])<1e-8)&(q[:,0]<0));q[flip]*=-1;return q
 
@@ -26,7 +28,7 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
  z=a.astype('float32')
  if remove_mean:z=z-float(z.mean())
  if window=='hann':z=z*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:]
- power=np.abs(fftshift(fft2(z,workers=2)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],smoothing_sigma);valid=(g>0)&(g>=g_min)&(g<=g_max)
+ power=np.abs(fftshift(fft2(z,workers=FFT_WORKERS)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],smoothing_sigma);valid=(g>0)&(g>=g_min)&(g<=g_max)
  window_width=(1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
  threshold=max(threshold_floor,profile_fraction*float(np.max(wh[valid]))) if np.any(valid) else threshold_floor
  components,nc=label(valid&(wh>threshold));peaks=[]

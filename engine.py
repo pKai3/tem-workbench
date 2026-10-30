@@ -1,4 +1,7 @@
 """DM4 input and reusable single-region analysis, independent of the web UI."""
+from parallel_execution import configure_numeric_threads
+configure_numeric_threads()
+from concurrent.futures import CancelledError
 from pathlib import Path
 from io import BytesIO
 import base64
@@ -54,7 +57,7 @@ class Engine:
         self.auto_templates = self.templates
         self._template_cache = {(10., 3., .295, .468, .330, .417): self.templates}
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'engine.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'engine.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
         self.acquisition_index = MetadataIndex()
@@ -304,7 +307,7 @@ class Engine:
             models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
         return models, candidates
 
-    def analyze(self, item, roi, settings, images=True, cache_candidates=False):
+    def analyze(self, item, roi, settings, images=True, cache_candidates=False, cancel_event=None):
         roi, settings = self.validate(item, roi, settings)
         started = time.perf_counter()
         x, y, w, h = [roi[k] for k in ['x', 'y', 'w', 'h']]
@@ -337,6 +340,8 @@ class Engine:
                       if auto_strength else [settings['fft_minimum_enrichment']])
             best, attempts, last_count = None, [], None
             for strength in levels:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise CancelledError('Grid cancelled')
                 peaks = [p for p in pool if p['log_radial_enrichment'] >= strength]
                 if auto_strength and len(pool) >= 4 and len(peaks) < 4:
                     break

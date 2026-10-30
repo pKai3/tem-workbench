@@ -1,4 +1,9 @@
 """Local-only TEM workbench. Start with: python server.py --open"""
+from parallel_execution import RegionPool, worker_count, worker_limit, configure_numeric_threads
+configure_numeric_threads()
+from concurrent.futures import TimeoutError, CancelledError
+import copy
+import signal
 from pathlib import Path
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -55,12 +60,14 @@ class Workbench:
         self.preview_batch = None
         self.demo_download = DemoDownload(demo_data.DIRECTORY/'packs')
         self.jobs = {}
+        self.grid_thread = None
+        self.closing = False
         self.job_lock = threading.RLock()
         self.engine.catalog()
 
 
     def config_info(self):
-        return {'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -146,7 +153,10 @@ class Workbench:
         LOG.info('Saved region deleted: %s (%s)', deleted['region']['name'], deleted['region']['id'])
         return deleted
 
-    def grid(self, item, settings, count, adaptive, minimum, check_passing=False):
+    def grid(self, item, settings, count, adaptive, minimum, check_passing=False, workers=0):
+        workers = worker_count(workers)
+        settings = copy.deepcopy(settings)
+        engine = self.engine  # Snapshot even if the open image changes.
         if item['info'].get('image_kind') == 'diffraction':
             raise ValueError('A detector diffraction pattern is not a real-space phase map. Use whole-pattern analysis with exclusions.')
         if min(.5/item['info']['pixel_x_nm'], .5/item['info']['pixel_y_nm']) < settings.get('g_max', 10.):
@@ -164,16 +174,19 @@ class Workbench:
                                              'check_passing': check_passing,
                                              'refinement_policy': adaptive_refinement.VERSION if check_passing else 'unresolved_or_multiple_patterns' if adaptive else 'uniform'},
                'lookahead': {'checked': 0, 'refined': 0, 'retained': 0},
-               'regions': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False}
+               'regions': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False,
+               'execution': {'backend': 'processes', 'workers': workers, 'elapsed_seconds': 0.}}
         with self.job_lock:
-            if any(j['state'] == 'running' and not j['cancel'] for j in self.jobs.values()):
+            if self.closing or any(j['state'] == 'running' for j in self.jobs.values()) or (self.grid_thread is not None and self.grid_thread.is_alive()):
                 raise ValueError('Cancel or finish the current grid first.')
             self.jobs = {job['id']: job}
 
-        LOG.info("Grid %s started: %s; %s×%s; adaptive=%s; stop=%.3g nm", job["id"][:8], item["info"].get("name", "image"), count, count, adaptive, minimum)
+        LOG.info("Grid %s started: %s; %s×%s; adaptive=%s; stop=%.3g nm; workers=%s", job["id"][:8], item["info"].get("name", "image"), count, count, adaptive, minimum, workers)
 
         def work():
-            progress_at = time.monotonic()
+            started = progress_at = time.monotonic()
+            pool = None
+            in_flight = deque()
             queue = deque(({'x': int(bounds[c]), 'y': int(bounds[r]), 'w': int(bounds[c+1]-bounds[c]), 'h': int(bounds[r+1]-bounds[r])}, 0, None, None) for r in range(count) for c in range(count))
             probes = {}
 
@@ -195,23 +208,38 @@ class Workbench:
                 if not (needs_split or review_pass):
                     region['stop_reason'] = 'Supported phase candidate with no substantial second periodic pattern.'
                     return
-                probe_id = region['id'] if review_pass else None
+                probe_id = region['id']
+                probes[probe_id] = {'parent': region, 'children': [], 'review': review_pass}
                 if review_pass:
-                    probes[probe_id] = {'parent': region, 'children': []}
                     region['lookahead'] = {'state': 'checking', 'version': adaptive_refinement.VERSION}
                     region['stop_reason'] = 'Checking four children; parent remains on the map.'
                 else:
-                    region['leaf'] = False
-                    region['stop_reason'] = 'Subdivided: ' + ('no resolved phase assignment.' if unresolved else 'two candidate structures or orientations.' if multiple else 'substantial second periodic pattern.')
+                    region['stop_reason'] = 'Preparing subdivision: ' + ('no resolved phase assignment.' if unresolved else 'two candidate structures or orientations.' if multiple else 'substantial second periodic pattern.')
                 for dy, hh in [(0, halfy), (halfy, roi['h']-halfy)]:
                     for dx, ww in [(0, halfx), (halfx, roi['w']-halfx)]:
                         queue.append(({'x': roi['x']+dx, 'y': roi['y']+dy, 'w': ww, 'h': hh}, region['depth']+1, region['id'], probe_id))
 
             try:
-                while queue and not job['cancel']:
-                    roi, depth, parent, probe_id = queue.popleft()
-                    with self.lock:
-                        result = self.engine.analyze(item, roi, settings, images=False, cache_candidates=True)
+                pool = RegionPool(item, settings, engine.settings, engine.version, workers)
+                while (queue or in_flight) and not job['cancel']:
+                    # Submit only a bounded window; commit in submission order.
+                    # This preserves serial breadth-first IDs, tie order and splits.
+                    while queue and len(in_flight) < workers and not job['cancel']:
+                        task = queue.popleft()
+                        in_flight.append((task, pool.submit(task[0])))
+                    if job['cancel']:
+                        break
+                    with self.job_lock:
+                        job['pending'] = len(queue) + len(in_flight)
+                        job['execution']['elapsed_seconds'] = round(time.monotonic()-started, 2)
+                    (roi, depth, parent, probe_id), future = in_flight[0]
+                    try:
+                        result = future.result(timeout=.1)
+                    except TimeoutError:
+                        continue
+                    in_flight.popleft()
+                    if job['cancel']:
+                        break
                     with self.job_lock:
                         result.update({'id': str(len(job['regions'])), 'depth': depth, 'parent': parent,
                                        'leaf': probe_id is None, 'trial_only': probe_id is not None})
@@ -221,11 +249,14 @@ class Workbench:
                             group = probes[probe_id]; group['children'].append(result)
                             result['stop_reason'] = 'Trial child; parent retained pending comparison.'
                             if len(group['children']) == 4 and not job['cancel']:
-                                decision = adaptive_refinement.review(group['parent'], group['children'], self.engine)
-                                owner = group['parent']; owner['lookahead'] = decision
-                                job['lookahead']['checked'] += 1
+                                decision = (adaptive_refinement.review(group['parent'], group['children'], engine)
+                                            if group['review'] else {'retain_children': True, 'reason': 'Unresolved or multiple-pattern parent.', 'state': 'complete'})
+                                owner = group['parent']
                                 retain = decision['retain_children']
-                                job['lookahead']['refined' if retain else 'retained'] += 1
+                                if group['review']:
+                                    owner['lookahead'] = decision
+                                    job['lookahead']['checked'] += 1
+                                    job['lookahead']['refined' if retain else 'retained'] += 1
                                 owner['leaf'] = not retain
                                 owner['stop_reason'] = ('Subdivided: ' if retain else 'Parent retained: ') + decision['reason']
                                 for child in group['children']:
@@ -239,25 +270,51 @@ class Workbench:
                             plan(result)
                         else:
                             result['stop_reason'] = 'Cancelled after this region; no further refinement.'
-                        job['pending'] = len(queue)
+                        job['pending'] = len(queue) + len(in_flight)
                     if time.monotonic()-progress_at >= 5:
                         LOG.info('Grid %s: %s regions analysed; %s pending', job['id'][:8], job['processed'], job['pending'])
                         progress_at = time.monotonic()
+            except CancelledError:
+                job['cancel'] = True
             except Exception as exc:
                 with self.job_lock:
                     job['error'] = str(exc)
                 traceback.print_exc()
             finally:
+                if pool is not None:
+                    try:
+                        pool.close()
+                    except Exception as exc:
+                        job['error'] = job['error'] or str(exc)
+                        LOG.exception('Grid worker cleanup failed')
                 with self.job_lock:
                     for group in probes.values():
-                        group['parent']['lookahead'].update(state='incomplete', children_checked=len(group['children']))
+                        if group['review']:
+                            group['parent']['lookahead'].update(state='incomplete', children_checked=len(group['children']))
                         group['parent']['stop_reason'] = 'Parent retained: child checks were interrupted.'
                         for child in group['children']:
                             child['stop_reason'] = 'Trial only; incomplete child checks.'
+                    job['execution']['elapsed_seconds'] = round(time.monotonic()-started, 2)
                     job['state'] = 'error' if job['error'] else 'cancelled' if job['cancel'] else 'complete'
                     LOG.info('Grid %s %s: %s analysed; %s map regions', job['id'][:8], job['state'], job['processed'], sum(r['leaf'] for r in job['regions']))
-        threading.Thread(target=work, daemon=True).start()
+        with self.job_lock:
+            self.grid_thread = threading.Thread(target=work, daemon=True, name='tem-grid')
+            self.grid_thread.start()
         return {'id': job['id']}
+
+    def cancel_grid(self, job_id):
+        with self.job_lock:
+            if job_id not in self.jobs:
+                raise ValueError('This grid is no longer in memory.')
+            self.jobs[job_id]['cancel'] = True
+
+    def close(self):
+        with self.job_lock:
+            self.closing = True
+            for job in self.jobs.values():
+                job['cancel'] = True
+        if self.grid_thread is not None:
+            self.grid_thread.join()
 
     @staticmethod
     def best_zones(region):
@@ -275,6 +332,7 @@ class Workbench:
             if not job:
                 raise ValueError('This grid is no longer in memory.')
             result = {k: v for k, v in job.items() if k not in ['cancel', 'regions']}
+            result['cancelling'] = bool(job['cancel'] and job['state'] == 'running')
             regions = list(job['regions'])
             result['can_rescore'] = (job['state'] != 'running' and
                                      all('_fit_cache' in r for r in regions))
@@ -550,12 +608,12 @@ def make_handler(app):
                     with app.lock:
                         item=app.engine.load(body['file_id'])
                         _, settings=app.engine.validate(item, body['roi'], body.get('settings', {}))
-                        started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)))
+                        started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)), body.get('workers', 0))
                     self.send(started)
                 elif self.path == '/api/rescore-grid':
                     self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight'), body.get('ca_penalty_strength')))
                 elif self.path == '/api/cancel':
-                    app.jobs[body['job_id']]['cancel']=True
+                    app.cancel_grid(body['job_id'])
                     LOG.info('Grid %s cancellation requested', body['job_id'][:8])
                     self.send({'ok':True})
                 elif self.path == '/api/export-spectrum':
@@ -582,6 +640,11 @@ def main():
     parser.add_argument('--open', action='store_true')
     parser.add_argument('--fallback-port', action='store_true', help='Use the next free local port if the default is occupied')
     args=parser.parse_args()
+    # Native launchers use terminate; allow orderly worker/mmap cleanup on POSIX.
+    if hasattr(signal, 'SIGTERM'):
+        def stop_backend(*_):
+            raise SystemExit(0)
+        signal.signal(signal.SIGTERM, stop_backend)
     config_path = args.config or ROOT/'.tem-paths.json'
     if args.config and not config_path.is_file() and not args.demo:
         parser.error('The specified configuration file does not exist.')
@@ -609,9 +672,12 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        app.close()
         LOG.info('TEM Workbench stopped')
         server.server_close()
 
 
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

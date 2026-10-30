@@ -192,3 +192,5 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .acquisition-folder{flex:1;min-width:180px!important;max-width:360px}.acquisition-folder select{width:100%}#acquisition-level{max-width:190px;overflow-wrap:anywhere}
 
 #acquisition-canvas.adjusting .location{cursor:move}#acquisition-canvas .location[data-selected] rect{stroke-width:3;stroke:#65fff0}#acquisition-canvas .location[data-manual] rect{stroke-dasharray:5 2}
+
+.grid-run-actions{display:flex;gap:10px;align-items:center}

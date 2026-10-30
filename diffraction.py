@@ -4,6 +4,7 @@ Centre finding, local-contrast thresholds and spot widths are exploratory.
 Coordinates are nm^-1 with x right and y up; detector coordinates are x right,
 y down. Opposite observations share a profile but remain separate on display.
 """
+import os
 import numpy as np
 from scipy.ndimage import gaussian_filter, maximum_filter, map_coordinates, label, distance_transform_edt
 from scipy.spatial import cKDTree
@@ -202,17 +203,40 @@ def _deduplicate_spots(spots, minimum):
     return kept
 
 
+# Native Gaussian filters release the GIL. Bound both threads and queued arrays.
+DETECTOR_WORKERS = min(2, os.cpu_count() or 1)
+
+
+def _scale_blurs(raw, valid, widths):
+    from concurrent.futures import ThreadPoolExecutor
+    from collections import deque
+    weighted = raw*valid
+    mask = valid.astype(np.float32)
+    def blur(width):
+        return gaussian_filter(weighted, width)/np.maximum(gaussian_filter(mask, width), 1e-6)
+    if DETECTOR_WORKERS <= 1:
+        yield from map(blur, widths)
+        return
+    with ThreadPoolExecutor(max_workers=DETECTOR_WORKERS, thread_name_prefix='tem-spots') as pool:
+        pending = deque()
+        widths = iter(widths)
+        for width in widths:
+            pending.append(pool.submit(blur, width))
+            if len(pending) >= DETECTOR_WORKERS:
+                yield pending.popleft().result()
+        while pending:
+            yield pending.popleft().result()
+
+
 def _spot_candidates(raw, valid, band, scales):
     # Compare blob responses across sizes. A small annulus inside a broad spot
     # mistakes the spot itself for noisy background; each size gets its own
     # background annulus outside that feature. No crystal predictions enter here.
-    def blur(width):
-        return gaussian_filter(raw*valid, width)/np.maximum(gaussian_filter(valid.astype(np.float32), width), 1e-6)
-    smooth = blur(scales[0])
+    blurred = _scale_blurs(raw, valid, [scales[0], *(2*s for s in scales)])
+    smooth = next(blurred)
     previous = smooth
     fields = []
-    for scale in scales:
-        following = blur(2*scale)
+    for following in blurred:
         fields.append(previous-following)
         previous = following
     spots = []

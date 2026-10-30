@@ -2,7 +2,7 @@
 
 Last updated: 30 October 2026
 
-This is the maintained plan for upcoming analysis and performance work. The next three analysis tasks have an agreed order. Parallel grid execution is also under consideration because automatic parameter searches are making grid analysis increasingly expensive; its position relative to those tasks has not yet been decided.
+This is the maintained plan for upcoming analysis and performance work. The next three analysis tasks have an agreed order. The user authorized parallel grid execution ahead of the remaining analysis tasks on 30 October 2026; that implementation is on `perf/parallel-analysis`. The order of the three analysis tasks below is otherwise unchanged.
 
 ## Next tasks in agreed order
 
@@ -62,20 +62,17 @@ These are candidate-labelled image-area percentages, not validated volume fracti
 
 ## Parallel grid execution
 
-Status: requested for planning and estimation; implementation has not started. Whether to move this ahead of tasks 1–3 remains open. It can be developed independently of the fitting changes and reused by batch grids.
+Implemented 30 October 2026 on `perf/parallel-analysis`, following explicit approval to proceed independently of the remaining analysis tasks.
 
-The current grid has one background worker processing regions sequentially under the shared engine lock. FFT calculation uses two internal workers, but automatic peak-strength selection repeats matching for multiple detected-profile sets. Independent regions are the initial parallelization target.
+- Uniform and adaptive grids use a bounded spawn-process pool. **Workers: Auto / 1 / 2 / 4 / 8** is remembered in the browser; Auto uses at most four workers, leaves one logical CPU free, and all choices are capped by CPU count. Each worker owns its analysis engine and caches. One read-only memory-mapped copy of the source is shared per job; only ROIs and results cross the queue.
+- Results are committed in submission order, preserving deterministic region IDs, tie ordering and subdivision decisions. All four children must finish before replacing a parent, including ordinary unresolved-parent subdivision. Cancellation/errors retain the parent and mark incomplete child probes as trial-only. Initial cells not yet analysed remain uncovered.
+- The grid no longer holds the interactive engine lock. Pending work is bounded by worker count. Cancellation is checked between automatic-strength trials; a current fitting trial may finish first. Pool shutdown is completed before another grid can start. Each worker exits if its backend disappears; normal close removes the temporary image file. Forced process termination can leave a temporary file in the OS temp directory.
+- Numerical-library threads are limited to one before loading the app's numeric stack; grid FFTs use one internal worker. Direct diffraction instead uses two bounded native-filter threads (one on a single-core machine), retaining the original calculations and order. Single-region matching and the auto-strength search within each region remain sequential.
+- Exports retain execution worker count and elapsed seconds separately from scientific settings. Reweighting uses the same cached fit pool as before. No changes to fitting, scoring, thresholds or the adaptive decision criteria are intended.
+- Validation: 100 tests passed, including actual spawn equivalence and cached reweighting, serial/threaded detector equivalence, adaptive child decisions, cancellation and injected worker errors. Browser checks covered worker preference persistence, progress, cancellation and manual analysis during a grid. Terminating the isolated test backend left no analysis workers. Windows uses spawn and a windowless interpreter when available; native Windows runtime testing is still pending.
+- Benchmarks on an 11-core Apple M3 Pro: 100-cell ST1203 grid with automatic strength and HCP overall/c/a fitting was about 3× faster with four workers; adaptive testing returned identical regions and classifications. Direct diffraction 1096 improved from about 12.2 to 8.9 seconds with two smoothing threads. See [benchmark details](parallel-performance.md) and `tools/benchmark_parallel.py` for reproduction and limits.
 
-Proposed sequence:
-
-1. Benchmark representative serial uniform grids with the expensive automatic settings enabled. Record elapsed time, peak memory and manual-region responsiveness.
-2. Prototype a bounded worker pool for whole regions. Compare threads with processes if needed; process workers are the initial candidate for Python-heavy matching. Avoid sending the full source image with every task and avoid multiplying internal FFT/BLAS threads across workers.
-3. Preserve serial numerical results and deterministic region identity. Keep image/settings snapshots fixed for a job and ensure workers cannot mutate shared engine caches.
-4. Extend to adaptive subdivision and passing-parent child checks. Apply each parent decision only after its required children are available; retain correct leaf coverage on cancellation or error.
-5. Integrate progress, worker limits, responsive manual inspection, cancellation, shutdown and worker failure handling. Check the macOS Dock launcher and Windows process startup.
-6. Measure actual speedup and memory use before choosing defaults. Reuse the pool for batch grids without launching nested pools per image.
-
-No GPT-credit estimate or speedup is established. The earlier hour estimates were rough human-effort estimates, not credit estimates. A uniform-grid benchmark is the first decision point before committing to the broader adaptive implementation.
+Remaining: native Windows smoke test; broader memory/load measurements on smaller computers; reuse this pool in future batch grids without nested per-image pools. Batch grids and the weaker-second-pattern objective remain separate tasks, not implemented here. Architecture diagrams were intentionally not refreshed.
 
 ## Overlapping window phase candidate map
 
@@ -91,7 +88,7 @@ Candidate-labelled image area can be reported with unresolved area beside it. Co
 
 [Related work by Jany et al. on local FFT analysis of HRTEM images](https://arxiv.org/abs/1907.10929) is a starting point for methodological review, not validation of this app’s classifier or of phase-fraction estimates.
 
-Parallel grid execution is tracked separately above and can support this mapping mode when implemented.
+Parallel grid execution is implemented separately above and can support this future mapping mode.
 
 ## Platform delivery
 

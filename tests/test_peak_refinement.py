@@ -1,6 +1,8 @@
 """Focused checks for evidence bookkeeping and optional child refinement."""
 import copy
+from concurrent.futures import ThreadPoolExecutor
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 import numpy as np
@@ -76,7 +78,7 @@ class EvidenceChecks(unittest.TestCase):
 
 class FakeEngine:
     def __init__(self, interrupt=False, mixed=False):
-        self.mixed=mixed;self.interrupt=interrupt;self.waiting=threading.Event();self.release=threading.Event()
+        self.settings={};self.version="fixture";self.mixed=mixed;self.interrupt=interrupt;self.waiting=threading.Event();self.release=threading.Event()
     def analyze(self,item,roi,settings,**kwargs):
         if self.interrupt and roi['w']==32:
             self.waiting.set()
@@ -94,20 +96,25 @@ class FakeEngine:
 class GridChecks(unittest.TestCase):
     def run_grid(self, interrupt=False, enabled=True, mixed=False):
         app=Workbench.__new__(Workbench);app.engine=FakeEngine(interrupt,mixed)
-        app.jobs={};app.lock=threading.Lock();app.job_lock=threading.RLock()
+        app.grid_thread=None;app.closing=False;app.jobs={};app.lock=threading.Lock();app.job_lock=threading.RLock()
         item={'info':dict(width=128,height=128,pixel_x_nm=.05,pixel_y_nm=.05,can_index=True)}
-        # Execute the worker with a tracked thread, without starting an HTTP server.
-        original=threading.Thread;threads=[]
-        def thread(*args,**kwargs):
-            result=original(*args,**kwargs);threads.append(result);return result
+        # Exercise the coordinator with concurrent controlled fits; spawn is tested separately.
+        class TestPool:
+            def __init__(self,*args):self.pool=ThreadPoolExecutor(2)
+            def submit(self,roi):return self.pool.submit(app.engine.analyze,item,roi,{})
+            def close(self):self.pool.shutdown(wait=True,cancel_futures=True)
         from unittest.mock import patch
-        with patch('server.threading.Thread',thread):
-            job_id=app.grid(item,dict(scale_mode='fixed'),2,True,1.,enabled)['id']
-        if interrupt:
-            self.assertTrue(app.engine.waiting.wait(2))
-            app.jobs[job_id]['cancel']=True;app.engine.release.set()
-        threads[0].join(3)
-        self.assertFalse(threads[0].is_alive())
+        with patch('server.RegionPool',TestPool):
+            job_id=app.grid(item,dict(scale_mode='fixed'),2,True,1.,enabled,workers=2)['id']
+            if interrupt:
+                self.assertTrue(app.engine.waiting.wait(2))
+                deadline=time.monotonic()+2
+                while app.jobs[job_id]['processed']<4 and time.monotonic()<deadline:
+                    time.sleep(.01)
+                self.assertGreaterEqual(app.jobs[job_id]['processed'],4)
+                app.cancel_grid(job_id);app.engine.release.set()
+            app.grid_thread.join(3)
+        self.assertFalse(app.grid_thread.is_alive())
         return app.jobs[job_id]
 
     def test_children_replace_parent_only_when_useful_and_area_is_preserved(self):
