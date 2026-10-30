@@ -4,6 +4,8 @@ import hashlib
 import json
 import logging
 import re
+import ssl
+import sys
 import tempfile
 import threading
 import urllib.parse
@@ -12,6 +14,16 @@ import zipfile
 
 LOG = logging.getLogger('tem_workbench')
 MAX_BYTES = 4 * 1024**3
+
+
+def download_context():
+    context = ssl.create_default_context()
+    # python.org builds can lack a CA bundle until their certificate installer runs.
+    # macOS already ships a trusted bundle; add it without weakening verification.
+    system_bundle = Path('/etc/ssl/cert.pem')
+    if sys.platform == 'darwin' and system_bundle.is_file():
+        context.load_verify_locations(cafile=str(system_bundle))
+    return context
 
 
 def download_url(url):
@@ -128,7 +140,7 @@ class DemoDownload:
             with tempfile.TemporaryDirectory() as temp:
                 archive = Path(temp)/'demo.zip'
                 request = urllib.request.Request(url, headers={'User-Agent': 'TEM-Workbench-demo-downloader'})
-                with urllib.request.urlopen(request, timeout=30) as response, archive.open('wb') as dest:
+                with urllib.request.urlopen(request, timeout=30, context=download_context()) as response, archive.open('wb') as dest:
                     if urllib.parse.urlsplit(response.url).scheme != 'https':
                         raise ValueError('The download redirected to an insecure link.')
                     total = int(response.headers.get('Content-Length', 0)) or None
