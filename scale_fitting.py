@@ -4,7 +4,7 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.spatial import cKDTree
 import analysis_core as core
-from crystal_templates import reciprocal, allowed, NOMINAL_A
+from crystal_templates import reciprocal, allowed, TEMPLATE_BASE_A
 
 BOUNDS = (.85, 1.15)
 MODES = ('fixed', 'auto_uniform', 'auto_hcp_ac')
@@ -41,6 +41,8 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
 
     The zone library stays finite; the reflection-index bound follows the chosen
     reciprocal range and reference dimensions rather than a fixed shell count.
+    HCP is rebuilt at the selected a/c. Cubic coordinates retain their template
+    baseline and are converted to the selected material reference in prediction_points.
     """
     prepared = []
     for original in templates:
@@ -56,9 +58,9 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
             scaled = projection * np.array([old_a/hcp_a, old_a/hcp_a, old_c/hcp_c])[:, None]
             eig, axes = np.linalg.eigh(scaled.T @ scaled)
             projection = scaled @ ((axes / np.sqrt(eig)) @ axes.T)
-        reference = {'BCC': .330/bcc_a, 'FCC': .417/fcc_a}.get(phase, 1.)
+        reference = {'BCC': TEMPLATE_BASE_A['BCC']/bcc_a, 'FCC': TEMPLATE_BASE_A['FCC']/fcc_a}.get(phase, 1.)
         maximum = (g_max+.1)/(BOUNDS[0]*reference)
-        a = hcp_a if phase == 'HCP' else NOMINAL_A[phase]
+        a = hcp_a if phase == 'HCP' else TEMPLATE_BASE_A[phase]
         a_bound = int(np.ceil(a*maximum))
         c_bound = int(np.ceil(hcp_c*maximum)) if phase == 'HCP' else a_bound
         hs = np.array(list(itertools.product(range(-a_bound, a_bound+1),
@@ -101,7 +103,7 @@ def prediction_points(template, scale_a, scale_c, bcc_a=.330, hkl=None, fcc_a=.4
     q = template['q'] if hkl is None else reciprocal(
         hkl, template['phase'], a=template.get('reference_a_nm'),
         c=template.get('reference_c_nm', .468)) @ template['projection']
-    reference = {'BCC': .330/bcc_a, 'FCC': .417/fcc_a}.get(template['phase'], 1.)
+    reference = {'BCC': TEMPLATE_BASE_A['BCC']/bcc_a, 'FCC': TEMPLATE_BASE_A['FCC']/fcc_a}.get(template['phase'], 1.)
     return q @ metric_transform(template, scale_a, scale_c)*reference
 
 

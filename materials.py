@@ -1,5 +1,8 @@
 """Editable lattice references in nm; presets are not phase-stability models.
 
+These are the user-facing material defaults. Template coordinate baselines live
+in crystal_templates.py and are converted to these references before matching.
+
 Titanium retains the workbench's approximate starting values. Iron references
 have different physical conditions; these must accompany the preset in the UI.
 See README.md for sources and the epsilon-Fe cell derivation.

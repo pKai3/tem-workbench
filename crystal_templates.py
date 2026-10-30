@@ -9,13 +9,16 @@ import math
 import numpy as np
 
 PHASES = ('HCP', 'BCC', 'FCC')
-NOMINAL_A = {'HCP': .295, 'BCC': .330, 'FCC': .417}
+# Coordinate baselines for the template library, in nm; these are not material presets.
+# Keep aligned with templates.json. Selected material/user references are applied
+# by scale_fitting; materials.py owns the editable material definitions.
+TEMPLATE_BASE_A = {'HCP': .295, 'BCC': .330, 'FCC': .417}
 FCC_ZONE_MAX = 3
 
 
 def reciprocal(hkl, phase, a=None, c=.468):
     h, k, l = np.asarray(hkl, dtype=float).T
-    a = NOMINAL_A[phase] if a is None else a
+    a = TEMPLATE_BASE_A[phase] if a is None else a
     if phase in ('BCC', 'FCC'):
         return np.asarray(hkl, dtype=float)/a
     if phase != 'HCP':
@@ -54,5 +57,5 @@ def fcc_templates():
             templates.append({'id': 'FCC_' + '_'.join(map(str, zone)) + ('_m' if mirror < 0 else ''),
                               'phase': 'FCC', 'zone_3index': list(zone), 'mirror': mirror,
                               'projection': projection * [1, mirror],
-                              'nominal_a_nm': NOMINAL_A['FCC'], 'nominal_c_nm': None})
+                              'nominal_a_nm': TEMPLATE_BASE_A['FCC'], 'nominal_c_nm': None})
     return templates
