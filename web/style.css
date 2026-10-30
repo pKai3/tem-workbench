@@ -222,3 +222,17 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 #batch-live[hidden]{display:none}#batch-live-title{font-size:12px;overflow-wrap:anywhere;margin-bottom:6px}
 #batch-live-map{display:block;width:100%;max-height:340px;background:#0c121a;aspect-ratio:1}
 #batch-live-legend{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10px}
+
+.batch-review-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:12px}
+.batch-files.batch-preview-grid{grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:10px;max-height:480px;padding:3px}
+.batch-files .batch-preview-card{display:flex;flex-direction:column;position:relative;gap:6px;min-width:0;padding:7px;border:1px solid var(--line);border-radius:7px;cursor:pointer;background:#101923;align-items:stretch}
+.batch-preview-card.selected{border-color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
+.batch-preview-card input{min-height:0;padding:0;position:absolute;z-index:1;top:10px;left:10px;margin:0;width:18px;height:18px;accent-color:var(--cyan)}
+.batch-files .batch-name-row{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px}
+.batch-file-caption{min-width:0;display:flex;flex-direction:column;gap:3px}.batch-file-caption strong{font-size:12px;font-weight:500;overflow-wrap:anywhere}.batch-file-caption small{font-size:11px;color:var(--muted)}
+.batch-files .unavailable{opacity:.5;cursor:default}.batch-preview-card:focus-within{outline:2px solid var(--cyan);outline-offset:2px}
+#batch-hover{position:fixed;z-index:1100;pointer-events:none;width:min(380px,calc(100vw - 24px),calc(100dvh - 90px));padding:8px;background:#0c141d;border:1px solid var(--cyan);border-radius:8px;box-shadow:0 8px 28px #0009}
+#batch-hover[hidden]{display:none}#batch-hover-name{display:block;font-size:12px;font-weight:500;overflow-wrap:anywhere;margin-bottom:6px}.batch-hover-picture{position:relative;display:grid;place-items:center;aspect-ratio:1;background:#080d13;font-size:12px;color:var(--muted)}#batch-hover-image{position:absolute;width:100%;height:100%;object-fit:contain}
+
+.batch-name-row input{min-height:0;padding:0;margin:0}
+.batch-review-toolbar .signal-toggle{margin-left:0}
