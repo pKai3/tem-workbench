@@ -34,7 +34,7 @@ python -m pip install -r requirements.txt
 python server.py --demo --open
 ```
 
-Substitute another installed compatible Python version if needed. On Windows, create the environment with `py -3.12 -m venv .venv` and activate it with `.venv\Scripts\Activate.ps1` in PowerShell before running the installation and server commands.
+Substitute another installed compatible Python version if needed. Windows users can use the double-click installer below.
 
 The server normally listens at **http://127.0.0.1:8767**. Use `--port 8768` to select another port. Stop a terminal-launched server with Ctrl+C. This application is intended for local use, not public web hosting.
 
@@ -53,6 +53,18 @@ Setup searches installed compatible Python versions in Homebrew, python.org and 
 To prepare just the environment without rebuilding the Dock app, run `/usr/bin/python3 tools/python_runtime.py --prepare` from the repository on macOS.
 
 If the log reports **No module named PIL**, Pillow is missing from the Python actually running the app. Update the checkout and rerun **Install TEM Workbench App.command**. Install the app separately on each Mac; do not copy a `.venv` from another computer. Missing or broken dependencies now produce a setup message before the server starts.
+
+### Windows launcher
+
+On Windows 10/11, extract the GitHub ZIP (or clone the repository) into a writable local folder. Install **64-bit Python 3.12** from python.org, including the Python launcher, if no compatible Python is installed. Python 3.10–3.14 are supported; 3.15 is excluded. The installer does not download Python itself.
+
+1. Double-click **Install TEM Workbench App.cmd**. It creates the app's own `.venv`, installs the scientific packages and DM4 reader, and adds a desktop shortcut. No administrator rights are needed.
+2. Open **TEM Workbench** from the desktop or double-click **Launch TEM Workbench.cmd**. The interface opens in the default browser. The console displays the activity log; keep it open while working and press **Ctrl+C** to stop.
+3. Choose data/output folders or download the optional demo pack under **Data Sources and Outputs**.
+
+Rerun the installer after updates to install any new dependencies. Keep the extracted folder in place; reinstall the shortcut if you move it. Do not copy `.venv` between computers or operating systems. Launch always uses `.venv\Scripts\python.exe`, independent of the default Python on PATH. The Windows launcher is a console-backed browser app, rather than the macOS Dock control window. The `.cmd` installer runs its bundled PowerShell script with a process-only policy override; it does not change the machine's execution policy. Managed computers may require IT approval to run scripts.
+
+Windows setup has automated runtime checks, but still needs an end-to-end test on Windows hardware.
 
 ## Opening DM4 images
 

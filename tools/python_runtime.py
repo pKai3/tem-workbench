@@ -9,6 +9,10 @@ import shutil
 import subprocess
 import sys
 
+INSTALLER = ('Install TEM Workbench App.cmd' if sys.platform == 'win32'
+             else 'Install TEM Workbench App.command')
+VENV_PYTHON = 'Scripts/python.exe' if sys.platform == 'win32' else 'bin/python'
+
 MIN_VERSION = (3, 10)
 MAX_VERSION = (3, 15)  # Exclusive: desktop dependencies need wheels for this Python.
 CORE_IMPORTS = ('numpy', 'scipy.ndimage', 'scipy.optimize', 'PIL.Image')
@@ -40,7 +44,7 @@ def python_info(executable):
         info = json.loads(result.stdout)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         raise RuntimeError(f'Could not run Python at {executable}. '
-                           'Virtual environments cannot be copied between computers; recreate .venv on this Mac.') from error
+                           'Virtual environments cannot be copied between computers; recreate .venv on this computer.') from error
     return info
 
 
@@ -52,21 +56,42 @@ def require_compatible(executable, info):
     if not compatible(info):
         raise RuntimeError(f'{executable} is Python {".".join(map(str, info["version"]))}; '
                            'TEM Workbench currently supports Python 3.10–3.14 (3.12 preferred). '
-                           'Rerun Install TEM Workbench App.command to prepare a compatible .venv.')
+                           f'Rerun {INSTALLER} to prepare a compatible .venv.')
 
 
 def discover_python(root, environ):
     # Finder does not inherit the interactive shell's Homebrew/python.org PATH.
     versions = ('3.12', '3.13', '3.14', '3.11', '3.10')
     candidates = []
-    for version in versions:
-        candidates += [f'python{version}', f'/opt/homebrew/bin/python{version}',
-                       f'/usr/local/bin/python{version}',
-                       f'/Library/Frameworks/Python.framework/Versions/{version}/bin/python{version}']
-    # Conda installs are often absent from Finder's PATH, but can seed a venv.
-    for name in ('anaconda3', 'miniconda3', 'miniforge3', 'mambaforge'):
-        candidates += [str(Path.home() / name / 'bin/python3'), f'/opt/{name}/bin/python3']
-    candidates += ['python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3', sys.executable]
+    if sys.platform == 'win32':
+        # The Windows launcher knows installations that are not on PATH.
+        launcher = shutil.which('py', path=environ.get('PATH', os.defpath))
+        for version in versions:
+            if launcher:
+                try:
+                    probe = subprocess.run([launcher, '-' + version, '-c',
+                                            'import sys; print(sys.executable)'],
+                                           check=True, capture_output=True, text=True, timeout=15)
+                    candidates.append(probe.stdout.strip())
+                except (OSError, subprocess.SubprocessError):
+                    pass
+            compact = version.replace('.', '')
+            for directory in (environ.get('LOCALAPPDATA'), environ.get('ProgramFiles')):
+                if directory:
+                    candidates.append(str(Path(directory) / 'Programs' / 'Python' /
+                                          ('Python' + compact) / 'python.exe'))
+                    candidates.append(str(Path(directory) / ('Python' + compact) / 'python.exe'))
+        candidates += [str(Path.home() / name / 'python.exe')
+                       for name in ('anaconda3', 'miniconda3', 'miniforge3')]
+        candidates += ['python', 'python3', sys.executable]
+    else:
+        for version in versions:
+            candidates += [f'python{version}', f'/opt/homebrew/bin/python{version}',
+                           f'/usr/local/bin/python{version}',
+                           f'/Library/Frameworks/Python.framework/Versions/{version}/bin/python{version}']
+        for name in ('anaconda3', 'miniconda3', 'miniforge3', 'mambaforge'):
+            candidates += [str(Path.home() / name / 'bin/python3'), f'/opt/{name}/bin/python3']
+        candidates += ['python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3', sys.executable]
     for candidate in dict.fromkeys(candidates):
         try:
             executable = executable_path(candidate, root, environ)
@@ -75,26 +100,27 @@ def discover_python(root, environ):
         except RuntimeError:
             continue
     raise RuntimeError('No compatible Python 3.10–3.14 was found. Install Python 3.12 from python.org '
-                       'or Homebrew (brew install python@3.12), then rerun Install TEM Workbench App.command.')
+                       f'(or another supported version), then rerun {INSTALLER}.')
 
 
 def local_python(root):
     """Reject external environments before the installer can modify packages."""
     root = Path(root).resolve()
     environment = root / '.venv'
-    if environment.is_symlink():
+    if environment.is_symlink() or (os.name == 'nt' and environment.exists()
+                                    and bool(environment.stat(follow_symlinks=False).st_file_attributes & 0x400)):
         raise RuntimeError('Workbench needs its own .venv directory, not a link to another environment. '
-                           'Remove the link and rerun Install TEM Workbench App.command.')
-    local = environment / 'bin/python'
+                           f'Remove the link and rerun {INSTALLER}.')
+    local = environment / VENV_PYTHON
     if not local.exists():
         raise RuntimeError('Workbench’s .venv is missing or incomplete. '
-                           'Run Install TEM Workbench App.command to prepare it. '
+                           f'Run {INSTALLER} to prepare it. '
                            'If an incomplete .venv directory exists, move it aside first.')
     executable = str(local)
     info = python_info(executable)
     if not info['venv'] or Path(info['prefix']).resolve() != environment.resolve():
         raise RuntimeError('The .venv Python belongs to a different environment. '
-                           'Move .venv aside and rerun Install TEM Workbench App.command.')
+                           f'Move .venv aside and rerun {INSTALLER}.')
     return executable, info
 
 
@@ -122,11 +148,11 @@ print(json.dumps(failures))
         failures = json.loads(result.stdout)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         raise RuntimeError(f'Python dependency check failed for {executable}. '
-                           'Rerun Install TEM Workbench App.command to repair the environment.') from error
+                           f'Rerun {INSTALLER} to repair the environment.') from error
     if failures:
         details = '; '.join(f'{PACKAGE_NAMES[name]}: {message}' for name, message in failures.items())
         raise RuntimeError(f'Python dependencies are missing or broken in {executable}: {details}. '
-                           'Rerun Install TEM Workbench App.command to install them into .venv.')
+                           f'Rerun {INSTALLER} to install them into .venv.')
 
 
 def prepare_python(root, environ=None):
@@ -172,7 +198,7 @@ def main():
             check_dependencies(executable)
         print(executable)
         return 0
-    except RuntimeError as error:
+    except (RuntimeError, OSError, subprocess.CalledProcessError) as error:
         print(f'TEM Workbench could not start: {error}', file=sys.stderr)
         return 1
 

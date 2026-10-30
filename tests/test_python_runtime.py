@@ -111,6 +111,41 @@ class RuntimeChecks(unittest.TestCase):
                 patch.object(runtime, 'python_info', return_value={'version': [3, 10]}):
             self.assertEqual(runtime.discover_python('/tmp', {'PATH': '/usr/bin:/bin'}), base)
 
+    def test_windows_launcher_discovery_skips_unavailable_versions(self):
+        base = '/installed Python/python.exe'
+        def run(command, **kwargs):
+            if command[1] != '-3.13':
+                raise subprocess.CalledProcessError(1, command)
+            return subprocess.CompletedProcess(command, 0, stdout=base + '\n')
+        def available(candidate, root, environ):
+            if candidate == base:
+                return candidate
+            raise RuntimeError('missing')
+        with patch.object(runtime.sys, 'platform', 'win32'), \
+                patch.object(runtime.shutil, 'which', return_value='/Windows/py.exe'), \
+                patch.object(runtime.subprocess, 'run', side_effect=run), \
+                patch.object(runtime, 'executable_path', side_effect=available), \
+                patch.object(runtime, 'python_info', return_value={'version': [3, 13]}):
+            self.assertEqual(runtime.discover_python('/tmp', {}), base)
+
+    def test_windows_local_path_and_packages_stay_in_scripts_environment(self):
+        with tempfile.TemporaryDirectory(prefix='TEM Windows ') as directory:
+            root = Path(directory).resolve()
+            local = root / '.venv/Scripts/python.exe'
+            def run(command, **kwargs):
+                if command[1:3] == ['-m', 'venv']:
+                    local.parent.mkdir(parents=True)
+                    local.touch()
+            with patch.object(runtime, 'VENV_PYTHON', 'Scripts/python.exe'), \
+                    patch.object(runtime, 'discover_python', return_value='/base/python.exe'), \
+                    patch.object(runtime, 'python_info', return_value=self.local_info(root)), \
+                    patch.object(runtime, 'check_dependencies'), \
+                    patch.object(runtime.subprocess, 'run', side_effect=run) as process:
+                self.assertEqual(runtime.prepare_python(root, {}), str(local))
+                self.assertEqual(runtime.select_python(root), str(local))
+            self.assertTrue(all(call.args[0][0] == str(local)
+                                for call in process.call_args_list[1:]))
+
     def test_incompatible_venv_is_preserved_and_replaced(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
