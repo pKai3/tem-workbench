@@ -116,3 +116,5 @@ Parallel grid execution is tracked separately above and can support this mapping
 Update this document when a task's scope, priority, decisions or implementation status changes. Keep proposals distinct from agreed behaviour and mark work complete only after implementation and relevant verification. Add the completion date and commit reference when closing a task; keep a short completed-work record as tasks leave the active list.
 
 The README links here instead of maintaining a second plan. Update the [architecture and methods documentation](architecture/README.md) when implemented numerical or execution changes affect it. This plan is a roadmap, not a description of features already available.
+
+30 October 2026: corrected GIF export limits for the full 72-frame Bounce + rotate cycle at 30 fps and 2800-pixel width. Older running servers are detected before rendering frames and prompt a restart.

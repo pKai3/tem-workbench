@@ -32,6 +32,10 @@ from workbench_project import Project
 ROOT = Path(__file__).resolve().parent
 LOG = logging.getLogger('tem_workbench')
 
+# Longest marker cycle: 2.4 seconds at 30 fps, rendered at 2800 × 2728.
+SPECTRUM_MAX_FRAMES = 72
+SPECTRUM_MAX_PIXELS = 600_000_000
+
 
 def demo_config(demo_only=False):
     """Installed demos appear alongside locally chosen folders."""
@@ -64,7 +68,7 @@ class Workbench:
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
-                'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
+                'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -310,8 +314,8 @@ class Workbench:
     def export_spectrum(self, body):
         format_name = body.get('format')
         frames = body.get('frames')
-        if format_name not in ('png', 'gif') or not isinstance(frames, list) or not frames or len(frames) > 60:
-            raise ValueError('Choose PNG or GIF with at most 60 frames.')
+        if format_name not in ('png', 'gif') or not isinstance(frames, list) or not frames or len(frames) > SPECTRUM_MAX_FRAMES:
+            raise ValueError(f'Choose PNG or GIF with at most {SPECTRUM_MAX_FRAMES} frames.')
         if format_name == 'png' and len(frames) != 1:
             raise ValueError('PNG exports contain one frame.')
         duration = body.get('duration_ms', 60)
@@ -344,7 +348,7 @@ class Workbench:
                 if image.format != 'PNG' or max(image.size) > 3200 or min(image.size) < 1:
                     raise ValueError('Export frames must be PNG images up to 3200 pixels per side.')
                 total_pixels += image.width * image.height
-                if total_pixels > 500000000 or (images and image.size != images[0].size):
+                if total_pixels > SPECTRUM_MAX_PIXELS or (images and image.size != images[0].size):
                     raise ValueError('Export frames must have matching dimensions within the size limit.')
                 rgb = image.convert('RGB')
                 if format_name == 'gif':

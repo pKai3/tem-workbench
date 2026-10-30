@@ -1615,6 +1615,7 @@ async function exportSpectrum(format){
  if(!config?.spectrum_exports){message('Restart TEM Workbench to enable PNG and GIF exports.',true);return}
  const mode=format==='gif'?$('marker-motion').value:'off',cycleMs=mode==='pulse'?1800:mode==='rotate'?2400:1200,count=mode==='off'?1:Math.round(cycleMs*30/1000);
  if(count>1&&config.spectrum_export_fps!==30){message('Restart TEM Workbench, then reload the page to enable 30 fps GIF exports.',true);return}
+ if(count>(config.spectrum_export_max_frames??60)){message('Restart TEM Workbench, then reload the page to enable full-cycle Bounce + rotate GIF exports.',true);return}
  // GIF delays have 10 ms precision. Rounded frame boundaries alternate
  // 30/40 ms delays for 30 fps on average without changing the cycle length.
  const durations=Array.from({length:count},(_,i)=>10*(Math.round((i+1)*cycleMs/count/10)-Math.round(i*cycleMs/count/10)));
