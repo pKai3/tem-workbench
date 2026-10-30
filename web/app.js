@@ -2046,9 +2046,36 @@ $('batch-preview').onclick=async()=>{
  }catch(e){message(e.message,true)}
 };
 for(const id of ['batch-cutoff'])$(id).onchange=()=>{$('batch-start').disabled=true;$('batch-status').textContent='Review images again after changing the cutoff.'};
+function batchTimeEstimate(data,now=Date.now()){
+ if(data.state!=='running')return null;
+ const started=Date.parse(data.started_at),total=Number(data.total),finished=Number(data.finished)||0;
+ if(!Number.isFinite(started)||!Number.isFinite(total)||total<=0)return null;
+ if(finished>=total)return {finishing:true};
+ const current=data.current_grid,processed=Math.max(0,Number(current?.processed)||0),pending=Math.max(0,Number(current?.pending)||0);
+ // The previous grid can remain attached briefly while its export is saved.
+ // Count a partial image only while its grid is actually running.
+ const fraction=current?.state==='running'&&processed+pending>0?Math.min(.99,processed/(processed+pending)):0;
+ const completed=finished+fraction,elapsed=(now-started)/1000;
+ if(completed<=0||elapsed<10||(finished===0&&processed<5))return {estimating:true};
+ const remaining=Math.max(0,elapsed/completed*(total-completed));
+ return {remaining_seconds:remaining,finish_ms:now+remaining*1000};
+}
+function renderBatchTimeEstimate(data){
+ const host=$('batch-eta'),estimate=batchTimeEstimate(data);host.hidden=!estimate;
+ if(!estimate){host.textContent='';return}
+ if(estimate.finishing){host.textContent='Finishing batch exports…';return}
+ if(estimate.estimating){host.textContent='Estimated finish: calculating from initial progress…';return}
+ const minutes=Math.max(1,Math.ceil(estimate.remaining_seconds/60));
+ const duration=minutes<60?`about ${minutes} min remaining`:`about ${Math.floor(minutes/60)} h ${minutes%60} min remaining`;
+ const date=new Date(estimate.finish_ms),today=new Date();
+ const time=date.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+ const day=date.toDateString()===today.toDateString()?'':date.toLocaleDateString([],{month:'short',day:'numeric'})+' ';
+ host.textContent=`Estimated finish: ${day}${time} · ${duration}`;
+}
 function renderBatch(data){
  const running=data.state==='running';$('batch-cancel').disabled=!running;$('batch-start').disabled=running||!batchFiles.length;$('batch-preview').disabled=running;
  $('batch-status').textContent=`${data.state} · ${data.finished||0}/${data.total||0} images · ${data.current||''}${data.current_grid?' · '+data.current_grid.processed+' regions analysed':''}${data.failures?.length?' · '+data.failures.length+' failure(s)':''}${data.error?' · '+data.error:''}${data.output_directory?' · Saved to '+data.output_directory:''}`;
+ renderBatchTimeEstimate(data);
  renderBatchMap(data);
  const phases=analysisPhases(data.settings),host=$('batch-summary');host.replaceChildren();
  if(data.samples?.length){
