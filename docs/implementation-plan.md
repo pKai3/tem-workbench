@@ -1,6 +1,6 @@
 # TEM Workbench implementation plan
 
-Last updated: 1 November 2026
+Last updated: 2 November 2026
 
 This is the maintained plan for upcoming analysis and performance work. The next three analysis tasks have an agreed order. The user authorized parallel grid execution ahead of the remaining analysis tasks on 30 October 2026; that implementation is on `perf/parallel-analysis`. On 31 October 2026 the user explicitly brought forward batch grids alongside manual diffraction peak addition/removal. The remaining analysis work below is unchanged.
 
@@ -88,9 +88,30 @@ Implemented 30 October 2026 on `perf/parallel-analysis`, following explicit appr
 - Validation: 104 tests passed, including actual spawn equivalence and cached reweighting, serial/threaded detector equivalence, adaptive child decisions, cancellation and injected worker errors. Browser checks covered worker preference persistence, progress, cancellation and manual analysis during a grid. Terminating the isolated test backend left no analysis workers. Windows uses spawn with the backend interpreter; native Windows validation is in progress.
 - Benchmarks on an 11-core Apple M3 Pro: 100-cell ST1203 grid with automatic strength and HCP overall/c/a fitting was about 3× faster with four workers; adaptive testing returned identical regions and classifications. Direct diffraction 1096 improved from about 12.2 to 8.9 seconds with two smoothing threads. See [benchmark details](parallel-performance.md) and `tools/benchmark_parallel.py` for reproduction and limits.
 
-1 November 2026 Windows test: user reported four-worker grids failing with `BrokenProcessPool` before any completed cells, while single-region analysis worked. The log shows a private venv based on Miniconda. Removed the forced switch to `pythonw.exe`; workers now retain the backend interpreter. This is a targeted startup fix to test, not a confirmed diagnosis. Native Windows retest pending.
+1 November 2026 Windows test: user reported four-worker grids failing with `BrokenProcessPool` before any completed cells, while single-region analysis worked. The log shows a private venv based on Miniconda. Removed the forced switch to `pythonw.exe`; workers now retain the backend interpreter. Fix committed as `c54e173`. Subsequent user exports completed successfully on Windows; the precise original worker failure was not captured.
 
-Remaining: native Windows smoke test; broader memory/load measurements on smaller computers; batch grids now reuse this pool sequentially across images without nested per-image pools. Further validation of the weaker-second-pattern objective remains separate. Architecture diagrams were intentionally not refreshed.
+Remaining: broader native Windows checks (adaptive grids, cancellation/restart, automatic strength modes and diffraction threading); broader memory/load measurements on smaller computers; batch grids now reuse this pool sequentially across images without nested per-image pools. Further validation of the weaker-second-pattern objective remains separate. Architecture diagrams were intentionally not refreshed.
+
+## Deferred review: Mac–Windows numerical reproducibility
+
+Recorded 2 November 2026 at the user’s request. **Review later; no fitting changes authorized by this note.** Preserve the existing analysis task order.
+
+Validation on the same ST1203 pixels and 100 uniform crops, manual peak strength, HCP overall/c/a fitting and a 12 nm⁻¹ outer limit:
+
+- Within each machine, one versus four workers produced exactly identical exported models, classifications, spectra and periodicity results for all 100 cells. Mac: 17.85 → 7.12 s (2.51×); Windows: 59.11 → 16.92 s (3.49×). Thus the observed cross-machine differences are not caused by worker count in this test.
+- Across machines: all 100 classification labels, peak counts (781 profiles total), best passing phase/zone assignments, and selected primary/secondary phase/zone assignments agree. Source pixel hashes and analysis settings match. The stopping limits differ (4 versus 5 nm), but subdivision is disabled and all ROIs match. Engine fingerprints differ, so identical source/dependency builds have not been established.
+- Largest peak-position difference: 0.001053 nm⁻¹, about 0.00516 FFT bins. Median best-passing rank differences are about 3×10⁻⁸; maximum HCP 0.0001954, BCC 0.0002796.
+- Best passing fits: maximum absolute lattice differences HCP a = 0.000001475 nm, HCP c = 0.00002304 nm, BCC a = 0.00002581 nm; HCP c/a relative difference up to 0.00544%.
+- Rejected alternatives differ more: maximum best-HCP rank difference 0.100501, a difference 0.004308 nm, c difference 0.021778 nm. The largest cases match only two profiles, with nearly identical positional agreement but different fitted scales/scale penalties. Three rejected BCC top candidates switch between almost-tied zones. These are not all negligible rounding differences, despite unchanged final classifications.
+
+Review scope: verify source revisions and fingerprint sensitivity to line endings; record Python/NumPy/SciPy and numerical-library versions on both machines; reproduce the rejected HCP cases (notably ROI x=2048, y=1638 and x=2867, y=1638, each 410×410 px); inspect underconstrained scale optimization, numerical tie-breaking and candidate retention. Determine sensible reproducibility tolerances and whether scoring/optimization needs adjustment. Poorly constrained solutions are a hypothesis, not an established root cause. Do not generalize this one-image result to all modes or datasets.
+
+Source exports (filenames retained here; experimental data are not bundled into Git):
+
+- Mac one worker: `20261101_235124_1MX_OneView_ST_1203_grid_9c6057.json`
+- Mac four workers: `20261101_234248_1MX_OneView_ST_1203_grid_94c3d2.json`
+- Windows one worker: `20261101_085216_1MX_OneView_ST_1203_demo_grid_ac0d26.json`
+- Windows four workers: `20261101_084643_1MX_OneView_ST_1203_demo_grid_518121.json`
 
 ## Overlapping window phase candidate map
 
