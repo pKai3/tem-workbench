@@ -1,6 +1,6 @@
 # TEM Workbench implementation plan
 
-Last updated: 31 October 2026
+Last updated: 1 November 2026
 
 This is the maintained plan for upcoming analysis and performance work. The next three analysis tasks have an agreed order. The user authorized parallel grid execution ahead of the remaining analysis tasks on 30 October 2026; that implementation is on `perf/parallel-analysis`. On 31 October 2026 the user explicitly brought forward batch grids alongside manual diffraction peak addition/removal. The remaining analysis work below is unchanged.
 
@@ -161,3 +161,7 @@ Optional fixed smoothing sensitivity at representative sizes compares off/lower/
 Next: review ST1156 size/location dependence; manually inspect representative missed/spurious peaks and fit rejections, then test 1203 and a mixed-pattern control before altering defaults. Build the in-app crop-size diagnostic panel after deciding which diagnostic outputs to retain. No architecture refresh requested.
 
 ST1156 first experiment completed 31 October 2026: 189 analyses (141 baseline crop/mode combinations plus 48 fixed-smoothing checks). Expected-orientation acceptance was 29/47 manual, 28/47 geometry-auto and 40/47 rank-auto. Eighteen of nineteen geometry-auto failures passed the position screen but failed after ranking penalties; this implicates scoring as well as detection. Smoothing effects depend on crop size and selection mode. Nine targeted runner/auto-strength tests pass, including unchanged production results in all three modes. Results are exploratory; no defaults changed and automatic smoothing remains deferred.
+
+## Grid marker layout
+
+Implemented 1 November 2026: interactive grid zone symbols are centred in a vertical stack, ordered by descending candidate rank (coverage breaks rank ties), rather than fixed phase positions. Only enabled phases with a retained candidate occupy a slot; one candidate is centred. Below-screen candidates remain faded, independently of rank order. Layout uses the active phase list, including FCC, and shrinks symbols for larger stacks. Browser map PNG exports inherit the same layout. Batch text-label PNG rendering is unchanged; unifying its overlay options remains the separate follow-up above.

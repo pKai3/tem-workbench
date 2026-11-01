@@ -746,7 +746,7 @@ function renderZoneLegend(found){
  const legend=$('zone-legend');legend.replaceChildren();legend.hidden=PHASES.every(phase=>!found[phase].size);
  if(legend.hidden)return;
  const hint=document.createElement('p');hint.className='hint';
- hint.textContent='Best candidate for each searched structure, left to right: '+analysisPhases(grid?.settings).join(', ')+'. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Legend counts and areas include passing fits only, largest area first.';
+ hint.textContent='Best candidates for '+analysisPhases(grid?.settings).join(', ')+' are stacked by rank, highest at the top. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Legend counts and areas include passing fits only, largest area first.';
  legend.append(hint);
  for(const phase of PHASES){
   if(!found[phase].size)continue;
@@ -776,11 +776,12 @@ function drawGrid(){
   const descriptions=[labels[r.label]];
   for(const phase of PHASES){const m=r.best_zones?.[phase];if(m)descriptions.push(`${phase} ${zoneLabel(m)} · ${m.valid?'passes screen':'below threshold'}`)}
   e.setAttribute('role','img');e.setAttribute('aria-label',descriptions.join(' · '));group.append(e);
-  if(showZones)for(const [i,phase]of analysisPhases(grid.settings).entries()){
-   const model=r.best_zones?.[phase];if(!model)continue;
+  const rankedZones=analysisPhases(grid.settings).map(phase=>({phase,model:r.best_zones?.[phase]}))
+   .filter(entry=>entry.model).sort((a,b)=>compareRank(a.model,b.model));
+  if(showZones)for(const [i,{phase,model}]of rankedZones.entries()){
    const key=zoneKey(model),symbol=zoneSymbol(phase,key);
-   const size=Math.min(r.roi.w,r.roi.h)*.25;
-   const marker=el('text',{x:r.roi.x+r.roi.w*((i+1)/(analysisPhases(grid.settings).length+1)),y:r.roi.y+r.roi.h*.5,
+   const size=Math.min(r.roi.w*.25,r.roi.h*Math.min(.25,.65/rankedZones.length));
+   const marker=el('text',{x:r.roi.x+r.roi.w*.5,y:r.roi.y+r.roi.h*((i+1)/(rankedZones.length+1)),
     fill:phaseColors[phase],'font-size':size,'stroke-width':size*.12,
     class:'zone-marker','data-phase':phase,'data-zone-key':key,'fill-opacity':model.valid?1:.38,'stroke-opacity':model.valid ? .85 : .38,
     'aria-hidden':'true'},symbol);
