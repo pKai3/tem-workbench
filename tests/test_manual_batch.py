@@ -3,6 +3,7 @@ from io import BytesIO
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 import numpy as np
@@ -111,13 +112,24 @@ class BatchSummaries(unittest.TestCase):
             app.config=dict(output_root=tmp);app.engine=LocalEngine({});app.batch=BatchGrids(app)
             with patch('batch_grids.Engine',LocalEngine),patch('server.RegionPool',Pool):
                 app.batch.start(dict(file_ids=['first','second','third'],count=2,minimum_nm=1,adaptive=False,workers=1))
-                self.assertTrue(reached.wait(10))
-                live=app.batch.status()['live_grid']
-                self.assertEqual(live['source']['id'],'second')
-                self.assertEqual(live['state'],'running')
-                self.assertIn('regions',live)
-                with self.assertRaisesRegex(ValueError,'batch'):app.grid(image(),{},2,False,1)
-                app.batch.cancel_run();release.set();app.batch.thread.join(15)
+                try:
+                    self.assertTrue(reached.wait(10))
+                    # A worker can start before the batch publishes its job ID.
+                    # Wait for that handoff, not merely for worker entry.
+                    deadline=time.monotonic()+10
+                    while True:
+                        live=app.batch.status()['live_grid']
+                        if live['state']=='running' or time.monotonic()>=deadline:break
+                        time.sleep(.01)
+                    self.assertEqual(live['source']['id'],'second')
+                    self.assertEqual(live['state'],'running')
+                    self.assertIn('regions',live)
+                    with self.assertRaisesRegex(ValueError,'batch'):app.grid(image(),{},2,False,1)
+                finally:
+                    # Keep patches and the temporary output alive until workers stop,
+                    # including when an assertion fails.
+                    app.batch.cancel_run();release.set();app.batch.thread.join(15)
+                    app.close()
             status=app.batch.status();self.assertEqual(status['state'],'cancelled')
             self.assertEqual(status['images'][0]['state'],'complete')
             self.assertEqual(len(status['images']),2)

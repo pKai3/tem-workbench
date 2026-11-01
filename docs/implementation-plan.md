@@ -2,15 +2,41 @@
 
 Last updated: 2 November 2026
 
-This is the maintained plan for upcoming analysis and performance work. The next three analysis tasks have an agreed order. The user authorized parallel grid execution ahead of the remaining analysis tasks on 30 October 2026; that implementation is on `perf/parallel-analysis`. On 31 October 2026 the user explicitly brought forward batch grids alongside manual diffraction peak addition/removal. The remaining analysis work below is unchanged.
+This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
-## Next tasks in agreed order
+## Analysis priorities and current status
 
 | Order | Task | Status |
 | --- | --- | --- |
-| 1 | Revise fully free HCP fitting | First-pass optional mode implemented; data validation pending |
-| 2 | Revise automatic minimum peak strength selection to retain weaker separate patterns | Design discussion pending |
-| 3 | Batch grid analysis across qualifying images, with per-image and ST/STA summaries | Implemented 31 October 2026; validation recorded below |
+| 1 | Revise fully free HCP fitting | Overall-scale + c/a mode implemented; comparative validation and optimizer review remain open |
+| 2 | Revise automatic minimum peak strength selection to retain weaker separate patterns | Geometry (1–2 patterns) mode implemented (`f9d0d03`); dataset comparisons completed, further objective design/validation remains open |
+| 3 | Batch grid analysis across qualifying images, with per-image and ST/STA summaries | Implemented 31 October 2026 (`977ae03`), with selection, progress and export follow-ups; shared overlay styles remain open |
+
+## Open follow-ups at a glance
+
+- **HCP fitting:** compare the scaling modes and review penalty-aware optimization/candidate retention. Material priors and complexity corrections are not validated.
+- **Automatic strength:** improve retention of separately supported weaker patterns; do not simply sum two candidates explaining the same peaks. Geometry-auto is already available.
+- **Grid display/export:** offer the same symbol and text-label overlay choices in interactive grids and batch PNGs. The two renderers still differ.
+- **Crop-size diagnostic:** the runner and ST1156 experiment are complete; representative failure inspection, ST1203/mixed-pattern controls and an in-app panel remain open. Automatic smoothing is deferred.
+- **Parallel/platform validation:** native Windows uniform grids pass at one and four workers. Adaptive grids, cancellation/restart, automatic-strength modes, batch runs and diffraction threading need broader native Windows checks; smaller-machine memory/load checks remain open.
+- **Explicitly deferred:** Mac–Windows numerical reproducibility review, partially obscured/inferred diffraction peaks, FFT manual peak editing and Hitachi acquisition-map calibration. Details and limits are below.
+- **Future mapping mode:** overlapping square/hexagonal windows and optional aggregation are not implemented.
+
+## Completed work overview
+
+| Delivered | Date | Reference |
+| --- | --- | --- |
+| Bounded parallel grids and diffraction smoothing | 30 Oct | `8f7aa0c` |
+| Geometry-first auto strength and selectable diffraction threads | 30 Oct | `f9d0d03` |
+| Manual diffraction peaks and batch grid exports | 31 Oct | `977ae03` |
+| Peak-edit controls and live batch viewer | 31 Oct | `000a4d3` |
+| Remembered batch cutoff, ETA, thumbnail/name selection and keyword filters | 31 Oct | `5666df4`, `930f941`, `2d98bbd`, `7a3ba5b` |
+| Crop-size diagnostic runner and fixed-smoothing comparisons | 31 Oct | `c138c80` |
+| Grid symbols stacked vertically by candidate rank | 1 Nov | `c1a6b10` |
+| Windows worker interpreter fix | 1 Nov | `c54e173` |
+| Native Mac/Windows comparison recorded; further numerical review deferred | 2 Nov | `30bc0a6` |
+
+Main integration validation, 2 November 2026: all 115 automated tests pass, alongside JavaScript syntax and diff checks. A batch cancellation test now waits for the coordinator to publish the running job before asserting status and always cleans up its workers; production calculations are unchanged. Historical test counts below describe their respective changes, not the size of the current test suite. Architecture diagrams are unchanged unless a refresh is explicitly requested.
 
 ### 1 HCP fitting
 
@@ -29,11 +55,13 @@ Compare the revised fitting with the current single-scale and independent-a/c mo
 
 ### 2 Automatic minimum peak strength
 
-The current strongest-candidate objective can raise the detection threshold until weaker BCC evidence disappears, leaving a strong HCP result. Keep that behaviour available for deliberately selecting the dominant pattern, and design an alternative that searches lower thresholds for a separately supported second pattern.
+The current strongest-candidate objective can raise the detection threshold until weaker BCC evidence disappears, leaving a strong HCP result. Keep that behaviour available for deliberately selecting the dominant pattern, and evaluate the implemented geometry-first alternative, which also searches lower thresholds for a separately supported second pattern.
 
 The second pattern may be another orientation of the same phase. Two candidates explaining the same measured profiles are competing interpretations, not evidence of two patterns. The new objective must distinguish those cases and account for shared and independently explained profiles.
 
-First pass implemented 30 October 2026: **Auto · geometry (1–2 patterns)** retains the existing best-crystal-rank mode. It searches all distinct strength cutoffs using the existing geometry screen, then runs crystal matching once on the selected peak set. The objective uses positional evidence normalized to the full admitted peak pool, counts shared profiles once, subtracts the existing chance allowance for each grid and 0.03 per grid, and adds a screened secondary only if it improves that score. The secondary still requires three unique profiles in nonparallel directions. This is exploratory: it does not guarantee detection of a weak second pattern or change crystal classification thresholds. Trials, objective and selected cutoff are exported; browser preferences, saved regions and grid workers carry the choice. The 104-test suite passes, including shared-evidence deduplication, independent-pair selection, one final crystal search, and manual-cutoff reproduction. Browser checks verified both mode-specific limit layouts, thread preference persistence, Auto control state, the source-detector boundary, and no horizontal overflow at 1440/850 px. Validation on the real mixed examples remains pending.
+First pass implemented 30 October 2026: **Auto · geometry (1–2 patterns)** retains the existing best-crystal-rank mode. It searches all distinct strength cutoffs using the existing geometry screen, then runs crystal matching once on the selected peak set. The objective uses positional evidence normalized to the full admitted peak pool, counts shared profiles once, subtracts the existing chance allowance for each grid and 0.03 per grid, and adds a screened secondary only if it improves that score. The secondary still requires three unique profiles in nonparallel directions. This is exploratory: it does not guarantee detection of a weak second pattern or change crystal classification thresholds. Trials, objective and selected cutoff are exported; browser preferences, saved regions and grid workers carry the choice. The 104-test suite passes, including shared-evidence deduplication, independent-pair selection, one final crystal search, and manual-cutoff reproduction. Browser checks verified both mode-specific limit layouts, thread preference persistence, Auto control state, the source-detector boundary, and no horizontal overflow at 1440/850 px. Exploratory real-data comparisons have since been completed; controlled validation of weak-pattern recovery remains open.
+
+Dataset review completed 31 October–1 November 2026: the merged 74-image set (46 labelled ST, 28 labelled STA) was compared in manual, geometry-auto and rank-auto modes, including secondary patterns. Geometry-auto retained 34 separately supported BCC secondary cells; rank-auto retained only one of those as a BCC secondary and five with any passing BCC fit. This supports keeping the objectives distinct, but does not establish phase identities or validate a new pair objective. ST1156 crop-size/smoothing results are recorded below. Experimental reports stay in the analysis output directory, outside Git; sample labels remain as recorded.
 
 Remaining decisions:
 
@@ -62,7 +90,13 @@ Implemented 31 October 2026 following explicit approval to proceed now. **Automa
 Approved follow-up, 31 October 2026 (not yet implemented): offer both zone-symbol maps and the batch-style text-label overlay as display choices for interactive grids and batch PNG exports. Preserve the existing batch style rather than replacing it. Unify zone notation, phase colours, eligibility and symbol/legend mapping across the two renderers; currently interactive exports capture the browser SVG, while batch PNGs independently draw passing three-index zone labels.
 - Grid and region JSON export filenames now include the source image name alongside timestamp and unique suffix.
 
-Validation: automated tests cover eligibility, leaf-only areas, overlapping support, pooled versus mean denominators, PNG rendering, actual spawn-grid exports, per-image errors and cancellation retaining completed output. The full suite passed 111 tests. Browser verification covered add/remove, snapping, undo/reset and persistence, plus a two-worker batch of ST1203 and STA1114 with complete coverage, per-image JSON/PNG and sample summaries. JavaScript syntax and diff checks passed. Native Windows verification remains pending.
+Validation: automated tests cover eligibility, leaf-only areas, overlapping support, pooled versus mean denominators, PNG rendering, actual spawn-grid exports, per-image errors and cancellation retaining completed output. The full suite passed 111 tests. Browser verification covered add/remove, snapping, undo/reset and persistence, plus a two-worker batch of ST1203 and STA1114 with complete coverage, per-image JSON/PNG and sample summaries. JavaScript syntax and diff checks passed. Native Windows batch-specific verification remains pending; the separate uniform-grid one/four-worker test has passed (see numerical reproducibility below).
+
+31 October 2026 UI follow-up: Phase colours/search and material cells remain above Processing settings. Batch selection uses an inclusive minimum magnification; the redundant Include cutoff checkbox was removed.
+
+31 October 2026 batch UI: a compact live image/map above the batch summaries displays finished leaf regions as each grid runs, automatically advancing to the next image and retaining the last map on completion/cancellation. A separate preview endpoint uses a small cached batch thumbnail without switching the interactive source. Summary phase columns follow the enabled phases captured for that batch.
+
+Validation for the 31 October follow-up: 112 tests passed, including snap metadata persistence, larger search radii, live batch leaf snapshots and thumbnail retrieval. Browser checks covered purple markers following the selected shape, source/enlarged-view ring dragging and undo, background editing without dimming/spinner, separate settings reset preserving edits, and two real-image 6×6 batches advancing in the viewer with disabled FCC omitted from the table.
 
 ## Manual diffraction peak editing
 
@@ -78,14 +112,14 @@ Deferred explicitly by the user on 31 October 2026 (do not implement in this cha
 
 ## Parallel grid execution
 
-Implemented 30 October 2026 on `perf/parallel-analysis`, following explicit approval to proceed independently of the remaining analysis tasks. Implementation commit: `8f7aa0c`.
+Implemented 30 October 2026 in `8f7aa0c`, originally on `perf/parallel-analysis`, and included in the 2 November main integration. Parallel execution was explicitly brought forward ahead of the remaining analysis tasks.
 
 - Uniform and adaptive grids use a bounded spawn-process pool. **Workers: Auto / 1 / 2 / 4 / 8** is remembered in the browser; Auto uses at most four workers, leaves one logical CPU free, and all choices are capped by CPU count. Each worker owns its analysis engine and caches. One read-only memory-mapped copy of the source is shared per job; only ROIs and results cross the queue.
 - Results are committed in submission order, preserving deterministic region IDs, tie ordering and subdivision decisions. All four children must finish before replacing a parent, including ordinary unresolved-parent subdivision. Cancellation/errors retain the parent and mark incomplete child probes as trial-only. Initial cells not yet analysed remain uncovered.
 - The grid no longer holds the interactive engine lock. Pending work is bounded by worker count. Cancellation is checked between automatic-strength trials; a current fitting trial may finish first. Pool shutdown is completed before another grid can start. Each worker exits if its backend disappears; normal close removes the temporary image file. Forced process termination can leave a temporary file in the OS temp directory.
 - Numerical-library threads are limited to one before loading the app's numeric stack; grid FFTs use one internal worker. Direct diffraction offers remembered Smoothing threads Auto / 1 / 2 / 4 / 8 (Auto: two; capped by CPU count), retaining the original calculations and order. Thread changes preserve the detector cache. The original diffraction detector view now shows the outer fitting-limit boundary using the current beam centre and separate X/Y calibration. Added 30 October 2026: central exclusion and outer fitting limit move together into the active FFT or Direct diffraction settings panel. Single-region matching and the auto-strength search within each region remain sequential.
 - Exports retain execution worker count and elapsed seconds separately from scientific settings. Reweighting uses the same cached fit pool as before. No changes to fitting, scoring, thresholds or the adaptive decision criteria are intended.
-- Validation: 104 tests passed, including actual spawn equivalence and cached reweighting, serial/threaded detector equivalence, adaptive child decisions, cancellation and injected worker errors. Browser checks covered worker preference persistence, progress, cancellation and manual analysis during a grid. Terminating the isolated test backend left no analysis workers. Windows uses spawn with the backend interpreter; native Windows validation is in progress.
+- Validation: 104 tests passed, including actual spawn equivalence and cached reweighting, serial/threaded detector equivalence, adaptive child decisions, cancellation and injected worker errors. Browser checks covered worker preference persistence, progress, cancellation and manual analysis during a grid. Terminating the isolated test backend left no analysis workers. Windows uses spawn with the backend interpreter. Native Windows uniform-grid validation subsequently passed at one and four workers; broader checks remain open as listed below.
 - Benchmarks on an 11-core Apple M3 Pro: 100-cell ST1203 grid with automatic strength and HCP overall/c/a fitting was about 3× faster with four workers; adaptive testing returned identical regions and classifications. Direct diffraction 1096 improved from about 12.2 to 8.9 seconds with two smoothing threads. See [benchmark details](parallel-performance.md) and `tools/benchmark_parallel.py` for reproduction and limits.
 
 1 November 2026 Windows test: user reported four-worker grids failing with `BrokenProcessPool` before any completed cells, while single-region analysis worked. The log shows a private venv based on Miniconda. Removed the forced switch to `pythonw.exe`; workers now retain the backend interpreter. Fix committed as `c54e173`. Subsequent user exports completed successfully on Windows; the precise original worker failure was not captured.
@@ -131,7 +165,7 @@ Parallel grid execution is implemented separately above and can support this fut
 
 ## Platform delivery
 
-30 October 2026: added Windows double-click installer and launcher, private `.venv\Scripts\python.exe`, installed-Python discovery, and a desktop shortcut. A native Tk control window provides Start/Stop, Open Workbench and View log without a terminal; closing it stops its own server. Uses the existing browser interface and Windows directory junctions for data/output. Python 3.10–3.14 supported, 3.12 preferred; no automatic Python download. Runtime regression checks run on macOS; actual Windows installation and DM4/grid/export smoke testing remain to be confirmed on a Windows computer. This packaging work does not change the analysis roadmap order.
+30 October 2026: added Windows double-click installer and launcher, private `.venv\Scripts\python.exe`, installed-Python discovery, and a desktop shortcut. A native Tk control window provides Start/Stop, Open Workbench and View log without a terminal; closing it stops its own server. Uses the existing browser interface and Windows directory junctions for data/output. Python 3.10–3.14 supported, 3.12 preferred; no automatic Python download. Runtime regression checks run on macOS. The user has since installed and run the Windows app and exported completed demo-image grids with one and four workers. Original-DM4 loading, direct diffraction, adaptive/batch runs and cancellation still need broader native Windows verification; the successful demo-grid test does not cover those paths. This packaging work does not change the analysis roadmap order.
 
 ## Display updates
 
@@ -147,12 +181,6 @@ Parallel grid execution is implemented separately above and can support this fut
 
 30 October 2026: renamed template construction constants to `TEMPLATE_BASE_A` and documented their distinction from material presets. Values and matching behaviour are unchanged.
 
-## Maintaining this plan
-
-Update this document when a task's scope, priority, decisions or implementation status changes. Keep proposals distinct from agreed behaviour and mark work complete only after implementation and relevant verification. Add the completion date and commit reference when closing a task; keep a short completed-work record as tasks leave the active list.
-
-The README links here instead of maintaining a second plan. Update the [architecture and methods documentation](architecture/README.md) when the user requests a refresh. This plan is a roadmap, not a description of features already available.
-
 30 October 2026: corrected GIF export limits for the full 72-frame Bounce + rotate cycle at 30 fps and 2800-pixel width. Older running servers are detected before rendering frames and prompt a restart.
 
 ## Approximate acquisition map — implemented 30 October 2026
@@ -161,7 +189,7 @@ The file toolbar opens a stage-metadata map for the current labelled sample. It 
 
 Only DM4 metadata is read for indexing; cached entries invalidate on file size/mtime changes. Overview previews are loaded on demand without analysis or changing the loaded source. Switchable hover comparisons show the full acquired image beside a crop of original reference pixels at the predicted footprint, with bounded preview caching and black padding outside the reference. The reference itself never opens a comparison card. Calibrated real-space images have physical footprints; diffraction/uncalibrated images have location points only. Missing positions and read failures are reported. Raw stage X/Y/tilts are also retained in newly exported source metadata.
 
-This is a schematic location aid, not registration: stage units are undeclared in these files (µm is a visible, adjustable assumption), and stage-to-image rotation/flips are manual display controls. Stage rounding, drift, image shifts and tilt are not corrected. Footprint dots and acquisition labels sit at the top-right corner to leave image centres clear. Coincident positions remain available in the list. ST/STA folder labels are retained as recorded; suspected sample swaps are not resolved by this feature. No automatic image alignment, batch-grid work or parallel execution is included.
+This is a schematic location aid, not registration: stage units are undeclared in these files (µm is a visible, adjustable assumption), and stage-to-image rotation/flips are manual display controls. Stage rounding, drift, image shifts and tilt are not corrected. Footprint dots and acquisition labels sit at the top-right corner to leave image centres clear. Coincident positions remain available in the list. ST/STA folder labels are retained as recorded; suspected sample swaps are not resolved by this feature. The acquisition map does not perform automatic image alignment. Batch grids and parallel execution are separate features described above.
 
 Follow-up: Hitachi-specific placement calibration remains deferred at the user’s request. The user observed approximately −90° stage-to-image rotation for the current acquisition set; rotation remains an adjustable map control, not a universal camera calibration.
 
@@ -169,22 +197,22 @@ Acquisition-map stage rotation is remembered per reference image and data folder
 
 Manual placement — implemented 30 October 2026: **Adjust placements** enables footprint dragging with an image selector for overlapping acquisitions. Each reference–image pair remembers its manually chosen centre in reference-image coordinates, scoped to the data folder and browser. These positions override the stage estimate at that level without changing original metadata or image pixels; **Reset placement** removes the override. During a drag the comparison card stays visible and crops the cached reference preview immediately; release saves the centre and requests the original-pixel crop. Cancelled drags restore the previous placement. Zoom-out is bounded to twice the fitted view width, with All locations available for deliberate reframing. Hitachi-specific automatic calibration remains deferred.
 
-31 October 2026 UI follow-up: Phase colours/search and material cells remain above Processing settings. Batch selection uses an inclusive minimum magnification; the redundant Include cutoff checkbox was removed.
-
-31 October 2026 batch UI: a compact live image/map above the batch summaries displays finished leaf regions as each grid runs, automatically advancing to the next image and retaining the last map on completion/cancellation. A separate preview endpoint uses a small cached batch thumbnail without switching the interactive source. Summary phase columns follow the enabled phases captured for that batch.
-
-Validation for the 31 October follow-up: 112 tests passed, including snap metadata persistence, larger search radii, live batch leaf snapshots and thumbnail retrieval. Browser checks covered purple markers following the selected shape, source/enlarged-view ring dragging and undo, background editing without dimming/spinner, separate settings reset preserving edits, and two real-image 6×6 batches advancing in the viewer with disabled FCC omitted from the table.
-
 ## Crop-size consistency diagnostic
 
 Approved and implemented first runner, 31 October 2026: `tools/crop_size_diagnostic.py` runs the existing engine outside the live app. Compare manual, geometry-auto and rank-auto on nine fixed centres at 4/6/8/12/20 nm plus centred 30 nm and full image. Capture raw/processed previews, detected profiles, all rank-auto candidate trials, geometry-auto trial evidence, score decompositions, rejection reasons and cached-candidate penalty ablations. No production detection or scoring defaults changed. The expected HCP orientation is evaluation-only and is a working hypothesis from the saved region, not independent ground truth.
 
 Optional fixed smoothing sensitivity at representative sizes compares off/lower/higher smoothing and a constant reciprocal-space smoothing width. Automatic smoothing optimization is explicitly deferred for discussion. The runner supports restart after failure with matching provenance and preserves completed groups; use local temporary output before copying to cloud storage. See [diagnostic instructions](crop-size-diagnostic.md).
 
-Next: review ST1156 size/location dependence; manually inspect representative missed/spurious peaks and fit rejections, then test 1203 and a mixed-pattern control before altering defaults. Build the in-app crop-size diagnostic panel after deciding which diagnostic outputs to retain. No architecture refresh requested.
+Next: follow up the completed ST1156 experiment with manual inspection of representative missed/spurious peaks and fit rejections, then test ST1203 and a mixed-pattern control before altering defaults. Build the in-app crop-size diagnostic panel after deciding which diagnostic outputs to retain. No architecture refresh requested.
 
 ST1156 first experiment completed 31 October 2026: 189 analyses (141 baseline crop/mode combinations plus 48 fixed-smoothing checks). Expected-orientation acceptance was 29/47 manual, 28/47 geometry-auto and 40/47 rank-auto. Eighteen of nineteen geometry-auto failures passed the position screen but failed after ranking penalties; this implicates scoring as well as detection. Smoothing effects depend on crop size and selection mode. Nine targeted runner/auto-strength tests pass, including unchanged production results in all three modes. Results are exploratory; no defaults changed and automatic smoothing remains deferred.
 
 ## Grid marker layout
 
-Implemented 1 November 2026: interactive grid zone symbols are centred in a vertical stack, ordered by descending candidate rank (coverage breaks rank ties), rather than fixed phase positions. Only enabled phases with a retained candidate occupy a slot; one candidate is centred. Below-screen candidates remain faded, independently of rank order. Layout uses the active phase list, including FCC, and shrinks symbols for larger stacks. Browser map PNG exports inherit the same layout. Batch text-label PNG rendering is unchanged; unifying its overlay options remains the separate follow-up above.
+Implemented 1 November 2026 (`c1a6b10`): interactive grid zone symbols are centred in a vertical stack, ordered by descending candidate rank (coverage breaks rank ties), rather than fixed phase positions. Only enabled phases with a retained candidate occupy a slot; one candidate is centred. Below-screen candidates remain faded, independently of rank order. Layout uses the active phase list, including FCC, and shrinks symbols for larger stacks. Browser map PNG exports inherit the same layout. Batch text-label PNG rendering is unchanged; unifying its overlay options remains the separate follow-up above.
+
+## Maintaining this plan
+
+Update this document when a task's scope, priority, decisions or implementation status changes. Keep proposals distinct from agreed behaviour and mark work complete only after implementation and relevant verification. Add the completion date and commit reference when closing a task; keep a short completed-work record as tasks leave the active list.
+
+The README links here instead of maintaining a second plan. Update the [architecture and methods documentation](architecture/README.md) when the user requests a refresh. This document records delivered scope alongside remaining work; the README describes how to use available features.
