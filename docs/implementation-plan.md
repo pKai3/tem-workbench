@@ -169,6 +169,10 @@ Parallel grid execution is implemented separately above and can support this fut
 
 ## Display updates
 
+2 November 2026: fresh-start marker defaults now use open crosshairs for measured peaks, diamonds for HCP/BCC/FCC predictions, squares for both geometry grids, original dots for weak detections, A/B/C Winning Fit (Passing) vectors and Bounce + rotate. Existing saved display preferences retain precedence.
+
+2 November 2026: added a visible overlay legend below the FFT/direct-diffraction image and in its enlarged view. The key follows rendered marker shapes, phase colours, manual/weak detections, geometry grids, prediction line styles, vectors, label connectors and fitting/exclusion boundaries. Hidden marker types and unused evidence styles are omitted. Display only; analysis and scoring are unchanged.
+
 30 October 2026: added Bounce + rotate marker motion (−45° to +45°, largest at 0°; 2.4-second rotation cycle with the original 1.2-second bounce timing), preserving phase timing offsets, reduced-motion preferences and GIF export support.
 
 30 October 2026: phase-colour dropdown options use neutral text to avoid inheriting the selected phase colour in Windows native menus.

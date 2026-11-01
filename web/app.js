@@ -445,7 +445,7 @@ function markerMotionOffset(kind,phase){
 function markerShape(x,y,mode,attrs={},r=7){
  const offset=markerMotionOffset(attrs['data-marker-kind'],attrs['data-marker-phase']);
  const style={class:'spectrum-marker',stroke:'#ffffff','stroke-width':1,fill:'none',
-  'data-motion-offset':offset,...attrs};
+  'data-motion-offset':offset,'data-marker-shape':mode,'data-marker-radius':r,...attrs};
  if(mode==='off')return null;
  if(mode==='diamond')return el('path',{...style,d:`M${x} ${y-r}L${x+r} ${y}L${x} ${y+r}L${x-r} ${y}Z`});
  if(mode==='square')return el('rect',{...style,x:x-r,y:y-r,width:2*r,height:2*r});
@@ -556,7 +556,7 @@ for(const f of fits){
    if(weak)attrs['stroke-dasharray']='5 3';else if(!f.model.valid)attrs['stroke-dasharray']='2 2';else if(!supported)attrs['stroke-dasharray']='1 3';
    if(evidence?.status==='unassessable')attrs.opacity=.35;
    const styleId=f.geometry?(f.model===result.periodicity.primary_lattice?'primary-geometry-marker':'secondary-geometry-marker'):(f.model.phase.toLowerCase()+'-marker');
-   const shape=markerShape(x,y,$(styleId).value,{...attrs,'data-marker-kind':'prediction','data-marker-phase':f.geometry?'geometry':f.model.phase},7);
+   const shape=markerShape(x,y,$(styleId).value,{...attrs,'data-marker-kind':'prediction','data-marker-phase':f.geometry?'geometry':f.model.phase,'data-legend-label':f.geometry?f.name:f.model.phase+' prediction'},7);
    const evidenceText=supported?'matched original detected profile':weak?`weak local maximum ${evidence.weak_id}, local contrast ${evidence.local_contrast.toFixed(1)}, offset ${evidence.offset_nm_inv.toFixed(3)} nm⁻¹`:evidence?.status==='unassessable'?'not reliably assessable':'no strong or qualifying weak maximum assigned';
    if(shape){shape.append(el('title',{},f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.model.phase} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${evidenceText}`));$('fft-overlay').append(shape)}
    if(weak){
@@ -572,7 +572,57 @@ for(const f of fits){
 }
  drawReflectionVectors(qp);
  if(result.image_kind==='diffraction')drawDetectorExclusions(qp);
- syncFFTZoom();drawSnapOverlays();
+ renderSpectrumLegend();syncFFTZoom();drawSnapOverlays();
+}
+// Read the rendered overlays so hidden marker types and unused evidence styles
+// never acquire legend entries. Swatches stay still for easy comparison.
+function renderSpectrumLegend(){
+ const host=$('fft-legend'),overlay=$('fft-overlay');host.replaceChildren();
+ const identities=new Map(),styles=new Map();
+ const add=(map,key,label,shape,attrs={},help='')=>{if(!map.has(key))map.set(key,{label,shape,attrs,help})};
+ for(const node of overlay.querySelectorAll('[data-marker-kind]')){
+  const kind=node.getAttribute('data-marker-kind'),shape=kind==='weak'&&Number(node.getAttribute('data-marker-radius'))<2?'dot':node.getAttribute('data-marker-shape');
+  const stroke=node.getAttribute('stroke'),dash=node.getAttribute('stroke-dasharray');
+  if(kind==='prediction'){
+   const label=node.getAttribute('data-legend-label');
+   add(identities,label,label,shape,{stroke});
+   const geometry=node.getAttribute('data-marker-phase')==='geometry';
+   const labelStyle=dash==='5 3'?'Weak match':dash==='2 2'?'Below screen':dash==='1 3'?'No assigned peak':geometry?'Passing geometry':'Strong match · passing fit';
+   add(styles,labelStyle,labelStyle,'line',{'stroke-dasharray':dash||''},dash==='5 3'?'A weak maximum is assigned. Long dashes take precedence whether the candidate passes or fails the screen.':dash==='1 3'?'Passing candidate, but no strong or qualifying weak peak is assigned at this position.':geometry?'Geometry-only fit; no crystal phase is assigned.':'');
+   if(node.getAttribute('opacity')==='.35'||Number(node.getAttribute('opacity'))===.35)add(styles,'unchecked','Not assessable','line',{opacity:.35},'Faint predictions cannot be checked reliably; they are not evidence of a missing reflection.');
+  }else{
+   const manual=node.getAttribute('data-manual-peak')==='true';
+   const label=kind==='weak'?'Weak maximum':manual?'Manual peak':'Detected peak';
+   add(identities,label,label,shape,{stroke,fill:node.getAttribute('fill')||'none','stroke-dasharray':dash||''},kind==='weak'?'Additional local maximum checked for a displayed fit; excluded from the initial strong-profile screen.':manual?'Manually added observation.':'Original detected observation. Opposite spots count as one profile.');
+  }
+ }
+ for(const phase of new Set([...overlay.querySelectorAll('[data-reflection-vector]')].map(n=>n.getAttribute('data-reflection-vector')))){
+  add(identities,'vector-'+phase,phase+' vectors','arrow',{stroke:phaseColors[phase]},'Reciprocal vectors: g in nm⁻¹ and d = 1/g in nm. These are not real-space unit-cell edges.');
+ }
+ if(overlay.querySelector('[data-vector-leader]'))add(styles,'leader','Label connector','line',{'stroke-dasharray':'2 2',opacity:.7},'Connects a displaced label to its vector endpoint.');
+ if(overlay.querySelector('[data-fitting-band]'))add(styles,'band','Fitting limits','circle',{stroke:'#b3c2d0','stroke-dasharray':'3 3'},'Inner circle: central exclusion. Outer circle: fitting limit. Shaded areas are excluded.');
+ if(overlay.querySelector('[data-exclusion-mask]'))add(styles,'mask','Excluded area','square',{stroke:'#f4b75e',fill:'#f4b75e','fill-opacity':.12},'User-defined exclusion rectangle.');
+ const heading=document.createElement('strong');heading.textContent='Overlay key';host.append(heading);
+ for(const entries of [identities,styles]){
+  if(!entries.size)continue;
+  const row=document.createElement('div');row.className='spectrum-legend-row';
+  for(const {label,shape,attrs,help} of entries.values()){
+   const item=document.createElement('span');item.className='spectrum-legend-item';if(help)item.title=help;
+   const swatch=el('svg',{viewBox:'0 0 28 24',width:28,height:24,'aria-hidden':'true'});
+   const base={stroke:'#dce6ef','stroke-width':1.5,fill:'none',...attrs};
+   let mark;
+   if(shape==='line'||shape==='arrow')mark=el('path',{...base,d:shape==='arrow'?'M3 19L24 5M16 5H24V13':'M2 12H26'});
+   else {mark=markerShape(14,12,shape==='dot'?'circle':shape,base,shape==='dot'?2:7);mark.removeAttribute('class')}
+   swatch.append(mark);item.append(swatch,document.createTextNode(label));row.append(item);
+  }
+  host.append(row);
+ }
+ host.hidden=!identities.size&&!styles.size;
+ syncSpectrumLegendZoom();
+}
+function syncSpectrumLegendZoom(){
+ const source=$('fft-legend'),target=$('fft-zoom-legend');
+ target.hidden=source.hidden;target.replaceChildren(...[...source.childNodes].map(n=>n.cloneNode(true)));
 }
 function renderFitChoices(data){
  chosenFits=new Set();$('fit-list').replaceChildren();
@@ -640,12 +690,12 @@ $('reset-phase-colors').onclick=()=>{
  setPhaseSelection(config?.phase_selection?materialPhases():PHASES);finishPhaseChange(previous);
 };
 const savedMarkerStyles=readPreference('tem-marker-styles',{});
-for(const [id,fallback]of Object.entries({'hcp-marker':'circle','bcc-marker':'circle','fcc-marker':'circle','primary-geometry-marker':'diamond','secondary-geometry-marker':'diamond','weak-marker':'diamond'})){
+for(const [id,fallback]of Object.entries({'hcp-marker':'diamond','bcc-marker':'diamond','fcc-marker':'diamond','primary-geometry-marker':'square','secondary-geometry-marker':'square','weak-marker':'dot'})){
  const choices=id==='weak-marker'?[...MARKER_SHAPES,'follow','dot']:MARKER_SHAPES;
  $(id).value=choices.includes(savedMarkerStyles?.[id])?savedMarkerStyles[id]:fallback;
  $(id).onchange=()=>{rememberMarkerStyles();drawFFT()};
 }
-$('marker-motion').value=['off','pulse','bounce','wobble','rotate'].includes(savedMarkerStyles?.motion)?savedMarkerStyles.motion:savedMarkerStyles?.pulse===true?'bounce':'off';applyMarkerAnimation();
+$('marker-motion').value=['off','pulse','bounce','wobble','rotate'].includes(savedMarkerStyles?.motion)?savedMarkerStyles.motion:savedMarkerStyles?.pulse===true?'bounce':savedMarkerStyles?.pulse===false?'off':'rotate';applyMarkerAnimation();
 $('marker-motion').onchange=()=>{rememberMarkerStyles();applyMarkerAnimation()};
 $('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT();if(isDiffraction())drawDetector()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
 const oldPalette=readPreference('tem-palette',null),savedPalette=({ice:'viridis',violet:'plasma',green:'viridis'})[oldPalette]||oldPalette;if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;syncIntensityKey();
@@ -1063,7 +1113,7 @@ function syncFFTZoom(){
  for(const attribute of ['id','tabindex','aria-haspopup','aria-controls'])copy.removeAttribute(attribute);
  copy.setAttribute('role','img');copy.setAttribute('aria-label',isDiffraction()?'Enlarged diffraction pattern with current spots and crystal overlays':'Enlarged FFT with current peaks and crystal overlays');
  for(const child of copy.querySelectorAll('[id]'))child.removeAttribute('id');
- copy.classList.add('fft-enlarged');$('fft-zoom-view').replaceChildren(copy);drawSnapOverlays();
+ copy.classList.add('fft-enlarged');$('fft-zoom-view').replaceChildren(copy);syncSpectrumLegendZoom();drawSnapOverlays();
 }
 function openFFTZoom(){
  if(!(result||displayedDiffraction)||!fftRaw||!$('fft-image').getAttribute('href'))return;
@@ -1397,7 +1447,7 @@ function drawDetectorExclusions(qp){
   const [left,top]=qp((r.x-d.center_x)*d.pixel_x_nm_inv,(d.center_y-r.y)*d.pixel_y_nm_inv);
   const [right,bottom]=qp((r.x+r.w-d.center_x)*d.pixel_x_nm_inv,(d.center_y-r.y-r.h)*d.pixel_y_nm_inv);
   const x=clamp(left,0,420),y=clamp(top,0,420),width=clamp(right,0,420)-x,height=clamp(bottom,0,420)-y;
-  if(width>0&&height>0)overlay.append(el('rect',{x,y,width,height,fill:'#f4b75e','fill-opacity':.12,stroke:'#f4b75e','stroke-width':.6}));
+  if(width>0&&height>0)overlay.append(el('rect',{'data-exclusion-mask':'true',x,y,width,height,fill:'#f4b75e','fill-opacity':.12,stroke:'#f4b75e','stroke-width':.6}));
  }
 }
 const savedDiffWorkers=readPreference('tem-diffraction-workers',0);
@@ -1845,8 +1895,8 @@ function drawReflectionVectors(qp){
  }
 }
 const VECTOR_MODES=['off','fitted_winner','fitted_winner_any','fitted_HCP','fitted_BCC','fitted_FCC','fitted_both','fitted_all','winner','winner_any',...PHASES,'both','all'];
-const savedVectors=readPreference('tem-reflection-vectors','off');
-syncOverlayMenus($('overlay').value,VECTOR_MODES.includes(savedVectors)?savedVectors:'off');
+const savedVectors=readPreference('tem-reflection-vectors','fitted_winner');
+syncOverlayMenus($('overlay').value,VECTOR_MODES.includes(savedVectors)?savedVectors:'fitted_winner');
 $('reflection-vectors').onchange=()=>{writePreference('tem-reflection-vectors',$('reflection-vectors').value);drawFFT()};
 
 start();
