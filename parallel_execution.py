@@ -7,7 +7,6 @@ from concurrent.futures import ProcessPoolExecutor, CancelledError
 from pathlib import Path
 import multiprocessing as mp
 import os
-import sys
 import tempfile
 import threading
 
@@ -65,11 +64,9 @@ class RegionPool:
     """One bounded, explicitly owned pool per grid. Close before replacing it."""
     def __init__(self, item, settings, config, version, workers=0):
         self.workers = worker_count(workers)
-        # Console-free workers when launched by the Windows control window.
-        if sys.platform == 'win32':
-            windowless = Path(sys.executable).with_name('pythonw.exe')
-            if windowless.is_file():
-                mp.set_executable(str(windowless))
+        # Keep multiprocessing's default: the same interpreter as the backend.
+        # Switching a running venv from python.exe to pythonw.exe can change its
+        # Windows/Conda startup behaviour and hides worker startup diagnostics.
         self.context = mp.get_context('spawn')
         self.stop = self.context.Event()
         self.directory = tempfile.TemporaryDirectory(prefix='tem-grid-')
