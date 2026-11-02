@@ -2165,7 +2165,7 @@ function syncPeakEditControls(){
  const edits=diffractionSettings?.peak_edits||[];
  $('diff-undo-peak').disabled=(!edits.length&&!peakUndo.length)||peakEditBusy;
  $('diff-reset-peaks').disabled=!edits.length||peakEditBusy;
- if(isDiffraction())$('diff-peak-note').textContent=`${edits.length} peak edit(s). Click either image. Drag an add ring to re-snap, or a removal ring to resize the cleared area. All edit circles stay visible; × deletes an addition. Manual additions count as measured evidence. ${busy||pending?'Updating fits in the background…':''}`;
+ if(isDiffraction())$('diff-peak-note').textContent=`${edits.length} peak edit(s). Click either image. Drag an add ring to re-snap, or a removal ring to resize the cleared area. All edit circles stay visible; × deletes an addition or removal area. Manual additions count as measured evidence. ${busy||pending?'Updating fits in the background…':''}`;
 }
 function editSnapshot(){return result?.image_kind==='diffraction'?result:displayedDiffraction}
 function effectiveDetector(){
@@ -2240,10 +2240,10 @@ function editSpectrumPeak(event,svg){
  if(p){if($('diff-tool').value==='center')setDetectorCentre(p.x,p.y);else editDetectorPeak(p.x,p.y)}
  return true;
 }
-function deletePeakAddition(index){
- if(!isDiffraction()||peakEditBusy||radiusDrag||diffractionSettings?.peak_edits?.[index]?.action!=='add')return;
+function deletePeakEdit(index){
+ if(!isDiffraction()||peakEditBusy||radiusDrag||!['add','remove'].includes(diffractionSettings?.peak_edits?.[index]?.action))return;
  rememberPeakUndo();diffractionSettings.peak_edits.splice(index,1);snapPointer=null;
- commitDetector();drawSnapOverlays();message('Manual peak addition deleted. Undo peak edit restores it.');
+ commitDetector();drawSnapOverlays();message('Peak edit deleted. Undo peak edit restores it.');
 }
 function drawSnapOverlays(){
  for(const svg of [$('overview'),$('fft'),$('fft-zoom-view').querySelector('svg')].filter(Boolean)){
@@ -2266,10 +2266,10 @@ function drawSnapOverlays(){
    const boundary=el('ellipse',{...attrs,'stroke-dasharray':index===null?'3 3':'5 3',...(removal?{'data-removal-index':index}:{})});
    boundary.append(el('title',{},removal?`Peak removal radius ${r.toFixed(3)} nm⁻¹${diffractionSettings.peak_edits?.[index]?.single?' (legacy single spot; resize to remove all within radius)':''}`:'Peak snap search'));
    group.append(boundary);
-   if(index!==null&&!removal){
+   if(index!==null){
     const half=source?Math.max(5,meta.width/180):4,bx=cx+rx*.55,by=cy-ry*.55;
-    const button=el('g',{'data-delete-addition':index,role:'button',tabindex:0,'aria-label':'Delete manual peak addition','pointer-events':'all',style:'cursor:pointer'});
-    button.append(el('title',{},'Delete this manual addition (automatic detection may return)'));
+    const button=el('g',{'data-delete-peak-edit':index,role:'button',tabindex:0,'aria-label':removal?'Delete peak removal area':'Delete manual peak addition','pointer-events':'all',style:'cursor:pointer'});
+    button.append(el('title',{},removal?'Delete this removal area (previously removed peaks may return)':'Delete this manual addition (automatic detection may return)'));
     button.append(el('rect',{x:bx-half*1.4,y:by-half*1.4,width:half*2.8,height:half*2.8,rx:half*.5,fill:'#101925',stroke:colour,'stroke-width':1,'vector-effect':'non-scaling-stroke'}));
     button.append(el('path',{d:`M${bx-half*.6},${by-half*.6}l${half*1.2},${half*1.2}M${bx+half*.6},${by-half*.6}l${-half*1.2},${half*1.2}`,stroke:colour,'stroke-width':1.5,'vector-effect':'non-scaling-stroke'}));
     group.append(button);
@@ -2307,14 +2307,14 @@ async function finishRadiusDrag(cancel=false){
 for(const id of ['overview','fft','fft-zoom-view']){
  const host=$(id),svg=()=>id==='fft-zoom-view'?host.querySelector('svg'):host;
  host.addEventListener('pointermove',event=>{
-  if(!peakEditing()||event.target.closest('[data-delete-addition]'))return;
+  if(!peakEditing()||event.target.closest('[data-delete-peak-edit]'))return;
   const p=detectorPoint(event,svg());if(!p){snapPointer=null;drawSnapOverlays();return}
   if(radiusDrag?.host===host){radiusDrag.radius=Math.round(clamp(reciprocalDistance(p,radiusDrag),.001,5)*1000)/1000;event.preventDefault();event.stopImmediatePropagation()}
   else snapPointer={...p,svg:svg()};
   drawSnapOverlays();
  },true);
  host.addEventListener('pointerdown',event=>{
-  if(event.target.closest('[data-delete-addition]')){event.preventDefault();event.stopImmediatePropagation();return}
+  if(event.target.closest('[data-delete-peak-edit]')){event.preventDefault();event.stopImmediatePropagation();return}
   const target=event.target.closest('[data-snap-index]');if(!target||!peakEditing()||peakEditBusy)return;
   event.preventDefault();event.stopImmediatePropagation();const index=Number(target.dataset.snapIndex),edit=diffractionSettings.peak_edits[index];
   const radius=edit.action==='remove'?savedRemovalRadius(edit):savedSnapRadius(edit);
@@ -2325,13 +2325,13 @@ for(const id of ['overview','fft','fft-zoom-view']){
   host.dataset.suppressPeakClick='1';setTimeout(()=>delete host.dataset.suppressPeakClick,0);finishRadiusDrag(name==='pointercancel');
  },true);
  host.addEventListener('click',event=>{
-  const deletion=event.target.closest('[data-delete-addition]');
-  if(deletion){event.preventDefault();event.stopImmediatePropagation();deletePeakAddition(Number(deletion.dataset.deleteAddition));return}
+  const deletion=event.target.closest('[data-delete-peak-edit]');
+  if(deletion){event.preventDefault();event.stopImmediatePropagation();deletePeakEdit(Number(deletion.dataset.deletePeakEdit));return}
   if(host.dataset.suppressPeakClick||event.target.closest('[data-snap-index]')){event.preventDefault();event.stopImmediatePropagation()}
  },true);
  host.addEventListener('keydown',event=>{
-  const deletion=event.target.closest('[data-delete-addition]');
-  if(deletion&&['Enter',' '].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();deletePeakAddition(Number(deletion.dataset.deleteAddition))}
+  const deletion=event.target.closest('[data-delete-peak-edit]');
+  if(deletion&&['Enter',' '].includes(event.key)){event.preventDefault();event.stopImmediatePropagation();deletePeakEdit(Number(deletion.dataset.deletePeakEdit))}
  },true);
  host.addEventListener('pointerleave',()=>{snapPointer=null;drawSnapOverlays()});
 }
