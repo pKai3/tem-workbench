@@ -22,3 +22,5 @@ outputs/
 /demo/packs/
 /demo/*.npz
 /demo/*.png
+
+/.tem-image-calibrations.json

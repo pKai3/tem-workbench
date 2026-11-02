@@ -258,3 +258,17 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 
 .grid-controls label[hidden], #batch-panel[hidden] {display:none}
 #overlap-controls, #overlap-display {margin:10px 0}
+
+#raster-dialog{width:min(1000px,94vw);max-height:94vh;overflow:auto}
+#raster-canvas{display:block;width:100%;height:min(42vh,650px);background:#05090e;touch-action:none;cursor:crosshair}
+#raster-dialog input{width:110px}
+
+#raster-dialog .raster-free{display:flex;flex-direction:row;justify-content:flex-start;align-items:center;gap:6px;margin:8px 0}
+#raster-dialog .raster-free input{width:auto}
+#raster-loupe{position:fixed;width:210px;background:#080e14;border:1px solid #ff43cd;border-radius:5px;overflow:hidden;pointer-events:none;z-index:10;box-shadow:0 3px 14px #0009}
+#raster-loupe svg{display:block;width:210px;height:210px;image-rendering:pixelated}
+#raster-loupe-coordinates{padding:4px 6px;font-size:12px;white-space:nowrap}
+.raster-crosshair{position:absolute;left:105px;top:105px;width:0;height:0;color:#ff43cd}
+.raster-crosshair:before,.raster-crosshair:after{content:"";position:absolute;box-shadow:0 0 2px #000;background:currentColor}
+.raster-crosshair:before{width:36px;height:1px;left:-18px;top:0}
+.raster-crosshair:after{height:36px;width:1px;left:0;top:-18px}

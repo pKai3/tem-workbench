@@ -115,7 +115,7 @@ class Workbench:
             def render(file_id):
                 with self.lock:
                     return engine.file_preview(file_id)
-            self.preview_batch = PreviewBatch(engine.files, render, engine.data_root)
+            self.preview_batch = PreviewBatch({k:v for k,v in engine.files.items() if v.suffix.lower()=='.dm4'}, render, engine.data_root)
             self.preview_batch.start()
             return self.preview_status()
 
@@ -126,6 +126,8 @@ class Workbench:
             path = self.engine.files.get(file_id)
             if not path or not path.resolve().is_relative_to(self.engine.data_root):
                 raise ValueError('That image has no sidecar preview.')
+            if path.suffix.lower() != '.dm4':
+                return self.engine.file_preview(file_id)
             preview = sidecar_path(path)
             if not preview.resolve().is_relative_to(self.engine.data_root):
                 raise ValueError('Preview must be inside the data folder.')
@@ -543,6 +545,13 @@ def make_handler(app):
                 if url.path == '/api/config':
                     with app.lock:
                         self.send(app.config_info())
+                elif url.path == '/api/raster-preview':
+                    with app.lock:
+                        preview = app.engine.raster_preview(query['id'][0])
+                    self.send(preview, 'image/png')
+                elif url.path == '/api/raster-info':
+                    with app.lock:
+                        self.send(app.engine.raster_info(query['id'][0]))
                 elif url.path == '/api/regions':
                     self.send(app.project.read())
                 elif url.path == '/api/demo-pack':
@@ -625,6 +634,9 @@ def make_handler(app):
                     self.send(app.delete_region(body))
                 elif self.path == '/api/regions/open':
                     self.send(app.saved_region(body['id']))
+                elif self.path == '/api/raster-calibration':
+                    with app.lock:
+                        self.send(app.engine.calibrate_raster(body['file_id'], body))
                 elif self.path == '/api/open':
                     with app.lock:
                         item=app.engine.load(body['file_id'])

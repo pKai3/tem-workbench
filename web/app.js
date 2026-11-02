@@ -262,14 +262,76 @@ function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi
 // Invalidate the old result immediately; never attach it to a newly moved region.
 function schedule(delay=120){generation++;pending=true;result=null;updateStrengthMode();hideRegionPreview();beginSpectrumLoading();syncSpectrumExportControls();if(isDiffraction()){drawDetector();renderTranslation()}$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
 async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true;const version=generation,body=requestBody();try{const data=await api('analyze',body);if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}}catch(e){if(version===generation){result=null;message(e.message,true);$('phase-label').textContent='Analysis unavailable'}}finally{busy=false;syncPeakEditControls();if(version===generation&&!pending)finishSpectrumLoading();syncSpectrumExportControls();if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20)}}
+let rasterContext=null,rasterResolve=null,rasterDrag=false;
+const rasterFields=['raster-x1','raster-y1','raster-x2','raster-y2'];
+function rasterPoints(){const v=rasterFields.map(id=>$(id).value===''?NaN:Number($(id).value));return [[v[0],v[1]],[v[2],v[3]]]}
+function rasterMeasure(){
+ if(!$('raster-free-y').checked)$('raster-y2').value=$('raster-y1').value;
+ const p=rasterPoints();for(const [key,value]of Object.entries({x1:p[0][0],y1:p[0][1],x2:p[1][0],y2:p[1][1]}))for(const id of ['raster-line','raster-loupe-line'])$(id).setAttribute(key,Number.isFinite(value)?value:0);
+ const length=Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1]),value=Number($('raster-value').value);
+ $('raster-status').textContent=Number.isFinite(length)&&length>=1?`${length.toFixed(2)} pixels · ${(value/length).toPrecision(6)} ${$('raster-units').selectedOptions[0].text}/pixel`:'Draw the scale bar, or enter its endpoint coordinates.';
+}
+async function calibrateRaster(id,info){
+ rasterContext={id,...info};rasterDrag=false;
+ const c=info.calibration;$('raster-kind').value=c?.image_kind||'real_space';$('raster-value').value=c?.value||5;$('raster-units').value=c?.units||'nm';
+ rasterFields.forEach((key,i)=>$(key).value=c?c.points.flat()[i]:'');
+ $('raster-canvas').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);
+ $('raster-free-y').checked=!!c&&Math.abs(c.points[0][1]-c.points[1][1])>.001;
+ $('raster-y2').disabled=!$('raster-free-y').checked;$('raster-loupe').hidden=true;
+ for(const imageId of ['raster-image','raster-loupe-image']){for(const key of ['width','height'])$(imageId).setAttribute(key,info[key]);$(imageId).setAttribute('href','/api/raster-preview?id='+encodeURIComponent(id));}
+ rasterMeasure();$('raster-apply').disabled=false;$('raster-dialog').showModal();
+ return new Promise(resolve=>rasterResolve=resolve);
+}
+$('raster-dialog').addEventListener('close',()=>{const resolve=rasterResolve;rasterResolve=null;rasterContext=null;rasterDrag=false;$('raster-loupe').hidden=true;resolve?.(false)});
+$('raster-close').onclick=()=>$('raster-dialog').close();
+$('raster-kind').onchange=()=>{$('raster-units').value=$('raster-kind').value==='diffraction'?'nm^-1':'nm';rasterMeasure()};
+for(const id of [...rasterFields,'raster-value','raster-units'])$(id).oninput=rasterMeasure;
+function rasterPoint(e){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform($('raster-canvas').getScreenCTM().inverse());return [clamp(p.x,0,rasterContext.width-1),clamp(p.y,0,rasterContext.height-1)]}
+$('raster-free-y').onchange=()=>{$('raster-y2').disabled=!$('raster-free-y').checked;rasterMeasure()};
+function rasterZoom(e,p){
+ const span=64,box=$('raster-loupe');
+ $('raster-loupe-view').setAttribute('viewBox',`${p[0]-span/2} ${p[1]-span/2} ${span} ${span}`);
+ $('raster-loupe-coordinates').textContent=`X ${p[0].toFixed(1)} · Y ${p[1].toFixed(1)} px`;
+ box.hidden=false;
+ const x=e.clientX+24+210>innerWidth?e.clientX-234:e.clientX+24;
+ box.style.left=`${clamp(x,8,innerWidth-218)}px`;box.style.top=`${clamp(e.clientY+24,8,innerHeight-242)}px`;
+}
+$('raster-canvas').onpointerdown=e=>{
+ if(e.button!==0||!rasterContext)return;e.preventDefault();const p=rasterPoint(e),points=rasterPoints(),ctm=$('raster-canvas').getScreenCTM();
+ const distances=points.map(q=>Math.hypot((q[0]-p[0])*ctm.a,(q[1]-p[1])*ctm.d));
+ rasterDrag=Math.min(...distances)<12?(distances[0]<distances[1]?'start':'end'):'end';
+ if(!(Math.min(...distances)<12))rasterFields.forEach((id,i)=>$(id).value=p[i%2].toFixed(2));
+ $('raster-canvas').setPointerCapture(e.pointerId);rasterMeasure();rasterZoom(e,p);
+};
+$('raster-canvas').onpointermove=e=>{
+ if(!rasterContext)return;const p=rasterPoint(e);
+ if(rasterDrag){const start=rasterDrag==='start';$(start?'raster-x1':'raster-x2').value=p[0].toFixed(2);
+  if(start||$('raster-free-y').checked)$(start?'raster-y1':'raster-y2').value=p[1].toFixed(2);
+  rasterMeasure();if(!$('raster-free-y').checked)p[1]=Number($('raster-y1').value);
+ }rasterZoom(e,p);
+};
+$('raster-canvas').onpointerup=()=>rasterDrag=false;
+$('raster-canvas').onpointercancel=()=>{rasterDrag=false;$('raster-loupe').hidden=true};
+$('raster-canvas').onpointerleave=()=>{if(!rasterDrag)$('raster-loupe').hidden=true};
+$('raster-apply').onclick=async()=>{
+ const context=rasterContext;if(!context)return;$('raster-apply').disabled=true;
+ try{await api('raster-calibration',{file_id:context.id,image_kind:$('raster-kind').value,points:rasterPoints(),value:Number($('raster-value').value),units:$('raster-units').value});
+  if(rasterContext!==context)return;const resolve=rasterResolve;rasterResolve=null;$('raster-dialog').close();resolve?.(true);
+ }catch(e){$('raster-status').textContent=e.message}finally{$('raster-apply').disabled=false}
+};
+$('calibrate-image').onclick=async()=>{const id=$('file').value;try{if(await calibrateRaster(id,await api('raster-info?id='+encodeURIComponent(id))))await openFile()}catch(e){message(e.message,true)}};
 async function openFile(){
- const id=$('file').value;if(!id)return;updateFileNavigation();
+ const id=$('file').value;if(!id)return;updateFileNavigation();$('calibrate-image').hidden=!config.files.find(f=>f.id===id)?.raster;$('run-grid').disabled=true;
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
  const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;detectorRaw=null;opened=false;drag=null;maskDrag=null;displayedDiffraction=null;snapPointer=null;radiusDrag=null;peakUndo=[];document.body.classList.remove('editing-peaks');
  finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
  message('Opening source image…');
  try{
   if(isGridRunning())await api('cancel',{job_id:jobId});
+  if(config.files.find(f=>f.id===id)?.raster){
+   const raster=await api('raster-info?id='+encodeURIComponent(id));if(version!==sourceRequest)return;
+   if(!raster.calibration){finishSpectrumLoading();if(!await calibrateRaster(id,raster)){message('Image calibration cancelled. Select an image or use Calibrate scale bar.');return;}if(version!==sourceRequest)return;beginSpectrumLoading();}
+  }
   const info=await api('open',{file_id:id});if(version!==sourceRequest)return;
   meta=info;fileId=id;opened=true;writePreference(lastImageKey(),id);grid=null;jobId=null;
   setupImageKind();drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=isDiffraction();
@@ -1449,7 +1511,7 @@ async function storeRegion(asNew=false){
 }
 $('store-region').onclick=()=>storeRegion();$('copy-region').onclick=()=>storeRegion(true);
 
-function diffractionKey(){return 'tem-diffraction:'+meta.sha256_pixels}
+function diffractionKey(){return 'tem-diffraction:'+meta.sha256_pixels+(meta.manual_calibration?':'+meta.pixel_x_nm_inv:'')}
 const DETECTOR_FIELDS={'diff-cx':'center_x','diff-cy':'center_y','diff-sx':'pixel_x_nm_inv','diff-sy':'pixel_y_nm_inv','diff-radius':'exclude_radius_nm_inv','diff-sigma':'spot_sigma_px','diff-snr':'spot_snr','diff-shift-limit':'max_center_shift_px'};
 function withTranslationDefaults(d){return {refine_center:true,max_center_shift_px:50,peak_edits:[],...d}}
 function validDiffraction(d){

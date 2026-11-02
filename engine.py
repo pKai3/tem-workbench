@@ -23,6 +23,7 @@ import phase_comparison
 import demo_data
 import peak_evidence
 import diffraction
+import raster_images
 from materials import PHASES, reference_settings
 from crystal_templates import fcc_templates
 
@@ -47,6 +48,7 @@ class Engine:
     def __init__(self, settings):
         self.settings = settings
         self.data_root = folder_paths.resolve_folder(settings.get('data_root', './data'), ROOT)
+        self.raster_store = Path(settings.get('raster_calibrations', ROOT/'.tem-image-calibrations.json'))
         self.reader = None  # Load the optional DM4 reader only for external DM4 files.
         self.templates = json.loads((ROOT/'templates.json').read_text())
         for t in self.templates:
@@ -57,7 +59,7 @@ class Engine:
         self.auto_templates = self.templates
         self._template_cache = {(10., 3., .295, .468, .330, .417): self.templates}
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'engine.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
         self.acquisition_index = MetadataIndex()
@@ -80,18 +82,43 @@ class Engine:
         output = folder_paths.resolve_folder(self.settings.get('output_root', './output'), ROOT)
         for directory, folders, names in os.walk(self.data_root, followlinks=False):
             folders[:] = sorted(name for name in folders if not name.startswith('.') and (Path(directory)/name).resolve() != output)
+            originals = {Path(n).stem.casefold() for n in names if Path(n).suffix.lower() in {'.dm4', '.jpg', '.jpeg', '.tif', '.tiff'}}
             for name in sorted(names):
                 path = Path(directory)/name
-                if path.suffix.lower() != '.dm4' or not path.resolve().is_relative_to(self.data_root):
+                if path.suffix.lower() not in {'.dm4', *raster_images.EXTENSIONS} or not path.resolve().is_relative_to(self.data_root):
                     continue
+                if path.suffix.lower() == '.png' and path.stem.casefold() in originals:
+                    continue  # Preview sidecar, not another acquired image.
                 relative = path.relative_to(self.data_root)
                 file_id = relative.as_posix()
                 sample = next((part for part in relative.parts[:-1] if part in ('STA', 'ST')),
                               relative.parts[0] if len(relative.parts) > 1 else 'Images')
                 self.files[file_id] = path
                 rows.append({'id': file_id, 'name': path.stem, 'sample': sample,
-                             'has_preview': sidecar_path(path).is_file()})
+                             'raster': path.suffix.lower() in raster_images.EXTENSIONS,
+                             'has_preview': path.suffix.lower() in raster_images.EXTENSIONS or sidecar_path(path).is_file()})
         return rows
+
+    def raster_source(self, file_id):
+        path = self.files.get(file_id)
+        if not path or path.suffix.lower() not in raster_images.EXTENSIONS or not path.resolve().is_relative_to(self.data_root):
+            raise ValueError('Choose a JPEG, PNG or TIFF from the data folder.')
+        return path, raster_images.read(path)
+
+    def raster_preview(self, file_id):
+        _, array = self.raster_source(file_id)
+        return png(array)
+
+    def raster_info(self, file_id):
+        path, array = self.raster_source(file_id)
+        return dict(width=array.shape[1], height=array.shape[0],
+                    calibration=raster_images.stored(self.raster_store, path, array))
+
+    def calibrate_raster(self, file_id, values):
+        path, array = self.raster_source(file_id)
+        result = raster_images.save(self.raster_store, path, array, values)
+        self.loaded.pop(file_id, None)
+        return result
 
     def dm_reader(self):
         if self.reader is None:
@@ -128,6 +155,8 @@ class Engine:
             if path is None:
                 errors.append({'name': entry['name'], 'error': 'No original DM4 metadata available.'})
                 continue
+            if Path(path).suffix.lower() in raster_images.EXTENSIONS:
+                continue  # No stage metadata in ordinary images.
             try:
                 info = self.acquisition_index.read(path, self.dm_reader())
                 rows.append({**entry, **info, 'folder': str(Path(entry['id']).parent)})
@@ -151,7 +180,9 @@ class Engine:
     def file_preview(self, file_id):
         path = self.files.get(file_id)
         if not path or not path.resolve().is_relative_to(self.data_root):
-            raise ValueError('Choose a DM4 from the configured data folder.')
+            raise ValueError('Choose an image from the configured data folder.')
+        if path.suffix.lower() in raster_images.EXTENSIONS:
+            return png(raster_images.read(path), max_size=1400)
         array, meta = self.read_dm4(path)
         if array.ndim != 2 or min(array.shape) < 1 or not np.isfinite(array).all():
             raise ValueError('Preview requires a finite two-dimensional image.')
@@ -164,14 +195,25 @@ class Engine:
         if file_id in self.loaded:
             return self.loaded[file_id]
         is_demo = file_id in demo_data.DEMOS
+        manual_calibration = None
         if is_demo:
             array, meta = demo_data.load(file_id, reader=self.read_dm4)
             name = demo_data.DEMOS[file_id]['name']
         else:
             path = self.files.get(file_id)
             if not path or not path.resolve().is_relative_to(self.data_root):
-                raise ValueError('Choose an installed demo or a DM4 from the configured TEM folder.')
-            array, meta = self.read_dm4(path)
+                raise ValueError('Choose an installed demo or an image from the configured TEM folder.')
+            if path.suffix.lower() in raster_images.EXTENSIONS:
+                array = raster_images.read(path)
+                manual_calibration = raster_images.stored(self.raster_store, path, array)
+                if manual_calibration is None:
+                    raise ValueError('Calibrate this image from its scale bar before analysis.')
+                units = 'nm' if manual_calibration['image_kind'] == 'real_space' else '1/nm'
+                meta = {f'Calibrations Dimension {d} {key}': value for d in (1,2)
+                        for key, value in [('Units', units), ('Scale', manual_calibration['scale'])]}
+                meta['Acquisition Device Name'] = 'Imported image · manual calibration'
+            else:
+                array, meta = self.read_dm4(path)
             name = path.stem
         if array.ndim != 2 or min(array.shape) < 32 or not np.isfinite(array).all():
             raise ValueError('Choose a finite two-dimensional image at least 32 pixels per side.')
@@ -199,6 +241,8 @@ class Engine:
                 'time': str(meta.get('DataBar Acquisition Time', '')),
                 'device': str(meta.get('Acquisition Device Name', '')),
                 'stage_position': stage_position(meta)}
+        if manual_calibration is not None:
+            info['manual_calibration'] = manual_calibration
         limits = np.percentile(array, [.3, 99.7])
         if is_diffraction:
             info.update(pixel_x_nm_inv=sx, pixel_y_nm_inv=sy, field_nm_inv=[w*sx, h*sy],

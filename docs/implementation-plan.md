@@ -12,6 +12,12 @@ This is the maintained implementation status and roadmap. The original three ana
 | 2 | Revise automatic minimum peak strength selection to retain weaker separate patterns | Geometry (1–2 patterns) mode implemented (`f9d0d03`); dataset comparisons completed, further objective design/validation remains open |
 | 3 | Batch grid analysis across qualifying images, with per-image and ST/STA summaries | Implemented 31 October 2026 (`977ae03`), with selection, progress and export follow-ups; shared overlay styles remain open |
 
+## Ordinary image calibration — completed 2 November 2026
+
+JPEG, standalone PNG and single-frame TIFF inputs now use the existing FFT or direct-diffraction pipeline after manual scale-bar calibration. Users choose image type, endpoints, printed value and units; calibration is isotropic, saved locally against source path/pixel hash, and carried in exported image metadata. Recalibration invalidates loaded data. Native-resolution hover magnification supports placement and endpoint dragging. Drawing locks Y horizontally by default, with a Free Y option; stored angled bars retain their geometry. Same-name preview PNGs are not catalogued twice.
+
+Validation: raster input/calibration tests cover persistence, real-space and diffraction analysis, unit conversion, invalid inputs, changed source pixels, TIFF stacks and preview sidecars. Browser checks cover calibration, remembered reopening, horizontal locking, Free Y and cursor magnification. No automatic scale-bar recognition or anisotropic calibration is included.
+
 ## Open follow-ups at a glance
 
 - **HCP fitting:** compare the scaling modes and review penalty-aware optimization/candidate retention. Material priors and complexity corrections are not validated.

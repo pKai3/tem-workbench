@@ -80,17 +80,27 @@ Rerun the installer after updates to install any new dependencies. Keep the extr
 
 Windows setup has automated runtime checks, but still needs an end-to-end test on Windows hardware.
 
-## Opening DM4 images
+## Opening images
 
-Expand **Folders** at the top of the page. Browse to a data folder and an output folder, then select **Apply folders**. The picker browses the local filesystem; it does not upload or copy images. **Refresh images** rescans after new files arrive.
+Expand **Data Sources and Outputs** at the top of the page. Browse to a data folder and an output folder, then select **Apply folders**. The picker browses the local filesystem; it does not upload or copy images. **Refresh images** rescans after new files arrive.
 
 The app maintains `./data` and `./output` directory links to those locations (symlinks on macOS/Linux, directory junctions on Windows). Existing nonempty real directories are never replaced. Relative paths resolve from the application directory. The choices are saved in the ignored `.tem-paths.json`, preserving other configuration fields. Changing folders clears the in-memory grid; finish or cancel any running grid and export results first.
 
-The catalog finds `.dm4` files recursively beneath the selected data folder, including files at its root. `STA` and `ST` folders retain their sample grouping; other folders also work. The selected output directory is skipped during scanning. Output may be outside the data directory.
+The catalog finds DM4, JPEG, standalone PNG and single-frame TIFF files recursively beneath the selected data folder, including files at its root. `STA` and `ST` folders retain their sample grouping; other folders also work. The selected output directory is skipped during scanning. Output may be outside the data directory.
 
 **Generate PNG previews** under Data Sources and Outputs creates missing same-name sidecars (`image.dm4` → `image.png`) throughout the linked collection. Previews are greyscale, contrast-adjusted, and up to 1400 pixels along the longest side; direct diffraction uses log intensity. This does not run a fit or estimate a beam centre. Existing PNGs are skipped, source files are unchanged, and the progress display reports saved, skipped and failed files. Cancellation stops after the current file. Downloaded demo packs include PNG previews and are excluded from sidecar generation.
 
 **Visual image browser** opens a searchable thumbnail gallery, ordered by filename or acquisition number. It uses existing sidecar PNGs; files without a preview remain selectable. Choose a thumbnail to load that image for analysis. The gallery can also start generation of missing previews. A ★ marks favourites in both the gallery and the image lists.
+
+### JPEG, PNG and TIFF images
+
+Place ordinary images in the linked data folder, then refresh the image list. On first opening, **Calibrate scale bar** asks whether the image is real space (FFT analysis) or direct diffraction. Drag along the scale bar and enter its printed value and units: nm, µm or Å for real space; nm⁻¹ or Å⁻¹ for diffraction.
+
+Drawing is horizontal by default. **Free Y** permits angled bars. A cursor magnifier shows original-resolution pixels while hovering or dragging; drag an existing endpoint to refine it, or enter coordinates directly. Calibration uses the endpoint distance and assumes equal x/y pixel scales. Previously calibrated angled bars reopen with Free Y enabled.
+
+Calibration is remembered locally in `.tem-image-calibrations.json`, tied to the source path and decoded pixel content. **Calibrate scale bar** can revise it later. Exports include the manual calibration in image metadata; original files are unchanged. Colour inputs are converted to greyscale; single-channel TIFF precision is preserved. Prefer original greyscale data when available—JPEG compression and rendered colour images can alter weak features. Keep printed bars/text outside FFT crops or mask them in diffraction mode. Multi-frame TIFFs are not supported.
+
+Same-name PNG previews beside DM4/JPEG/TIFF sources remain sidecars rather than separate analysis inputs. Standalone PNGs are selectable; give an independent PNG a distinct basename if another source shares its name.
 
 External DM4 loading uses the [openNCEM DM reader](https://openncem.readthedocs.io/en/latest/ncempy.io.dm.html). The Mac app installer includes it. For a manual installation, install it in the app's Python environment:
 
@@ -290,7 +300,7 @@ These adjustments do not simulate reflection intensities, thickness, defocus or 
 - A conservative shared-evidence check retains ambiguity when competing structures explain the same detected profiles and the leading fit requires additional flexibility or unsupported predictions.
 - Small regions broaden FFT peaks, limiting separation of nearby reflections. Image-calibrated fits alone do not establish lattice strain.
 
-Supported input is finite, two-dimensional DM4 data with length or reciprocal-length calibration. Real-space FFTs require equal x/y pixel calibration; automatic grids require square real-space images. Direct diffraction supports rectangular detector exclusions. Ring indexing and arbitrary real-space region shapes are not implemented.
+Supported input is finite, two-dimensional DM4 data with length or reciprocal-length calibration, or single-frame JPEG, PNG and TIFF images calibrated manually from a scale bar. Real-space FFTs require equal x/y pixel calibration; automatic grids require square real-space images. Direct diffraction supports rectangular detector exclusions. Ring indexing and arbitrary real-space region shapes are not implemented.
 
 ## Development
 
