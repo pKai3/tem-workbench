@@ -94,7 +94,7 @@ The catalog finds DM4, JPEG, standalone PNG and single-frame TIFF files recursiv
 
 ### JPEG, PNG and TIFF images
 
-Place ordinary images in the linked data folder, then refresh the image list. On first opening, **Calibrate scale bar** asks whether the image is real space (FFT analysis) or direct diffraction. Drag along the scale bar and enter its printed value and units: nm, µm or Å for real space; nm⁻¹ or Å⁻¹ for diffraction.
+Place ordinary images in the linked data folder, then refresh the image list. On first opening, **Calibrate scale bar** asks whether the image is real space (FFT analysis) or direct diffraction. Drag along the scale bar and enter its printed value and units: nm, µm or Å for real space; nm⁻¹ or Å⁻¹ for diffraction. Changing the units automatically selects the corresponding image type.
 
 Drawing is horizontal by default. **Free Y** permits angled bars. A cursor magnifier shows original-resolution pixels while hovering or dragging; drag an existing endpoint to refine it, or enter coordinates directly. Calibration uses the endpoint distance and assumes equal x/y pixel scales. Previously calibrated angled bars reopen with Free Y enabled.
 

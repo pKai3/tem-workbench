@@ -285,7 +285,11 @@ async function calibrateRaster(id,info){
 $('raster-dialog').addEventListener('close',()=>{const resolve=rasterResolve;rasterResolve=null;rasterContext=null;rasterDrag=false;$('raster-loupe').hidden=true;resolve?.(false)});
 $('raster-close').onclick=()=>$('raster-dialog').close();
 $('raster-kind').onchange=()=>{$('raster-units').value=$('raster-kind').value==='diffraction'?'nm^-1':'nm';rasterMeasure()};
-for(const id of [...rasterFields,'raster-value','raster-units'])$(id).oninput=rasterMeasure;
+for(const id of [...rasterFields,'raster-value'])$(id).oninput=rasterMeasure;
+$('raster-units').onchange=()=>{
+ $('raster-kind').value=['nm^-1','Å^-1'].includes($('raster-units').value)?'diffraction':'real_space';
+ rasterMeasure();
+};
 function rasterPoint(e){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform($('raster-canvas').getScreenCTM().inverse());return [clamp(p.x,0,rasterContext.width-1),clamp(p.y,0,rasterContext.height-1)]}
 $('raster-free-y').onchange=()=>{$('raster-y2').disabled=!$('raster-free-y').checked;rasterMeasure()};
 function rasterZoom(e,p){
