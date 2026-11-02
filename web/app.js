@@ -1679,7 +1679,7 @@ function detectorPointerDown(e){
  const tool=$('diff-tool').value;if(tool==='view')return;e.preventDefault();
  const p=point(e),x=clamp(p.x,0,meta.width-1),y=clamp(p.y,0,meta.height-1);
  if(tool==='add'||tool==='remove'){editDetectorPeak(x,y);return}
- if(tool==='center'){diffractionSettings.center_x=x;diffractionSettings.center_y=y;commitDetector();return}
+ if(tool==='center'){setDetectorCentre(x,y);return}
  if(diffractionSettings.masks.length>=20){message('Use up to 20 exclusions. Undo or clear an existing one first.',true);return}
  maskDrag={x,y,rect:null};$('overview').setPointerCapture(e.pointerId);
 }
@@ -1706,7 +1706,7 @@ function syncSpectrumExportControls(){
  syncMapExportControls();
  for(const id of ['export-png','export-gif']){$(id).disabled=spectrumExportBusy||mapExportBusy||busy||pending||!result||!fftRaw||!config?.spectrum_exports;$(id).title=config?.spectrum_exports?'Save the current view to the output folder':'Restart TEM Workbench to enable image exports'}
 }
-function setSpectrumSpinner(show){show=show&&!peakEditing();for(const id of ['fft-loading','fft-zoom-loading'])$(id).hidden=!show}
+function setSpectrumSpinner(show){show=show&&!peakEditing()&&!(isDiffraction()&&$('diff-tool').value==='center');for(const id of ['fft-loading','fft-zoom-loading'])$(id).hidden=!show}
 function beginSpectrumLoading(){
  hideSpectrumHover();
  if(spectrumLoading)return;spectrumLoading=true;$('fft-stage').setAttribute('aria-busy','true');
@@ -2165,7 +2165,7 @@ function syncPeakEditControls(){
  const edits=diffractionSettings?.peak_edits||[];
  $('diff-undo-peak').disabled=(!edits.length&&!peakUndo.length)||peakEditBusy;
  $('diff-reset-peaks').disabled=!edits.length||peakEditBusy;
- if(isDiffraction())$('diff-peak-note').textContent=`${edits.length} peak edit(s). Click either image. Drag a search ring to resize and snap again. Manual additions count as measured evidence. ${busy||pending?'Updating fits in the background…':''}`;
+ if(isDiffraction())$('diff-peak-note').textContent=`${edits.length} peak edit(s). Click either image. Drag an add ring to re-snap, or a removal ring to resize the cleared area. Removal circles stay visible; additions count as measured evidence. ${busy||pending?'Updating fits in the background…':''}`;
 }
 function editSnapshot(){return result?.image_kind==='diffraction'?result:displayedDiffraction}
 function effectiveDetector(){
@@ -2176,6 +2176,11 @@ function effectiveDetector(){
 }
 function reciprocalDistance(a,b,d=effectiveDetector()){return Math.hypot((a.x-b.x)*d.pixel_x_nm_inv,(a.y-b.y)*d.pixel_y_nm_inv)}
 function savedSnapRadius(edit){return edit.snap_radius_nm_inv??(edit.snap_radius_px??50)*Math.sqrt(diffractionSettings.pixel_x_nm_inv*diffractionSettings.pixel_y_nm_inv)}
+function savedRemovalRadius(edit){return edit.radius_nm_inv??edit.radius_px*Math.sqrt(diffractionSettings.pixel_x_nm_inv*diffractionSettings.pixel_y_nm_inv)}
+function setDetectorCentre(x,y){
+ if(!isDiffraction()||!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>=meta.width||y>=meta.height)return;
+ diffractionSettings.center_x=x;diffractionSettings.center_y=y;commitDetector();
+}
 function editableObservations(includeWeak=false){
  const snapshot=editSnapshot(),edits=diffractionSettings?.peak_edits||[],applied=snapshot?.settings.diffraction?.peak_edits||[];let points=[],common=0;
  const sameEdit=(a,b)=>Object.keys(a).length===Object.keys(b).length&&Object.keys(a).every(key=>a[key]===b[key]);
@@ -2211,17 +2216,15 @@ async function editDetectorPeak(x,y){
  try{
   const snapped=tool==='add'&&$('diff-snap').checked;
   if(tool==='remove'){
-   const nearest=editableObservations(true).sort((a,b)=>reciprocalDistance(a,{x,y},d)-reciprocalDistance(b,{x,y},d))[0];
-   if(!nearest||reciprocalDistance(nearest,{x,y},d)>dedupeRadius)throw new Error('Click closer to a detected spot.');
-   ({x,y}=nearest);
+   if(x<0||y<0||x>=meta.width||y>=meta.height)throw new Error('Choose a point inside the detector image.');
   }else if(tool==='add'){
    if(snapped)({x,y}=await api('diffraction/snap',{file_id:fileId,diffraction:d,x,y,radius_nm_inv:radius,g_max:Number($('g-max').value)}));
    if(!inDetectorBand(x,y,d))throw new Error('Choose a point inside the fitting band and outside exclusions.');
   }else return;
   if(version!==sourceRequest)return;
   rememberPeakUndo();diffractionSettings.peak_edits??=[];
-  diffractionSettings.peak_edits.push({action:tool,x,y,...(tool==='remove'?{single:true,radius_px:2}:{radius_nm_inv:dedupeRadius,snap_x:origin.x,snap_y:origin.y,snap_radius_nm_inv:radius})});
-  commitDetector();message(`${tool==='add'?'Added':'Removed'} observation at ${x.toFixed(1)}, ${y.toFixed(1)} px.`);
+  diffractionSettings.peak_edits.push({action:tool,x,y,radius_nm_inv:dedupeRadius,...(tool==='add'?{snap_x:origin.x,snap_y:origin.y,snap_radius_nm_inv:radius}:{})});
+  commitDetector();message(tool==='remove'?`Removing all peaks within ${dedupeRadius.toFixed(3)} nm⁻¹.`:`Added observation at ${x.toFixed(1)}, ${y.toFixed(1)} px.`);
  }catch(error){message(error.message,true)}finally{peakEditBusy=false;syncPeakEditControls();drawSnapOverlays()}
 }
 function detectorPoint(event,svg){
@@ -2232,36 +2235,46 @@ function detectorPoint(event,svg){
  return {x:cx+(e[0]+p.x/420*(e[1]-e[0]))/d.pixel_x_nm_inv,y:cy-(e[3]-p.y/420*(e[3]-e[2]))/d.pixel_y_nm_inv};
 }
 function editSpectrumPeak(event,svg){
- if(!peakEditing()||!svg)return false;
- event.preventDefault();const p=detectorPoint(event,svg);if(p)editDetectorPeak(p.x,p.y);return true;
+ if(!isDiffraction()||!svg||!['add','remove','center'].includes($('diff-tool').value))return false;
+ event.preventDefault();const p=detectorPoint(event,svg);
+ if(p){if($('diff-tool').value==='center')setDetectorCentre(p.x,p.y);else editDetectorPeak(p.x,p.y)}
+ return true;
 }
 function drawSnapOverlays(){
  for(const svg of [$('overview'),$('fft'),$('fft-zoom-view').querySelector('svg')].filter(Boolean)){
   svg.querySelectorAll('.manual-snap-overlay').forEach(n=>n.remove());
-  if(!peakEditing())continue;
+  if(!isDiffraction()||!diffractionSettings)continue;
   const source=svg===$('overview'),snapshot=editSnapshot();if(!source&&!snapshot)continue;
-  const d=snapshot?.settings.diffraction??diffractionSettings,e=snapshot?.spectrum.extent,c=snapshot?.spectrum.beam_center_px;
+  const d=source?diffractionSettings:snapshot.settings.diffraction,e=snapshot?.spectrum.extent,c=snapshot?.spectrum.beam_center_px;
   const sx=source?1/d.pixel_x_nm_inv:420/(e[1]-e[0]),sy=source?1/d.pixel_y_nm_inv:420/(e[3]-e[2]);
   const project=(x,y)=>source?[x,y]:[((x-c[0])*d.pixel_x_nm_inv-e[0])/(e[1]-e[0])*420,(e[3]-(c[1]-y)*d.pixel_y_nm_inv)/(e[3]-e[2])*420];
   const group=el('g',{class:'manual-snap-overlay','pointer-events':'none'});svg.append(group);
-  const ring=(x,y,r,index)=>{
-   const [cx,cy]=project(x,y),attrs={cx,cy,rx:r*sx,ry:r*sy,fill:'none',stroke:'#c58aff','stroke-width':1.3,'vector-effect':'non-scaling-stroke'};
-   if(index!==null){
+  const ring=(x,y,r,index,removal=false,legacyPixels=null)=>{
+   const [cx,cy]=project(x,y),rx=legacyPixels===null?r*sx:legacyPixels*d.pixel_x_nm_inv*sx,ry=legacyPixels===null?r*sy:legacyPixels*d.pixel_y_nm_inv*sy;
+   const colour=removal?'#ff879b':'#c58aff',attrs={cx,cy,rx,ry,fill:removal?colour:'none','fill-opacity':removal?.06:0,stroke:colour,'stroke-width':1.3,'vector-effect':'non-scaling-stroke'};
+   if(index!==null&&peakEditing()){
     // Wide invisible stroke is an easy hit target; the visible search boundary stays thin.
     group.append(el('ellipse',{...attrs,stroke:'transparent','stroke-width':12,'pointer-events':'stroke','data-snap-index':index,class:'snap-radius-handle'}));
     const handleSize=source?Math.max(meta.width/350,4):2.8;
-    group.append(el('rect',{x:cx+r*sx-handleSize,y:cy-handleSize,width:handleSize*2,height:handleSize*2,fill:'#c58aff',stroke:'#101925','stroke-width':1,'vector-effect':'non-scaling-stroke','pointer-events':'all','data-snap-index':index,class:'snap-radius-handle'}));
+    group.append(el('rect',{x:cx+rx-handleSize,y:cy-handleSize,width:handleSize*2,height:handleSize*2,fill:colour,stroke:'#101925','stroke-width':1,'vector-effect':'non-scaling-stroke','pointer-events':'all','data-snap-index':index,class:'snap-radius-handle'}));
    }
-   group.append(el('ellipse',{...attrs,'stroke-dasharray':index===null?'3 3':'5 3'}));
-   if(index===null||radiusDrag?.index===index)group.append(el('text',{x:cx+r*sx+(source?12:4),y:cy,fill:'#c58aff','font-size':source?Math.max(28,meta.width/85):8,stroke:'#0a1119','stroke-width':source?6:1,'paint-order':'stroke'},`${r.toFixed(3)} nm⁻¹`));
+   const boundary=el('ellipse',{...attrs,'stroke-dasharray':index===null?'3 3':'5 3',...(removal?{'data-removal-index':index}:{})});
+   boundary.append(el('title',{},removal?`Peak removal radius ${r.toFixed(3)} nm⁻¹${diffractionSettings.peak_edits?.[index]?.single?' (legacy single spot; resize to remove all within radius)':''}`:'Peak snap search'));
+   group.append(boundary);
+   if(index===null||radiusDrag?.index===index)group.append(el('text',{x:cx+rx+(source?12:4),y:cy,fill:colour,'font-size':source?Math.max(28,meta.width/85):8,stroke:'#0a1119','stroke-width':source?6:1,'paint-order':'stroke'},`${r.toFixed(3)} nm⁻¹`));
   };
   if($('diff-tool').value==='add')for(const p of editableObservations().filter(p=>p.manual)){
    ring(p.snap_x??p.x,p.snap_y??p.y,radiusDrag?.index===p.index?radiusDrag.radius:savedSnapRadius(p),p.index);
   }
-  if(snapPointer?.svg===svg&&!radiusDrag){
+  (diffractionSettings.peak_edits||[]).forEach((edit,index)=>{
+   if(edit.action!=='remove')return;
+   const dragging=radiusDrag?.index===index;
+   ring(edit.x,edit.y,dragging?radiusDrag.radius:savedRemovalRadius(edit),index,true,!dragging&&edit.radius_nm_inv===undefined?edit.radius_px:null);
+  });
+  if(peakEditing()&&snapPointer?.svg===svg&&!radiusDrag){
    const snapping=$('diff-tool').value==='add'&&$('diff-snap').checked;
    const r=Number($(snapping?'diff-snap-radius':'diff-dedupe-radius').value);
-   if(r>=.001&&r<=5)ring(snapPointer.x,snapPointer.y,r,null);
+   if(r>=.001&&r<=5)ring(snapPointer.x,snapPointer.y,r,null,$('diff-tool').value==='remove');
   }
  }
 }
@@ -2270,6 +2283,10 @@ async function finishRadiusDrag(cancel=false){
  const drag=radiusDrag;if(!drag)return;radiusDrag=null;snapPointer=null;
  if(cancel||drag.radius===drag.original){drawSnapOverlays();return}
  const edit=diffractionSettings?.peak_edits?.[drag.index];if(!edit)return;
+ if(edit.action==='remove'){
+  rememberPeakUndo();const updated={...edit,radius_nm_inv:drag.radius};delete updated.radius_px;delete updated.single;
+  diffractionSettings.peak_edits[drag.index]=updated;commitDetector();drawSnapOverlays();message(`Removal radius ${drag.radius.toFixed(3)} nm⁻¹; removing all peaks inside.`);return;
+ }
  const version=sourceRequest;peakEditBusy=true;
  try{
   const d=effectiveDetector(),p=await api('diffraction/snap',{file_id:fileId,diffraction:d,x:drag.x,y:drag.y,radius_nm_inv:drag.radius,g_max:Number($('g-max').value)});
@@ -2289,7 +2306,8 @@ for(const id of ['overview','fft','fft-zoom-view']){
  host.addEventListener('pointerdown',event=>{
   const target=event.target.closest('[data-snap-index]');if(!target||!peakEditing()||peakEditBusy)return;
   event.preventDefault();event.stopImmediatePropagation();const index=Number(target.dataset.snapIndex),edit=diffractionSettings.peak_edits[index];
-  radiusDrag={host,index,x:edit.snap_x??edit.x,y:edit.snap_y??edit.y,radius:savedSnapRadius(edit),original:savedSnapRadius(edit)};host.setPointerCapture(event.pointerId);
+  const radius=edit.action==='remove'?savedRemovalRadius(edit):savedSnapRadius(edit);
+  radiusDrag={host,index,x:edit.snap_x??edit.x,y:edit.snap_y??edit.y,radius,original:radius};host.setPointerCapture(event.pointerId);
  },true);
  for(const name of ['pointerup','pointercancel'])host.addEventListener(name,event=>{
   if(radiusDrag?.host!==host)return;event.preventDefault();event.stopImmediatePropagation();

@@ -74,6 +74,20 @@ class ManualPeaks(unittest.TestCase):
             with self.assertRaises(ValueError):
                 diffraction.validate(info,{**d,'peak_edits':[{**edit,'radius_nm_inv':radius}]})
 
+    def test_area_removal_resize_replays_cached_observations(self):
+        array, info, _ = pattern()
+        d = diffraction.validate(info, {'pixel_x_nm_inv': .01, 'pixel_y_nm_inv': .02})
+        spots = [dict(x_px=100., y_px=100.), dict(x_px=106., y_px=100.),
+                 dict(x_px=100., y_px=106.), dict(x_px=150., y_px=150.)]
+        original = copy.deepcopy(spots)
+        # Larger rings remove all contained spots; shrinking restores the others.
+        for radius, survivors in [(.1, spots[2:]), (.2, spots[3:]), (.05, spots[1:])]:
+            edit = dict(action='remove', x=100., y=100., radius_nm_inv=radius)
+            settings = diffraction.validate(info, {**d, 'peak_edits': [edit]})
+            self.assertEqual(settings['peak_edits'], [edit])
+            self.assertEqual(diffraction.edit_spots(array, settings, spots), survivors)
+            self.assertEqual(spots, original)
+
     def test_reciprocal_snap_uses_anisotropic_calibration(self):
         array, info, _ = pattern()
         array=np.zeros_like(array)

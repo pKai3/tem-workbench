@@ -261,7 +261,7 @@ The README links here instead of maintaining a second plan. Update the [architec
 
 ## Reciprocal peak-edit radii and Unknown material — completed 2 November 2026
 
-Snap and deduplication controls, cursor rings and per-peak dragged snap rings use nm⁻¹ (defaults 0.50 / 0.10; adjustable 0.001–5). Distances use both calibration axes, including anisotropic pixels. Existing saved pixel-radius edits retain their original behaviour. New removal edits target one observation, not every spot inside the selection radius. Detector smoothing and centre-shift controls remain detector-pixel operations.
+Snap and deduplication controls, cursor rings and per-peak dragged snap rings use nm⁻¹ (defaults 0.50 / 0.10; adjustable 0.001–5). Distances use both calibration axes, including anisotropic pixels. Existing saved pixel-radius edits retain their original behaviour. Initially, new removal edits targeted one observation. Superseded by the persistent area-removal tools described below (2 November 2026). Detector smoothing and centre-shift controls remain detector-pixel operations.
 
 Initial implementation: Unknown material enabled all three existing phases, switches fixed fitting to automatic, and searches reciprocal multipliers ×0.5–2.0 using a denser HCP proportion seed sweep. References remain editable search anchors and scoring penalties remain user-controlled. Ordinary presets retain ×0.85–1.15 bounds; the finite orientation library is unchanged. Catalog/browser labels include extensions and calibration status for ordinary images. No architecture refresh.
 
@@ -275,3 +275,7 @@ Unknown now forces overall scale cost to zero in analysis and cached rescoring, 
 FFT/diffraction clicking no longer opens an enlarged modal. The spectrum cursor is a crosshair; existing hover magnification remains available. Add/remove tools show the active reciprocal-space selection radius as a dashed cursor ring; saved per-peak rings remain draggable.
 
 Validation: synthetic orthorhombic recovery, principal/partially identifiable zones, fixed/common scale, edited reference caching, full FFT analysis and cached rescoring; Unknown penalty regression; browser control and full existing regression checks. No architecture refresh.
+
+### Diffraction centre and removal tools — completed 2 November 2026
+
+Set centre works on the detector and reciprocal plot, converting clicks using the displayed plot’s centre and calibration. New removal edits clear every observation in their reciprocal-distance radius (shared deduplication/removal control). Pink dashed removal circles persist on both images in View as well as editing modes; in Add/Remove modes, drag a boundary or handle to resize. Resizing a removal never snaps its centre. Saved legacy single-spot edits preserve their original effect until resized, when they become area removals. Undo, per-image memory and exports retain the edits. Opposite partners are not removed unless inside a removal circle.
