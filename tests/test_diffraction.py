@@ -75,6 +75,11 @@ class DiffractionChecks(unittest.TestCase):
         array = array.astype(np.float32);settings = diffraction.defaults(info);cache = {}
         spectrum, _ = diffraction.spectrum(array, settings, cache)
         self.assertEqual(spectrum['observed_spot_count'], len(observed))
+        for peak in spectrum['peaks']:
+            self.assertGreater(peak['radius_nm_inv'],0)
+            self.assertGreater(peak['intensity'],300)
+            self.assertLessEqual(peak['intensity'],float(array.max()))
+            self.assertFalse(peak['radius_estimated_from_smoothing'])
         measured = np.array([q for p in spectrum['peaks'] for q in p['observed_spots']])
         self.assertLess(np.linalg.norm(observed[:, None]-measured[None], axis=2).min(axis=1).max(), .03)
         with patch('diffraction._prepare_detector', side_effect=AssertionError('Unexpected refilter')):

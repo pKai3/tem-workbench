@@ -46,7 +46,7 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
     else:dy=off
   q=canonical(np.array([[float(xx[y,x]+dx*df),float(yy[y,x]-dy*df)]]))[0].tolist();weights=np.maximum(wh[ys,xs]-threshold,0);area=int(len(ys));width=float(np.sqrt(max(area,1)/np.pi)*2*df)
   if not g_min <= np.linalg.norm(q) <= g_max or np.linalg.norm(q)==0:continue
-  peaks.append({'profile_id':0,'qx':q[0],'qy':q[1],'g_nm_inv':float(np.linalg.norm(q)),'log_radial_enrichment':en,'weight':float(np.clip(en-2,1,6)),'profile_area_bins':area,'equivalent_profile_diameter_nm_inv':width})
+  peaks.append({'profile_id':0,'qx':q[0],'qy':q[1],'g_nm_inv':float(np.linalg.norm(q)),'log_radial_enrichment':en,'weight':float(np.clip(en-2,1,6)),'profile_area_bins':area,'equivalent_profile_diameter_nm_inv':width,'radius_nm_inv':width/2,'intensity':float(np.expm1(lg[y,x]))})
  peaks.sort(key=lambda p:p['log_radial_enrichment'],reverse=True)
  # Weak fragments within one window response cannot be counted independently.
  # Profiles represent +/-q: neighbours can cross the canonical half-plane seam.

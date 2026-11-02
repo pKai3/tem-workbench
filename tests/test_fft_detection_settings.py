@@ -21,6 +21,12 @@ class FFTDetectionChecks(unittest.TestCase):
     def test_settings_change_detection_without_changing_fft(self):
         baseline=core.spectrum(self.image,self.pixel,self.pixel)
         self.assertGreater(len(baseline['peaks']),4)
+        for peak in baseline['peaks']:
+            self.assertGreater(peak['radius_nm_inv'],0)
+            self.assertGreater(peak['intensity'],0)
+            self.assertTrue(np.isfinite(peak['intensity']))
+        doubled=core.spectrum(self.image*2,self.pixel,self.pixel)
+        self.assertAlmostEqual(doubled['peaks'][0]['intensity']/baseline['peaks'][0]['intensity'],4.,places=4)
         variants=[dict(smoothing_sigma=0),dict(smoothing_sigma=1.5),dict(threshold_floor=20),
                   dict(minimum_enrichment=20),dict(minimum_separation=3.0),dict(max_peaks=4)]
         for values in variants:

@@ -569,9 +569,11 @@ def spectrum(array, settings, cache=None, g_max=10.):
     profiles = _profiles(strong, radius)[:70]
     peaks = []
     for i, p in enumerate(profiles):
-        q = p['q']; strength = max(s['local_contrast'] for s in p['spots'])
+        q = p['q']; strongest = max(p['spots'], key=lambda s: s['local_contrast']); strength = strongest['local_contrast']
         peaks.append({'profile_id': i+1, 'qx': float(q[0]), 'qy': float(q[1]),
                       'g_nm_inv': float(np.linalg.norm(q)), 'local_contrast': strength,
+                      'radius_nm_inv': float(strongest['width_nm_inv']/2), 'intensity': float(strongest['intensity']),
+                      'radius_estimated_from_smoothing': bool(strongest.get('manual')),
                       'log_local_contrast': float(np.log1p(strength)),
                       'weight': float(np.clip(np.log1p(strength), 1, 6)),
                       'observed_spots': [s['q'] for s in p['spots']],
