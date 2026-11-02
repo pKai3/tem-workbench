@@ -852,14 +852,15 @@ function drawOverlapMap(){
  if(view==='spread'&&grid.grid.passes<2){$('map-view').value='support';drawOverlapMap();return}
  $('map-phase-label').hidden=['raw','samples','separate'].includes(view);
  const symbolStyle=$('map-symbol').value;$('map-symbol-label').hidden=Boolean(a)&&view!=='raw';
- $('overlap-key').textContent=view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':combined?`${phases.join(' + ')} passing frequency · separate colour bands, strongest above · brightness 0–100% independently · blank = unmeasured`:`${phase} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
+ $('overlap-key').textContent=view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':combined?`${phases.join(' + ')} passing frequency · full colour for one supported phase; split bands for multiple, strongest above · brightness 0–100% independently · blank = unmeasured`:`${phase} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
  if(!a&&view!=='raw')$('overlap-key').textContent+=' · showing raw centres until aggregation';
  if($('show-grid').checked){
   if(a&&view!=='raw'){
    const max=Math.max(1,...a.cells.map(c=>c.samples));
    for(const cell of a.cells){if(view==='spread'&&cell.passes<2)continue;
     if(combined){
-     const entries=phases.map(p=>({phase:p,value:cell.phases[p]?.support??0})).sort((a,b)=>b.value-a.value);
+     const entries=phases.map(p=>({phase:p,value:cell.phases[p]?.support??0})).filter(entry=>entry.value>0).sort((a,b)=>b.value-a.value);
+     if(!entries.length){group.append(el('rect',{x:cell.x*meta.width/a.width,y:cell.y*meta.height/a.height,width:meta.width/a.width,height:meta.height/a.height,fill:'#596778','fill-opacity':opacity*.15,class:'grid-cell','data-id':cell.region_id,'aria-label':`No passing phase support; ${cell.samples} windows, ${cell.passes} passes`}));continue;}
      for(const [i,entry]of entries.entries()){
       const node=el('rect',{x:cell.x*meta.width/a.width,y:(cell.y+i/entries.length)*meta.height/a.height,width:meta.width/a.width,height:meta.height/a.height/entries.length,fill:entry.value>0?phaseColors[entry.phase]:'#596778','fill-opacity':opacity*(.15+.85*entry.value),class:'grid-cell','data-id':cell.region_id});
       node.setAttribute('aria-label',`${entry.phase}: ${(100*entry.value).toFixed(1)}% passing; ${cell.samples} windows, ${cell.passes} passes`);group.append(node);
