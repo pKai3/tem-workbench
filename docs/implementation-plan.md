@@ -155,7 +155,9 @@ Source exports (filenames retained here; experimental data are not bundled into 
 
 **Display update — 2 November 2026:** raw centres show one phase-coloured zone symbol for the highest-ranked candidate, with passing-winner legend counts (not areas). Rejected winners remain faded. Aggregated views show a colour-scale legend directly below the image; sample coverage uses saturated cyan.
 
-**Display proposal, not implemented:** hexagonal summary tiles averaging contributing windows, with per-phase support, counts and aggregate hover information; consider an all-phases view alongside individual phase maps. These describe correlated support, not phase fractions.
+**Combined passing-frequency view — 2 November 2026:** Phase selector offers All phases plus individual enabled phases. Each aggregate tile is split into phase-coloured horizontal bands, strongest support at the top, opacity indicating each independent frequency. Separate ramps identify the colours; no blended phase colours or normalization to a 100% total. Existing PNG export includes the visible bands and explanatory key.
+
+**Display proposal, not implemented:** hexagonal summary tiles averaging contributing windows, with per-phase support, counts and aggregate hover information; the all-phases passing-frequency view is implemented separately below. These describe correlated support, not phase fractions.
 
 **Aggregation decision:** match every FFT independently, then aggregate results. Do not average complex FFTs or power spectra for this spatial map. Every enabled phase contributes independently, including weaker passing fits. Windows without a passing fit remain in the denominator. Weights are `exp(-8*(dx²+dy²))` inside the window footprint, with offsets normalized by width/height. Normalize each placement pass separately, then give represented passes equal weight. No rank/quality weighting is applied to support, to avoid letting stronger HCP erase weaker passing BCC.
 
