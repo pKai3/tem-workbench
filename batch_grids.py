@@ -29,6 +29,37 @@ def eligibility(row, cutoff=400000, inclusive=True):
             'Below magnification cutoff' if magnification<cutoff or (not inclusive and magnification==cutoff) else '')
     return {**row,'magnification':magnification,'eligible':not reason,'reason':reason}
 
+def summary_folder(file_id, roots, flatten=False):
+    folder=file_id.rsplit('/',1)[0] if '/' in file_id else '.'
+    if not flatten:return folder
+    if not roots:return folder.split('/')[0]
+    # Nested selections are a union: count each image once under the outer parent.
+    matches=[p for p in roots if folder==p or (p!='.' and folder.startswith(p+'/'))]
+    return min(matches,key=lambda p:(p.count('/'),len(p),p)) if matches else folder
+
+
+def folder_summaries(images):
+    rows=[{**r,'sample':r['summary_folder']} for r in images]
+    return [{**{k:v for k,v in r.items() if k!='sample'},'folder':r['sample']} for r in sample_summaries(rows)]
+
+
+def write_folder_csv(folder, data, writer):
+    overlap=data['options'].get('overlap') is not None
+    rows=[];zones=[]
+    for group in data['folders']:
+        common=dict(folder=group['folder'],images=group['images'],coverage_percent=group['coverage_percent'])
+        if overlap:
+            for phase,values in group['phase_support'].items():rows.append({**common,'phase':phase,**values})
+        else:
+            for label,pct in group['pooled_image_percent'].items():rows.append({**common,'category':label,
+                'area_nm2':group['classification_area_nm2'][label],'pooled_image_percent':pct,'mean_image_percent':group['mean_image_percent'][label]})
+        for z in group['passing_zones']:zones.append(dict(folder=group['folder'],**z,zone=' '.join(map(str,z['zone_3index']))))
+    writer(folder/'folders.csv',rows,['folder','images','coverage_percent']+(['phase','pooled_support_percent','mean_image_support_percent','measured_images'] if overlap else ['category','area_nm2','pooled_image_percent','mean_image_percent']))
+    for z in zones:z.pop('zone_3index')
+    writer(folder/'folder_zones.csv',zones,['folder','phase','zone']+(['passing_windows','window_percent'] if overlap else ['regions','area_nm2','pooled_image_area_percent']))
+    writer(folder/'image_folders.csv',[dict(image=i['image'],file_id=i['file_id'],source_folder=i['source_folder'],summary_folder=i['summary_folder']) for i in data['images']],['image','file_id','source_folder','summary_folder'])
+
+
 def summarize(job, sample):
     if job.get('grid',{}).get('mode')=='overlap':
         return batch_stability.summarize(job,sample)
@@ -160,6 +191,9 @@ class BatchGrids:
             eligible={r['id']:r for r in rows if r['eligible']}
             if any(key not in eligible for key in chosen):raise ValueError('Selection includes ineligible images. Refresh the list.')
             options=copy.deepcopy(body);options.pop('file_ids',None)
+            roots=options.get('summary_folders',[])
+            if not isinstance(roots,list) or any(not isinstance(p,str) or not p for p in roots):
+                raise ValueError('Summary folders must be a list of folder paths.')
             count=int(options.get('count',20));minimum=float(options.get('minimum_nm',5))
             from parallel_execution import worker_count
             worker_count(options.get('workers',0))
@@ -213,6 +247,8 @@ class BatchGrids:
                             kind='overlap_map' if job.get('grid',{}).get('mode')=='overlap' else 'grid'
                             target=folder/(stem+'_'+kind+'.json');target.write_text(json.dumps(job,indent=2,allow_nan=False))
                             summary=summarize(job,row['sample']);summary['data_file']=target.name
+                            summary['source_folder']=summary_folder(key,[],False)
+                            summary['summary_folder']=summary_folder(key,roots,bool(options.get('flatten_folders',False)))
                             with self.lock:self.data['images'].append(summary)
                             if options.get('export_png') and job['state']=='complete':
                                 try:
@@ -236,8 +272,10 @@ class BatchGrids:
         return self.status()
     def write(self,folder):
         with self.lock:
-            self.data['samples']=sample_summaries(self.data['images']);data=copy.deepcopy(self.data)
+            self.data['samples']=sample_summaries(self.data['images'])
+            self.data['folders']=folder_summaries(self.data['images']);data=copy.deepcopy(self.data)
         temp=folder/'summary.tmp';temp.write_text(json.dumps(data,indent=2,allow_nan=False));temp.replace(folder/'summary.json')
+        write_folder_csv(folder,data,self.csv)
         if data['options'].get('overlap') is not None:
             batch_stability.write_csv(folder,data,self.csv)
             return

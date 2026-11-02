@@ -274,3 +274,9 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .raster-crosshair:after{height:36px;width:1px;left:0;top:-18px}
 
 .ort{color:var(--ort-color,#64e2b0)}
+
+.batch-folder-picker{position:relative;min-width:150px}
+.batch-folder-picker>summary{padding:7px 10px;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.batch-folder-list{position:absolute;z-index:20;top:100%;left:0;min-width:260px;max-width:min(520px,80vw);max-height:300px;overflow:auto;background:#101a26;border:1px solid #40556a;border-radius:6px;padding:8px;box-shadow:0 5px 16px #0008}
+.batch-folder-list label{display:flex;flex-direction:row;align-items:center;gap:8px;padding:5px;overflow-wrap:anywhere}
+.batch-folder-list input{width:auto;flex:none}
