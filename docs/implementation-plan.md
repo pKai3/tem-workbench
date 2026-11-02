@@ -1,8 +1,12 @@
 # TEM Workbench implementation plan
 
-Last updated: 2 November 2026
+Last updated: 3 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
+
+## Phase settings layout — 3 November 2026
+
+Phase colour/search controls use one compact four-column row, with ORT alongside HCP/BCC/FCC. Reference lattice inputs are disabled and greyed for excluded phases, retaining their values for re-enabling; this follows manual phase changes, material presets, resets and restored settings. The scale-fitting selector is capped at a compact width instead of stretching across Processing settings.
 
 ## Analysis priorities and current status
 

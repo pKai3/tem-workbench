@@ -24,10 +24,18 @@ const phaseColorChoices={...PHASE_DEFAULT_COLORS};
 let enabledPhases=['HCP','BCC'];
 function materialPhases(){return config?.material_presets?.[$('material').value]?.enabled_phases??({titanium:['HCP','BCC'],iron:['BCC','FCC'],custom:PHASES}[$('material').value]||PHASES)}
 function analysisPhases(value){return Array.isArray(value?.enabled_phases)?PHASES.filter(phase=>value.enabled_phases.includes(phase)):PHASES}
+function syncReferenceControls(){
+ for(const input of document.querySelectorAll('.material-bar input')){
+  const enabled=enabledPhases.includes(input.id.split('-')[0].toUpperCase());
+  input.disabled=!enabled||Boolean(config&&!config.material_presets);
+  input.closest('label').classList.toggle('phase-disabled',!enabled);
+ }
+}
 function setPhaseSelection(phases){
  enabledPhases=PHASES.filter(phase=>phases.includes(phase));
  for(const phase of PHASES)$(phase.toLowerCase()+'-color').value=enabledPhases.includes(phase)?phaseColorChoices[phase]:'disabled';
  syncOverlayMenus();
+ syncReferenceControls();
  applyPhaseColors(false);
  $('phase-search-note').textContent=enabledPhases.length?'Searching '+enabledPhases.join(' + ')+'. Disabled skips matching.':'Phase search disabled. Peak and geometry checks remain available.';
 }
@@ -1168,6 +1176,7 @@ for(const id of ['scale-penalty','scale-penalty-slider','ca-penalty','ca-penalty
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=effectiveScalePenalty().toFixed(2)};
 const REFERENCE_CONTROLS={'hcp-a':'hcp_a','hcp-c':'hcp_c','bcc-a':'bcc_a','fcc-a':'fcc_a','ort-a':'ort_a','ort-b':'ort_b','ort-c':'ort_c'};
 function materialView(){
+ syncReferenceControls();
  const selected=$('material').value,preset=config?.material_presets?.[selected];
  if(selected!=='unknown'&&preset&&Object.entries(REFERENCE_CONTROLS).some(([id,key])=>Math.abs(Number($(id).value)-preset.references[key])>1e-9))$('material').value='custom';
  const note=config?.material_presets?.[$('material').value]?.note??'Custom reference cells. Changing the material or a reference recalculates this region; rerun any grid.';

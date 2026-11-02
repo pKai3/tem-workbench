@@ -108,7 +108,7 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 .material-settings{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin-top:12px}
 .material-settings .material-bar{flex:1 1 660px;min-width:0;margin-top:0;gap:8px 12px}
 .material-settings .material-bar .hint{flex-basis:100%}
-.material-settings .phase-color-controls{flex:0 1 344px;align-content:center;align-items:end;gap:8px 10px}
+.material-settings .phase-color-controls{flex:0 1 440px;min-width:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-content:center;align-items:end;gap:8px 10px}
 .phase-colors-heading{display:flex;align-items:center;justify-content:space-between;flex-basis:100%}
 #reset-phase-colors,#reset-fft{min-height:26px;width:28px;padding:0;font-size:19px;line-height:1}
 .phase-color-controls label{flex:1 1 90px;min-width:0}
@@ -280,3 +280,10 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .batch-folder-list{position:absolute;z-index:20;top:100%;left:0;min-width:260px;max-width:min(520px,80vw);max-height:300px;overflow:auto;background:#101a26;border:1px solid #40556a;border-radius:6px;padding:8px;box-shadow:0 5px 16px #0008}
 .batch-folder-list label{display:flex;flex-direction:row;align-items:center;gap:8px;padding:5px;overflow-wrap:anywhere}
 .batch-folder-list input{width:auto;flex:none}
+
+.phase-color-controls .phase-colors-heading,.phase-color-controls .hint{grid-column:1/-1}
+.material-settings .phase-color-controls select{min-width:0}
+.material-bar label.phase-disabled{opacity:.45}
+.material-bar input:disabled{cursor:not-allowed;color:var(--muted)}
+.calibration-bar>label:first-child{flex:0 1 360px;min-width:0;max-width:100%}
+.calibration-bar>label:first-child select{width:100%;min-width:0}
