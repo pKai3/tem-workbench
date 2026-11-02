@@ -810,7 +810,31 @@ $('marker-motion').onchange=()=>{rememberMarkerStyles();applyMarkerAnimation()};
 $('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT();if(isDiffraction())drawDetector()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
 const oldPalette=readPreference('tem-palette',null),savedPalette=({ice:'viridis',violet:'plasma',green:'viridis'})[oldPalette]||oldPalette;if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;syncIntensityKey();
 function overlapRequest(){return $('grid-mode').value==='overlap'?{window_nm:Number($('map-window').value),spacing_nm:Number($('map-spacing').value),layout:$('map-layout').value,passes:Number($('map-passes').value)}:null}
+let overlapPreviewTimer=null,overlapPreviewVersion=0;
+function scheduleOverlapPreview(){
+ clearTimeout(overlapPreviewTimer);const version=++overlapPreviewVersion;
+ $('overlap-preview').replaceChildren();$('overlap-preview-note').textContent='';
+ const options=overlapRequest(),active=Boolean(options)&&meta&&!isDiffraction();
+ $('overlap-preview-control').hidden=!active;
+ if(!active||!$('show-overlap-preview').checked)return;
+ if(!config?.overlap_preview){$('overlap-preview-note').textContent='Restart Workbench and reload to enable preview.';return}
+ overlapPreviewTimer=setTimeout(async()=>{
+  try{
+   const data=await api('overlap-preview',{file_id:fileId,overlap:options});
+   if(version!==overlapPreviewVersion)return;
+   const group=$('overlap-preview');
+   const colours=['#64e2b0','#79bafa','#f4b75e','#ff8ac3','#d692fa','#00d9e8','#e4eb91','#ffa877','#e6ecf3'];
+   for(const sample of data.samples){const r=sample.roi,color=colours[sample.pass_id%colours.length];
+    group.append(el('rect',{x:r.x,y:r.y,width:r.w,height:r.h,fill:'none',stroke:color,'stroke-opacity':.25,'stroke-width':.6,'vector-effect':'non-scaling-stroke'}));
+    group.append(el('circle',{cx:r.x+r.w/2,cy:r.y+r.h/2,r:meta.width/650,fill:color,'fill-opacity':.85}));
+   }
+   $('overlap-preview-note').textContent=`${data.samples.length} square windows · colours distinguish placement passes`;
+  }catch(error){if(version===overlapPreviewVersion)$('overlap-preview-note').textContent=error.message}
+ },180);
+}
+$('show-overlap-preview').onchange=scheduleOverlapPreview;
 function updateGridSizeNote(){
+ scheduleOverlapPreview();
  const overlap=Boolean(overlapRequest());$('overlap-controls').hidden=!overlap;
  for(const id of ['grid-count','grid-min','adaptive','check-passing'])$(id).closest('label').hidden=overlap;
  $('batch-panel').hidden=false;
@@ -956,12 +980,26 @@ function drawOverlapMap(){
  const phase=select.value,a=grid.aggregation,opacity=Number($('grid-opacity').value)/100,combined=view==='support'&&phase==='all';
  $('map-view').querySelector('option[value=spread]').disabled=grid.grid.passes<2;
  if(view==='spread'&&grid.grid.passes<2){$('map-view').value='support';drawOverlapMap();return}
- $('map-phase-label').hidden=['raw','samples','separate'].includes(view);
+ $('map-phase-label').hidden=['raw','samples','separate','hex'].includes(view);
  const symbolStyle=$('map-symbol').value;$('map-symbol-label').hidden=Boolean(a)&&view!=='raw';
- $('overlap-key').textContent=view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':combined?`${phases.join(' + ')} passing frequency · full colour for one supported phase; split bands for multiple, strongest above · brightness 0–100% independently · blank = unmeasured`:`${phase} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
+ $('overlap-key').textContent=view==='hex'?'Hex winner by averaged rank · faded = less passing support · click inspects a contributing FFT window':view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':combined?`${phases.join(' + ')} passing frequency · full colour for one supported phase; split bands for multiple, strongest above · brightness 0–100% independently · blank = unmeasured`:`${phase} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
  if(!a&&view!=='raw')$('overlap-key').textContent+=' · showing raw centres until aggregation';
  if($('show-grid').checked){
-  if(a&&view!=='raw'){
+  if(a&&view==='hex'){
+   if(!a.hex){$('overlap-key').textContent='Rerun or reweight this map after restarting Workbench to generate averaged hex results.'}
+   else{
+    const clip=el('clipPath',{id:'hex-coverage-clip'});
+    for(const {roi:r} of grid.regions)clip.append(el('rect',{x:r.x,y:r.y,width:r.w,height:r.h}));
+    const tiles=el('g',{'clip-path':'url(#hex-coverage-clip)'});group.append(clip,tiles);
+    for(const [index,cell] of a.hex.cells.entries()){
+     const phase=cell.winner,fit=cell.phases[phase],colour=phaseColors[phase]||'#596778';
+     const points=Array.from({length:6},(_,i)=>{const angle=(30+i*60)*Math.PI/180;return `${cell.cx+a.hex.radius_x*Math.cos(angle)},${cell.cy+a.hex.radius_y*Math.sin(angle)}`}).join(' ');
+     const label=phase?`${phase} · averaged rank ${fit.rank.toFixed(3)} · ${(fit.support*100).toFixed(1)}% passing · ${cell.samples} windows, ${cell.passes} passes`:'No candidate fits';
+     const node=el('polygon',{points,fill:colour,'fill-opacity':opacity*(.15+.85*(fit?.support||0)),stroke:colour,'stroke-opacity':.5,'stroke-width':.6,'vector-effect':'non-scaling-stroke',class:'grid-cell','data-id':cell.region_id,'aria-label':label,'data-hex-index':index});
+     tiles.append(node);
+    }
+   }
+  }else if(a&&view!=='raw'){
    const max=Math.max(1,...a.cells.map(c=>c.samples));
    for(const cell of a.cells){if(view==='spread'&&cell.passes<2)continue;
     if(combined){
@@ -996,13 +1034,15 @@ function drawOverlapMap(){
   else{
    const legend=$('zone-legend');legend.replaceChildren();legend.hidden=false;
    const label=document.createElement('div');label.className='hint';label.textContent=$('overlap-key').textContent;legend.append(label);
-   for(const p of combined?phases:[phase]){
+   if(view==='hex'){
+    for(const p of phases.filter(p=>a.hex?.cells.some(c=>c.winner===p))){const item=document.createElement('div');item.className='zone-legend-group';const name=document.createElement('strong');name.textContent=p;name.style.color=phaseColors[p];item.append(name);legend.append(item)}
+   }else for(const p of combined?phases:[phase]){
     if(combined){const name=document.createElement('span');name.textContent=p;name.style.color=phaseColors[p];legend.append(name)}
     const ramp=document.createElement('div');ramp.style.cssText='width:220px;height:10px;margin:6px 0;border-radius:3px';
     const colour=view==='separate'?'#d692fa':view==='samples'?'#00d9e8':phaseColors[p];
     ramp.style.background=`linear-gradient(to right,#596778,${colour})`;ramp.style.opacity=opacity;legend.append(ramp);
    }
-   const ends=document.createElement('div');ends.className='hint';ends.textContent=view==='samples'?`Few → ${Math.max(1,...a.cells.map(c=>c.samples))} contributing windows`:view==='spread'?'0 → 100 percentage points':'0% → 100%';legend.append(ends);
+   const ends=document.createElement('div');ends.className='hint';ends.textContent=view==='hex'?'Each hex combines overlapping readings; missing phase fits are excluded from its mean rank.':view==='samples'?`Few → ${Math.max(1,...a.cells.map(c=>c.samples))} contributing windows`:view==='spread'?'0 → 100 percentage points':'0% → 100%';legend.append(ends);
   }
  }
  renderGridSummary();updatePenaltyControls();
@@ -1805,6 +1845,17 @@ function computedRegionAt(p,savedId){
  return null;
 }
 function renderRegionPreviewDetails(region){
+ if(region.hex){
+  const cell=region.hex,heading=$('region-hover-title'),name=$('region-hover-name'),rows=$('region-hover-models');
+  heading.textContent=cell.winner?`${cell.winner} · highest averaged rank`:'No candidate fits';heading.style.color=phaseColors[cell.winner]||'#dce6ef';
+  name.hidden=false;name.textContent=`${cell.samples} windows · ${cell.passes} passes · contributing window shown below`;
+  rows.replaceChildren();
+  for(const [phase,fit]of Object.entries(cell.phases).filter(([,f])=>f.fit_presence>0).sort((a,b)=>b[1].rank-a[1].rank)){
+   const row=document.createElement('div'),label=document.createElement('span'),rank=document.createElement('span'),support=document.createElement('span');
+   label.textContent=phase;label.style.color=phaseColors[phase];rank.textContent='Mean '+fit.rank.toFixed(3);support.textContent=(100*fit.support).toFixed(0)+'% passing';row.append(label,rank,support);rows.append(row);
+  }
+  return;
+ }
  const heading=$('region-hover-title');heading.textContent=labels[region.label]||(region.saved?'Saved region':'Computed region');heading.style.color=colors[region.label]||'#dce6ef';
  const name=$('region-hover-name');name.textContent=region.name||'';name.hidden=!region.name;
  const rows=$('region-hover-models');rows.replaceChildren();
@@ -1844,7 +1895,13 @@ function hoverComputedRegion(event){
  hoverPointer={x:event.clientX,y:event.clientY};
  const savedId=event.target?.closest('.saved-region-overlay')?.dataset.regionId;
  const region=computedRegionAt(point(event),savedId);if(!region){hideRegionPreview();return}
- const key=previewKey(region.roi,region.settings),cardKey=key+':'+(savedId||'');
+ const hexIndex=event.target?.closest('[data-hex-index]')?.getAttribute('data-hex-index');
+ if(!savedId&&hexIndex!=null&&grid?.aggregation?.hex){
+  region.hex=grid.aggregation.hex.cells[Number(hexIndex)];
+  const contributing=grid.regions.find(r=>r.id===region.hex.region_id);
+  if(contributing)region.roi=contributing.roi;
+ }
+ const key=previewKey(region.roi,region.settings),cardKey=key+':'+(savedId||'')+':'+(hexIndex??'');
  if(cardKey===hoverKey){positionRegionPreview(event.clientX,event.clientY);return}
  hideRegionPreview();hoverKey=cardKey;const version=hoverVersion,source=fileId;
  hoverTimer=setTimeout(async()=>{
@@ -1967,9 +2024,9 @@ function mapSnapshot(){
  const original=$('overview'),copy=original.cloneNode(true),nodes=[original,...original.querySelectorAll('*')],copies=[copy,...copy.querySelectorAll('*')];
  const properties=['fill','fill-opacity','stroke','stroke-width','stroke-opacity','stroke-dasharray','stroke-linejoin','opacity','vector-effect','paint-order','font-family','font-size','font-weight','text-anchor','dominant-baseline'];
  nodes.forEach((node,i)=>{const style=getComputedStyle(node);for(const property of properties)copies[i].setAttribute(property,style.getPropertyValue(property))});
- for(const node of copy.querySelectorAll('#roi-box,#roi-handle,#detector-overlay,title'))node.remove();
+ for(const node of copy.querySelectorAll('#roi-box,#roi-handle,#detector-overlay,#overlap-preview,title'))node.remove();
  const source=copy.querySelector('#source-image');
- for(const node of [copy,...copy.querySelectorAll('*')])for(const attribute of ['id','class','style','role','tabindex'])node.removeAttribute(attribute);
+ for(const node of [copy,...copy.querySelectorAll('*')])for(const attribute of ['id','class','style','role','tabindex'])if(attribute!=='id'||node.tagName!=='clipPath')node.removeAttribute(attribute);
  copy.setAttribute('x',20);copy.setAttribute('y',78);copy.setAttribute('width',1160);copy.setAttribute('height',1160);
  const svg=el('svg',{xmlns:NS,width:1200,'font-family':'Arial, sans-serif'});
  svg.append(el('rect',{x:0,y:0,width:1200,height:'100%',fill:'#0c121a'}));

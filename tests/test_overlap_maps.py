@@ -88,6 +88,35 @@ class OverlapTests(unittest.TestCase):
         self.assertEqual(empty['cells'],[])
         json.dumps(empty,allow_nan=False)
 
+    def test_hex_winner_uses_mean_rank_not_window_winners(self):
+        # HCP wins two windows, but BCC has the higher mean rank.
+        regions=[region(i,0,bcc=True) for i in range(3)]
+        for r,h,b in zip(regions,[.6,.6,.01],[.5,.5,.9]):
+            r['models'][0]['score']=h
+            r['models'][1]['score']=b
+        data=maps.aggregate(job(regions),8)
+        self.assertTrue(data['hex']['cells'])
+        for cell in data['hex']['cells']:
+            self.assertEqual(cell['winner'],'BCC')
+            self.assertAlmostEqual(cell['phases']['BCC']['rank'],1.9/3,places=6)
+            self.assertEqual(cell['samples'],3)
+            self.assertLess(cell['cx'],128)
+            self.assertLess(cell['cy'],128)
+        # Adding identical readings in one pass cannot outweigh another pass.
+        regions=[region(i,0) for i in range(4)]+[region(4,1,False)]
+        data=maps.aggregate(job(regions,2),8)
+        self.assertTrue(all(c['phases']['HCP']['rank']==.2 for c in data['hex']['cells']))
+        self.assertTrue(all(c['phases']['HCP']['support']==.5 for c in data['hex']['cells']))
+        for r in regions:r['models']=[]
+        self.assertTrue(all(c['winner'] is None for c in maps.aggregate(job(regions,2),8)['hex']['cells']))
+
+    def test_hex_geometry_respects_anisotropic_calibration(self):
+        data=job([region(0,0)])
+        data['source']=dict(INFO,pixel_y_nm=.06)
+        a=maps.aggregate(data,8)
+        self.assertAlmostEqual(a['hex']['radius_x']/a['hex']['radius_y'],2)
+        json.dumps(a,allow_nan=False)
+
     def test_coordinator_keeps_passes_and_compact_full_exports(self):
         app=Workbench.__new__(Workbench);app.engine=Engine({});app.jobs={};app.grid_thread=None;app.closing=False
         app.job_lock=threading.RLock();app.lock=threading.RLock()

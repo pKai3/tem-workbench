@@ -7,7 +7,7 @@ passing support; rank is averaged only where a candidate exists.
 import math
 import numpy as np
 
-VERSION = 'overlap-v3'
+VERSION = 'overlap-v4'
 MAX_WINDOWS = 5000
 
 
@@ -81,6 +81,36 @@ def aggregate(job, resolution=64):
     xs = (np.arange(nx)+.5)*source['width']/nx
     ys = (np.arange(ny)+.5)*source['height']/ny
     xx, yy = np.meshgrid(xs, ys)
+    result = _aggregate_points(job, xx, yy)
+    # Evaluate the same readings directly at hex centres, not raster winners.
+    # A display cap bounds work for unusually fine spacing and large windows.
+    spacing = options.get('spacing_nm', options.get('window_nm', 5)/2)
+    physical_area = source['width']*source['pixel_x_nm']*source['height']*source['pixel_y_nm']
+    spacing = max(spacing, math.sqrt(physical_area/(4000*math.sqrt(3)/2)))
+    sx, sy = spacing/source['pixel_x_nm'], spacing/source['pixel_y_nm']*math.sqrt(3)/2
+    rows = max(1, int(source['height']/sy))
+    cols = max(1, int(source['width']/sx))
+    points = [(col*sx+(row%2)*sx/2, row*sy) for row in range(rows) for col in range(cols)]
+    ox = (source['width']-max(x for x,y in points))/2
+    oy = (source['height']-max(y for x,y in points))/2
+    points = [(x+ox,y+oy) for x,y in points]
+    hx = np.array([[x for x,y in points]]); hy = np.array([[y for x,y in points]])
+    hex_result = _aggregate_points(job, hx, hy)
+    for cell in hex_result['cells']:
+        cell['cx'], cell['cy'] = points[cell['x']]
+        candidates = [(p,f) for p,f in cell['phases'].items() if f['fit_presence']>0]
+        cell['winner'] = max(candidates, key=lambda pf:pf[1]['rank'])[0] if candidates else None
+    result['hex'] = dict(cells=hex_result['cells'], spacing_nm=spacing,
+                         radius_x=sx/math.sqrt(3), radius_y=spacing/source['pixel_y_nm']/math.sqrt(3),
+                         interpretation='Highest averaged rank among available phase fits. Fading shows winning phase passing frequency; not phase identity or fraction.')
+    return result
+
+
+def _aggregate_points(job, xx, yy):
+    """Shared aggregation for raster and hex centres, including equal-pass means."""
+    options = job['grid']
+    phases = job['settings'].get('enabled_phases', ['HCP','BCC','FCC'])
+    ny, nx = xx.shape
     shape = (options['passes'], ny, nx)
     weights = np.zeros(shape); counts = np.zeros((ny,nx), dtype=int)
     best_weight = np.zeros((ny,nx)); representative = np.full((ny,nx), '', dtype=object)
