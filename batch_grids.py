@@ -11,6 +11,7 @@ import uuid
 import math
 from PIL import Image, ImageDraw, ImageFont
 from engine import Engine
+import batch_stability
 
 LABELS = ('hcp_compatible','bcc_compatible','fcc_compatible','ort_compatible','coexisting_candidates','multiple_orientations','ambiguous','unresolved','insufficient')
 COLORS = dict(zip(LABELS, ('#79bafa','#f4b75e','#ff8ac3','#64e2b0','#d692fa','#64d6bb','#df9da6','#a4adba','#596778')))
@@ -29,6 +30,8 @@ def eligibility(row, cutoff=400000, inclusive=True):
     return {**row,'magnification':magnification,'eligible':not reason,'reason':reason}
 
 def summarize(job, sample):
+    if job.get('grid',{}).get('mode')=='overlap':
+        return batch_stability.summarize(job,sample)
     source=job['source']; pixel_area=source['pixel_x_nm']*source['pixel_y_nm']
     total=source['width']*source['height']*pixel_area
     areas={label:0. for label in LABELS}; zones={}; leaves=[r for r in job['regions'] if r['leaf']]
@@ -51,6 +54,8 @@ def summarize(job, sample):
                 passing_zones=list(zones.values()))
 
 def sample_summaries(images):
+    if images and images[0].get('mode')=='overlap':
+        return batch_stability.sample_summaries(images)
     output=[]
     for sample in sorted({r['sample'] for r in images}):
         rows=[r for r in images if r['sample']==sample];total=sum(r['total_image_area_nm2'] for r in rows)
@@ -75,6 +80,8 @@ def map_png(item, job, target, colors=None, opacity=.2):
     colors={**COLORS,**(colors or {})}
     for value in colors.values():
         if not re.fullmatch(r'#[0-9a-fA-F]{6}',value):raise ValueError('Map colours must be RGB hex values.')
+    if job.get('grid',{}).get('mode')=='overlap':
+        return batch_stability.map_png(item,job,target,colors,opacity)
     size=1800; canvas=Image.new('RGB',(size+80,size+260),'#0c121a')
     source=Image.open(BytesIO(item['preview'])).convert('RGB').resize((size,size))
     layer=Image.new('RGBA',source.size);draw=ImageDraw.Draw(layer)
@@ -122,6 +129,8 @@ class BatchGrids:
                 try:
                     job=self.app.status(live['job_id'])
                     live.update({k:job[k] for k in ('state','processed','pending')})
+                    live['grid']=job.get('grid',{})
+                    live['aggregation']=job.get('aggregation')
                     live['regions']=[{k:r[k] for k in ('roi','label')} for r in job['regions'] if r['leaf']]
                 except ValueError:pass
             result['live_grid']=live
@@ -166,7 +175,7 @@ class BatchGrids:
                 output_directory=str(folder),settings=copy.deepcopy(options.get('settings',{})),options=options,
                 engine_sha256=engine.version,eligibility=rows,selected_file_ids=chosen,
                 started_at=datetime.now().astimezone().isoformat(),
-                interpretation='Candidate-labelled image areas, not confirmed phase fractions. Sample pooling sums acquired fields, which may overlap. Classification areas are disjoint; passing phase/zone support overlaps and must not be added as fractions.')
+                interpretation=batch_stability.INTERPRETATION if options.get('overlap') is not None else 'Candidate-labelled image areas, not confirmed phase fractions. Sample pooling sums acquired fields, which may overlap. Classification areas are disjoint; passing phase/zone support overlaps and must not be added as fractions.')
             def work():
                 try:
                     self.write(folder)
@@ -191,7 +200,7 @@ class BatchGrids:
                             roi=dict(x=0,y=0,w=info['width'],h=info['height'])
                             _,settings=engine.validate(item,roi,options.get('settings',{}))
                             if self.cancel.is_set():break
-                            started=app.grid(item,settings,count,bool(options.get('adaptive',True)),minimum,bool(options.get('check_passing',False)),options.get('workers',0),batch=True,engine=engine)
+                            started=app.grid(item,settings,count,bool(options.get('adaptive',True)),minimum,bool(options.get('check_passing',False)),options.get('workers',0),batch=True,engine=engine,overlap=options.get('overlap'))
                             with self.lock:
                                 self.data['job_id']=started['id'];self.live['job_id']=started['id']
                             while app.grid_thread.is_alive():
@@ -201,12 +210,13 @@ class BatchGrids:
                             job['saved_at']=datetime.now().astimezone().isoformat()
                             job['limits']=json.loads((Path(__file__).parent/'engine_provenance.json').read_text())['limits']
                             stem=safe_name(row['sample'])+'_'+safe_name(info['name'])+'_'+uuid.uuid4().hex[:6]
-                            target=folder/(stem+'_grid.json');target.write_text(json.dumps(job,indent=2,allow_nan=False))
+                            kind='overlap_map' if job.get('grid',{}).get('mode')=='overlap' else 'grid'
+                            target=folder/(stem+'_'+kind+'.json');target.write_text(json.dumps(job,indent=2,allow_nan=False))
                             summary=summarize(job,row['sample']);summary['data_file']=target.name
                             with self.lock:self.data['images'].append(summary)
                             if options.get('export_png') and job['state']=='complete':
                                 try:
-                                    png_target=folder/(stem+'_grid.png');map_png(item,job,png_target,options.get('colors'),float(options.get('opacity',.2)))
+                                    png_target=folder/(stem+'_'+kind+'.png');map_png(item,job,png_target,options.get('colors'),float(options.get('opacity',.2)))
                                     with self.lock:summary['png_file']=png_target.name
                                 except Exception as error:
                                     with self.lock:self.data['failures'].append(dict(file_id=key,stage='PNG export',error=str(error)))
@@ -228,6 +238,9 @@ class BatchGrids:
         with self.lock:
             self.data['samples']=sample_summaries(self.data['images']);data=copy.deepcopy(self.data)
         temp=folder/'summary.tmp';temp.write_text(json.dumps(data,indent=2,allow_nan=False));temp.replace(folder/'summary.json')
+        if data['options'].get('overlap') is not None:
+            batch_stability.write_csv(folder,data,self.csv)
+            return
         rows=[]
         for image in data['images']:
             for label,percent in image['classification_image_percent'].items():

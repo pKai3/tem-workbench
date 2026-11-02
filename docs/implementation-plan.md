@@ -177,7 +177,9 @@ A 64-column aspect-preserving raster samples aggregate values at tile centres; i
 
 **Validation:** six focused tests cover staggered bounded deterministic sampling, invalid/oversized requests, equal-pass weighting, missing/failed fits, simultaneous phase support, empty maps, JSON and grid-coordinator integration, including a real two-worker run, cached rescoring and exported raw candidates/pass IDs. Six existing parallel/coordinator tests pass on Python 3.14.7. An isolated browser test of demo ST1203 ran 378 windows (8 nm / 4 nm, hex, three passes) using two workers in 28.8 s; HCP/BCC support, disagreement views and UI completion were verified. This is functional validation, not scientific calibration.
 
-**Still planned:** batch integration; zone/orientation agreement maps; pairwise rank differences; dedicated comparison of 5 versus 8–10 nm windows on ST1156/ST1203/ST1217; any use as physical phase fractions. No architecture diagram update requested.
+**Batch stability maps — 3 November 2026:** the selected overlap window size, spacing, hex/square layout and placement passes now run across reviewed images using the existing worker pool. The live viewer shows completed window centres during analysis, then the all-phase passing-frequency map. Optional PNGs use that same split-tile convention with phase colours and a frequency key; JSON retains every raw window, pass and candidate plus aggregation. Per-image CSVs report support and candidate-presence frequencies over covered raster area; per-sample CSVs report covered-area-weighted support and equal-image means. Missing/empty coverage is unmeasured, not zero support. Zone breakdowns count best passing fits per phase per window, explicitly correlated counts rather than area fractions. Cancellation and individual image failures preserve available results. Standard batches retain their existing schemas. A Folder filter includes descendants and combines with keyword search; Select only matches replaces selection, while Select all/Deselect all operate on shown matches. Tests cover overlapping denominators, simultaneous phases, empty/partial maps, unequal image areas, aspect-preserving PNG bands, and a real two-worker multi-image export with a failed image. The existing 11 manual/batch and eight overlap tests also pass; a UI smoke check covers folder subtree/search selection, phase columns, centre rendering and split tiles. Restart the backend for the new batch capability.
+
+**Still planned:** zone/orientation agreement maps; pairwise rank differences; dedicated comparison of 5 versus 8–10 nm windows on ST1156/ST1203/ST1217; any use as physical phase fractions. No architecture diagram update requested.
 
 Original design retained below for the remaining scope:
 
@@ -193,7 +195,7 @@ Candidate-labelled image area can be reported with unresolved area beside it. Co
 
 [Related work by Jany et al. on local FFT analysis of HRTEM images](https://arxiv.org/abs/1907.10929) is a starting point for methodological review, not validation of this app’s classifier or of phase-fraction estimates.
 
-Parallel grid execution is reused by the implemented overlapping mode. Batch summaries remain limited to the non-overlapping uniform/adaptive modes until a separate aggregation-aware batch schema is added.
+Parallel grid execution is reused by single-image and batch overlapping maps. Batch stability summaries use the aggregation-aware schema described above; uniform/adaptive batches retain their disjoint-area summaries.
 
 ## Platform delivery
 
