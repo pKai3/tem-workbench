@@ -20,7 +20,7 @@ This is the maintained implementation status and roadmap. The original three ana
 - **Crop-size diagnostic:** the runner and ST1156 experiment are complete; representative failure inspection, ST1203/mixed-pattern controls and an in-app panel remain open. Automatic smoothing is deferred.
 - **Parallel/platform validation:** native Windows uniform grids pass at one and four workers. Adaptive grids, cancellation/restart, automatic-strength modes, batch runs and diffraction threading need broader native Windows checks; smaller-machine memory/load checks remain open.
 - **Explicitly deferred:** Mac–Windows numerical reproducibility review, partially obscured/inferred diffraction peaks, FFT manual peak editing and Hitachi acquisition-map calibration. Details and limits are below.
-- **Overlapping maps:** first pass implemented 2 November 2026: square FFT windows on square/hexagonal centres, 1/3/7 shifted passes, per-phase support and placement-disagreement views. Batch integration and zone-stability maps remain planned.
+- **Overlapping maps:** first pass implemented 2 November 2026: square FFT windows on square/hexagonal centres, 1/3/9 shifted passes, per-phase support and placement-disagreement views. Batch integration and zone-stability maps remain planned.
 
 ## Completed work overview
 
@@ -149,7 +149,13 @@ Source exports (filenames retained here; experimental data are not bundled into 
 
 ## Overlapping window phase candidate map
 
-**Approved and first pass implemented — 2 November 2026.** Automatic grid now offers **Overlapping stability map**. Defaults: 5 nm square windows, 2.5 nm centre spacing, hexagonal centres, one pass; optional square centres and three/seven deterministic shifted passes. Existing uniform/adaptive behavior is retained. Full windows only, a 32-pixel minimum, and a 5,000-window cap. Uses the existing selectable process workers, cancellation and cached reweighting.
+**Approved and first pass implemented — 2 November 2026.** Automatic grid now offers **Overlapping stability map**. Defaults: 5 nm square windows, 2.5 nm centre spacing, hexagonal centres, one pass; optional square centres and three/nine deterministic shifted passes. Existing uniform/adaptive behavior is retained. Full windows only, a 32-pixel minimum, and a 5,000-window cap. Uses the existing selectable process workers, cancellation and cached reweighting.
+
+**Update — 2 November 2026:** nine passes use every combination of 0, ⅓ and ⅔ shifts along both lattice directions. Legacy seven-pass requests remain supported; saved UI choice migrates to nine. Grid/batch worker choices extend through 10/12/14/16; Auto remains at most four. Explicit choices can exceed CPU count. Diffraction smoothing retains its existing limit. Tests check nine-offset completeness and worker validation.
+
+**Display update — 2 November 2026:** raw centres show one phase-coloured zone symbol for the highest-ranked candidate, with passing-winner legend counts (not areas). Rejected winners remain faded. Aggregated views show a colour-scale legend directly below the image; sample coverage uses saturated cyan.
+
+**Display proposal, not implemented:** hexagonal summary tiles averaging contributing windows, with per-phase support, counts and aggregate hover information; consider an all-phases view alongside individual phase maps. These describe correlated support, not phase fractions.
 
 **Aggregation decision:** match every FFT independently, then aggregate results. Do not average complex FFTs or power spectra for this spatial map. Every enabled phase contributes independently, including weaker passing fits. Windows without a passing fit remain in the denominator. Weights are `exp(-8*(dx²+dy²))` inside the window footprint, with offsets normalized by width/height. Normalize each placement pass separately, then give represented passes equal weight. No rank/quality weighting is applied to support, to avoid letting stronger HCP erase weaker passing BCC.
 

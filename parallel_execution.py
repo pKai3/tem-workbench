@@ -19,12 +19,12 @@ def configure_numeric_threads():
 
 
 def worker_limit():
-    return max(1, min(8, os.cpu_count() or 1))
+    return 16
 
 
 def worker_count(requested=0):
-    if isinstance(requested, bool) or not isinstance(requested, int) or not 0 <= requested <= 8:
-        raise ValueError('Choose Auto or 1–8 grid workers.')
+    if isinstance(requested, bool) or not isinstance(requested, int) or not 0 <= requested <= 16:
+        raise ValueError('Choose Auto or 1–16 grid workers.')
     return min(requested or min(4, max(1, (os.cpu_count() or 1)-1)), worker_limit())
 
 

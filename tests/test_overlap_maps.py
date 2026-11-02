@@ -33,6 +33,13 @@ class OverlapTests(unittest.TestCase):
         starts=[min(s['roi']['x'] for s in samples if s['pass_id']==0 and s['roi']['y']==y) for y in sorted(rows)]
         self.assertNotEqual(starts[0],starts[1])
 
+    def test_nine_pass_lattice_offsets(self):
+        samples, options = maps.sampling(INFO, dict(window_nm=2, spacing_nm=1, passes=9))
+        self.assertEqual(set(map(tuple, options['offsets_basis'])), {(u/3,v/3) for u in range(3) for v in range(3)})
+        self.assertEqual({s['pass_id'] for s in samples}, set(range(9)))
+        # Seven remains readable for older saved requests, but new UI offers nine.
+        self.assertEqual(maps.sampling(INFO, dict(window_nm=2, spacing_nm=1, passes=7))[1]['passes'], 7)
+
     def test_invalid_and_excessive_sampling(self):
         for o in [dict(window_nm=float('nan')),dict(spacing_nm=0),dict(passes=True),dict(passes=2),dict(window_nm=20),dict(window_nm=.1),dict(window_nm=2,spacing_nm=3),dict(spacing_nm=.03,passes=7)]:
             with self.subTest(o=o),self.assertRaises(ValueError):maps.sampling(INFO,o)

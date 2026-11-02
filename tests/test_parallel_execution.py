@@ -41,11 +41,11 @@ class SpawnChecks(unittest.TestCase):
         self.assertFalse(directory.exists())
 
     def test_worker_limit_validation(self):
-        for value in [-1,9,True,2.5,'2']:
+        for value in [-1,17,True,2.5,'2']:
             with self.assertRaises(ValueError):worker_count(value)
         with patch('parallel_execution.os.cpu_count',return_value=2):
             self.assertEqual(worker_count(),1)
-            self.assertEqual(worker_count(8),2)
+            self.assertEqual(worker_count(16),16)
 
     def test_detector_worker_validation_and_cache(self):
         from test_diffraction import pattern

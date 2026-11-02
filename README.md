@@ -23,7 +23,7 @@ The interface pairs real-space images with reciprocal-space previews and support
 
 ## Parallel analysis
 
-Under **Automatic grid**, choose **Workers**: Auto, 1, 2, 4 or 8. Auto uses up to four workers and leaves one logical CPU free. Lower counts reduce CPU and memory use. The choice is remembered and applies to the next run. Progress includes worker count and elapsed time; manual region inspection remains available during a grid.
+Under **Automatic grid**, choose **Workers**: Auto, 1, 2, 4, 8, 10, 12, 14 or 16. Explicit choices may exceed logical CPU count; that can increase memory use without improving speed. Auto uses up to four workers and leaves one logical CPU free. Lower counts reduce CPU and memory use. The choice is remembered and applies to the next run. Progress includes worker count and elapsed time; manual region inspection remains available during a grid.
 
 Each grid uses separate Python processes with private fit caches and one shared, read-only temporary source image. Results and adaptive decisions are applied in a fixed order. Cancel stops queued work and checks between automatic-strength trials; the current trial may finish first. A partially checked subdivision retains its parent. Completed grids can still be reweighted from cached fits.
 

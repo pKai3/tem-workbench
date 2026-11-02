@@ -7,7 +7,7 @@ passing support; rank is averaged only where a candidate exists.
 import math
 import numpy as np
 
-VERSION = 'overlap-v1'
+VERSION = 'overlap-v2'
 MAX_WINDOWS = 5000
 
 
@@ -20,8 +20,8 @@ def sampling(info, options):
     passes = options.get('passes', 1)
     if not all(math.isfinite(v) and v > 0 for v in (width, spacing)):
         raise ValueError('Window width and centre spacing must be positive finite values.')
-    if layout not in ('hex', 'square') or type(passes) is not int or passes not in (1, 3, 7):
-        raise ValueError('Choose hex/square centres and 1, 3 or 7 placement passes.')
+    if layout not in ('hex', 'square') or type(passes) is not int or passes not in (1, 3, 7, 9):
+        raise ValueError('Choose hex/square centres and 1, 3 or 9 placement passes.')
     if spacing > width:
         raise ValueError('Centre spacing must not exceed window width.')
     # Square in real space; anisotropic pixels may require rectangular arrays.
@@ -33,7 +33,7 @@ def sampling(info, options):
     if min(sx, sy) < 1:
         raise ValueError('Centre spacing must be at least one pixel.')
     # Fractions of the two lattice basis vectors, not random jitter.
-    offsets = [(0., 0.), (1/3, 1/3), (2/3, 2/3), (1/3, 0.), (0., 1/3), (2/3, 0.), (0., 2/3)][:passes]
+    offsets = [(0., 0.), (1/3, 1/3), (2/3, 2/3), (1/3, 0.), (0., 1/3), (2/3, 0.), (0., 2/3), (1/3, 2/3), (2/3, 1/3)][:passes]
     samples = []
     for pass_id, (u, v) in enumerate(offsets):
         dx, dy = (u + (v/2 if layout == 'hex' else 0))*sx, v*sy
