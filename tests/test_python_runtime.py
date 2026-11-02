@@ -89,14 +89,24 @@ class RuntimeChecks(unittest.TestCase):
             discover.assert_not_called()
             self.assertTrue(all(call.args[0][0] == str(local) for call in process.call_args_list))
 
+    def test_discovery_prefers_314_when_older_versions_are_available(self):
+        def available(candidate, root, environ):
+            if candidate in ('python3.12', 'python3.13', 'python3.14'):
+                return candidate
+            raise RuntimeError('missing')
+        with patch.object(runtime.sys, 'platform', 'darwin'), \
+                patch.object(runtime, 'executable_path', side_effect=available), \
+                patch.object(runtime, 'python_info', side_effect=lambda p: {'version': [3, int(p.rsplit('.', 1)[1])]}):
+            self.assertEqual(runtime.discover_python('/tmp', {}), 'python3.14')
+
     def test_finder_discovery_skips_315_and_finds_compatible_python(self):
         base = '/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14'
         def available(candidate, root, environ):
-            if candidate in ('python3.12', base):
+            if candidate in ('python3.14', base):
                 return candidate
             raise RuntimeError('missing')
         def info(candidate):
-            return {'version': [3, 15] if candidate == 'python3.12' else [3, 14]}
+            return {'version': [3, 15] if candidate == 'python3.14' else [3, 14]}
         with patch.object(runtime, 'executable_path', side_effect=available), \
                 patch.object(runtime, 'python_info', side_effect=info):
             self.assertEqual(runtime.discover_python('/tmp', {'PATH': '/usr/bin:/bin'}), base)

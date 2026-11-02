@@ -55,13 +55,13 @@ def compatible(info):
 def require_compatible(executable, info):
     if not compatible(info):
         raise RuntimeError(f'{executable} is Python {".".join(map(str, info["version"]))}; '
-                           'TEM Workbench currently supports Python 3.10–3.14 (3.12 preferred). '
+                           'TEM Workbench currently supports Python 3.10–3.14 (3.14 preferred). '
                            f'Rerun {INSTALLER} to prepare a compatible .venv.')
 
 
 def discover_python(root, environ):
     # Finder does not inherit the interactive shell's Homebrew/python.org PATH.
-    versions = ('3.12', '3.13', '3.14', '3.11', '3.10')
+    versions = ('3.14', '3.13', '3.12', '3.11', '3.10')
     candidates = []
     if sys.platform == 'win32':
         # The Windows launcher knows installations that are not on PATH.
@@ -99,7 +99,7 @@ def discover_python(root, environ):
             return executable
         except RuntimeError:
             continue
-    raise RuntimeError('No compatible Python 3.10–3.14 was found. Install Python 3.12 from python.org '
+    raise RuntimeError('No compatible Python 3.10–3.14 was found. Install Python 3.14 from python.org '
                        f'(or another supported version), then rerun {INSTALLER}.')
 
 

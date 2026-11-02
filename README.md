@@ -31,12 +31,12 @@ Direct diffraction offers **Smoothing threads: Auto / 1 / 2 / 4 / 8**, remembere
 
 ## Quick start
 
-Use Python 3.10–3.14; Python 3.12 is the tested and preferred environment. Python 3.15 is currently excluded from app setup because compatible prebuilt scientific dependencies are needed. Numerical dependencies are listed in [requirements.txt](requirements.txt).
+Use Python 3.10–3.14; Python 3.14 is preferred for new installations; validation on 3.14 is pending. Python 3.12 remains the previously tested environment. Python 3.15 is currently excluded from app setup because compatible prebuilt scientific dependencies are needed. Numerical dependencies are listed in [requirements.txt](requirements.txt).
 
 ```sh
 git clone https://github.com/pKai3/tem-workbench.git
 cd tem-workbench
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 python server.py --demo --open
@@ -50,13 +50,13 @@ Without `.tem-paths.json`, the application starts with any installed demos and d
 
 ### macOS launcher
 
-With Python 3.10–3.14 installed (3.12 preferred), double-click **Install TEM Workbench App.command**. The installer creates Workbench's own `.venv` inside the repository and installs NumPy, SciPy, Pillow and the DM4 reader before building a Dock application in `~/Applications`. It never installs packages into another application's environment. The first installation needs an internet connection and can take a few minutes. Rerunning the installer repairs missing dependencies. Building the launcher requires macOS 13 or newer and Apple Command Line Tools or Xcode.
+With Python 3.10–3.14 installed (3.14 preferred), double-click **Install TEM Workbench App.command**. The installer creates Workbench's own `.venv` inside the repository and installs NumPy, SciPy, Pillow and the DM4 reader before building a Dock application in `~/Applications`. It never installs packages into another application's environment. The first installation needs an internet connection and can take a few minutes. Rerunning the installer repairs missing dependencies. Building the launcher requires macOS 13 or newer and Apple Command Line Tools or Xcode.
 
 The launcher provides **Start/Stop**, **Open Workbench** and **View log** controls. It uses the repository checkout and a separate Python environment; it is not a standalone Python distribution. Keep the checkout in place, or reinstall the launcher after moving it. Closing the window leaves the application running; quitting stops the server it started.
 
 **Launch TEM Workbench.command** is also available for terminal-based startup. Both launchers always use `.venv/bin/python` relative to the Workbench folder. Legacy `python_executable` settings are ignored; the launchers use only the app’s own environment. A missing or incomplete environment produces an installer instruction rather than falling back to a different Python.
 
-Setup searches installed compatible Python versions in Homebrew, python.org and common Conda locations, including when launched from Finder. It prefers 3.12 and skips 3.15 even if `python3` points there. If no compatible version is available, it asks for one to be installed; it does not download Python itself. `TEM_WORKBENCH_PYTHON` can select a compatible **base interpreter for creating a new `.venv` only**. It cannot override the launch environment or redirect package installation. An existing incompatible Workbench environment is kept at `.venv.previous` before a compatible one is created. Core scientific packages use prebuilt wheels to avoid unexpected HDF5/compiler setup.
+Setup searches installed compatible Python versions in Homebrew, python.org and common Conda locations, including when launched from Finder. It prefers 3.14 and skips 3.15 even if `python3` points there. If no compatible version is available, it asks for one to be installed; it does not download Python itself. `TEM_WORKBENCH_PYTHON` can select a compatible **base interpreter for creating a new `.venv` only**. It cannot override the launch environment or redirect package installation. An existing compatible `.venv` is reused, so changing the preference does not upgrade it automatically. To test 3.14, stop Workbench, rename `.venv` to `.venv-3.12-backup` (or another unused name), and rerun the installer with Python 3.14 installed. An existing incompatible Workbench environment is kept at `.venv.previous` before a compatible one is created. Core scientific packages use prebuilt wheels to avoid unexpected HDF5/compiler setup.
 
 To prepare just the environment without rebuilding the Dock app, run `/usr/bin/python3 tools/python_runtime.py --prepare` from the repository on macOS.
 
@@ -64,7 +64,7 @@ If the log reports **No module named PIL**, Pillow is missing from the Python ac
 
 ### Windows launcher
 
-On Windows 10/11, extract the GitHub ZIP (or clone the repository) into a writable local folder. Install **64-bit Python 3.12** from python.org, including the Python launcher, if no compatible Python is installed. Python 3.10–3.14 are supported; 3.15 is excluded. The installer does not download Python itself.
+On Windows 10/11, extract the GitHub ZIP (or clone the repository) into a writable local folder. Install **64-bit Python 3.14** from python.org, including the Python launcher, if no compatible Python is installed. Python 3.10–3.14 are supported; 3.15 is excluded. The installer does not download Python itself.
 
 1. Double-click **Install TEM Workbench App.cmd**. It creates the app's own `.venv`, installs the scientific packages and DM4 reader, and adds a desktop shortcut. No administrator rights are needed.
 2. Open **TEM Workbench** from the desktop or double-click **Launch TEM Workbench.cmd**. A control window starts the server and opens the interface in the default browser. It provides **Start/Stop**, **Open Workbench** and **View log**. Closing the control window stops only the server it started. The log is saved to `tem-workbench.log` in the app folder and replaced on each start.

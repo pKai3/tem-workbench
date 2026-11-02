@@ -26,7 +26,7 @@ try {
         # This only bootstraps stdlib setup; python_runtime selects a compatible base.
         $temSelectors = @('')
         if ([IO.Path]::GetFileNameWithoutExtension($temCandidate) -eq 'py') {
-            $temSelectors = @('-3.12', '-3.13', '-3.14', '-3.11', '-3.10', '-3')
+            $temSelectors = @('-3.14', '-3.13', '-3.12', '-3.11', '-3.10', '-3')
         }
         foreach ($temSelector in $temSelectors) {
             $temArgs = @()
@@ -40,7 +40,7 @@ try {
         if ($temPython) { break }
     }
     if (-not $temPython) {
-        throw 'No Python found. Install 64-bit Python 3.12 from python.org (include the Python launcher), then rerun this installer. Python 3.10-3.14 are supported.'
+        throw 'No Python found. Install 64-bit Python 3.14 from python.org (include the Python launcher), then rerun this installer. Python 3.10-3.14 are supported.'
     }
     Write-Host 'Preparing Python dependencies. The first installation needs an internet connection.'
     & $temPython (Join-Path $PSScriptRoot 'python_runtime.py') --prepare
