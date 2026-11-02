@@ -95,7 +95,7 @@ function readPreference(key,fallback){
  }catch{return fallback}
 }
 function writePreference(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch{message('Browser storage is unavailable; these preferences will last until this page closes.',true)}}
-const FFT_DETECTOR_CONTROLS={'fft-smoothing':['fft_smoothing_sigma',.65,0,3],'fft-threshold-floor':['fft_threshold_floor',1.8,0,20],'fft-min-strength':['fft_minimum_enrichment',3,0,20],'fft-min-separation':['fft_minimum_separation',.12,0,3],'fft-max-peaks':['fft_max_peaks',70,4,200,true]};
+const FFT_DETECTOR_CONTROLS={'fft-smoothing':['fft_smoothing_sigma',.65,0,3],'fft-threshold-floor':['fft_threshold_floor',1.8,0,20],'fft-min-strength':['fft_minimum_enrichment',3,0,20],'fft-min-separation':['fft_minimum_separation',.5,0,3],'fft-max-peaks':['fft_max_peaks',70,4,200,true]};
 const BASIC_NUMBERS={"g-max":[4,30],"fft-g-min":[0,29.9],"hcp-a":[0.15,0.65],"hcp-c":[0.20,1.20],"bcc-a":[0.20,0.65],"fcc-a":[0.20,0.65],"ort-a":[.1,2],"ort-b":[.1,2],"ort-c":[.1,2],"threshold":[0.15,0.7],"grid-workers":[0,16,true],"grid-count":[2,24,true],"grid-min":[0,null],"batch-cutoff":[0,100000000]};
 Object.assign(BASIC_NUMBERS,Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value,min,max,integer]])=>[id,[min,max,integer]])));
 Object.assign(BASIC_NUMBERS,{"map-window":[.1,1000],"map-spacing":[.1,1000],"map-window-percent":[.1,100],"map-spacing-percent":[1,100]});
@@ -112,7 +112,7 @@ function restoreBasicControls(){
  for(const id of Object.keys(BASIC_NUMBERS))if(validControlNumber(id,saved[id]))$(id).value=id==='batch-cutoff'?saved[id]/1000:saved[id];
  for(const id of BASIC_FLAGS)if(typeof saved[id]==='boolean')$(id).checked=saved[id];
  if(saved['map-passes']==='7')saved['map-passes']='9';
- for(const [id,choices]of Object.entries({'grid-mode':['standard','overlap'],'map-layout':['hex','square'],'map-size-mode':['fixed_nm','image_percent'],'map-passes':['1','3','9']}))if(choices.includes(saved[id]))$(id).value=saved[id];
+ for(const [id,choices]of Object.entries({'grid-mode':['standard','overlap'],'map-layout':['hex','square'],'map-size-mode':['fixed_nm','image_percent'],'map-spacing-mode':['fixed_nm','window_percent'],'map-passes':['1','3','9']}))if(choices.includes(saved[id]))$(id).value=saved[id];
  if(['manual','auto','geometry'].includes(saved['fft-strength-mode']))$('fft-strength-mode').value=saved['fft-strength-mode'];
  if(['titanium','iron','unknown','custom'].includes(saved.material))$('material').value=saved.material;
  setPhaseSelection(Array.isArray(saved.enabled_phases)&&saved.enabled_phases.every(phase=>PHASES.includes(phase))?saved.enabled_phases:materialPhases());
@@ -128,7 +128,7 @@ function rememberBasicControls(){
   else if(previous&&validControlNumber(id,previous[id]))saved[id]=previous[id];
  }
  for(const id of BASIC_FLAGS)saved[id]=$(id).checked;
- for(const id of ['grid-mode','map-layout','map-passes','map-size-mode'])saved[id]=$(id).value;
+ for(const id of ['grid-mode','map-layout','map-passes','map-size-mode','map-spacing-mode'])saved[id]=$(id).value;
  saved['fft-strength-mode']=$('fft-strength-mode').value;
  if(OVERLAY_MODES.includes($('overlay').value))saved.overlay=$('overlay').value;
  saved.material=$('material').value;saved.enabled_phases=[...enabledPhases];
@@ -809,17 +809,41 @@ $('marker-motion').value=['off','pulse','bounce','wobble','rotate'].includes(sav
 $('marker-motion').onchange=()=>{rememberMarkerStyles();applyMarkerAnimation()};
 $('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT();if(isDiffraction())drawDetector()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
 const oldPalette=readPreference('tem-palette',null),savedPalette=({ice:'viridis',violet:'plasma',green:'viridis'})[oldPalette]||oldPalette;if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;syncIntensityKey();
+const BATCH_PNG_VIEWS={standard:[['classification','Classification + zone labels']],overlap:[['support_all','Passing frequency · all phases'],['support_phases','Passing frequency · each phase'],['hex','Top match · averaged hex grid'],['spread_phases','Placement disagreement · each phase'],['samples','Sample coverage'],['separate','Separate-pattern frequency'],['raw','Raw centres · classification circles']]};
+let batchPngSelections=readPreference('tem-batch-png-views',{});
+if(!batchPngSelections||typeof batchPngSelections!=='object'||Array.isArray(batchPngSelections))batchPngSelections={};
+function batchPngViews(){
+ const mode=$('grid-mode').value==='overlap'?'overlap':'standard',choices=BATCH_PNG_VIEWS[mode];
+ const saved=batchPngSelections[mode];
+ return Array.isArray(saved)?choices.map(([id])=>id).filter(id=>saved.includes(id)):[choices[0][0]];
+}
+function updateBatchPngControls(){
+ const mode=$('grid-mode').value==='overlap'?'overlap':'standard',selected=batchPngViews(),box=$('batch-png-options');
+ box.hidden=!$('batch-png').checked;box.replaceChildren();
+ for(const [id,text]of BATCH_PNG_VIEWS[mode]){
+  const label=document.createElement('label');label.className='check';
+  const input=document.createElement('input');input.type='checkbox';input.value=id;input.checked=selected.includes(id);
+  input.disabled=id==='spread_phases'&&Number($('map-passes').value)<2;
+  if(input.disabled)label.title='Placement disagreement needs at least two passes.';
+  input.onchange=()=>{batchPngSelections[mode]=[...box.querySelectorAll('input:checked')].map(n=>n.value);writePreference('tem-batch-png-views',batchPngSelections)};
+  label.append(input,document.createTextNode(text));box.append(label);
+ }
+}
+$('batch-png').onchange=updateBatchPngControls;
 function overlapRequest(){
  if($('grid-mode').value!=='overlap')return null;
- const size_mode=$('map-size-mode').value;
- return {size_mode,layout:$('map-layout').value,passes:Number($('map-passes').value),
-  ...(size_mode==='image_percent'?{window_percent:Number($('map-window-percent').value),spacing_percent:Number($('map-spacing-percent').value)}:{window_nm:Number($('map-window').value),spacing_nm:Number($('map-spacing').value)})};
+ const size_mode=$('map-size-mode').value,spacing_mode=$('map-spacing-mode').value;
+ return {size_mode,spacing_mode,layout:$('map-layout').value,passes:Number($('map-passes').value),
+  ...(size_mode==='image_percent'?{window_percent:Number($('map-window-percent').value)}:{window_nm:Number($('map-window').value)}),
+  ...(spacing_mode==='window_percent'?{spacing_percent:Number($('map-spacing-percent').value)}:{spacing_nm:Number($('map-spacing').value)})};
 }
 function overlapDimensions(o,info){
  const width=o.size_mode==='image_percent'?Math.min(info.width*info.pixel_x_nm,info.height*info.pixel_y_nm)*o.window_percent/100:o.window_nm;
- return {width,spacing:o.size_mode==='image_percent'?width*o.spacing_percent/100:o.spacing_nm};
+ return {width,spacing:o.spacing_mode==='window_percent'?width*o.spacing_percent/100:o.spacing_nm};
 }
 function checkOverlapCapability(){
+ const o=overlapRequest();
+ if(o&&!config?.independent_overlap_spacing&&((o.size_mode==='image_percent')!==(o.spacing_mode==='window_percent')))throw new Error('Restart TEM Workbench and reload to enable independent centre spacing.');
  if(overlapRequest()?.size_mode==='image_percent'&&!config?.image_relative_overlap)throw new Error('Restart TEM Workbench and reload to enable image-relative windows.');
 }
 let overlapPreviewTimer=null,overlapPreviewVersion=0;
@@ -850,8 +874,10 @@ function updateGridSizeNote(){
  scheduleOverlapPreview();
  const overlap=Boolean(overlapRequest());$('overlap-controls').hidden=!overlap;
  const relative=$('map-size-mode').value==='image_percent';
- for(const id of ['map-window','map-spacing'])$(id).closest('label').hidden=relative;
- for(const id of ['map-percent-label','map-spacing-percent-label'])$(id).hidden=!relative;
+ const relativeSpacing=$('map-spacing-mode').value==='window_percent';
+ $('map-window').closest('label').hidden=relative;$('map-percent-label').hidden=!relative;
+ $('map-spacing').closest('label').hidden=relativeSpacing;$('map-spacing-percent-label').hidden=!relativeSpacing;
+ updateBatchPngControls();
  for(const id of ['grid-count','grid-min','adaptive','check-passing'])$(id).closest('label').hidden=overlap;
  $('batch-panel').hidden=false;
 
@@ -862,7 +888,7 @@ function updateGridSizeNote(){
   const estimate=Math.ceil(area/(spacing**2*(o.layout==='hex'?Math.sqrt(3)/2:1))*o.passes);
   const sigma=Number($('fft-smoothing').value),blur=sigma/width;
   const sizes=Number.isFinite(width)&&width>0?`Current image: ${width.toFixed(2)} nm window (${Math.round(width/meta.pixel_x_nm)} × ${Math.round(width/meta.pixel_y_nm)} px), ${spacing.toFixed(2)} nm spacing. Smoothing σ ${sigma} bins ≈ ${blur.toFixed(3)} nm⁻¹; bin setting stays unchanged. `:'';
-  note.textContent=sizes+`Square FFT windows, ${o.layout==='hex'?'hexagonal':'square'} centres; ${o.passes} shifted placement pass(es). Rough upper estimate ${Number.isFinite(estimate)?estimate:'—'} windows (limit ${(config?.overlap_max_windows||10000).toLocaleString()}). Full windows only; layout centred with balanced outer margins. Edges have fewer samples. Matching runs separately for every window. ${relative?'Batch grids resolve percentages separately for each image; physical window size and resolution vary.':'Batch grids use these same physical window and placement settings.'}`;return}
+  note.textContent=sizes+`Square FFT windows, ${o.layout==='hex'?'hexagonal':'square'} centres; ${o.passes} shifted placement pass(es). Rough upper estimate ${Number.isFinite(estimate)?estimate:'—'} windows (limit ${(config?.overlap_max_windows||10000).toLocaleString()}). Full windows only; layout centred with balanced outer margins. Edges have fewer samples. Matching runs separately for every window. ${relative?'Batch window sizes resolve separately for each image.':'Batch windows keep the same physical size.'} ${relativeSpacing?'Centre spacing follows window size.':'Centre spacing stays fixed in nm.'}`;return}
  const count=Number($('grid-count').value),minimum=Number($('grid-min').value);
  if(!Number.isInteger(count)||count<2||count>24||!Number.isFinite(minimum)||minimum<=0){note.textContent='Choose 2–24 regions per side and a positive stopping limit in nm.';return}
  const extent=Math.min(meta.width,meta.height),pixel=Math.min(meta.pixel_x_nm,meta.pixel_y_nm);
@@ -876,7 +902,7 @@ function updateGridSizeNote(){
   if($('check-passing').checked)note.textContent+=' Passing regions also trial four children; keep the children when they reveal different phases/zones, a separate pattern, or a mix of passing and unresolved assignments.';
  }
 }
-for(const id of ['grid-count','grid-min','adaptive','check-passing','grid-mode','map-window','map-spacing','map-layout','map-passes','map-size-mode','map-window-percent','map-spacing-percent','fft-smoothing'])$(id).addEventListener('input',updateGridSizeNote);
+for(const id of ['grid-count','grid-min','adaptive','check-passing','grid-mode','map-window','map-spacing','map-layout','map-passes','map-size-mode','map-spacing-mode','map-window-percent','map-spacing-percent','fft-smoothing'])$(id).addEventListener('input',updateGridSizeNote);
 function renderZoneBreakdown(phase,totalArea,open){
  const found=new Map();
  for(const region of grid.regions){
@@ -1814,7 +1840,7 @@ function detectorPointerEnd(e){
 }
 
 restoreBasicControls();
-for(const id of [...Object.keys(BASIC_NUMBERS),...BASIC_FLAGS,'overlay','grid-mode','map-layout','map-passes','map-size-mode']){
+for(const id of [...Object.keys(BASIC_NUMBERS),...BASIC_FLAGS,'overlay','grid-mode','map-layout','map-passes','map-size-mode','map-spacing-mode']){
  $(id).addEventListener('input',rememberBasicControls);
  $(id).addEventListener('change',rememberBasicControls);
 }
@@ -2691,6 +2717,9 @@ async function pollBatch(){try{const response=await fetch('/api/batch');if(!resp
 $('batch-start').onclick=async()=>{
  try{
   checkOverlapCapability();
+  const png_views=$('batch-png').checked?batchPngViews().filter(id=>id!=='spread_phases'||Number($('map-passes').value)>1):[];
+  if($('batch-png').checked&&!png_views.length)throw new Error('Select at least one PNG map, or turn off PNG export.');
+  if($('batch-png').checked&&!config.batch_png_views)throw new Error('Restart TEM Workbench and reload to enable batch PNG choices.');
   if(overlapRequest()&&!config.batch_overlap_maps)throw new Error('Restart TEM Workbench, then reload to enable batch stability maps.');
   if(isDiffraction())throw new Error('Open a real-space image to choose the FFT processing settings for this batch.');
   if(!batchReviewReady)throw new Error('Review images after changing the cutoff.');
@@ -2698,7 +2727,7 @@ $('batch-start').onclick=async()=>{
   const file_ids=batchFiles.filter(row=>row.eligible&&batchSelected.has(row.id)).map(row=>row.id);
   if(!file_ids.length)throw new Error('Select at least one image.');
   $('batch-start').disabled=true;
-  renderBatch(await api('batch/start',{...batchOptions(),file_ids,summary_folders:batchFolderSelection===null?[]:[...batchFolderSelection],flatten_folders:$('batch-flatten-folders').checked,settings:settings(),overlap:overlapRequest(),count:Number($('grid-count').value),minimum_nm:Number($('grid-min').value),adaptive:$('adaptive').checked,check_passing:$('check-passing').checked,workers:Number($('grid-workers').value),export_png:$('batch-png').checked,colors:{...colors},opacity:Number($('grid-opacity').value)/100}));
+  renderBatch(await api('batch/start',{...batchOptions(),file_ids,summary_folders:batchFolderSelection===null?[]:[...batchFolderSelection],flatten_folders:$('batch-flatten-folders').checked,settings:settings(),overlap:overlapRequest(),count:Number($('grid-count').value),minimum_nm:Number($('grid-min').value),adaptive:$('adaptive').checked,check_passing:$('check-passing').checked,workers:Number($('grid-workers').value),export_png:$('batch-png').checked,png_views,colors:{...colors},opacity:Number($('grid-opacity').value)/100}));
  }catch(e){syncBatchSelection();message(e.message,true)}
 };
 $('batch-cancel').onclick=async()=>{try{renderBatch(await api('batch/cancel',{}))}catch(e){message(e.message,true)}};

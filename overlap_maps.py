@@ -17,20 +17,28 @@ def sampling(info, options):
     size_mode = options.get('size_mode', 'fixed_nm')
     if size_mode not in ('fixed_nm', 'image_percent'):
         raise ValueError('Choose fixed nm or image-relative window size.')
-    sizing = dict(size_mode=size_mode)
+    # Legacy image-relative requests used window-relative spacing implicitly.
+    spacing_mode = options.get('spacing_mode', 'window_percent' if size_mode == 'image_percent' else 'fixed_nm')
+    if spacing_mode not in ('fixed_nm', 'window_percent'):
+        raise ValueError('Choose fixed nm or window-relative centre spacing.')
+    sizing = dict(size_mode=size_mode, spacing_mode=spacing_mode)
     if size_mode == 'image_percent':
         percent = float(options.get('window_percent', 10))
-        spacing_percent = float(options.get('spacing_percent', 100))
-        if not (math.isfinite(percent) and .1 <= percent <= 100 and
-                math.isfinite(spacing_percent) and 1 <= spacing_percent <= 100):
-            raise ValueError('Use window 0.1–100% of the shorter image dimension and spacing 1–100% of the window.')
+        if not (math.isfinite(percent) and .1 <= percent <= 100):
+            raise ValueError('Use window 0.1–100% of the shorter image dimension.')
         extent = min(info['width']*info['pixel_x_nm'], info['height']*info['pixel_y_nm'])
         width = extent*percent/100
-        spacing = width*spacing_percent/100
-        sizing.update(window_percent=percent, spacing_percent=spacing_percent,
+        sizing.update(window_percent=percent,
                       reference_extent_nm=extent, reference_dimension='shorter_physical_side')
     else:
         width = float(options.get('window_nm', 5))
+    if spacing_mode == 'window_percent':
+        spacing_percent = float(options.get('spacing_percent', 100))
+        if not (math.isfinite(spacing_percent) and 1 <= spacing_percent <= 100):
+            raise ValueError('Use spacing 1–100% of the window.')
+        spacing = width*spacing_percent/100
+        sizing['spacing_percent'] = spacing_percent
+    else:
         spacing = float(options.get('spacing_nm', 2.5))
     layout = options.get('layout', 'hex')
     passes = options.get('passes', 1)

@@ -106,13 +106,33 @@ def sample_summaries(images):
             passing_zones=list(zones.values())))
     return output
 
-def map_png(item, job, target, colors=None, opacity=.2):
+def png_exports(options, phases):
+    """Validate selected products and expand per-phase views, preserving old callers."""
+    overlap = options.get('overlap') is not None
+    choices = options.get('png_views', ['support_all'] if overlap else ['classification'])
+    allowed = {'support_all','support_phases','hex','spread_phases','samples','separate','raw'} if overlap else {'classification'}
+    if not isinstance(choices,list) or any(not isinstance(v,str) or v not in allowed for v in choices):
+        raise ValueError('Choose PNG map views supported by the selected grid mode.')
+    if not options.get('export_png'):return []
+    if not choices:raise ValueError('Select at least one PNG map or turn off PNG export.')
+    if 'spread_phases' in choices and options['overlap'].get('passes',1)<2:
+        raise ValueError('Placement disagreement PNGs require multiple passes.')
+    products=[]
+    for choice in dict.fromkeys(choices):
+        if choice in ('support_phases','spread_phases'):
+            view=choice.split('_')[0]
+            products.extend((view+'_'+p.lower(),view,p) for p in phases)
+        else:products.append((choice,'support' if choice=='support_all' else choice,None))
+    return products
+
+
+def map_png(item, job, target, colors=None, opacity=.2, view='support', phase=None):
     """Standalone map of current leaves; labels and zone indices accompany each region."""
     colors={**COLORS,**(colors or {})}
     for value in colors.values():
         if not re.fullmatch(r'#[0-9a-fA-F]{6}',value):raise ValueError('Map colours must be RGB hex values.')
     if job.get('grid',{}).get('mode')=='overlap':
-        return batch_stability.map_png(item,job,target,colors,opacity)
+        return batch_stability.map_png(item,job,target,colors,opacity,view,phase)
     size=1800; canvas=Image.new('RGB',(size+80,size+260),'#0c121a')
     source=Image.open(BytesIO(item['preview'])).convert('RGB').resize((size,size))
     layer=Image.new('RGBA',source.size);draw=ImageDraw.Draw(layer)
@@ -199,6 +219,7 @@ class BatchGrids:
             worker_count(options.get('workers',0))
             opacity=float(options.get('opacity',.2))
             if not math.isfinite(opacity) or not 0<=opacity<=1:raise ValueError('Map opacity must be between 0 and 1.')
+            png_exports(options, options.get('settings',{}).get('enabled_phases',['HCP','BCC','FCC']))
             json.dumps(options,allow_nan=False)
             if count not in range(2,25) or not 0<minimum<100000:raise ValueError('Invalid grid size or stopping limit.')
             engine=Engine(copy.deepcopy(app.config));engine.catalog()
@@ -251,11 +272,19 @@ class BatchGrids:
                             summary['summary_folder']=summary_folder(key,roots,bool(options.get('flatten_folders',False)))
                             with self.lock:self.data['images'].append(summary)
                             if options.get('export_png') and job['state']=='complete':
-                                try:
-                                    png_target=folder/(stem+'_'+kind+'.png');map_png(item,job,png_target,options.get('colors'),float(options.get('opacity',.2)))
-                                    with self.lock:summary['png_file']=png_target.name
-                                except Exception as error:
-                                    with self.lock:self.data['failures'].append(dict(file_id=key,stage='PNG export',error=str(error)))
+                                products=png_exports(options,settings['enabled_phases'])
+                                for suffix,view,phase in products:
+                                    if self.cancel.is_set():break
+                                    try:
+                                        # Preserve the legacy filename for the single default product.
+                                        extra='' if len(products)==1 and suffix in ('classification','support_all') else '_'+suffix
+                                        png_target=folder/(stem+'_'+kind+extra+'.png')
+                                        map_png(item,job,png_target,options.get('colors'),float(options.get('opacity',.2)),view,phase)
+                                        with self.lock:
+                                            summary.setdefault('png_files',{})[suffix]=png_target.name
+                                            summary.setdefault('png_file',png_target.name)
+                                    except Exception as error:
+                                        with self.lock:self.data['failures'].append(dict(file_id=key,stage='PNG export',view=suffix,error=str(error)))
                             if job.get('error'):
                                 with self.lock:self.data['failures'].append(dict(file_id=key,stage='grid',error=job['error']))
                         except Exception as error:

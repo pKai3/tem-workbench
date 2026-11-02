@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from PIL import Image
 from engine import Engine
-from batch_grids import BatchGrids, summarize, sample_summaries, map_png
+from batch_grids import BatchGrids, summarize, sample_summaries, map_png, png_exports
 import test_parallel_execution as parallel_tests
 from test_parallel_execution import image
 
@@ -55,10 +55,33 @@ class StabilityBatch(unittest.TestCase):
             path=Path(tmp)/'map.png'
             map_png(dict(preview=preview.getvalue()),job,path,dict(hcp_compatible='#ff0000',bcc_compatible='#00ff00'),1)
             with Image.open(path) as result:
-                self.assertEqual(result.size,(980,2060))
+                self.assertEqual(result.size,(980,2120))
                 colors=result.getcolors(result.width*result.height)
                 self.assertIn((255,0,0),[c for _,c in colors])
                 self.assertIn((0,255,0),[c for _,c in colors])
+
+    def test_png_choices_and_all_stability_views(self):
+        job=self.job();job['regions'][0]['models'][1]['valid']=False
+        choices=['support_all','support_phases','spread_phases','hex','samples','separate','raw']
+        options=dict(export_png=True,png_views=choices,overlap=dict(passes=3))
+        products=png_exports(options,['HCP','BCC'])
+        self.assertEqual(len(products),9)
+        self.assertFalse(any('fcc' in name for name,_,_ in products))
+        self.assertEqual(png_exports({**options,'export_png':False},['HCP']),[])
+        for bad in [dict(png_views=['bogus']),dict(png_views=[]),dict(overlap=None),dict(overlap=dict(passes=1))]:
+            with self.assertRaises(ValueError):png_exports({**options,**bad},['HCP'])
+        preview=BytesIO();Image.new('L',(100,100),120).save(preview,format='PNG')
+        with tempfile.TemporaryDirectory() as tmp:
+            hashes=[]
+            for name,view,phase in products:
+                path=Path(tmp)/(name+'.png')
+                map_png(dict(preview=preview.getvalue()),job,path,opacity=1,view=view,phase=phase)
+                with Image.open(path) as result:
+                    result.load();self.assertEqual(result.size,(1880,2120))
+                    # All views must leave unsampled right half unchanged.
+                    self.assertEqual(result.getpixel((1700,900)),(120,120,120))
+                    hashes.append(path.read_bytes())
+            self.assertEqual(len(set(hashes)),len(products))
 
     def test_real_two_image_batch_exports_and_live_map(self):
         app=parallel_tests.CoordinatorChecks().app()
@@ -76,9 +99,9 @@ class StabilityBatch(unittest.TestCase):
             app.config=dict(output_root=tmp);app.engine=LocalEngine({});app.batch=BatchGrids(app)
             try:
                 with patch('batch_grids.Engine',LocalEngine):
-                    app.batch.start(dict(file_ids=['a','bad','b'],workers=2,export_png=True,
+                    app.batch.start(dict(file_ids=['a','bad','b'],workers=2,export_png=True,png_views=['support_all','hex','support_phases'],
                         settings=dict(enabled_phases=['HCP','BCC']),
-                        overlap=dict(size_mode='image_percent',window_percent=50,spacing_percent=50,layout='hex',passes=3)))
+                        overlap=dict(size_mode='image_percent',window_percent=50,spacing_mode='fixed_nm',spacing_nm=2,layout='hex',passes=3)))
                     app.batch.thread.join(60)
                     self.assertFalse(app.batch.running())
                 status=app.batch.status()
@@ -89,11 +112,14 @@ class StabilityBatch(unittest.TestCase):
                 self.assertEqual(status['live_grid']['grid']['mode'],'overlap')
                 self.assertGreater(len(status['live_grid']['aggregation']['cells']),0)
                 folder=Path(status['output_directory'])
-                self.assertEqual(len(list(folder.glob('*_overlap_map.png'))),2)
+                self.assertEqual(len(list(folder.glob('*_overlap_map_*.png'))),8)
                 for summary in status['images']:
                     job=json.loads((folder/summary['data_file']).read_text())
                     self.assertEqual(job['grid']['mode'],'overlap')
                     self.assertEqual(job['grid']['size_mode'],'image_percent')
+                    self.assertEqual(job['grid']['spacing_nm'],2)
+                    self.assertEqual(set(summary['png_files']),{'support_all','hex','support_hcp','support_bcc'})
+                    for name in summary['png_files'].values():self.assertTrue((folder/name).is_file())
                     self.assertAlmostEqual(job['grid']['window_nm'],min(job['source']['width']*job['source']['pixel_x_nm'],job['source']['height']*job['source']['pixel_y_nm'])/2)
                     self.assertEqual({r['pass_id'] for r in job['regions']},{0,1,2})
                     self.assertEqual(summary['windows'],summary['planned_windows'])

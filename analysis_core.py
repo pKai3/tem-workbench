@@ -19,7 +19,7 @@ def peak_width(spectrum):
  return spectrum.get('peak_width_nm_inv', spectrum.get('hann_power_fwhm_nm_inv', 1.44*spectrum['df']))
 
 def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True,g_max=10.,g_min=3.,
-             smoothing_sigma=.65,threshold_floor=1.8,minimum_separation=.12,max_peaks=70):
+             smoothing_sigma=.65,threshold_floor=1.8,minimum_separation=.5,max_peaks=70):
  if window not in ('hann','none') or not isinstance(remove_mean,bool):
   raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
  if not all(np.isfinite(v) for v in (smoothing_sigma,threshold_floor,minimum_enrichment,minimum_separation,max_peaks)) or not (0<=smoothing_sigma<=3 and 0<=threshold_floor<=20 and 0<=minimum_enrichment<=20 and 0<=minimum_separation<=3 and 4<=max_peaks<=200 and int(max_peaks)==max_peaks):

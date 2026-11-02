@@ -84,6 +84,19 @@ class OverlapTests(unittest.TestCase):
             with self.subTest(bad=bad),self.assertRaises(ValueError):
                 maps.sampling(info,{**options,**bad})
 
+    def test_spacing_is_independent_of_window_mode(self):
+        info=dict(width=1024,height=1024,pixel_x_nm=.03,pixel_y_nm=.03)
+        options=dict(size_mode='image_percent',window_percent=10,spacing_mode='fixed_nm',spacing_nm=2,passes=3)
+        _,a=maps.sampling(info,options)
+        _,b=maps.sampling({**info,'pixel_x_nm':.06,'pixel_y_nm':.06},options)
+        self.assertEqual(a['spacing_nm'],b['spacing_nm'])
+        self.assertAlmostEqual(b['window_nm'],2*a['window_nm'])
+        self.assertEqual(a['spacing_mode'],'fixed_nm')
+        _,c=maps.sampling(info,dict(window_nm=4,spacing_mode='window_percent',spacing_percent=25))
+        self.assertEqual(c['spacing_nm'],1)
+        for changes in [dict(spacing_mode='bad'),dict(spacing_mode='window_percent',spacing_percent=0),dict(spacing_nm=9)]:
+            with self.assertRaises(ValueError):maps.sampling(info,{**options,**changes})
+
     def test_equal_pass_weighting_and_missing_not_excluded(self):
         # Four successful copies in one pass must not outweigh one failed other pass.
         regions=[region(i,0) for i in range(4)]+[region(4,1,False)]

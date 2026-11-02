@@ -84,11 +84,12 @@ class FFTDetectionChecks(unittest.TestCase):
         self.assertNotIn('detector_signal',result['spectrum'])
         json.dumps(result,allow_nan=False)
 
-    def test_old_defaults_unchanged(self):
+    def test_default_separation_and_explicit_settings(self):
         # Explicit settings must also reproduce implicit defaults exactly.
         implicit=core.spectrum(self.image,self.pixel,self.pixel)
         explicit=core.spectrum(self.image,self.pixel,self.pixel,smoothing_sigma=.65,
-                               threshold_floor=1.8,minimum_enrichment=3.,minimum_separation=.12,max_peaks=70)
+                               threshold_floor=1.8,minimum_enrichment=3.,minimum_separation=.5,max_peaks=70)
+        self.assertEqual(implicit['minimum_peak_separation_nm_inv'],.5)
         self.assertEqual(implicit['peaks'],explicit['peaks'])
         np.testing.assert_array_equal(implicit['log'],explicit['log'])
 

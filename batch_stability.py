@@ -87,42 +87,97 @@ def write_csv(folder, data, writer):
         writer(folder/(name+'.csv'),rows,keys+['phase','zone_3index','passing_windows','window_percent'])
 
 
-def map_png(item,job,target,colors,opacity):
-    """All-phase passing frequency, matching the interactive split-tile convention."""
+def map_png(item,job,target,colors,opacity,view='support',phase=None):
+    """Render completed fields without re-running detection or matching."""
+    import math
+    from PIL import ImageChops
     source = job['source']; a = job.get('aggregation') or overlap_maps.aggregate(job)
+    phases = job['settings'].get('enabled_phases', ['HCP','BCC','FCC'])
+    if view not in ('support','hex','spread','samples','separate','raw'):
+        raise ValueError('Unknown stability PNG view.')
+    if phase is not None and phase not in phases:
+        raise ValueError('PNG phase is not enabled for this analysis.')
+    if view == 'spread' and (phase is None or job['grid']['passes'] < 2):
+        raise ValueError('Placement disagreement requires a phase and multiple passes.')
     w = round(1800*source['width']/max(source['width'],source['height']))
     h = round(1800*source['height']/max(source['width'],source['height']))
-    canvas = Image.new('RGB',(w+80,h+260),'#0c121a')
+    canvas = Image.new('RGB',(w+80,h+320),'#0c121a')
     with Image.open(BytesIO(item['preview'])) as preview:
         background = preview.convert('RGBA').resize((w,h))
     layer = Image.new('RGBA',(w,h)); draw = ImageDraw.Draw(layer)
-    for cell in a['cells']:
-        entries = sorted(((p,v['support']) for p,v in cell['phases'].items() if v['support']>0),key=lambda x:-x[1])
-        entries = entries or [(None,0)]
-        for i,(phase,value) in enumerate(entries):
-            color = colors[phase.lower()+'_compatible'] if phase else '#596778'
-            rgb = tuple(int(color[j:j+2],16) for j in (1,3,5))
-            # Half-open pixel bounds avoid overwriting the next tile at shared edges.
-            box = (round(cell['x']*w/a['width']),round((cell['y']+i/len(entries))*h/a['height']),
-                   round((cell['x']+1)*w/a['width'])-1,round((cell['y']+(i+1)/len(entries))*h/a['height'])-1)
-            draw.rectangle(box,fill=(*rgb,round(255*opacity*(.15+.85*value))))
+    def color(p): return colors[p.lower()+'_compatible'] if p else '#596778'
+    def fill(c,value):
+        return (*tuple(int(c[j:j+2],16) for j in (1,3,5)),round(255*opacity*(.15+.85*value)))
+    max_samples = max((c['samples'] for c in a['cells']),default=1)
+    if view == 'hex':
+        # Reconstruct older exports lacking hex fields from their raw windows.
+        hexes = a.get('hex') or overlap_maps.aggregate(job)['hex']
+        for cell in hexes['cells']:
+            p=cell['winner']; value=cell['phases'][p]['support'] if p else 0
+            points=[((cell['cx']+hexes['radius_x']*math.cos(math.radians(30+i*60)))*w/source['width'],
+                     (cell['cy']+hexes['radius_y']*math.sin(math.radians(30+i*60)))*h/source['height']) for i in range(6)]
+            draw.polygon(points,fill=fill(color(p),value))
+        # Do not paint hex portions outside measured window footprints.
+        mask=Image.new('L',(w,h)); md=ImageDraw.Draw(mask)
+        for region in job['regions']:
+            roi=region['roi'];md.rectangle((round(roi['x']*w/source['width']),round(roi['y']*h/source['height']),
+                round((roi['x']+roi['w'])*w/source['width'])-1,round((roi['y']+roi['h'])*h/source['height'])-1),fill=255)
+        layer.putalpha(ImageChops.multiply(layer.getchannel('A'),mask))
+    elif view == 'raw':
+        radius=max(2,job['grid']['spacing_nm']/source['pixel_x_nm']*.168*w/source['width'])
+        for region in job['regions']:
+            roi=region['roi'];x=(roi['x']+roi['w']/2)*w/source['width'];y=(roi['y']+roi['h']/2)*h/source['height']
+            c=colors.get(region['classification']['label'],'#596778')
+            draw.ellipse((x-radius,y-radius,x+radius,y+radius),fill=c)
+    else:
+        for cell in a['cells']:
+            if view == 'spread' and cell['passes'] < 2: continue
+            if view == 'support' and phase is None:
+                entries=sorted(((color(p),cell['phases'][p]['support']) for p in phases if cell['phases'][p]['support']>0),key=lambda x:-x[1]) or [('#596778',0)]
+            else:
+                value=cell['samples']/max_samples if view=='samples' else cell['separate_support'] if view=='separate' else cell['phases'][phase]['spread' if view=='spread' else 'support']
+                c='#00d9e8' if view=='samples' else '#d692fa' if view=='separate' else color(phase)
+                entries=[(c if value>0 else '#596778',value)]
+            for i,(c,value) in enumerate(entries):
+                box=(round(cell['x']*w/a['width']),round((cell['y']+i/len(entries))*h/a['height']),
+                     round((cell['x']+1)*w/a['width'])-1,round((cell['y']+(i+1)/len(entries))*h/a['height'])-1)
+                draw.rectangle(box,fill=fill(c,value))
     canvas.paste(Image.alpha_composite(background,layer).convert('RGB'),(40,70))
-    draw = ImageDraw.Draw(canvas)
+    draw=ImageDraw.Draw(canvas)
     try: font=ImageFont.truetype('DejaVuSans.ttf',18); title=ImageFont.truetype('DejaVuSans.ttf',26)
     except OSError: font=ImageFont.load_default(size=18); title=ImageFont.load_default(size=26)
     draw.text((40,20),source['name'],font=title,fill='white')
+    titles=dict(support='Passing frequency'+(' · '+phase if phase else ' · all phases'),hex='Top match · averaged hex grid',
+        spread='Placement disagreement · '+str(phase),samples='Sample coverage',separate='Separate-pattern frequency',raw='Raw centres · classification circles')
+    draw.text((40,h+85),titles[view],font=title,fill='white')
     g=job['grid']
-    draw.text((40,h+85),f"Passing frequency · {g['layout']} · {g['window_nm']:g} nm windows / {g['spacing_nm']:g} nm spacing · {g['passes']} passes",font=font,fill='white')
-    x=40
-    for phase in job['settings'].get('enabled_phases',['HCP','BCC','FCC']):
-        color=colors[phase.lower()+'_compatible']
-        draw.text((x,h+120),phase,font=font,fill=color)
-        rgb=tuple(int(color[j:j+2],16) for j in (1,3,5))
-        for j in range(100):
-            alpha=opacity*(.15+.85*j/99)
-            ramp=tuple(round(12*(1-alpha)+c*alpha) for c in rgb)
-            draw.line((x+50+j,h+123,x+50+j,h+137),fill=ramp)
-        draw.text((x,h+144),'0 → 100%',font=font,fill='#a4adba');x+=200
-    draw.text((40,h+180),f"Coverage {a['coverage_percent']:.1f}% · split tiles only when multiple phases pass; brightness = frequency.",font=font,fill='#a4adba')
-    draw.text((40,h+210),'Correlated passing support, not phase fractions. Uncovered edges remain unmeasured.',font=font,fill='#a4adba')
+    draw.text((40,h+120),f"{g['layout']} · {g['window_nm']:.3g} nm windows / {g['spacing_nm']:.3g} nm spacing · {g['passes']} passes",font=font,fill='#a4adba')
+    legend=[(p,color(p)) for p in ([phase] if phase else phases)]
+    if view=='samples': legend=[(f"1–{max_samples} windows",'#00d9e8')]
+    if view=='separate': legend=[('Separate structures','#d692fa')]
+    if view=='raw': legend=[(key.replace('_',' '),colors[key]) for key in dict.fromkeys(r['classification']['label'] for r in job['regions'])]
+    x,y=40,h+155
+    for label,c in legend:
+        length=max(220 if view!='raw' else 0,draw.textlength(label,font=font)+30)
+        if x+length>w+40:x=40;y+=54 if view!='raw' else 28
+        draw.text((x,y),label,font=font,fill=c)
+        if view!='raw':
+            rgb=tuple(int(c[j:j+2],16) for j in (1,3,5))
+            for j in range(100):
+                alpha=opacity*(.15+.85*j/99)
+                ramp=tuple(round(12*(1-alpha)+v*alpha) for v in rgb)
+                draw.line((x+j,y+25,x+j,y+38),fill=ramp)
+            draw.text((x+108,y+22),'low → high' if view=='samples' else '0 → 100%',font=font,fill='#a4adba')
+        x+=length
+    notes=dict(support='Brightness = passing frequency, 0–100%; bands split only where multiple phases pass.',
+        hex='Highest mean rank; brightness = winner passing frequency. Rejected winners can appear.',
+        spread='Brightness = range of per-pass support, 0–100%; not an uncertainty estimate.',
+        samples='Darker to brighter = fewer to more contributing windows; counts are correlated.',
+        separate='Brightness = frequency of separately supported structures in one window, 0–100%.',
+        raw='One circle per analysed window; colour = window classification.')
+    # Wrap footer for portrait sources rather than clipping explanatory text.
+    import textwrap
+    text=f"Coverage {a['coverage_percent']:.1f}%. "+notes[view]+' Not phase fractions; uncovered edges remain unmeasured.'
+    lines=textwrap.wrap(text,width=max(30,int(w/10)))
+    draw.multiline_text((40,max(y+(32 if view=='raw' else 52),h+215)),'\n'.join(lines),font=font,fill='#a4adba',spacing=4)
     canvas.save(target)

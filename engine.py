@@ -293,7 +293,7 @@ class Engine:
         if not (.85 <= values['scale'] <= 1.15 and 0 <= values['g_min'] < 30 and 4 <= values['g_max'] <= 30 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['ca_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
             raise ValueError('Analysis settings are outside the supported range.')
         detector_defaults = {'fft_smoothing_sigma': .65, 'fft_threshold_floor': 1.8,
-                             'fft_minimum_enrichment': 3., 'fft_minimum_separation': .12,
+                             'fft_minimum_enrichment': 3., 'fft_minimum_separation': .5,
                              'fft_max_peaks': 70}
         detector = {key: float(settings.get(key, default)) for key, default in detector_defaults.items()}
         if not all(np.isfinite(v) for v in detector.values()) or not (
