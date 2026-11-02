@@ -2161,19 +2161,28 @@ function vectorLabelPosition(x,y,w,h,occupied,anchors){
 function drawReflectionVectors(qp){
  const mode=$('reflection-vectors').value,fitted=mode.startsWith('fitted_'),choice=fitted?mode.slice(7):mode;
  const models=overlayModels(result,choice),occupied=[],groups=[];
- for(const [phaseNumber,model]of models.entries()){
-  const phase=model.phase;
-  const vectors=fitted?fittedReferenceVectors(model):matchedReflectionVectors(model);if(!vectors.length)continue;
-  if(fitted){
-   const label=addVectorLabel($('fft-overlay'),{'data-vector-key':phase},[
-    [phase+' '+zoneLabel(model),10,12,phaseColors[phase]],
-    [fittedVectorSummary(vectors),9,26,'#dce6ef']
-   ],33,.92);
-   const lx=models.length===2&&phaseNumber===1?415-label.w:5,ly=models.length>2?382-37*phaseNumber:382;
-   label.group.setAttribute('transform',`translate(${lx} ${ly})`);
-   occupied.push({x:lx,y:ly,w:label.w,h:label.h});
+ for(const model of models){
+  const vectors=(fitted?fittedReferenceVectors(model):matchedReflectionVectors(model)).map((v,i)=>({...v,name:fitted?v.name:`P${i+1}`}));
+  if(vectors.length)groups.push({phase:model.phase,model,vectors});
+ }
+ // Keep full measurements together below the zone/angle summary. Equal-length
+ // fitted vectors share a letter and therefore a single measurement row.
+ const panels=groups.map(({phase,model,vectors})=>{
+  const lines=[[phase+' '+zoneLabel(model),10,12,phaseColors[phase]]];
+  let baseline=26;
+  if(fitted){lines.push([fittedVectorSummary(vectors),9,baseline,'#dce6ef']);baseline+=13}
+  const seen=new Set();
+  for(const {g,hkl,sign,name}of vectors){
+   if(seen.has(name))continue;seen.add(name);
+   const prefix=fitted?name:`${name} ${planeLabel(model,hkl,sign)}`;
+   lines.push([`${prefix} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm`,9,baseline,'#edf5fc']);baseline+=13;
   }
-  groups.push({phase,model,vectors});
+  return addVectorLabel($('fft-overlay'),{'data-vector-key':phase},lines,baseline-7,.92);
+ });
+ let top=415-panels.reduce((sum,p)=>sum+p.h,0)-Math.max(0,panels.length-1)*4;
+ for(const panel of panels){
+  panel.group.setAttribute('transform',`translate(5 ${top})`);
+  occupied.push({x:5,y:top,w:panel.w,h:panel.h});top+=panel.h+4;
  }
  const points=[[0,0],...groups.flatMap(entry=>entry.vectors.map(v=>v.q)),
   ...(result.spectrum?.peaks||[]).flatMap(p=>p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])];
@@ -2184,10 +2193,8 @@ function drawReflectionVectors(qp){
    const group=el('g',{'data-reflection-vector':phase});
    const line=el('path',{d:`M${ox} ${oy}L${x} ${y}M${x-7*ux+3*uy} ${y-7*uy-3*ux}L${x} ${y}L${x-7*ux-3*uy} ${y-7*uy+3*ux}`,stroke:color,'stroke-width':1.2,fill:'none'});
    if(!model.valid)line.setAttribute('stroke-dasharray','4 3');group.append(line);$('fft-overlay').append(group);
-   const label=addVectorLabel(group,{'data-vector-label':phase},[
-    [fitted?`${name} · ${phase}`:phase+' '+planeLabel(model,hkl,sign),9.5,11,color],
-    [`g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm`,9,23,'#edf5fc']
-   ],29,.88);
+   const identifier=fitted&&groups.length===1?name:`${phase} ${name}`;
+   const label=addVectorLabel(group,{'data-vector-label':phase},[[identifier,9.5,11,color]],16,.88);
    const {x:lx,y:ly}=vectorLabelPosition(x,y,label.w,label.h,occupied,anchors);
    label.group.setAttribute('transform',`translate(${lx} ${ly})`);
    const edgeX=clamp(x,lx,lx+label.w),edgeY=clamp(y,ly,ly+label.h),distance=Math.hypot(edgeX-x,edgeY-y);
@@ -2195,10 +2202,11 @@ function drawReflectionVectors(qp){
     const lead=el('path',{d:`M${x+8*(edgeX-x)/distance} ${y+8*(edgeY-y)/distance}L${edgeX} ${edgeY}`,stroke:color,'stroke-width':.7,'stroke-dasharray':'2 2',opacity:.7,fill:'none','data-vector-leader':phase});
     group.insertBefore(lead,label.group);
    }
-   group.append(el('title',{},fitted?`${name}: ${planeLabel(model,hkl,sign)} from the fitted prediction lattice. Letters run from longest to shortest reciprocal length; equal lengths share a letter. These are not unit-cell edges or a separate phase test.`:'Measured reciprocal distance and plane spacing, indexed by this candidate fit. Opposite observations count as one profile.'));
+   group.append(el('title',{},fitted?`${name}: ${planeLabel(model,hkl,sign)} from the fitted prediction lattice. Letters run from longest to shortest reciprocal length; equal lengths share a letter. These are not unit-cell edges or a separate phase test.`:`${phase} ${name}: ${planeLabel(model,hkl,sign)} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm. Measured reciprocal distance and plane spacing, indexed by this candidate fit. Opposite observations count as one profile.`));
   }
  }
 }
+
 const VECTOR_MODES=['off','fitted_winner','fitted_winner_any','fitted_HCP','fitted_BCC','fitted_FCC','fitted_ORT','fitted_both','fitted_all','winner','winner_any',...PHASES,'both','all'];
 const savedVectors=readPreference('tem-reflection-vectors','fitted_winner');
 syncOverlayMenus($('overlay').value,VECTOR_MODES.includes(savedVectors)?savedVectors:'fitted_winner');

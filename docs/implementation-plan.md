@@ -217,6 +217,8 @@ Parallel grid execution is reused by single-image and batch overlapping maps. Ba
 
 2 November 2026: added a visible overlay legend below the FFT/direct-diffraction image and in its enlarged view. The key follows rendered marker shapes, phase colours, manual/weak detections, geometry grids, prediction line styles, vectors, label connectors and fitting/exclusion boundaries. Hidden marker types and unused evidence styles are omitted. Display only; analysis and scoring are unchanged.
 
+3 November 2026: vector arrows now carry compact A/B/C identifiers (phase-prefixed when multiple phases are shown), or phase-prefixed P1/P2 for indexed reflections. Full reciprocal lengths and plane spacings are grouped at bottom left beneath each phase zone/angle summary; indexed rows include plane indices. Repeated fitted letters share one measurement row. All displayed phase groups stack at bottom left, with measured-width backgrounds and collision avoidance for the short arrow labels. PNG/GIF use the same SVG layout. Display only; vector selection and matching are unchanged.
+
 30 October 2026: added Bounce + rotate marker motion (−45° to +45°, largest at 0°; 2.4-second rotation cycle with the original 1.2-second bounce timing), preserving phase timing offsets, reduced-motion preferences and GIF export support.
 
 30 October 2026: phase-colour dropdown options use neutral text to avoid inheriting the selected phase colour in Windows native menus.
