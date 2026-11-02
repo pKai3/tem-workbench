@@ -1439,9 +1439,28 @@ async function generatePreviews(){
 }
 $('generate-previews').onclick=generatePreviews;$('browser-previews').onclick=generatePreviews;
 $('cancel-previews').onclick=async()=>{try{await api('previews/cancel',{});pollPreviewGeneration()}catch(error){message(error.message,true)}};
+let imageBrowserFolderRoot=null;
+function imageBrowserFolder(file){
+ const path=file.id.replaceAll('\\','/');return path.includes('/')?path.slice(0,path.lastIndexOf('/')):'.';
+}
+function syncImageBrowserFolders(){
+ const select=$('image-browser-folder'),root=config.data_root||'',key='tem-image-browser-folder:'+root;
+ const previous=imageBrowserFolderRoot===root?select.value:readPreference(key,'');imageBrowserFolderRoot=root;
+ const counts=new Map();
+ for(const file of config.files){
+  const folder=imageBrowserFolder(file);
+  if(folder==='.')counts.set('.',(counts.get('.')||0)+1);
+  else{const parts=folder.split('/');for(let i=1;i<=parts.length;i++){const parent=parts.slice(0,i).join('/');counts.set(parent,(counts.get(parent)||0)+1)}}
+ }
+ const option=(value,text)=>{const node=document.createElement('option');node.value=value;node.textContent=text;return node};
+ select.replaceChildren(option('',`All folders (${config.files.length})`),...[...counts].sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:'base'})).map(([folder,count])=>option(folder,`${folder==='.'?'Data folder (top level)':folder} (${count})`)));
+ select.value=counts.has(previous)?previous:'';
+}
 function renderImageBrowser(){
+ syncImageBrowserFolders();
  const terms=$('image-browser-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
- const files=config.files.filter(f=>terms.every(term=>`${f.name} ${f.sample} ${f.id}`.toLocaleLowerCase().includes(term)));
+ const folder=$('image-browser-folder').value;
+ const files=config.files.filter(f=>(!folder||imageBrowserFolder(f)===folder||(folder!=='.'&&imageBrowserFolder(f).startsWith(folder+'/')))&&terms.every(term=>`${f.name} ${f.sample} ${f.id}`.toLocaleLowerCase().includes(term)));
  const list=$('image-browser-list');list.replaceChildren();
  $('image-browser-count').textContent=`${files.length} image${files.length===1?'':'s'}`;
  for(const sample of new Set(files.map(f=>f.sample)))for(const file of sortedFiles(files.filter(f=>f.sample===sample))){
@@ -1468,6 +1487,7 @@ $('browse-images').onclick=()=>{
 };
 $('image-browser-close').onclick=()=>$('image-browser').close();
 $('image-browser-search').oninput=renderImageBrowser;
+$('image-browser-folder').onchange=()=>{writePreference('tem-image-browser-folder:'+(config.data_root||''),$('image-browser-folder').value);renderImageBrowser()};
 $('image-browser-sort').onchange=()=>{$('file-sort').value=$('image-browser-sort').value;$('file-sort').onchange();renderImageBrowser()};
 async function browseFolder(path){
  const version=++folderBrowseVersion;$('folder-use').disabled=true;$('folder-status').textContent='Loading folders…';

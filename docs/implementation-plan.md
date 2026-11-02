@@ -211,6 +211,8 @@ Parallel grid execution is reused by single-image and batch overlapping maps. Ba
 
 ## Display updates
 
+3 November 2026: Visual image browser has a folder selector with All folders, parent/subfolder paths and image counts. Parent selections include descendants, combine with keyword search and sorting, and are remembered per data source. Top-level files have their own option; stale selections fall back to All folders when a folder disappears. Preview generation scope remains the full linked collection.
+
 2 November 2026: PNG and GIF spectrum exports include the currently visible overlay key as a wrapped footer. Shapes, colours and line styles match the displayed legend; swatches remain stationary during animation. Export height expands for the key, with both formats retaining the same resolution and the existing 3200-pixel safety limit.
 
 2 November 2026: fresh-start marker defaults now use open crosshairs for measured peaks, diamonds for HCP/BCC/FCC predictions, squares for both geometry grids, original dots for weak detections, A/B/C Winning Fit (Passing) vectors and Bounce + rotate. Existing saved display preferences retain precedence.

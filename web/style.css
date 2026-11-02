@@ -291,3 +291,5 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .material-choice-control{display:flex;align-items:center;gap:6px}
 .material-choice-control select{min-width:0;flex:1}
 #reset-material{flex:none;width:28px;min-height:28px;padding:0;font-size:19px;line-height:1}
+
+.image-browser-folder-label{min-width:160px;max-width:300px;flex:1}.image-browser-folder-label select{width:100%;text-overflow:ellipsis}
