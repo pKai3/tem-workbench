@@ -16,6 +16,10 @@ from PIL import Image
 import errno
 import json
 import logging
+import os
+import platform
+import sys
+from importlib import metadata
 import mimetypes
 import time
 import secrets
@@ -671,6 +675,29 @@ def make_handler(app):
     return Handler
 
 
+def log_runtime_info():
+    """Startup diagnostics without importing optional readers or dumping config secrets."""
+    LOG.info('Starting TEM Workbench')
+    LOG.info('Python: %s (%s)', platform.python_version(), platform.python_implementation())
+    LOG.info('Python executable: %s', sys.executable)
+    LOG.info('Environment: %s; base: %s; virtual environment: %s',
+             sys.prefix, sys.base_prefix, sys.prefix != sys.base_prefix)
+    LOG.info('Platform: %s %s; architecture: %s; logical CPUs: %s; PID: %s',
+             platform.system(), platform.release(), platform.machine(), os.cpu_count(), os.getpid())
+    versions = []
+    for package in ('numpy', 'scipy', 'Pillow', 'h5py', 'ncempy'):
+        try:
+            version = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            version = 'not installed'
+        versions.append(f'{package} {version}')
+    LOG.info('Dependencies: %s', '; '.join(versions))
+    LOG.info('Application folder: %s', ROOT)
+    LOG.info('Parallel defaults: grid %s workers; diffraction smoothing %s threads; '
+             'maximum %s workers; numeric-library thread limit 1 per process',
+             worker_count(), min(2, worker_limit()), worker_limit())
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s · %(levelname)s · %(message)s', datefmt='%H:%M:%S')
     parser=argparse.ArgumentParser(description=__doc__)
@@ -680,6 +707,8 @@ def main():
     parser.add_argument('--open', action='store_true')
     parser.add_argument('--fallback-port', action='store_true', help='Use the next free local port if the default is occupied')
     args=parser.parse_args()
+    started = time.perf_counter()
+    log_runtime_info()
     # Native launchers use terminate; allow orderly worker/mmap cleanup on POSIX.
     if hasattr(signal, 'SIGTERM'):
         def stop_backend(*_):
@@ -689,7 +718,14 @@ def main():
     if args.config and not config_path.is_file() and not args.demo:
         parser.error('The specified configuration file does not exist.')
     config = demo_config(demo_only=args.demo) if args.demo or not config_path.is_file() else json.loads(config_path.read_text())
+    LOG.info('Configuration: %s', 'demo-only defaults' if args.demo else
+             str(config_path) if config_path.is_file() else f'defaults ({config_path} absent)')
     app=Workbench(config, config_path=config_path)
+    LOG.info('Data folder: %s', app.engine.data_root)
+    LOG.info('Output folder: %s', app.config['output_root'])
+    LOG.info('Project state: %s', app.project.path)
+    LOG.info('Analysis engine: %s; templates: %s; catalogued images: %s',
+             app.engine.version[:12], len(app.engine.templates), len(app.engine.catalog()))
     ports = range(args.port, min(args.port+20, 65536)) if args.fallback_port and args.port else [args.port]
     server = None
     for port in ports:
@@ -704,7 +740,7 @@ def main():
     url=f'http://127.0.0.1:{server.server_port}/'
     print(f'TEM Workbench: {url}', flush=True)
     print(f'Data: {app.engine.data_root}', flush=True)
-    LOG.info('Output: %s; engine %s', app.config['output_root'], app.engine.version[:12])
+    LOG.info('Ready: %s (startup %.2f s)', url, time.perf_counter() - started)
     if args.open:
         webbrowser.open(url)
     try:

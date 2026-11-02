@@ -165,6 +165,8 @@ Parallel grid execution is implemented separately above and can support this fut
 
 ## Platform delivery
 
+2 November 2026: backend startup logs now identify Python version/implementation/executable, virtual environment and base paths, OS/architecture/CPU count/PID, scientific package versions, application/config/data/output/project paths, engine fingerprint, template/image counts, parallel defaults and ready timing. Preserves the launcher’s readiness line; no configuration secrets are logged.
+
 2 November 2026: changed new-environment interpreter preference to Python 3.14, followed by 3.13, 3.12, 3.11 and 3.10, for macOS and Windows. Existing compatible environments are reused; 3.15 remains excluded. Updated setup instructions and discovery checks. User testing of the scientific stack on 3.14 is pending; previous runtime validation was on 3.12.
 
 30 October 2026: added Windows double-click installer and launcher, private `.venv\Scripts\python.exe`, installed-Python discovery, and a desktop shortcut. A native Tk control window provides Start/Stop, Open Workbench and View log without a terminal; closing it stops its own server. Uses the existing browser interface and Windows directory junctions for data/output. Python 3.10–3.14 supported, 3.12 preferred; no automatic Python download. Runtime regression checks run on macOS. The user has since installed and run the Windows app and exported completed demo-image grids with one and four workers. Original-DM4 loading, direct diffraction, adaptive/batch runs and cancellation still need broader native Windows verification; the successful demo-grid test does not cover those paths. This packaging work does not change the analysis roadmap order.
