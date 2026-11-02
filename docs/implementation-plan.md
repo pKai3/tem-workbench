@@ -163,7 +163,7 @@ Source exports (filenames retained here; experimental data are not bundled into 
 
 ## Overlapping window phase candidate map
 
-**Approved and first pass implemented — 2 November 2026.** Automatic grid now offers **Overlapping stability map**. Defaults: 5 nm square windows, 2.5 nm centre spacing, hexagonal centres, one pass; optional square centres and three/nine deterministic shifted passes. Existing uniform/adaptive behavior is retained. Full windows only, a 32-pixel minimum, and a 5,000-window cap. Uses the existing selectable process workers, cancellation and cached reweighting.
+**Approved and first pass implemented — 2 November 2026.** Automatic grid now offers **Overlapping stability map**. Defaults: 5 nm square windows, 2.5 nm centre spacing, hexagonal centres, one pass; optional square centres and three/nine deterministic shifted passes. Existing uniform/adaptive behavior is retained. Full windows only, a 32-pixel minimum, and a 10,000-window cap (raised 3 November 2026 for larger fields in nine-pass batches). Uses the existing selectable process workers, cancellation and cached reweighting.
 
 **Update — 2 November 2026:** nine passes use every combination of 0, ⅓ and ⅔ shifts along both lattice directions. Legacy seven-pass requests remain supported; saved UI choice migrates to nine. Grid/batch worker choices extend through 10/12/14/16; Auto remains at most four. Explicit choices can exceed CPU count. Diffraction smoothing retains its existing limit. Tests check nine-offset completeness and worker validation.
 

@@ -8,7 +8,7 @@ import math
 import numpy as np
 
 VERSION = 'overlap-v4'
-MAX_WINDOWS = 5000
+MAX_WINDOWS = 10000
 
 
 def sampling(info, options):
