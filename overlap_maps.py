@@ -7,7 +7,7 @@ passing support; rank is averaged only where a candidate exists.
 import math
 import numpy as np
 
-VERSION = 'overlap-v2'
+VERSION = 'overlap-v3'
 MAX_WINDOWS = 5000
 
 
@@ -52,10 +52,21 @@ def sampling(info, options):
                     raise ValueError(f'Map exceeds {MAX_WINDOWS} windows. Increase spacing, reduce passes or use a larger window.')
     if not samples or {s['pass_id'] for s in samples} != set(range(passes)):
         raise ValueError('Some placement passes have no full windows. Reduce window size or number of passes.')
+    # Centre the complete set together, preserving relative pass offsets and
+    # lattice spacing. Integer pixels leave at most a one-pixel margin mismatch.
+    shift = []
+    for axis, size, extent in (('x', 'w', 'width'), ('y', 'h', 'height')):
+        low = min(s['roi'][axis] for s in samples)
+        high = max(s['roi'][axis]+s['roi'][size] for s in samples)
+        delta = (info[extent]-high-low)//2
+        shift.append(delta)
+        for sample in samples:
+            sample['roi'][axis] += delta
     return samples, dict(mode='overlap', version=VERSION, layout=layout, window_nm=width,
                         spacing_nm=spacing, passes=passes, offsets_basis=offsets,
                         actual_window_px=[w,h], actual_window_nm=[w*info['pixel_x_nm'], h*info['pixel_y_nm']],
-                        sample_count=len(samples), edge_policy='full_windows_only', adaptive=False)
+                        sample_count=len(samples), edge_policy='full_windows_only',
+                        placement_origin='centred_sample_bounds', centering_shift_px=shift, adaptive=False)
 
 
 def aggregate(job, resolution=64):

@@ -792,7 +792,7 @@ function updateGridSizeNote(){
  const note=$('grid-size-note');if(!meta||isDiffraction()){note.textContent='';return}
  if(overlap){const o=overlapRequest(),area=meta.width*meta.pixel_x_nm*meta.height*meta.pixel_y_nm;
   const estimate=Math.ceil(area/(o.spacing_nm**2*(o.layout==='hex'?Math.sqrt(3)/2:1))*o.passes);
-  note.textContent=`Square FFT windows, ${o.layout==='hex'?'hexagonal':'square'} centres; ${o.passes} shifted placement pass(es). Rough upper estimate ${Number.isFinite(estimate)?estimate:'—'} windows (limit 5,000). Full windows only; edges have fewer samples. Matching runs separately for every window. Batch support is deferred.`;return}
+  note.textContent=`Square FFT windows, ${o.layout==='hex'?'hexagonal':'square'} centres; ${o.passes} shifted placement pass(es). Rough upper estimate ${Number.isFinite(estimate)?estimate:'—'} windows (limit 5,000). Full windows only; layout centred with balanced outer margins. Edges have fewer samples. Matching runs separately for every window. Batch support is deferred.`;return}
  const count=Number($('grid-count').value),minimum=Number($('grid-min').value);
  if(!Number.isInteger(count)||count<2||count>24||!Number.isFinite(minimum)||minimum<=0){note.textContent='Choose 2–24 regions per side and a positive stopping limit in nm.';return}
  const extent=Math.min(meta.width,meta.height),pixel=Math.min(meta.pixel_x_nm,meta.pixel_y_nm);

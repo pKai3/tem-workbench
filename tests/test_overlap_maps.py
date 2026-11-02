@@ -33,6 +33,25 @@ class OverlapTests(unittest.TestCase):
         starts=[min(s['roi']['x'] for s in samples if s['pass_id']==0 and s['roi']['y']==y) for y in sorted(rows)]
         self.assertNotEqual(starts[0],starts[1])
 
+    def test_sampling_centres_combined_footprint(self):
+        info=dict(width=4096,height=3000,pixel_x_nm=48.99/4096,pixel_y_nm=.014)
+        for layout in ('hex','square'):
+            for passes in (1,3,7,9):
+                with self.subTest(layout=layout,passes=passes):
+                    samples, config=maps.sampling(info,dict(window_nm=8,spacing_nm=5,layout=layout,passes=passes))
+                    for axis,size,extent in (('x','w','width'),('y','h','height')):
+                        low=min(s['roi'][axis] for s in samples)
+                        high=max(s['roi'][axis]+s['roi'][size] for s in samples)
+                        self.assertGreaterEqual(low,0)
+                        self.assertLessEqual(high,info[extent])
+                        self.assertLessEqual(abs(low-(info[extent]-high)),1)
+                    self.assertEqual(config['placement_origin'],'centred_sample_bounds')
+        # Reproduce the reported map: preserve all 247 windows, centre margins.
+        info.update(height=4096,pixel_y_nm=info['pixel_x_nm'])
+        samples, config=maps.sampling(info,dict(window_nm=8,spacing_nm=5,passes=3))
+        self.assertEqual(len(samples),247)
+        self.assertEqual(config['centering_shift_px'],[41,24])
+
     def test_nine_pass_lattice_offsets(self):
         samples, options = maps.sampling(INFO, dict(window_nm=2, spacing_nm=1, passes=9))
         self.assertEqual(set(map(tuple, options['offsets_basis'])), {(u/3,v/3) for u in range(3) for v in range(3)})
