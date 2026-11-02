@@ -153,7 +153,7 @@ Source exports (filenames retained here; experimental data are not bundled into 
 
 **Update — 2 November 2026:** nine passes use every combination of 0, ⅓ and ⅔ shifts along both lattice directions. Legacy seven-pass requests remain supported; saved UI choice migrates to nine. Grid/batch worker choices extend through 10/12/14/16; Auto remains at most four. Explicit choices can exceed CPU count. Diffraction smoothing retains its existing limit. Tests check nine-offset completeness and worker validation.
 
-**Display update — 2 November 2026:** raw centres show one phase-coloured zone symbol for the highest-ranked candidate, with passing-winner legend counts (not areas). Rejected winners remain faded. Aggregated views show a colour-scale legend directly below the image; sample coverage uses saturated cyan.
+**Display update — 2 November 2026:** raw centres offer Circles (classification colour), Circles + zone icon, or Zone icon (remembered display preference). Zone icons show the highest-ranked candidate, with passing-winner legend counts (not areas). Rejected winners remain faded. Aggregated views show a colour-scale legend directly below the image; sample coverage uses saturated cyan.
 
 **Combined passing-frequency view — 2 November 2026:** Phase selector offers All phases plus individual enabled phases. Each aggregate tile is split into phase-coloured horizontal bands, strongest support at the top, opacity indicating each independent frequency. Separate ramps identify the colours; no blended phase colours or normalization to a 100% total. Existing PNG export includes the visible bands and explanatory key.
 

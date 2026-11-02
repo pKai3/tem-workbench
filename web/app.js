@@ -851,7 +851,8 @@ function drawOverlapMap(){
  $('map-view').querySelector('option[value=spread]').disabled=grid.grid.passes<2;
  if(view==='spread'&&grid.grid.passes<2){$('map-view').value='support';drawOverlapMap();return}
  $('map-phase-label').hidden=['raw','samples','separate'].includes(view);
- $('overlap-key').textContent=view==='raw'?'Raw centres: highest-ranked candidate; click to inspect the square FFT window':view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':combined?`${phases.join(' + ')} passing frequency · separate colour bands, strongest above · brightness 0–100% independently · blank = unmeasured`:`${phase} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
+ const symbolStyle=$('map-symbol').value;$('map-symbol-label').hidden=Boolean(a)&&view!=='raw';
+ $('overlap-key').textContent=view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':combined?`${phases.join(' + ')} passing frequency · separate colour bands, strongest above · brightness 0–100% independently · blank = unmeasured`:`${phase} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
  if(!a&&view!=='raw')$('overlap-key').textContent+=' · showing raw centres until aggregation';
  if($('show-grid').checked){
   if(a&&view!=='raw'){
@@ -874,8 +875,8 @@ function drawOverlapMap(){
    for(const r of grid.regions){
     const cx=r.roi.x+r.roi.w/2,cy=r.roi.y+r.roi.h/2,size=Math.max(5,grid.grid.spacing_nm/meta.pixel_x_nm*.28);
     const entries=analysisPhases(grid.settings).map(phase=>({phase,model:r.best_zones?.[phase]})).filter(e=>e.model).sort((a,b)=>compareRank(a.model,b.model)).slice(0,1);
-    const node=el('circle',{cx,cy,r:size*.6,fill:entries.length?'transparent':colors[r.label]||'#aaa','fill-opacity':.35,class:'grid-cell','data-id':r.id});group.append(node);
-    for(const [i,{phase,model}]of entries.entries()){
+    const node=el('circle',{cx,cy,r:size*.6,fill:symbolStyle==='zone'&&entries.length?'transparent':colors[r.label]||'#aaa','fill-opacity':symbolStyle==='circle'?.85:.35,class:'grid-cell','data-id':r.id});group.append(node);
+    if(symbolStyle!=='circle')for(const [i,{phase,model}]of entries.entries()){
      const key=zoneKey(model),symbol=zoneSymbol(phase,key);
      group.append(el('text',{x:cx,y:cy+(i-(entries.length-1)/2)*size,fill:phaseColors[phase],'font-size':size,'stroke-width':size*.12,class:'zone-marker','fill-opacity':model.valid?1:.38,'stroke-opacity':model.valid?.85:.38,'aria-hidden':'true'},symbol));
      if(model.valid){if(!shown[phase].has(key))shown[phase].set(key,{model,count:0,passing:0,area:0});const e=shown[phase].get(key);e.count++;e.passing++;}
@@ -900,6 +901,8 @@ function drawOverlapMap(){
  renderGridSummary();updatePenaltyControls();
 }
 for(const id of ['map-view','map-phase'])$(id).onchange=()=>{if(grid?.grid.mode==='overlap')drawOverlapMap()};
+const savedMapSymbol=readPreference('tem-map-symbol','zone');if(['circle','both','zone'].includes(savedMapSymbol))$('map-symbol').value=savedMapSymbol;
+$('map-symbol').onchange=()=>{writePreference('tem-map-symbol',$('map-symbol').value);if(grid?.grid.mode==='overlap')drawOverlapMap()};
 function drawGrid(){
  $('overlap-display').hidden=grid?.grid.mode!=='overlap';
  $('show-zones').closest('label').hidden=grid?.grid.mode==='overlap';
