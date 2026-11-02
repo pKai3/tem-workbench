@@ -39,6 +39,25 @@ class FFTDetectionChecks(unittest.TestCase):
         self.assertNotEqual([p['log_radial_enrichment'] for p in baseline['peaks']],
                             [p['log_radial_enrichment'] for p in core.spectrum(self.image,self.pixel,self.pixel,smoothing_sigma=0)['peaks']])
 
+    def test_separation_across_opposite_profile_boundary(self):
+        n=256; yy,xx=np.indices((n,n))
+        # Two resolved spots just above/below the horizontal axis. Canonical
+        # representatives lie on opposite sides, but their displayed spots touch.
+        image=(2*np.cos(2*np.pi*(50*xx+3*yy)/n)+
+               np.cos(2*np.pi*(50*xx-3*yy)/n)).astype(np.float32)
+        loose=core.spectrum(image,.03,.03,minimum_separation=.12)
+        strict=core.spectrum(image,.03,.03,minimum_separation=3.)
+        self.assertEqual(len(loose['peaks']),2)
+        self.assertEqual(len(strict['peaks']),1)
+        self.assertEqual(strict['peaks'][0],loose['peaks'][0])
+        np.testing.assert_array_equal(strict['log'],loose['log'])
+        # The spacing guarantee must hold for all mirrored representatives.
+        wider=core.spectrum(self.image,self.pixel,self.pixel,minimum_separation=3.)
+        q=np.array([[p['qx'],p['qy']] for p in wider['peaks']])
+        for i in range(len(q)):
+            for j in range(i):
+                self.assertGreaterEqual(min(np.linalg.norm(q[i]-q[j]),np.linalg.norm(q[i]+q[j])),3.)
+
     def test_detector_view_encodes_actual_signed_signal_without_changing_results(self):
         engine=Engine({})
         item=dict(array=self.image,info=dict(image_kind='real_space',pixel_x_nm=self.pixel,pixel_y_nm=self.pixel),limits=[-8,8])
