@@ -169,6 +169,8 @@ Parallel grid execution is implemented separately above and can support this fut
 
 ## Display updates
 
+2 November 2026: PNG and GIF spectrum exports include the currently visible overlay key as a wrapped footer. Shapes, colours and line styles match the displayed legend; swatches remain stationary during animation. Export height expands for the key, with both formats retaining the same resolution and the existing 3200-pixel safety limit.
+
 2 November 2026: fresh-start marker defaults now use open crosshairs for measured peaks, diamonds for HCP/BCC/FCC predictions, squares for both geometry grids, original dots for weak detections, A/B/C Winning Fit (Passing) vectors and Bounce + rotate. Existing saved display preferences retain precedence.
 
 2 November 2026: added a visible overlay legend below the FFT/direct-diffraction image and in its enlarged view. The key follows rendered marker shapes, phase colours, manual/weak detections, geometry grids, prediction line styles, vectors, label connectors and fitting/exclusion boundaries. Hidden marker types and unused evidence styles are omitted. Display only; analysis and scoring are unchanged.

@@ -1668,18 +1668,42 @@ function markerMotionAt(mode,phase){
  const stops=[[1.35,0,0],[1.1,1,-1],[.85,0,1],[1.1,-1,-.5],[1.35,0,0]],i=Math.floor(phase*4),f=phase*4-i,t=f*f*(3-2*f),a=stops[i],b=stops[i+1];
  return {rotation:0,scale:a[0]+(b[0]-a[0])*t,x:mode==='wobble'?a[1]+(b[1]-a[1])*t:0,y:mode==='wobble'?a[2]+(b[2]-a[2])*t:0,opacity:1};
 }
+// Convert the visible HTML key to native SVG so PNG/GIF rasterization is
+// self-contained. Legend swatches stay still while image markers animate.
+function appendSpectrumExportLegend(svg){
+ const host=$('fft-legend');if(host.hidden)return 452;
+ const group=el('g',{'data-export-legend':'true','font-family':'Arial, sans-serif'});
+ group.append(el('path',{d:'M-22 444H430',stroke:'#2a3948','stroke-width':.5}));
+ group.append(el('text',{x:-22,y:453,fill:'#94a5b8','font-size':5.5},'Overlay key'));
+ const measure=document.createElement('canvas').getContext('2d');measure.font='5.5px Arial';
+ let y=456;
+ for(const row of host.querySelectorAll('.spectrum-legend-row')){
+  let x=-22;
+  for(const item of row.querySelectorAll('.spectrum-legend-item')){
+   const label=item.textContent,width=15+measure.measureText(label).width+9;
+   if(x>-22&&x+width>430){x=-22;y+=12}
+   const swatch=item.querySelector('svg').cloneNode(true);
+   swatch.setAttribute('x',x);swatch.setAttribute('y',y);swatch.setAttribute('width',14);swatch.setAttribute('height',12);
+   group.append(swatch,el('text',{x:x+16,y:y+8,fill:'#b9c7d7','font-size':5.5},label));x+=width;
+  }
+  y+=12;
+ }
+ svg.append(group);return y+6+12; // Includes the viewBox's -12 top edge.
+}
 function spectrumSnapshot(){
  const svg=$('fft').cloneNode(true),markers=[...$('fft').querySelectorAll('.spectrum-marker')].map(m=>{const b=m.getBBox();return {x:b.x+b.width/2,y:b.y+b.height/2,offset:Number(m.getAttribute('data-motion-offset'))||0}});
  svg.querySelectorAll('.manual-snap-overlay').forEach(n=>n.remove());
  svg.setAttribute('font-family','Arial, sans-serif');
  for(const node of [svg,...svg.querySelectorAll('[id]')])node.removeAttribute('id');
  for(const attribute of ['tabindex','role','aria-controls','aria-haspopup','aria-label'])svg.removeAttribute(attribute);
- svg.insertBefore(el('rect',{x:-28,y:-12,width:464,height:452,fill:'#05090e'}),svg.firstChild);
+ const height=appendSpectrumExportLegend(svg);
+ svg.setAttribute('viewBox',`-28 -12 464 ${height}`);
+ svg.insertBefore(el('rect',{x:-28,y:-12,width:464,height,fill:'#05090e'}),svg.firstChild);
  for(const img of svg.querySelectorAll('image'))img.setAttribute('style','image-rendering:pixelated');
- return {svg,markers};
+ return {svg,markers,height};
 }
 function spectrumFrameSVG(snapshot,width,mode,phase){
- const svg=snapshot.svg.cloneNode(true);svg.setAttribute('width',width);svg.setAttribute('height',Math.round(width*452/464));
+ const svg=snapshot.svg.cloneNode(true);svg.setAttribute('width',width);svg.setAttribute('height',Math.round(width*snapshot.height/464));
  [...svg.querySelectorAll('.spectrum-marker')].forEach((marker,i)=>{
   const centre=snapshot.markers[i],motion=markerMotionAt(mode,phase+centre.offset/(mode==='rotate'?2:1));
   marker.removeAttribute('class');marker.setAttribute('transform',`translate(${motion.x} ${motion.y}) translate(${centre.x} ${centre.y}) rotate(${motion.rotation||0}) scale(${motion.scale}) translate(${-centre.x} ${-centre.y})`);
@@ -1689,7 +1713,7 @@ function spectrumFrameSVG(snapshot,width,mode,phase){
 }
 async function renderSpectrumFrame(snapshot,width,mode,phase){
  const image=new Image();image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(spectrumFrameSVG(snapshot,width,mode,phase));await image.decode();
- const canvas=document.createElement('canvas');canvas.width=width;canvas.height=Math.round(width*452/464);canvas.getContext('2d').drawImage(image,0,0);return canvas.toDataURL('image/png');
+ const canvas=document.createElement('canvas');canvas.width=width;canvas.height=Math.round(width*snapshot.height/464);canvas.getContext('2d').drawImage(image,0,0);return canvas.toDataURL('image/png');
 }
 async function exportSpectrum(format){
  if(!result||!fftRaw||spectrumExportBusy||mapExportBusy||pending||busy)return;
@@ -1703,8 +1727,10 @@ async function exportSpectrum(format){
  spectrumExportBusy=true;syncSpectrumExportControls();const buttonId='export-'+format;beginExport(buttonId,'Exporting '+format.toUpperCase()+'…');
  const body={file_id:fileId,image_kind:result.image_kind,format,frames:[],duration_ms:count>1?durations:60};
  try{
-  const snapshot=spectrumSnapshot();
-  for(let i=0;i<count;i++){$(buttonId).textContent=`Exporting ${i+1}/${count}`;exportNotice('Exporting '+format.toUpperCase()+'…',`Preparing frame ${i+1} of ${count}`);body.frames.push(await renderSpectrumFrame(snapshot,2800,mode,i/count));await new Promise(resolve=>setTimeout(resolve,0))}
+  // Use the same size for PNG and GIF, including the longest 72-frame
+  // motion cycle, within the server's aggregate decoded-pixel budget.
+  const snapshot=spectrumSnapshot(),width=Math.min(2800,Math.floor(3200*464/snapshot.height),Math.floor(Math.sqrt(599_000_000/72*464/snapshot.height)));
+  for(let i=0;i<count;i++){$(buttonId).textContent=`Exporting ${i+1}/${count}`;exportNotice('Exporting '+format.toUpperCase()+'…',`Preparing frame ${i+1} of ${count}`);body.frames.push(await renderSpectrumFrame(snapshot,width,mode,i/count));await new Promise(resolve=>setTimeout(resolve,0))}
   exportNotice('Saving '+format.toUpperCase()+'…','Writing to the output folder');const saved=await api('export-spectrum',body);finishExport(buttonId,saved.path);
  }catch(error){finishExport(buttonId,null,'Image export failed: '+error.message)}finally{spectrumExportBusy=false;syncSpectrumExportControls()}
 }
