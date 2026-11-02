@@ -20,7 +20,7 @@ This is the maintained implementation status and roadmap. The original three ana
 - **Crop-size diagnostic:** the runner and ST1156 experiment are complete; representative failure inspection, ST1203/mixed-pattern controls and an in-app panel remain open. Automatic smoothing is deferred.
 - **Parallel/platform validation:** native Windows uniform grids pass at one and four workers. Adaptive grids, cancellation/restart, automatic-strength modes, batch runs and diffraction threading need broader native Windows checks; smaller-machine memory/load checks remain open.
 - **Explicitly deferred:** Mac–Windows numerical reproducibility review, partially obscured/inferred diffraction peaks, FFT manual peak editing and Hitachi acquisition-map calibration. Details and limits are below.
-- **Future mapping mode:** overlapping square/hexagonal windows and optional aggregation are not implemented.
+- **Overlapping maps:** first pass implemented 2 November 2026: square FFT windows on square/hexagonal centres, 1/3/7 shifted passes, per-phase support and placement-disagreement views. Batch integration and zone-stability maps remain planned.
 
 ## Completed work overview
 
@@ -149,6 +149,20 @@ Source exports (filenames retained here; experimental data are not bundled into 
 
 ## Overlapping window phase candidate map
 
+**Approved and first pass implemented — 2 November 2026.** Automatic grid now offers **Overlapping stability map**. Defaults: 5 nm square windows, 2.5 nm centre spacing, hexagonal centres, one pass; optional square centres and three/seven deterministic shifted passes. Existing uniform/adaptive behavior is retained. Full windows only, a 32-pixel minimum, and a 5,000-window cap. Uses the existing selectable process workers, cancellation and cached reweighting.
+
+**Aggregation decision:** match every FFT independently, then aggregate results. Do not average complex FFTs or power spectra for this spatial map. Every enabled phase contributes independently, including weaker passing fits. Windows without a passing fit remain in the denominator. Weights are `exp(-8*(dx²+dy²))` inside the window footprint, with offsets normalized by width/height. Normalize each placement pass separately, then give represented passes equal weight. No rank/quality weighting is applied to support, to avoid letting stronger HCP erase weaker passing BCC.
+
+**Available views:** passing frequency for each phase, per-phase placement disagreement (max-minus-min support across represented passes), sample coverage and raw sample centres. A separate view records the existing classifier's `coexisting_candidates` outcome within individual windows, distinguishing it from neighboring windows favouring different phases. That inherits existing classifier limitations, including same-phase secondary-orientation detection. Overlap means correlated measurements, not independent observations. Disagreement is sensitivity to placement, not a confidence interval. One-pass disagreement is disabled and locations with fewer than two passes are blank in that view.
+
+A 64-column aspect-preserving raster samples aggregate values at tile centres; its coverage estimate is approximate. Raster density does not improve the FFT window's resolution. JSON (`*_overlap_map_*.json`) includes raw candidates/coordinates, actual pixel footprints, pass IDs/offsets, settings, weights/version and aggregate support, rank, candidate presence and separate-pattern support. PNG uses the visible map and interpretation key. Aggregate rank excludes missing candidates; support does not. No overlapping-window areas are summed into specimen phase percentages.
+
+**Validation:** six focused tests cover staggered bounded deterministic sampling, invalid/oversized requests, equal-pass weighting, missing/failed fits, simultaneous phase support, empty maps, JSON and grid-coordinator integration, including a real two-worker run, cached rescoring and exported raw candidates/pass IDs. Six existing parallel/coordinator tests pass on Python 3.14.7. An isolated browser test of demo ST1203 ran 378 windows (8 nm / 4 nm, hex, three passes) using two workers in 28.8 s; HCP/BCC support, disagreement views and UI completion were verified. This is functional validation, not scientific calibration.
+
+**Still planned:** batch integration; zone/orientation agreement maps; pairwise rank differences; dedicated comparison of 5 versus 8–10 nm windows on ST1156/ST1203/ST1217; any use as physical phase fractions. No architecture diagram update requested.
+
+Original design retained below for the remaining scope:
+
 Build this as a separate mapping mode alongside the existing uniform and adaptive grids. The first result should be a spatial map of HCP/BCC/FCC evidence, with ambiguity retained, rather than an estimate of phase percentage.
 
 1. **Sample overlapping windows.** Start with an adjustable window near 5 nm and spacing near 2 nm. Offer square or hexagonal arrangements of window centres; the FFT crop can remain square in either case. Handle image edges explicitly and record the actual analysed footprint. Overlap makes the display denser; it does not create independent measurements or improve the resolution set by the window.
@@ -161,7 +175,7 @@ Candidate-labelled image area can be reported with unresolved area beside it. Co
 
 [Related work by Jany et al. on local FFT analysis of HRTEM images](https://arxiv.org/abs/1907.10929) is a starting point for methodological review, not validation of this app’s classifier or of phase-fraction estimates.
 
-Parallel grid execution is implemented separately above and can support this future mapping mode.
+Parallel grid execution is reused by the implemented overlapping mode. Batch summaries remain limited to the non-overlapping uniform/adaptive modes until a separate aggregation-aware batch schema is added.
 
 ## Platform delivery
 

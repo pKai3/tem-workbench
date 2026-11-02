@@ -36,6 +36,7 @@ from batch_grids import BatchGrids, eligibility, safe_name
 import demo_data
 from demo_packs import DemoDownload
 import adaptive_refinement
+import overlap_maps
 import folder_paths
 from preview_files import PreviewBatch, sidecar_path
 from workbench_project import Project
@@ -74,7 +75,7 @@ class Workbench:
 
 
     def config_info(self):
-        return {'manual_diffraction_peaks': True, 'batch_grids': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': worker_limit(), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'overlap_maps': True, 'manual_diffraction_peaks': True, 'batch_grids': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': worker_limit(), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -162,7 +163,7 @@ class Workbench:
         LOG.info('Saved region deleted: %s (%s)', deleted['region']['name'], deleted['region']['id'])
         return deleted
 
-    def grid(self, item, settings, count, adaptive, minimum, check_passing=False, workers=0, batch=False, engine=None):
+    def grid(self, item, settings, count, adaptive, minimum, check_passing=False, workers=0, batch=False, engine=None, overlap=None):
         workers = worker_count(workers)
         settings = copy.deepcopy(settings)
         engine = engine or self.engine  # Snapshot even if the open image changes.
@@ -172,12 +173,15 @@ class Workbench:
             raise ValueError('A detector diffraction pattern is not a real-space phase map. Use whole-pattern analysis with exclusions.')
         if min(.5/item['info']['pixel_x_nm'], .5/item['info']['pixel_y_nm']) < settings.get('g_max', 10.):
             raise ValueError('This image does not sample the full phase-fitting band.')
-        if item['info']['width'] != item['info']['height']:
+        samples, overlap_options = overlap_maps.sampling(item['info'], overlap) if overlap is not None else (None, None)
+        if samples is not None:
+            adaptive = check_passing = False
+        if samples is None and item['info']['width'] != item['info']['height']:
             raise ValueError('Automatic grids currently require a square source image.')
         if count not in range(2, 25) or not np.isfinite(minimum) or minimum <= 0:
             raise ValueError('Use a grid of 2–24 per side and a positive stopping limit in nm.')
         bounds = np.round(np.linspace(0, item['info']['width'], count+1)).astype(int)
-        if np.diff(bounds).min() < 32:
+        if samples is None and np.diff(bounds).min() < 32:
             raise ValueError('Grid regions would be smaller than 32 pixels.')
         check_passing = bool(adaptive and check_passing)
         job = {'id': uuid.uuid4().hex, 'state': 'running', 'source': item['info'],
@@ -187,11 +191,16 @@ class Workbench:
                'lookahead': {'checked': 0, 'refined': 0, 'retained': 0},
                'regions': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False,
                'execution': {'backend': 'processes', 'workers': workers, 'elapsed_seconds': 0.}}
+        if samples is not None:
+            job['grid'] = overlap_options
+            job['pending'] = len(samples)
         with self.job_lock:
             if self.closing or any(j['state'] == 'running' for j in self.jobs.values()) or (self.grid_thread is not None and self.grid_thread.is_alive()):
                 raise ValueError('Cancel or finish the current grid first.')
             self.jobs = {job['id']: job}
 
+        if samples is not None:
+            LOG.info('Overlapping map: %s windows; %s centres; %s passes; window %.3g nm, spacing %.3g nm', len(samples), overlap_options['layout'], overlap_options['passes'], overlap_options['window_nm'], overlap_options['spacing_nm'])
         LOG.info("Grid %s started: %s; %s×%s; adaptive=%s; stop=%.3g nm; workers=%s", job["id"][:8], item["info"].get("name", "image"), count, count, adaptive, minimum, workers)
 
         def work():
@@ -199,6 +208,8 @@ class Workbench:
             pool = None
             in_flight = deque()
             queue = deque(({'x': int(bounds[c]), 'y': int(bounds[r]), 'w': int(bounds[c+1]-bounds[c]), 'h': int(bounds[r+1]-bounds[r])}, 0, None, None) for r in range(count) for c in range(count))
+            if samples is not None:
+                queue = deque((s['roi'], 0, None, None) for s in samples)
             probes = {}
 
             def plan(region):
@@ -211,7 +222,7 @@ class Workbench:
                 needs_split = mixed or unresolved or multiple
                 review_pass = check_passing and label in adaptive_refinement.PASSING and not needs_split
                 if not adaptive:
-                    region['stop_reason'] = 'Uniform grid.'
+                    region['stop_reason'] = 'Fixed overlapping window.' if samples is not None else 'Uniform grid.'
                     return
                 if not can_split:
                     region['stop_reason'] = 'Further subdivision would fall below the stopping size or 32 pixels.'
@@ -254,6 +265,8 @@ class Workbench:
                     with self.job_lock:
                         result.update({'id': str(len(job['regions'])), 'depth': depth, 'parent': parent,
                                        'leaf': probe_id is None, 'trial_only': probe_id is not None})
+                        if samples is not None:
+                            result['pass_id'] = samples[len(job['regions'])]['pass_id']
                         job['regions'].append(result)
                         job['processed'] += 1
                         if probe_id is not None:
@@ -305,6 +318,12 @@ class Workbench:
                         group['parent']['stop_reason'] = 'Parent retained: child checks were interrupted.'
                         for child in group['children']:
                             child['stop_reason'] = 'Trial only; incomplete child checks.'
+                    if samples is not None:
+                        try:
+                            job['aggregation'] = overlap_maps.aggregate(job)
+                        except Exception as exc:
+                            job['error'] = str(exc)
+                            LOG.exception('Overlap map aggregation failed')
                     job['execution']['elapsed_seconds'] = round(time.monotonic()-started, 2)
                     job['state'] = 'error' if job['error'] else 'cancelled' if job['cancel'] else 'complete'
                     LOG.info('Grid %s %s: %s analysed; %s map regions', job['id'][:8], job['state'], job['processed'], sum(r['leaf'] for r in job['regions']))
@@ -354,7 +373,7 @@ class Workbench:
             result['regions'] = ([{k: v for k, v in r.items() if not k.startswith('_')} for r in regions] if full else
                                  [{'id': r['id'], 'roi': r['roi'], 'label': r['classification']['label'],
                                    'leaf': r['leaf'], 'depth': r['depth'], 'elapsed_ms': r['elapsed_ms'],
-                                   'best_zones': self.best_zones(r)} for r in regions])
+                                   'best_zones': self.best_zones(r), 'pass_id': r.get('pass_id')} for r in regions])
             return result
 
     def rescore(self, job_id, strength, evidence_weight=None, ca_penalty_strength=None):
@@ -381,6 +400,8 @@ class Workbench:
                        rescore={'strength': strength, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_weight': evidence_weight, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                                 'region_count': len(regions), 'reused_fits': True, 'boundaries_unchanged': True,
                                 'at': datetime.now().astimezone().isoformat()})
+            if job['grid'].get('mode') == 'overlap':
+                job['aggregation'] = overlap_maps.aggregate(job)
             LOG.info('Grid %s reweighted: scale penalty %.3f; peak evidence %.3f', job_id[:8], strength, evidence_weight)
             return self.status(job_id)
 
@@ -468,7 +489,7 @@ class Workbench:
             if self.jobs.get(body['job_id'], {}).get('state') == 'running':
                 raise ValueError('Finish or cancel the grid before saving.')
             result = self.status(body['job_id'], full=True)
-            kind = 'grid'
+            kind = 'overlap_map' if result['grid'].get('mode') == 'overlap' else 'grid'
         else:
             with self.lock:
                 item = self.engine.load(body['file_id'])
@@ -652,7 +673,7 @@ def make_handler(app):
                     with app.lock:
                         item=app.engine.load(body['file_id'])
                         _, settings=app.engine.validate(item, body['roi'], body.get('settings', {}))
-                        started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)), body.get('workers', 0))
+                        started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)), body.get('workers', 0), overlap=body.get('overlap'))
                     self.send(started)
                 elif self.path == '/api/rescore-grid':
                     self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight'), body.get('ca_penalty_strength')))

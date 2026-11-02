@@ -251,3 +251,10 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .spectrum-legend[hidden]{display:none}.spectrum-legend>strong{display:block;font-size:10px;color:var(--muted);font-weight:500;margin-bottom:2px}
 .spectrum-legend-row{display:flex;flex-wrap:wrap;gap:1px 10px}.spectrum-legend-item{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}.spectrum-legend-item svg{width:24px;height:21px;flex:none}
 #fft-zoom{overflow:auto}#fft-zoom-legend{font-size:11px}
+
+/* Collapsible map controls must stay hidden despite row flex layout. */
+#overlap-controls[hidden], #overlap-display[hidden], #map-phase-label[hidden] {display:none}
+#overlap-controls input {width:7rem}
+
+.grid-controls label[hidden], #batch-panel[hidden] {display:none}
+#overlap-controls, #overlap-display {margin:10px 0}

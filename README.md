@@ -29,6 +29,12 @@ Each grid uses separate Python processes with private fit caches and one shared,
 
 Direct diffraction offers **Smoothing threads: Auto / 1 / 2 / 4 / 8**, remembered between sessions and images. Auto uses two threads where available; choices are capped by CPU count. Changing threads preserves cached detections and takes effect on the next uncached detection. Central exclusion and outer fitting limit sit together in the active FFT or Direct diffraction settings panel. These execution changes preserve the detector and matcher calculations. Process startup adds overhead to very small grids; speedup depends on the image, settings, CPU and memory. Windows and macOS use the same spawn-based design; the initial performance measurements and live UI checks were on macOS. See [measurements and validation](docs/parallel-performance.md).
 
+## Overlapping stability maps
+
+Under **Automatic grid → Search mode**, choose **Overlapping stability map**. Set a square FFT window (default 5 nm), centre spacing (2.5 nm), square or hexagonal centres, and 1, 3 or 7 shifted placement passes. Each window is matched independently using the current analysis settings and grid workers.
+
+View each phase's passing frequency, disagreement between placement passes, sampling coverage, raw centres, or separately supported structures within the same window. Click a map location to inspect a contributing window. Exports retain raw fits and aggregation settings; PNG exports capture the selected view. These are overlapping candidate-support maps, **not physical phase fractions**. Windows are correlated, edges have fewer samples, and the FFT window sets spatial resolution. This first version runs one image at a time; batch grids retain their existing uniform/adaptive behavior. Details and remaining work are in the [implementation plan](docs/implementation-plan.md#overlapping-window-phase-candidate-map).
+
 ## Quick start
 
 Use Python 3.10–3.14; Python 3.14 is preferred for new installations; validation on 3.14 is pending. Python 3.12 remains the previously tested environment. Python 3.15 is currently excluded from app setup because compatible prebuilt scientific dependencies are needed. Numerical dependencies are listed in [requirements.txt](requirements.txt).
