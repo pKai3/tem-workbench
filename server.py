@@ -388,6 +388,8 @@ class Workbench:
                 raise ValueError('This grid is no longer in memory.')
             if job['state'] == 'running':
                 raise ValueError('Finish or cancel the grid before adjusting its penalty.')
+            if job['settings'].get('material') == 'unknown':
+                strength = 0.
             evidence_weight = float(job['settings'].get('peak_evidence_weight', .10) if evidence_weight is None else evidence_weight)
             if not np.isfinite(evidence_weight) or not 0 <= evidence_weight <= .5:
                 raise ValueError('Peak evidence weight must be between 0 and 0.5.')

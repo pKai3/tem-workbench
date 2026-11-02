@@ -12,8 +12,8 @@ import math
 from PIL import Image, ImageDraw, ImageFont
 from engine import Engine
 
-LABELS = ('hcp_compatible','bcc_compatible','fcc_compatible','coexisting_candidates','multiple_orientations','ambiguous','unresolved','insufficient')
-COLORS = dict(zip(LABELS, ('#79bafa','#f4b75e','#ff8ac3','#d692fa','#64d6bb','#df9da6','#a4adba','#596778')))
+LABELS = ('hcp_compatible','bcc_compatible','fcc_compatible','ort_compatible','coexisting_candidates','multiple_orientations','ambiguous','unresolved','insufficient')
+COLORS = dict(zip(LABELS, ('#79bafa','#f4b75e','#ff8ac3','#64e2b0','#d692fa','#64d6bb','#df9da6','#a4adba','#596778')))
 
 def safe_name(name):
     return re.sub(r'[^\w.−-]+','_',str(name)).strip('._')[:140] or 'image'
@@ -36,7 +36,7 @@ def summarize(job, sample):
         area=region['roi']['w']*region['roi']['h']*pixel_area
         label=region['classification']['label'];areas[label]=areas.get(label,0.)+area
         # One best passing fit per phase per leaf, consistent with the grid legend.
-        for phase in ('HCP','BCC','FCC'):
+        for phase in ('HCP','BCC','FCC','ORT'):
             fits=[m for m in region['models'] if m['phase']==phase and m['valid']]
             if not fits:continue
             model=max(fits,key=lambda m:m['score']);zone=' '.join(map(str,model['zone_3index']))
@@ -87,7 +87,7 @@ def map_png(item, job, target, colors=None, opacity=.2):
         c=colors[r['classification']['label']];rgb=tuple(int(c[i:i+2],16) for i in (1,3,5))
         draw.rectangle(box,fill=(*rgb,int(255*opacity)),outline=(*rgb,210),width=2)
         lines=[]
-        for phase in ('HCP','BCC','FCC'):
+        for phase in ('HCP','BCC','FCC','ORT'):
             fits=[m for m in r['models'] if m['phase']==phase and m['valid']]
             if fits:
                 m=max(fits,key=lambda m:m['score']);lines.append(phase+' ['+' '.join(map(str,m['zone_3index']))+']')

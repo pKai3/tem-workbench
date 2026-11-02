@@ -25,7 +25,7 @@ import peak_evidence
 import diffraction
 import raster_images
 from materials import scale_bounds, PHASES, reference_settings
-from crystal_templates import fcc_templates
+from crystal_templates import fcc_templates, orthorhombic_templates
 
 ROOT = Path(__file__).resolve().parent
 
@@ -54,23 +54,23 @@ class Engine:
         for t in self.templates:
             for key in ['q', 'hkl', 'g']:
                 t[key] = np.array(t[key])
-        self.template_library = self.templates + fcc_templates()
+        self.template_library = self.templates + fcc_templates() + orthorhombic_templates()
         self.templates = scale_fitting.prepare_templates(self.template_library)
         self.auto_templates = self.templates
-        self._template_cache = {(10., 3., .295, .468, .330, .417, .85, 1.15): self.templates}
+        self._template_cache = {(10., 3., .295, .468, .330, .417, .3, .4, .5, .85, 1.15): self.templates}
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'orthorhombic.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
         self.acquisition_index = MetadataIndex()
 
     def templates_for(self, settings):
-        key = tuple(settings[k] for k in ('g_max', 'g_min', 'hcp_a', 'hcp_c', 'bcc_a', 'fcc_a')) + scale_bounds(settings)
+        key = tuple(settings[k] for k in ('g_max', 'g_min', 'hcp_a', 'hcp_c', 'bcc_a', 'fcc_a')) + tuple(settings.get('ort_'+axis, value) for axis,value in zip('abc',(.3,.4,.5))) + scale_bounds(settings)
         if key not in self._template_cache:
             if len(self._template_cache) >= 4:
                 self._template_cache.pop(next(iter(self._template_cache)))
             self._template_cache[key] = scale_fitting.prepare_templates(
-                self.template_library, g_max=key[0], g_min=key[1], hcp_a=key[2], hcp_c=key[3], bcc_a=key[4], fcc_a=key[5], bounds=key[6:])
+                self.template_library, g_max=key[0], g_min=key[1], hcp_a=key[2], hcp_c=key[3], bcc_a=key[4], fcc_a=key[5], ort_a=key[6], ort_b=key[7], ort_c=key[8], bounds=key[9:])
         enabled = settings.get('enabled_phases', PHASES)
         return [template for template in self._template_cache[key] if template['phase'] in enabled]
 
@@ -304,6 +304,8 @@ class Engine:
         detector['fft_max_peaks'] = int(detector['fft_max_peaks'])
         values.update(detector)
         values.update(reference_settings(settings))
+        if values['material'] == 'unknown':
+            values['scale_penalty_strength'] = 0.
         mode = settings.get('scale_mode', 'fixed')
         if mode not in scale_fitting.MODES:
             raise ValueError('Choose a supported scale fitting mode.')
@@ -338,7 +340,8 @@ class Engine:
                 model.update({'scale_mode': 'fixed', 'scale_a': settings['scale'],
                               'scale_c': settings['scale'] if model['phase'] == 'HCP' else None,
                               'fitted_a_nm': model['nominal_a_nm']/settings['scale'],
-                              'fitted_c_nm': model['nominal_c_nm']/settings['scale'] if model['phase'] == 'HCP' else None,
+                              'fitted_c_nm': model['nominal_c_nm']/settings['scale'] if model['phase'] in ('HCP','ORT') else None,
+                              **({'fitted_b_nm': model['nominal_b_nm']/settings['scale']} if model['phase']=='ORT' else {}),
                               'scale_parameter_count': 0, 'position_score': model['score'],
                               'position_valid': model['valid'], 'scale_penalty': 0.,
                               'scale_penalty_strength': 0.})
@@ -484,6 +487,8 @@ class Engine:
 
     def classify(self, s, models, settings, width_nm, height_nm, can_index=True):
         classification = phase_comparison.classify(s['peaks'], models, s['df'])
+        if 'ORT' in settings.get('enabled_phases', []):
+            classification['flags'].append('ORT is generic primitive orthorhombic geometry, not a chemical phase assignment. No systematic absences or intensities are modelled. Free cell proportions increase flexibility; unconstrained axes are not measured.')
         if settings['scale_mode'] != 'fixed':
             classification['flags'].append(f'Prediction scales are fitted independently in this region ({scale_bounds(settings)[0]:g}–{scale_bounds(settings)[1]:g}). Fitted lattice dimensions depend on the image calibration used.')
             if settings['scale_mode'] in ('auto_hcp_ac', 'auto_hcp_ratio') and 'HCP' in settings.get('enabled_phases', PHASES):
@@ -562,7 +567,7 @@ class Engine:
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= .5:
             raise ValueError('Scale penalty must be between 0 and 0.5.')
-        settings = {**result['settings'], 'scale_penalty_strength': strength}
+        settings = {**result['settings'], 'scale_penalty_strength': 0. if result['settings'].get('material') == 'unknown' else strength}
         if evidence_weight is not None:
             settings['peak_evidence_weight'] = float(evidence_weight)
         if ca_penalty_strength is not None:

@@ -43,7 +43,11 @@ def decomposed_cost(scale_a, scale_c, strength, ca_strength):
 def penalize(result, scale_a, scale_c, strength, ca_strength=DEFAULT_CA_PENALTY):
     if result is None:
         return None
-    if result.get('scale_mode') == 'auto_hcp_ratio':
+    if result.get('phase') == 'ORT':
+        scales = np.array([result.get('scale_'+axis, scale_a) for axis in 'abc'])
+        active = np.array(result.get('scale_active_axes', result.get('axis_observable', [True]*3)), dtype=bool)
+        cost = float(strength*np.mean(((scales[active]-1)/.05)**2))
+    elif result.get('scale_mode') == 'auto_hcp_ratio':
         overall, ratio, size_cost, ratio_cost = decomposed_cost(scale_a, scale_c, strength, ca_strength)
         result.update(overall_prediction_scale=overall, ca_ratio_multiplier=ratio,
                       overall_scale_penalty=size_cost, ca_ratio_penalty=ratio_cost,
@@ -59,7 +63,7 @@ def penalize(result, scale_a, scale_c, strength, ca_strength=DEFAULT_CA_PENALTY)
     return result
 
 
-def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, hcp_c=.468, g_min=3., bounds=BOUNDS):
+def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, hcp_c=.468, g_min=3., bounds=BOUNDS, ort_a=.3, ort_b=.4, ort_c=.5):
     """Expand allowed reflections for these zones and the complete scale range.
 
     The zone library stays finite; the reflection-index bound follows the chosen
@@ -71,6 +75,11 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
     for original in templates:
         phase = original['phase']
         projection = original.get('projection')
+        if phase == 'ORT':
+            normal = np.asarray(original['zone_3index'])*[ort_a, ort_b, ort_c]
+            normal = normal/np.linalg.norm(normal)
+            x = np.cross(normal, np.eye(3)[np.argmin(abs(normal))]); x /= np.linalg.norm(x)
+            projection = np.column_stack((x, np.cross(normal, x)))*[1, original['mirror']]
         if projection is None:
             projection = np.linalg.lstsq(reciprocal(original['hkl'], phase), original['q'], rcond=None)[0]
         if phase == 'HCP':
@@ -83,14 +92,29 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
             projection = scaled @ ((axes / np.sqrt(eig)) @ axes.T)
         reference = {'BCC': TEMPLATE_BASE_A['BCC']/bcc_a, 'FCC': TEMPLATE_BASE_A['FCC']/fcc_a}.get(phase, 1.)
         maximum = (g_max+.1)/(bounds[0]*reference)
-        a = hcp_a if phase == 'HCP' else TEMPLATE_BASE_A[phase]
+        a = hcp_a if phase == 'HCP' else ort_a if phase == 'ORT' else TEMPLATE_BASE_A[phase]
         a_bound = int(np.ceil(a*maximum))
-        c_bound = int(np.ceil(hcp_c*maximum)) if phase == 'HCP' else a_bound
-        hs = np.array(list(itertools.product(range(-a_bound, a_bound+1),
-                                             range(-a_bound, a_bound+1),
-                                             range(-c_bound, c_bound+1))))
+        b_bound = int(np.ceil(ort_b*maximum)) if phase == 'ORT' else a_bound
+        c_bound = int(np.ceil((ort_c if phase == 'ORT' else hcp_c)*maximum)) if phase in ('HCP','ORT') else a_bound
+        if phase == 'ORT':
+            # Enumerate the zone plane directly: wide generic cell bounds must
+            # not allocate an entire three-dimensional cube of reflections.
+            zone = np.asarray(original['zone_3index'])
+            solved = int(np.argmax(abs(zone)))
+            free = [axis for axis in range(3) if axis != solved]
+            limits = [a_bound, b_bound, c_bound]
+            pairs = np.array(list(itertools.product(*(range(-limits[i], limits[i]+1) for i in free))))
+            numerator = -(pairs @ zone[free])
+            keep = (numerator % zone[solved] == 0) & (abs(numerator) <= limits[solved]*abs(zone[solved]))
+            hs = np.zeros((int(keep.sum()), 3), dtype=int)
+            hs[:, free] = pairs[keep]
+            hs[:, solved] = numerator[keep] // zone[solved]
+        else:
+            hs = np.array(list(itertools.product(range(-a_bound, a_bound+1),
+                                                 range(-b_bound, b_bound+1),
+                                                 range(-c_bound, c_bound+1))))
         hs = hs[allowed(hs, phase) & (hs @ original['zone_3index'] == 0)]
-        vectors = reciprocal(hs, phase, a=a, c=hcp_c)
+        vectors = reciprocal(hs, phase, a=a, b=ort_b, c=ort_c if phase=='ORT' else hcp_c)
         radii = np.linalg.norm(vectors, axis=1)
         keep = (radii > 0) & (radii >= (g_min-.1)/(bounds[1]*reference)) & (radii <= maximum)
         hs, vectors = hs[keep], vectors[keep]
@@ -100,7 +124,8 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
         order = np.argsort(np.linalg.norm(q, axis=1))
         prepared.append({**original, 'scale_bounds': tuple(bounds), 'hkl': hs[order], 'q': q[order],
                          'g': np.linalg.norm(q[order], axis=1),
-                         'reference_a_nm': a, 'reference_c_nm': hcp_c if phase == 'HCP' else None,
+                         'reference_a_nm': a, 'reference_b_nm': ort_b if phase == 'ORT' else None,
+                         'reference_c_nm': ort_c if phase == 'ORT' else hcp_c if phase == 'HCP' else None,
                          'projection': projection, 'c_direction': projection[2].copy()})
     return prepared
 
@@ -112,7 +137,7 @@ def metric_transform(template, scale_a, scale_c):
     square root preserves the zone geometry; it is not an arbitrary x/y stretch.
     The remaining in-plane orientation is fitted separately.
     """
-    if template['phase'] in ('BCC', 'FCC'):
+    if template['phase'] in ('BCC', 'FCC', 'ORT'):
         return np.eye(2)*scale_a
     v = template['c_direction']
     norm2 = float(v @ v)
@@ -125,7 +150,7 @@ def metric_transform(template, scale_a, scale_c):
 def prediction_points(template, scale_a, scale_c, bcc_a=.330, hkl=None, fcc_a=.417):
     q = template['q'] if hkl is None else reciprocal(
         hkl, template['phase'], a=template.get('reference_a_nm'),
-        c=template.get('reference_c_nm', .468)) @ template['projection']
+        c=template.get('reference_c_nm', .468), b=template.get('reference_b_nm')) @ template['projection']
     reference = {'BCC': TEMPLATE_BASE_A['BCC']/bcc_a, 'FCC': TEMPLATE_BASE_A['FCC']/fcc_a}.get(template['phase'], 1.)
     return q @ metric_transform(template, scale_a, scale_c)*reference
 
@@ -219,7 +244,7 @@ def _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min):
         if improvement < 1e-7:
             break
     c_visible = template['phase'] == 'HCP' and float(template['c_direction'] @ template['c_direction']) > 1e-10
-    nominal_a = {'BCC': bcc_a, 'FCC': fcc_a, 'HCP': template.get('reference_a_nm', .295)}[template['phase']]
+    nominal_a = {'BCC': bcc_a, 'FCC': fcc_a, 'HCP': template.get('reference_a_nm', .295), 'ORT': template.get('reference_a_nm', .3)}[template['phase']]
     nominal_c = template.get('reference_c_nm', .468) if template['phase'] == 'HCP' else None
     fitted_a = nominal_a/sa
     fitted_c = nominal_c/sc if template['phase'] == 'HCP' else None
@@ -231,6 +256,11 @@ def _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min):
                    'scale_parameter_count': 2 if double else 1,
                    'c_axis_visible': c_visible,
                    'scale_at_bound': any(min(abs(v-low), abs(v-high)) < .001 for v in ([sa, sc] if double else [sa]))})
+    if template['phase'] == 'ORT':
+        result.update(nominal_b_nm=template['reference_b_nm'], nominal_c_nm=template['reference_c_nm'],
+                      fitted_b_nm=template['reference_b_nm']/sa, fitted_c_nm=template['reference_c_nm']/sa,
+                      scale_b=sa, scale_c=sa, axis_observable=[True]*3,
+                      scale_note='Orthorhombic proportions fixed by the reference; only common scale fitted.')
     # Keep fitted coordinates inspectable and unaltered by the ranking preference.
     return result
 
@@ -251,6 +281,13 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
     tree = cKDTree(np.r_[observed, -observed])
     candidates = []
     for template in templates:
+        if template['phase'] == 'ORT' and mode != 'auto_uniform':
+            from orthorhombic import fit as fit_orthorhombic
+            for result in fit_orthorhombic(peaks, template, tol, g_min, g_max):
+                result['scale_mode'] = mode
+                penalize(result, result['scale_a'], result['scale_c'], strength, ca_penalty_strength)
+                candidates.append(result)
+            continue
         double = (mode in ('auto_hcp_ac', 'auto_hcp_ratio') and template['phase'] == 'HCP' and
                   float(template['c_direction'] @ template['c_direction']) > 1e-10)
         if len(template['q']) < 4:

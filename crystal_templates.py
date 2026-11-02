@@ -8,17 +8,19 @@ import itertools
 import math
 import numpy as np
 
-PHASES = ('HCP', 'BCC', 'FCC')
+PHASES = ('HCP', 'BCC', 'FCC', 'ORT')
 # Coordinate baselines for the template library, in nm; these are not material presets.
 # Keep aligned with templates.json. Selected material/user references are applied
 # by scale_fitting; materials.py owns the editable material definitions.
-TEMPLATE_BASE_A = {'HCP': .295, 'BCC': .330, 'FCC': .417}
+TEMPLATE_BASE_A = {'HCP': .295, 'BCC': .330, 'FCC': .417, 'ORT': .3}
 FCC_ZONE_MAX = 3
 
 
-def reciprocal(hkl, phase, a=None, c=.468):
+def reciprocal(hkl, phase, a=None, c=.468, b=None):
     h, k, l = np.asarray(hkl, dtype=float).T
     a = TEMPLATE_BASE_A[phase] if a is None else a
+    if phase == 'ORT':
+        return np.asarray(hkl, dtype=float)/np.array([a, .4 if b is None else b, c])
     if phase in ('BCC', 'FCC'):
         return np.asarray(hkl, dtype=float)/a
     if phase != 'HCP':
@@ -28,6 +30,8 @@ def reciprocal(hkl, phase, a=None, c=.468):
 
 def allowed(hkl, phase):
     h, k, l = np.asarray(hkl, dtype=int).T
+    if phase == 'ORT':
+        return np.ones_like(h, dtype=bool)
     if phase == 'FCC':
         return (h % 2 == k % 2) & (k % 2 == l % 2)
     if phase == 'BCC':
@@ -59,3 +63,15 @@ def fcc_templates():
                               'projection': projection * [1, mirror],
                               'nominal_a_nm': TEMPLATE_BASE_A['FCC'], 'nominal_c_nm': None})
     return templates
+
+
+def orthorhombic_templates(max_index=2):
+    """Primitive orthorhombic directions, signs equivalent but NOT permutations.
+
+    No systematic absences: one scatterer per primitive lattice point.
+    The Cartesian zone normal depends on the edited cell and is rebuilt later.
+    """
+    return [dict(id='ORT_'+'_'.join(map(str,z))+('_m' if mirror<0 else ''),
+                 phase='ORT', zone_3index=list(z), mirror=mirror)
+            for z in itertools.product(range(max_index+1), repeat=3)
+            if math.gcd(*z)==1 for mirror in (1,-1)]

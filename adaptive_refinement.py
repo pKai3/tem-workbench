@@ -3,7 +3,7 @@ import math
 
 VERSION = 'passing-children-v2'
 MARGIN = .08
-PASSING = {'hcp_compatible', 'bcc_compatible', 'fcc_compatible'}
+PASSING = {'hcp_compatible', 'bcc_compatible', 'fcc_compatible', 'ort_compatible'}
 UNASSIGNED = {'unresolved', 'insufficient', 'ambiguous'}
 
 

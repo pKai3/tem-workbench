@@ -263,4 +263,15 @@ The README links here instead of maintaining a second plan. Update the [architec
 
 Snap and deduplication controls, cursor rings and per-peak dragged snap rings use nm⁻¹ (defaults 0.50 / 0.10; adjustable 0.001–5). Distances use both calibration axes, including anisotropic pixels. Existing saved pixel-radius edits retain their original behaviour. New removal edits target one observation, not every spot inside the selection radius. Detector smoothing and centre-shift controls remain detector-pixel operations.
 
-Unknown material enables all three phases, switches fixed fitting to automatic, and searches reciprocal multipliers ×0.5–2.0 using a denser HCP proportion seed sweep. References remain editable search anchors and scoring penalties remain user-controlled. Ordinary presets retain ×0.85–1.15 bounds; the finite orientation library is unchanged. Catalog/browser labels include extensions and calibration status for ordinary images. No architecture refresh.
+Initial implementation: Unknown material enabled all three existing phases, switches fixed fitting to automatic, and searches reciprocal multipliers ×0.5–2.0 using a denser HCP proportion seed sweep. References remain editable search anchors and scoring penalties remain user-controlled. Ordinary presets retain ×0.85–1.15 bounds; the finite orientation library is unchanged. Catalog/browser labels include extensions and calibration status for ordinary images. No architecture refresh.
+
+
+## Generic orthorhombic search and hover controls — completed 2 November 2026
+
+Approved scope: a generic primitive orthorhombic lattice, not titanium α″. Added ORT phase/search colour, editable a/b/c anchors (0.300/0.400/0.500 nm), 38 zone/mirror templates, independent reciprocal-metric fitting in the two multi-parameter modes, and fixed-proportion single-scale fitting. Axes not individually identifiable in the selected zone are exported/displayed as unconstrained in independent mode. Matching, cached rescoring, legends, grids, batch summaries, marker styles and vector overlays accept ORT. Ti/Fe presets keep it disabled; Unknown enables all four structures. A finite pair-seed search and existing evidence screens are used; generic compatibility is not a chemical phase assignment or proof of symmetry. Complexity calibration and broader experimental validation remain open.
+
+Unknown now forces overall scale cost to zero in analysis and cached rescoring, while keeping the HCP c/a weight in overall + c/a mode. The disabled overall control shows zero and retains the preference for other materials.
+
+FFT/diffraction clicking no longer opens an enlarged modal. The spectrum cursor is a crosshair; existing hover magnification remains available. Add/remove tools show the active reciprocal-space selection radius as a dashed cursor ring; saved per-peak rings remain draggable.
+
+Validation: synthetic orthorhombic recovery, principal/partially identifiable zones, fixed/common scale, edited reference caching, full FFT analysis and cached rescoring; Unknown penalty regression; browser control and full existing regression checks. No architecture refresh.

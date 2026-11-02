@@ -43,7 +43,7 @@ class MaterialReferences(unittest.TestCase):
     def test_unknown_wider_search_and_all_phases(self):
         engine = Engine({})
         settings = dict(g_min=3., g_max=10., **reference_settings({'material': 'unknown'}))
-        self.assertEqual(settings['enabled_phases'], ['HCP', 'BCC', 'FCC'])
+        self.assertEqual(settings['enabled_phases'], ['HCP', 'BCC', 'FCC', 'ORT'])
         self.assertEqual(reference_settings({'material':'unknown','hcp_a':.31})['material'], 'unknown')
         templates = engine.templates_for(settings)
         self.assertTrue(all(t['scale_bounds'] == (.5, 2.) for t in templates))
@@ -56,9 +56,23 @@ class MaterialReferences(unittest.TestCase):
         normal=engine.templates_for({**settings,'material':'titanium'})
         self.assertTrue(all(t['scale_bounds']==(.85,1.15) for t in normal))
 
+    def test_unknown_disables_overall_but_retains_ca_cost(self):
+        array,info,_=pattern()
+        item=dict(array=array,info=info,limits=[99.,351.])
+        engine=Engine({});n=array.shape[0]
+        result=engine.analyze(item,dict(x=0,y=0,w=n,h=n),dict(material='unknown',enabled_phases=['HCP'],scale_mode='auto_hcp_ratio',scale_penalty_strength=.2,ca_penalty_strength=.1),images=False,cache_candidates=True)
+        self.assertEqual(result['settings']['scale_penalty_strength'],0)
+        rescored=engine.rescore(result,.5,ca_penalty_strength=.2)
+        self.assertEqual(rescored['settings']['scale_penalty_strength'],0)
+        self.assertTrue(rescored['models'])
+        for model in rescored['models']:
+            self.assertEqual(model['overall_scale_penalty'],0)
+            self.assertEqual(model['scale_penalty'],model['ca_ratio_penalty'])
+            self.assertEqual(model['ca_penalty_strength'],.2)
+
     def test_phase_defaults_overrides_and_template_cache(self):
         self.assertEqual(reference_settings({})['enabled_phases'], ['HCP', 'BCC'])
-        self.assertEqual(reference_settings({'material': 'custom'})['enabled_phases'], ['HCP', 'BCC', 'FCC'])
+        self.assertEqual(reference_settings({'material': 'custom'})['enabled_phases'], ['HCP', 'BCC', 'FCC', 'ORT'])
         self.assertEqual(reference_settings({'material': 'iron', 'enabled_phases': ['HCP']})['enabled_phases'], ['HCP'])
         self.assertEqual(reference_settings({'enabled_phases': []})['enabled_phases'], [])
         self.assertEqual(reference_settings({'enabled_phases': ['FCC', 'HCP', 'FCC']})['enabled_phases'], ['HCP', 'FCC'])
@@ -70,7 +84,7 @@ class MaterialReferences(unittest.TestCase):
             settings = dict(g_min=3., g_max=10., **reference_settings({'enabled_phases': enabled}))
             self.assertEqual({t['phase'] for t in engine.templates_for(settings)}, set(enabled))
         self.assertEqual(len(engine._template_cache), 1)
-        self.assertEqual({t['phase'] for t in engine.templates}, {'HCP', 'BCC', 'FCC'})
+        self.assertEqual({t['phase'] for t in engine.templates}, {'HCP', 'BCC', 'FCC', 'ORT'})
 
     def test_disabled_phases_never_enter_search_or_cached_rescore(self):
         array, info, _ = pattern()

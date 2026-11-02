@@ -9,15 +9,15 @@ See README.md for sources and the epsilon-Fe cell derivation.
 """
 import math
 
-PHASES = ('HCP', 'BCC', 'FCC')
+PHASES = ('HCP', 'BCC', 'FCC', 'ORT')
 REFERENCE_LIMITS = {'hcp_a': (.15, .65), 'hcp_c': (.20, 1.20),
-                    'bcc_a': (.20, .65), 'fcc_a': (.20, .65)}
+                    'bcc_a': (.20, .65), 'fcc_a': (.20, .65), 'ort_a': (.1, 2.), 'ort_b': (.1, 2.), 'ort_c': (.1, 2.)}
 MATERIAL_PRESETS = {
     'unknown': {
         'label': 'Unknown',
         'enabled_phases': list(PHASES),
         'references': {'hcp_a': .295, 'hcp_c': .468, 'bcc_a': .330, 'fcc_a': .417},
-        'note': 'Unknown material: all phases enabled; automatic reciprocal scales search ×0.5–2.0. Dimensions are editable search anchors, not a material identification. Selected penalties still apply. The zone-axis library remains finite.',
+        'note': 'Unknown material: all phases enabled; automatic reciprocal scales search ×0.5–2.0. Dimensions are editable search anchors, not a material identification. Overall scale penalty is disabled; HCP c/a penalty remains active in overall + c/a mode. The zone-axis library remains finite.',
     },
     'titanium': {
         'label': 'Titanium',
@@ -32,6 +32,10 @@ MATERIAL_PRESETS = {
         'note': 'Fe references: α-BCC at 295 K; γ-FCC at 1183 K; ε-HCP at 15 GPa / 300 K. These phases are not all stable at ambient conditions. Edit for your alloy and conditions.',
     },
 }
+
+# Generic primitive cell: numerical search anchors, not a material preset.
+for preset in MATERIAL_PRESETS.values():
+    preset['references'].update(ort_a=.3, ort_b=.4, ort_c=.5)
 
 
 def reference_settings(settings):
@@ -49,7 +53,7 @@ def reference_settings(settings):
     enabled = settings.get('enabled_phases',
                            MATERIAL_PRESETS.get(material, {}).get('enabled_phases', list(PHASES)))
     if not isinstance(enabled, list) or any(phase not in PHASES for phase in enabled):
-        raise ValueError('Enabled phases must be a list containing only HCP, BCC or FCC.')
+        raise ValueError('Enabled phases must be a list containing only HCP, BCC, FCC or ORT.')
     # Canonical order and independent lists keep presets and cache keys stable.
     enabled = [phase for phase in PHASES if phase in enabled]
     return {'material': material, **values, 'enabled_phases': enabled}
