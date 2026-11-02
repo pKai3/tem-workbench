@@ -13,6 +13,12 @@ PHASES = ('HCP', 'BCC', 'FCC')
 REFERENCE_LIMITS = {'hcp_a': (.15, .65), 'hcp_c': (.20, 1.20),
                     'bcc_a': (.20, .65), 'fcc_a': (.20, .65)}
 MATERIAL_PRESETS = {
+    'unknown': {
+        'label': 'Unknown',
+        'enabled_phases': list(PHASES),
+        'references': {'hcp_a': .295, 'hcp_c': .468, 'bcc_a': .330, 'fcc_a': .417},
+        'note': 'Unknown material: all phases enabled; automatic reciprocal scales search ×0.5–2.0. Dimensions are editable search anchors, not a material identification. Selected penalties still apply. The zone-axis library remains finite.',
+    },
     'titanium': {
         'label': 'Titanium',
         'enabled_phases': ['HCP', 'BCC'],
@@ -31,14 +37,14 @@ MATERIAL_PRESETS = {
 def reference_settings(settings):
     material = settings.get('material', 'titanium')
     if material not in (*MATERIAL_PRESETS, 'custom'):
-        raise ValueError('Choose Titanium, Iron or Custom material.')
+        raise ValueError('Choose Titanium, Iron, Unknown or Custom material.')
     defaults = MATERIAL_PRESETS.get(material, MATERIAL_PRESETS['titanium'])['references']
     values = {key: float(settings.get(key, defaults[key])) for key in REFERENCE_LIMITS}
     for key, (low, high) in REFERENCE_LIMITS.items():
         if not math.isfinite(values[key]) or not low <= values[key] <= high:
             raise ValueError(f'{key.upper().replace("_", " ")} reference must be between {low:g} and {high:g} nm.')
     # Explicit dimensions win, including in older saved analyses without a material.
-    if material != 'custom' and any(abs(values[k]-defaults[k]) > 1e-9 for k in values):
+    if material not in ('custom', 'unknown') and any(abs(values[k]-defaults[k]) > 1e-9 for k in values):
         material = 'custom'
     enabled = settings.get('enabled_phases',
                            MATERIAL_PRESETS.get(material, {}).get('enabled_phases', list(PHASES)))
@@ -47,3 +53,8 @@ def reference_settings(settings):
     # Canonical order and independent lists keep presets and cache keys stable.
     enabled = [phase for phase in PHASES if phase in enabled]
     return {'material': material, **values, 'enabled_phases': enabled}
+
+
+def scale_bounds(settings):
+    """Finite exploratory search range; reference/penalty choices remain explicit."""
+    return (.5, 2.) if settings.get('material') == 'unknown' else (.85, 1.15)

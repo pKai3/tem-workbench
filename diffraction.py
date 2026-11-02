@@ -148,15 +148,21 @@ def validate(info, supplied):
     for edit in edits:
         if not isinstance(edit, dict) or edit.get('action') not in ('add', 'remove'):
             raise ValueError('Peak edits must add or remove an observation.')
-        x, y, radius = [float(edit[k]) for k in ('x', 'y', 'radius_px')]
-        if not all(np.isfinite([x,y,radius])) or not (0 <= x < info['width'] and 0 <= y < info['height'] and 1 <= radius <= 200):
-            raise ValueError('Peak edits need detector coordinates and a radius of 1–200 pixels.')
-        record = dict(action=edit['action'], x=x, y=y, radius_px=radius)
-        if edit['action'] == 'add' and 'snap_radius_px' in edit:
-            sr, ox, oy = [float(edit[k]) for k in ('snap_radius_px', 'snap_x', 'snap_y')]
-            if not np.isfinite([sr, ox, oy]).all() or not (1 <= sr <= 200 and 0 <= ox < info['width'] and 0 <= oy < info['height']):
-                raise ValueError('Saved snap searches need an in-image origin and a radius of 1–200 pixels.')
-            record.update(snap_radius_px=sr, snap_x=ox, snap_y=oy)
+        radius_key = 'radius_nm_inv' if 'radius_nm_inv' in edit else 'radius_px'
+        x, y, radius = [float(edit[k]) for k in ('x', 'y', radius_key)]
+        low, high = (.001, 5.) if radius_key == 'radius_nm_inv' else (1., 200.)
+        if not all(np.isfinite([x,y,radius])) or not (0 <= x < info['width'] and 0 <= y < info['height'] and low <= radius <= high):
+            raise ValueError('Peak edits need in-image coordinates and radius 0.001–5 nm⁻¹ (legacy: 1–200 px).')
+        record = dict(action=edit['action'], x=x, y=y, **{radius_key: radius})
+        if edit['action'] == 'remove' and edit.get('single') is True:
+            record['single'] = True
+        snap_key = 'snap_radius_nm_inv' if 'snap_radius_nm_inv' in edit else 'snap_radius_px'
+        if edit['action'] == 'add' and snap_key in edit:
+            sr, ox, oy = [float(edit[k]) for k in (snap_key, 'snap_x', 'snap_y')]
+            low, high = (.001, 5.) if snap_key == 'snap_radius_nm_inv' else (1., 200.)
+            if not np.isfinite([sr, ox, oy]).all() or not (low <= sr <= high and 0 <= ox < info['width'] and 0 <= oy < info['height']):
+                raise ValueError('Saved snap searches need an in-image origin and radius 0.001–5 nm⁻¹ (legacy: 1–200 px).')
+            record.update({snap_key: sr}, snap_x=ox, snap_y=oy)
         value['peak_edits'].append(record)
     return value
 
@@ -184,8 +190,18 @@ def edit_spots(array, settings, spots):
     """Replay ordered pixel-coordinate edits on a copy; never mutate cached detections."""
     result=list(spots)
     for edit in settings.get('peak_edits', []):
-        x,y,r=edit['x'],edit['y'],edit['radius_px']
-        result=[p for p in result if np.hypot(p['x_px']-x,p['y_px']-y)>r]
+        x,y=edit['x'],edit['y']
+        physical='radius_nm_inv' in edit
+        r=edit['radius_nm_inv'] if physical else edit['radius_px']
+        sx,sy=(settings['pixel_x_nm_inv'],settings['pixel_y_nm_inv']) if physical else (1.,1.)
+        def distance(p):
+            return np.hypot((p['x_px']-x)*sx,(p['y_px']-y)*sy)
+        if edit['action']=='remove' and edit.get('single'):
+            nearest=min(range(len(result)), key=lambda i: distance(result[i]), default=None)
+            if nearest is not None and distance(result[nearest])<=r:
+                result.pop(nearest)
+        else:
+            result=[p for p in result if distance(p)>r]
         if edit['action']=='add':
             spot=manual_spot(array,settings,x,y)
             q=spot['q']; g=np.linalg.norm(q)
@@ -194,19 +210,26 @@ def edit_spots(array, settings, spots):
     return result
 
 
-def snap_peak(array, settings, x, y, radius=50):
+def snap_peak(array, settings, x, y, radius=50, radius_nm_inv=None):
     """Bounded native-pixel search with light smoothing; no model prediction involved."""
     h,w=array.shape
     if not np.isfinite([x,y,radius]).all() or not (0<=x<w and 0<=y<h and 1<=radius<=200):
         raise ValueError('Choose a point inside the detector and a snap radius of 1–200 px.')
-    x0,x1=max(0,int(x-radius)-3),min(w,int(x+radius)+4)
-    y0,y1=max(0,int(y-radius)-3),min(h,int(y+radius)+4)
+    sx,sy=settings['pixel_x_nm_inv'],settings['pixel_y_nm_inv']
+    if radius_nm_inv is not None:
+        radius_nm_inv=float(radius_nm_inv)
+        if not np.isfinite(radius_nm_inv) or not .001 <= radius_nm_inv <= 5:
+            raise ValueError('Use a snap radius of 0.001–5 nm⁻¹.')
+    rx,ry=(radius_nm_inv/sx,radius_nm_inv/sy) if radius_nm_inv is not None else (radius,radius)
+    x0,x1=max(0,int(x-rx)-3),min(w,int(x+rx)+4)
+    y0,y1=max(0,int(y-ry)-3),min(h,int(y+ry)+4)
     from scipy.ndimage import gaussian_filter
     signal=gaussian_filter(array[y0:y1,x0:x1].astype(float),1.)
     yy,xx=np.mgrid[y0:y1,x0:x1]
     sx,sy=settings['pixel_x_nm_inv'],settings['pixel_y_nm_inv']
     q=np.c_[((xx-settings['center_x'])*sx).ravel(),((settings['center_y']-yy)*sy).ravel()]
-    good=(np.hypot(xx-x,yy-y)<=radius)&visible(q,settings,array.shape).reshape(xx.shape)&(np.linalg.norm(q,axis=1).reshape(xx.shape)<=settings.get('g_max',10.))
+    distance=np.hypot((xx-x)*sx,(yy-y)*sy) if radius_nm_inv is not None else np.hypot(xx-x,yy-y)
+    good=(distance <= (radius_nm_inv if radius_nm_inv is not None else radius))&visible(q,settings,array.shape).reshape(xx.shape)&(np.linalg.norm(q,axis=1).reshape(xx.shape)<=settings.get('g_max',10.))
     if not good.any():raise ValueError('That location is outside the fitting band or inside an exclusion.')
     iy,ix=np.unravel_index(np.argmax(np.where(good,signal,-np.inf)),signal.shape)
     return dict(x=float(ix+x0),y=float(iy+y0))

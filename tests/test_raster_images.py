@@ -53,6 +53,15 @@ class RasterTests(unittest.TestCase):
         self.assertTrue(self.engine.file_preview('colour.jpg').startswith(b'\x89PNG'))
         self.assertEqual(Image.open(BytesIO(self.engine.raster_preview('test.tiff'))).size,(128,128))
         with self.assertRaises(ValueError):self.engine.raster_source('../elsewhere.png')
+    def test_catalog_calibration_status_tracks_source(self):
+        def entry():return next(row for row in self.engine.catalog() if row['id']=='test.tiff')
+        self.assertEqual(entry()['extension'],'.tiff')
+        self.assertFalse(entry()['calibrated'])
+        self.engine.calibrate_raster('test.tiff',self.calibration())
+        self.assertTrue(entry()['calibrated'])
+        Image.fromarray(self.pixels+1).save(self.root/'test.tiff')
+        self.assertFalse(entry()['calibrated'])
+
     def test_stack_rejected_and_length_unit_conversion(self):
         Image.fromarray(self.pixels).save(self.root/'stack.tif',save_all=True,append_images=[Image.fromarray(self.pixels)])
         with self.assertRaisesRegex(ValueError,'single-frame'):raster.read(self.root/'stack.tif')

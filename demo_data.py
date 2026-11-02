@@ -54,6 +54,8 @@ def preview_path(file_id):
 
 def catalog_entry(file_id=ID):
     return {'id': file_id, 'name': DEMOS[file_id]['name'], 'sample': 'Demo',
+            'extension': Path(DEMOS[file_id]['source']).suffix if 'source' in DEMOS[file_id] else '.npz',
+            'calibrated': True,
             'has_preview': preview_path(file_id).is_file()}
 
 

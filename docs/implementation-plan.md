@@ -18,6 +18,10 @@ JPEG, standalone PNG and single-frame TIFF inputs now use the existing FFT or di
 
 Validation: raster input/calibration tests cover persistence, real-space and diffraction analysis, unit conversion, invalid inputs, changed source pixels, TIFF stacks and preview sidecars. Browser checks cover calibration, remembered reopening, horizontal locking, Free Y and cursor magnification. No automatic scale-bar recognition or anisotropic calibration is included.
 
+### File selection and peak removal follow-up — 2 November 2026
+
+File dropdowns, favourites and the visual browser show extensions; ordinary images show Calibrated/Uncalibrated, updated after calibration. Catalogue status uses saved file size/mtime when unchanged and verifies pixel identity otherwise. New diffraction removal edits target one selected observation within 2 original pixels, rather than clearing the entire 50-pixel deduplication area. Additions keep their adjustable deduplication radius. Existing saved area-removal edits retain their original interpretation; Undo/Reset can remove those edits.
+
 ## Open follow-ups at a glance
 
 - **HCP fitting:** compare the scaling modes and review penalty-aware optimization/candidate retention. Material priors and complexity corrections are not validated.
@@ -254,3 +258,9 @@ Implemented 1 November 2026 (`c1a6b10`): interactive grid zone symbols are centr
 Update this document when a task's scope, priority, decisions or implementation status changes. Keep proposals distinct from agreed behaviour and mark work complete only after implementation and relevant verification. Add the completion date and commit reference when closing a task; keep a short completed-work record as tasks leave the active list.
 
 The README links here instead of maintaining a second plan. Update the [architecture and methods documentation](architecture/README.md) when the user requests a refresh. This document records delivered scope alongside remaining work; the README describes how to use available features.
+
+## Reciprocal peak-edit radii and Unknown material — completed 2 November 2026
+
+Snap and deduplication controls, cursor rings and per-peak dragged snap rings use nm⁻¹ (defaults 0.50 / 0.10; adjustable 0.001–5). Distances use both calibration axes, including anisotropic pixels. Existing saved pixel-radius edits retain their original behaviour. New removal edits target one observation, not every spot inside the selection radius. Detector smoothing and centre-shift controls remain detector-pixel operations.
+
+Unknown material enables all three phases, switches fixed fitting to automatic, and searches reciprocal multipliers ×0.5–2.0 using a denser HCP proportion seed sweep. References remain editable search anchors and scoring penalties remain user-controlled. Ordinary presets retain ×0.85–1.15 bounds; the finite orientation library is unchanged. Catalog/browser labels include extensions and calibration status for ordinary images. No architecture refresh.

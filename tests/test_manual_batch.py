@@ -55,6 +55,35 @@ class ManualPeaks(unittest.TestCase):
         snap = diffraction.snap_peak(array, {**d, 'g_max': 10}, x + 25, y, 50)
         self.assertLess(np.hypot(snap['x'] - x, snap['y'] - y), 2)
 
+    def test_reciprocal_edit_radii_and_single_removal(self):
+        array, info, _ = pattern()
+        d=diffraction.validate(info, {'pixel_x_nm_inv':.01,'pixel_y_nm_inv':.02,
+                                    'center_x':0,'center_y':0,'exclude_radius_nm_inv':0})
+        # Equal pixel offsets have different reciprocal distances.
+        spots=[dict(x_px=100.,y_px=100.),dict(x_px=106.,y_px=100.),dict(x_px=100.,y_px=106.)]
+        edit=dict(action='add',x=100,y=100,radius_nm_inv=.1,snap_x=99,snap_y=100,snap_radius_nm_inv=.5)
+        validated=diffraction.validate(info,{**d,'peak_edits':[edit]})
+        self.assertEqual(validated['peak_edits'][0],edit)
+        updated=diffraction.edit_spots(array,validated,spots)
+        self.assertEqual(len(updated),2)
+        self.assertEqual(updated[0],spots[2])
+        remove=dict(action='remove',x=100,y=100,radius_px=50,single=True)
+        remaining=diffraction.edit_spots(array,{**d,'peak_edits':[remove]},spots)
+        self.assertEqual(remaining,spots[1:])
+        for radius in [0,-1,float('nan'),5.1]:
+            with self.assertRaises(ValueError):
+                diffraction.validate(info,{**d,'peak_edits':[{**edit,'radius_nm_inv':radius}]})
+
+    def test_reciprocal_snap_uses_anisotropic_calibration(self):
+        array, info, _ = pattern()
+        array=np.zeros_like(array)
+        array[100,106]=10 # within .1 nm^-1 along x
+        array[110,100]=100 # outside .1 nm^-1 along y outside the reciprocal search ellipse
+        d=diffraction.validate(info,{'pixel_x_nm_inv':.01,'pixel_y_nm_inv':.02,
+                                   'center_x':0,'center_y':0,'exclude_radius_nm_inv':0})
+        snapped=diffraction.snap_peak(array,d,100,100,radius_nm_inv=.1)
+        self.assertEqual(snapped,dict(x=106.,y=100.))
+
     def test_bounds_masks_persistence(self):
         array,info,_=pattern()
         for edits in [[dict(action='add',x=-1,y=20,radius_px=4)], [dict(action='virtual',x=10,y=10,radius_px=4)], [dict(action='add',x=10,y=10,radius_px=float('nan'))]]:

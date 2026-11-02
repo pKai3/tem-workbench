@@ -67,8 +67,24 @@ def stored(store, source, array):
     return None
 
 
+def catalog_calibrated(source, calibrations):
+    entry = calibrations.get(str(Path(source).resolve()))
+    if not entry:
+        return False
+    try:
+        stat = Path(source).stat()
+        if entry.get('source_stat') == [stat.st_size, stat.st_mtime_ns]:
+            return True
+        array = read(source)
+        return entry.get('sha256_pixels') == identity(array) and bool(validate(array, entry))
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
 def save(store, source, array, request):
     entry = validate(array, request)
+    stat = Path(source).stat()
+    entry['source_stat'] = [stat.st_size, stat.st_mtime_ns]
     store = Path(store)
     data = json.loads(store.read_text()) if store.exists() else {}
     data[str(Path(source).resolve())] = entry

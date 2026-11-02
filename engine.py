@@ -24,7 +24,7 @@ import demo_data
 import peak_evidence
 import diffraction
 import raster_images
-from materials import PHASES, reference_settings
+from materials import scale_bounds, PHASES, reference_settings
 from crystal_templates import fcc_templates
 
 ROOT = Path(__file__).resolve().parent
@@ -57,7 +57,7 @@ class Engine:
         self.template_library = self.templates + fcc_templates()
         self.templates = scale_fitting.prepare_templates(self.template_library)
         self.auto_templates = self.templates
-        self._template_cache = {(10., 3., .295, .468, .330, .417): self.templates}
+        self._template_cache = {(10., 3., .295, .468, .330, .417, .85, 1.15): self.templates}
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
             ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
         self.files = {}
@@ -65,12 +65,12 @@ class Engine:
         self.acquisition_index = MetadataIndex()
 
     def templates_for(self, settings):
-        key = tuple(settings[k] for k in ('g_max', 'g_min', 'hcp_a', 'hcp_c', 'bcc_a', 'fcc_a'))
+        key = tuple(settings[k] for k in ('g_max', 'g_min', 'hcp_a', 'hcp_c', 'bcc_a', 'fcc_a')) + scale_bounds(settings)
         if key not in self._template_cache:
             if len(self._template_cache) >= 4:
                 self._template_cache.pop(next(iter(self._template_cache)))
             self._template_cache[key] = scale_fitting.prepare_templates(
-                self.template_library, g_max=key[0], g_min=key[1], hcp_a=key[2], hcp_c=key[3], bcc_a=key[4], fcc_a=key[5])
+                self.template_library, g_max=key[0], g_min=key[1], hcp_a=key[2], hcp_c=key[3], bcc_a=key[4], fcc_a=key[5], bounds=key[6:])
         enabled = settings.get('enabled_phases', PHASES)
         return [template for template in self._template_cache[key] if template['phase'] in enabled]
 
@@ -79,6 +79,7 @@ class Engine:
         self.files = {}
         if self.settings.get('demo_only'):
             return rows
+        calibrations = json.loads(self.raster_store.read_text()) if self.raster_store.exists() else {}
         output = folder_paths.resolve_folder(self.settings.get('output_root', './output'), ROOT)
         for directory, folders, names in os.walk(self.data_root, followlinks=False):
             folders[:] = sorted(name for name in folders if not name.startswith('.') and (Path(directory)/name).resolve() != output)
@@ -94,7 +95,8 @@ class Engine:
                 sample = next((part for part in relative.parts[:-1] if part in ('STA', 'ST')),
                               relative.parts[0] if len(relative.parts) > 1 else 'Images')
                 self.files[file_id] = path
-                rows.append({'id': file_id, 'name': path.stem, 'sample': sample,
+                rows.append({'id': file_id, 'name': path.stem, 'sample': sample, 'extension': path.suffix,
+                             'calibrated': raster_images.catalog_calibrated(path, calibrations) if path.suffix.lower() in raster_images.EXTENSIONS else True,
                              'raster': path.suffix.lower() in raster_images.EXTENSIONS,
                              'has_preview': path.suffix.lower() in raster_images.EXTENSIONS or sidecar_path(path).is_file()})
         return rows
@@ -483,7 +485,7 @@ class Engine:
     def classify(self, s, models, settings, width_nm, height_nm, can_index=True):
         classification = phase_comparison.classify(s['peaks'], models, s['df'])
         if settings['scale_mode'] != 'fixed':
-            classification['flags'].append('Prediction scales are fitted independently in this region (0.85–1.15). Fitted lattice dimensions depend on the image calibration used.')
+            classification['flags'].append(f'Prediction scales are fitted independently in this region ({scale_bounds(settings)[0]:g}–{scale_bounds(settings)[1]:g}). Fitted lattice dimensions depend on the image calibration used.')
             if settings['scale_mode'] in ('auto_hcp_ac', 'auto_hcp_ratio') and 'HCP' in settings.get('enabled_phases', PHASES):
                 classification['flags'].append('HCP has an extra fitting parameter where c is visible. Scale penalties discourage large adjustments; the separate shared-evidence check retains unresolved model tradeoffs.')
             if settings['scale_mode'] == 'auto_hcp_ratio':
@@ -492,7 +494,7 @@ class Engine:
                     f"c/a weight {settings.get('ca_penalty_strength', .10):.3f}. "
                     'Each charges squared log change normalized to log(1.05). '
                     'Overall reciprocal scale is sqrt(a* scale × c* scale); real c/a multiplier is a* scale / c* scale. '
-                    'Both are ranking preferences, not measured strain limits. Fits retain the 0.85–1.15 per-axis bounds.')
+                    f'Both are ranking preferences, not measured strain limits. Fits retain the {scale_bounds(settings)[0]:g}–{scale_bounds(settings)[1]:g} per-axis bounds.')
             elif settings['scale_penalty_strength']:
                 classification['flags'].append(
                     f"Scale penalty strength {settings['scale_penalty_strength']:.3f}: scale cost subtracts "

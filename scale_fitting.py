@@ -59,7 +59,7 @@ def penalize(result, scale_a, scale_c, strength, ca_strength=DEFAULT_CA_PENALTY)
     return result
 
 
-def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, hcp_c=.468, g_min=3.):
+def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, hcp_c=.468, g_min=3., bounds=BOUNDS):
     """Expand allowed reflections for these zones and the complete scale range.
 
     The zone library stays finite; the reflection-index bound follows the chosen
@@ -82,7 +82,7 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
             eig, axes = np.linalg.eigh(scaled.T @ scaled)
             projection = scaled @ ((axes / np.sqrt(eig)) @ axes.T)
         reference = {'BCC': TEMPLATE_BASE_A['BCC']/bcc_a, 'FCC': TEMPLATE_BASE_A['FCC']/fcc_a}.get(phase, 1.)
-        maximum = (g_max+.1)/(BOUNDS[0]*reference)
+        maximum = (g_max+.1)/(bounds[0]*reference)
         a = hcp_a if phase == 'HCP' else TEMPLATE_BASE_A[phase]
         a_bound = int(np.ceil(a*maximum))
         c_bound = int(np.ceil(hcp_c*maximum)) if phase == 'HCP' else a_bound
@@ -92,13 +92,13 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
         hs = hs[allowed(hs, phase) & (hs @ original['zone_3index'] == 0)]
         vectors = reciprocal(hs, phase, a=a, c=hcp_c)
         radii = np.linalg.norm(vectors, axis=1)
-        keep = (radii > 0) & (radii >= (g_min-.1)/(BOUNDS[1]*reference)) & (radii <= maximum)
+        keep = (radii > 0) & (radii >= (g_min-.1)/(bounds[1]*reference)) & (radii <= maximum)
         hs, vectors = hs[keep], vectors[keep]
         q = vectors @ projection
         half = (q[:, 1] > 1e-8) | ((abs(q[:, 1]) < 1e-8) & (q[:, 0] > 0))
         hs, q = hs[half], q[half]
         order = np.argsort(np.linalg.norm(q, axis=1))
-        prepared.append({**original, 'hkl': hs[order], 'q': q[order],
+        prepared.append({**original, 'scale_bounds': tuple(bounds), 'hkl': hs[order], 'q': q[order],
                          'g': np.linalg.norm(q[order], axis=1),
                          'reference_a_nm': a, 'reference_c_nm': hcp_c if phase == 'HCP' else None,
                          'projection': projection, 'c_direction': projection[2].copy()})
@@ -133,8 +133,8 @@ def prediction_points(template, scale_a, scale_c, bcc_a=.330, hkl=None, fcc_a=.4
 def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min):
     lengths = np.linalg.norm(observed, axis=1)
     angles = np.arctan2(observed[:, 1], observed[:, 0])
-    low, high = BOUNDS
-    ratios = np.unique(np.r_[np.linspace(low/high, high/low, 11), 1.]) if double else [1.]
+    low, high = template.get('scale_bounds', BOUNDS)
+    ratios = np.unique(np.r_[(np.geomspace(low/high, high/low, 41) if high/low>2 else np.linspace(low/high, high/low, 11)), 1.]) if double else [1.]
     seeds = []
     for ratio in ratios:
         q = prediction_points(template, 1., ratio, bcc_a, fcc_a=fcc_a)
@@ -181,7 +181,7 @@ def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weight
 
 def _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min):
     _, angle, sa, sc = seed
-    low, high = BOUNDS
+    low, high = template.get('scale_bounds', BOUNDS)
 
     def score(angle, sa, sc):
         return core.score_hypothesis(peaks, template, prediction_points(template, sa, sc, bcc_a, fcc_a=fcc_a), 1., angle, tol, g_max, g_min)

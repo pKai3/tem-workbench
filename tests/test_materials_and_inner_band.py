@@ -36,9 +36,25 @@ class MaterialReferences(unittest.TestCase):
         # Old saved analyses retain their explicit reference dimensions.
         self.assertEqual(reference_settings({'fcc_a': .45})['fcc_a'], .45)
         self.assertEqual(reference_settings({})['material'], 'titanium')
-        for supplied in ({'hcp_a': float('nan')}, {'hcp_c': .1}, {'material': 'unknown'}):
+        for supplied in ({'hcp_a': float('nan')}, {'hcp_c': .1}, {'material': 'nonexistent'}):
             with self.assertRaises(ValueError):
                 reference_settings(supplied)
+
+    def test_unknown_wider_search_and_all_phases(self):
+        engine = Engine({})
+        settings = dict(g_min=3., g_max=10., **reference_settings({'material': 'unknown'}))
+        self.assertEqual(settings['enabled_phases'], ['HCP', 'BCC', 'FCC'])
+        self.assertEqual(reference_settings({'material':'unknown','hcp_a':.31})['material'], 'unknown')
+        templates = engine.templates_for(settings)
+        self.assertTrue(all(t['scale_bounds'] == (.5, 2.) for t in templates))
+        template = next(t for t in templates if t['phase']=='BCC' and list(t['zone_3index'])==[0,0,1])
+        q = fitting.prediction_points(template, 1.4, 1.4)
+        q = q[(np.linalg.norm(q,axis=1)>=3)&(np.linalg.norm(q,axis=1)<=10)]
+        fits = fitting.search(peaks_for(q), [template], .08, 'auto_uniform', scale_penalty_strength=0)
+        self.assertTrue(fits)
+        self.assertLess(fits[0]['rms_nm_inv'], .01)
+        normal=engine.templates_for({**settings,'material':'titanium'})
+        self.assertTrue(all(t['scale_bounds']==(.85,1.15) for t in normal))
 
     def test_phase_defaults_overrides_and_template_cache(self):
         self.assertEqual(reference_settings({})['enabled_phases'], ['HCP', 'BCC'])
