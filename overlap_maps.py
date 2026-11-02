@@ -14,8 +14,24 @@ MAX_WINDOWS = 10000
 def sampling(info, options):
     if not isinstance(options, dict):
         raise ValueError('Overlapping map settings must be an object.')
-    width = float(options.get('window_nm', 5))
-    spacing = float(options.get('spacing_nm', 2.5))
+    size_mode = options.get('size_mode', 'fixed_nm')
+    if size_mode not in ('fixed_nm', 'image_percent'):
+        raise ValueError('Choose fixed nm or image-relative window size.')
+    sizing = dict(size_mode=size_mode)
+    if size_mode == 'image_percent':
+        percent = float(options.get('window_percent', 10))
+        spacing_percent = float(options.get('spacing_percent', 100))
+        if not (math.isfinite(percent) and .1 <= percent <= 100 and
+                math.isfinite(spacing_percent) and 1 <= spacing_percent <= 100):
+            raise ValueError('Use window 0.1–100% of the shorter image dimension and spacing 1–100% of the window.')
+        extent = min(info['width']*info['pixel_x_nm'], info['height']*info['pixel_y_nm'])
+        width = extent*percent/100
+        spacing = width*spacing_percent/100
+        sizing.update(window_percent=percent, spacing_percent=spacing_percent,
+                      reference_extent_nm=extent, reference_dimension='shorter_physical_side')
+    else:
+        width = float(options.get('window_nm', 5))
+        spacing = float(options.get('spacing_nm', 2.5))
     layout = options.get('layout', 'hex')
     passes = options.get('passes', 1)
     if not all(math.isfinite(v) and v > 0 for v in (width, spacing)):
@@ -62,7 +78,7 @@ def sampling(info, options):
         shift.append(delta)
         for sample in samples:
             sample['roi'][axis] += delta
-    return samples, dict(mode='overlap', version=VERSION, layout=layout, window_nm=width,
+    return samples, dict(mode='overlap', version=VERSION, **sizing, layout=layout, window_nm=width,
                         spacing_nm=spacing, passes=passes, offsets_basis=offsets,
                         actual_window_px=[w,h], actual_window_nm=[w*info['pixel_x_nm'], h*info['pixel_y_nm']],
                         sample_count=len(samples), edge_policy='full_windows_only',

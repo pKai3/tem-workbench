@@ -63,6 +63,27 @@ class OverlapTests(unittest.TestCase):
         for o in [dict(window_nm=float('nan')),dict(spacing_nm=0),dict(passes=True),dict(passes=2),dict(window_nm=20),dict(window_nm=.1),dict(window_nm=2,spacing_nm=3),dict(spacing_nm=.03,passes=7)]:
             with self.subTest(o=o),self.assertRaises(ValueError):maps.sampling(INFO,o)
 
+    def test_image_relative_windows_scale_with_each_source(self):
+        options=dict(size_mode='image_percent',window_percent=10,spacing_percent=100,layout='hex',passes=9)
+        info=dict(width=4096,height=4096,pixel_x_nm=.012,pixel_y_nm=.012)
+        samples,a=maps.sampling(info,options)
+        larger={**info,'pixel_x_nm':.04,'pixel_y_nm':.04}
+        other,b=maps.sampling(larger,options)
+        self.assertEqual(samples,other)
+        self.assertEqual(a['actual_window_px'],[410,410])
+        self.assertAlmostEqual(a['window_nm'],4.9152)
+        self.assertAlmostEqual(b['window_nm'],16.384)
+        self.assertEqual(a['spacing_nm'],a['window_nm'])
+        self.assertEqual(b['window_percent'],10)
+        self.assertNotIn('window_nm',options)  # Resolution does not mutate the batch request.
+        rect={**info,'height':2048,'pixel_y_nm':.024}
+        _,c=maps.sampling(rect,options)
+        self.assertEqual(c['actual_window_px'],[410,205])
+        self.assertAlmostEqual(*c['actual_window_nm'])
+        for bad in [dict(window_percent=0),dict(window_percent=float('nan')),dict(spacing_percent=101),dict(size_mode='unknown')]:
+            with self.subTest(bad=bad),self.assertRaises(ValueError):
+                maps.sampling(info,{**options,**bad})
+
     def test_equal_pass_weighting_and_missing_not_excluded(self):
         # Four successful copies in one pass must not outweigh one failed other pass.
         regions=[region(i,0) for i in range(4)]+[region(4,1,False)]

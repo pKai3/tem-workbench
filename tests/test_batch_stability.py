@@ -68,6 +68,8 @@ class StabilityBatch(unittest.TestCase):
             def load(self,key):
                 if key=='bad':raise ValueError('broken fixture')
                 item=image();item['info'].update(id=key,name='1MX_OneView_'+key)
+                if key=='b':
+                    item['info']['pixel_x_nm']*=1.25;item['info']['pixel_y_nm']*=1.25
                 stream=BytesIO();Image.new('L',(256,256),120).save(stream,format='PNG');item['preview']=stream.getvalue()
                 return item
         with tempfile.TemporaryDirectory() as tmp:
@@ -76,7 +78,7 @@ class StabilityBatch(unittest.TestCase):
                 with patch('batch_grids.Engine',LocalEngine):
                     app.batch.start(dict(file_ids=['a','bad','b'],workers=2,export_png=True,
                         settings=dict(enabled_phases=['HCP','BCC']),
-                        overlap=dict(window_nm=4,spacing_nm=2,layout='hex',passes=3)))
+                        overlap=dict(size_mode='image_percent',window_percent=50,spacing_percent=50,layout='hex',passes=3)))
                     app.batch.thread.join(60)
                     self.assertFalse(app.batch.running())
                 status=app.batch.status()
@@ -91,6 +93,8 @@ class StabilityBatch(unittest.TestCase):
                 for summary in status['images']:
                     job=json.loads((folder/summary['data_file']).read_text())
                     self.assertEqual(job['grid']['mode'],'overlap')
+                    self.assertEqual(job['grid']['size_mode'],'image_percent')
+                    self.assertAlmostEqual(job['grid']['window_nm'],min(job['source']['width']*job['source']['pixel_x_nm'],job['source']['height']*job['source']['pixel_y_nm'])/2)
                     self.assertEqual({r['pass_id'] for r in job['regions']},{0,1,2})
                     self.assertEqual(summary['windows'],summary['planned_windows'])
                     self.assertLessEqual(summary['coverage_percent'],100)
