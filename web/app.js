@@ -1175,9 +1175,14 @@ $('peak-evidence-weight').onblur=()=>{$('peak-evidence-weight').value=peakEviden
 for(const id of ['scale-penalty','scale-penalty-slider','ca-penalty','ca-penalty-slider','peak-evidence-weight','peak-evidence-slider'])$(id).oninput=()=>penaltyChanged($(id));
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=effectiveScalePenalty().toFixed(2)};
 const REFERENCE_CONTROLS={'hcp-a':'hcp_a','hcp-c':'hcp_c','bcc-a':'bcc_a','fcc-a':'fcc_a','ort-a':'ort_a','ort-b':'ort_b','ort-c':'ort_c'};
+let materialDefaultPreset=readPreference('tem-reference-preset','titanium');
 function materialView(){
  syncReferenceControls();
  const selected=$('material').value,preset=config?.material_presets?.[selected];
+ if(preset){materialDefaultPreset=selected;writePreference('tem-reference-preset',selected)}
+ const resetPreset=config?.material_presets?.[materialDefaultPreset]||config?.material_presets?.titanium;
+ $('reset-material').disabled=!resetPreset;
+ $('reset-material').title='Restore '+(resetPreset?.name||materialDefaultPreset)+' lattice constants';
  if(selected!=='unknown'&&preset&&Object.entries(REFERENCE_CONTROLS).some(([id,key])=>Math.abs(Number($(id).value)-preset.references[key])>1e-9))$('material').value='custom';
  const note=config?.material_presets?.[$('material').value]?.note??'Custom reference cells. Changing the material or a reference recalculates this region; rerun any grid.';
  $('material-note').textContent=note+'\nCubic: a = b = c; HCP: a = b, γ = 120°. Dimensions in nm.';
@@ -1217,6 +1222,13 @@ function resetFFTControls(){
  rememberBasicControls();if(changed)invalidateAnalysisSettings();message('FFT defaults restored.');
 }
 $('reset-fft').onclick=resetFFTControls;
+$('reset-material').onclick=()=>{
+ const key=config?.material_presets?.[materialDefaultPreset]?materialDefaultPreset:'titanium';
+ const preset=config?.material_presets?.[key];if(!preset)return;
+ for(const [id,name]of Object.entries(REFERENCE_CONTROLS))$(id).value=preset.references[name];
+ $('material').value=key;materialView();rememberBasicControls();calibrationView();updatePenaltyControls();invalidateAnalysisSettings();
+ message('Material lattice defaults restored.');
+};
 $('material').onchange=()=>{
  const preset=config?.material_presets?.[$('material').value];
  if(preset)for(const [id,key]of Object.entries(REFERENCE_CONTROLS))$(id).value=preset.references[key];

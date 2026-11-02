@@ -287,3 +287,7 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .material-bar input:disabled{cursor:not-allowed;color:var(--muted)}
 .calibration-bar>label:first-child{flex:0 1 360px;min-width:0;max-width:100%}
 .calibration-bar>label:first-child select{width:100%;min-width:0}
+
+.material-choice-control{display:flex;align-items:center;gap:6px}
+.material-choice-control select{min-width:0;flex:1}
+#reset-material{flex:none;width:28px;min-height:28px;padding:0;font-size:19px;line-height:1}

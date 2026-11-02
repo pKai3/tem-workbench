@@ -6,7 +6,7 @@ This is the maintained implementation status and roadmap. The original three ana
 
 ## Phase settings layout — 3 November 2026
 
-Phase colour/search controls use one compact four-column row, with ORT alongside HCP/BCC/FCC. Reference lattice inputs are disabled and greyed for excluded phases, retaining their values for re-enabling; this follows manual phase changes, material presets, resets and restored settings. The scale-fitting selector is capped at a compact width instead of stretching across Processing settings.
+Phase colour/search controls use one compact four-column row, with ORT alongside HCP/BCC/FCC. Reference lattice inputs are disabled and greyed for excluded phases, retaining their values for re-enabling; this follows manual phase changes, material presets, resets and restored settings. The scale-fitting selector is capped at a compact width instead of stretching across Processing settings. A reset arrow beside Material restores its lattice references, including disabled phases. Custom edits remember their last chosen preset for reset (Titanium fallback); phase search/colour selections are retained.
 
 ## Analysis priorities and current status
 

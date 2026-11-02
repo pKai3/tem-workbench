@@ -39,7 +39,7 @@
 <div class="material-settings">
 <div class="phase-color-controls" aria-label="Phase colours"><div class="phase-colors-heading"><strong>Phase colours / search</strong><button id="reset-phase-colors" type="button" aria-label="Restore phase defaults" title="Restore this material’s default phases and colours">↺</button></div><label>HCP colour<select id="hcp-color"></select></label><label>BCC colour<select id="bcc-color"></select></label><label>FCC colour<select id="fcc-color"></select></label><label title="Generic primitive orthorhombic lattice, not a specific material">ORT colour<select id="ort-color"></select></label><p id="phase-search-note" class="hint">Choose Disabled to skip a phase.</p></div>
 <div class="material-bar" aria-label="Material reference cells">
- <label class="material-choice">Material<select id="material"><option value="titanium">Titanium</option><option value="iron">Iron</option><option value="unknown">Unknown</option><option value="custom">Custom</option></select></label>
+ <label class="material-choice">Material<span class="material-choice-control"><select id="material"><option value="titanium">Titanium</option><option value="iron">Iron</option><option value="unknown">Unknown</option><option value="custom">Custom</option></select><button id="reset-material" type="button" aria-label="Restore material lattice defaults" title="Restore material lattice defaults">↺</button></span></label>
  <label>HCP a, nm<input id="hcp-a" type="number" min=".15" max=".65" step=".00001" value=".295"></label>
  <label>HCP c, nm<input id="hcp-c" type="number" min=".20" max="1.20" step=".00001" value=".468"></label>
  <label>BCC a, nm<input id="bcc-a" type="number" min=".20" max=".65" step=".00001" value=".330"></label>
