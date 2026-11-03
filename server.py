@@ -37,6 +37,7 @@ import demo_data
 from demo_packs import DemoDownload
 import adaptive_refinement
 import overlap_maps
+from window_size_probe import WindowSizeProbe
 import folder_paths
 from preview_files import PreviewBatch, sidecar_path
 from workbench_project import Project
@@ -72,10 +73,11 @@ class Workbench:
         self.job_lock = threading.RLock()
         self.engine.catalog()
         self.batch = BatchGrids(self)
+        self.window_probe = WindowSizeProbe()
 
 
     def config_info(self):
-        return {'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(8, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'window_size_probe': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(8, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -102,6 +104,19 @@ class Workbench:
             self.preview_batch = None
             LOG.info('Folders changed: data=%s; output=%s', self.config['data_root'], self.config['output_root'])
             return self.config_info()
+
+    def start_window_probe(self, body):
+        with self.lock, self.job_lock:
+            if self.closing or self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()):
+                raise ValueError('Finish or cancel the grid or batch before checking window size.')
+            if self.window_probe.running():
+                raise ValueError('Finish or cancel the current window size check first.')
+            item = self.engine.load(body['file_id'])
+            _, settings = self.engine.validate(item, body['roi'], body.get('settings', {}))
+            # Separate template/cache state; source pixels are read-only during analysis.
+            engine = Engine(copy.deepcopy(self.config))
+            snapshot = {**item, 'info': copy.deepcopy(item['info'])}
+            return self.window_probe.start(engine, snapshot, settings, body['anchor_nm'], body['file_id'], body.get('smoothing_mode', 'physical'))
 
     def preview_status(self):
         return self.preview_batch.status() if self.preview_batch else None
@@ -169,6 +184,8 @@ class Workbench:
         workers = worker_count(workers)
         settings = copy.deepcopy(settings)
         engine = engine or self.engine  # Snapshot even if the open image changes.
+        if getattr(self, 'window_probe', None) and self.window_probe.running():
+            raise ValueError('Finish or cancel the window size check first.')
         if not batch and getattr(self, 'batch', None) and self.batch.running():
             raise ValueError('Finish or cancel batch grids first.')
         if item['info'].get('image_kind') == 'diffraction':
@@ -341,6 +358,8 @@ class Workbench:
             self.jobs[job_id]['cancel'] = True
 
     def close(self):
+        if getattr(self, 'window_probe', None):
+            self.window_probe.cancel.set()
         if getattr(self, 'batch', None):
             self.batch.cancel_run()
         with self.job_lock:
@@ -582,6 +601,8 @@ def make_handler(app):
                     self.send(app.file_preview(query['id'][0]), 'image/png')
                 elif url.path == '/api/batch':
                     self.send(app.batch.status())
+                elif url.path == '/api/window-size':
+                    self.send(app.window_probe.status(query['id'][0]))
                 elif url.path == '/api/job':
                     self.send(app.status(query['id'][0]))
                 elif url.path == '/api/region-preview':
@@ -597,7 +618,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/phase-blend.js': ROOT/'web/phase-blend.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
@@ -639,6 +660,12 @@ def make_handler(app):
                 elif self.path == '/api/raster-calibration':
                     with app.lock:
                         self.send(app.engine.calibrate_raster(body['file_id'], body))
+                elif self.path == '/api/window-size':
+                    self.send(app.start_window_probe(body))
+                elif self.path == '/api/window-size/cancel':
+                    app.window_probe.status(body['id'])
+                    app.window_probe.cancel.set()
+                    self.send({'cancelled': True})
                 elif self.path == '/api/open':
                     with app.lock:
                         item=app.engine.load(body['file_id'])

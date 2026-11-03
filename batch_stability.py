@@ -1,6 +1,7 @@
 """Batch summaries for correlated overlapping windows, separate from area labels."""
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
+from phase_blend import blend_support
 import overlap_maps
 
 INTERPRETATION = ('Passing frequencies over covered raster area, not phase fractions. '
@@ -93,7 +94,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     from PIL import ImageChops
     source = job['source']; a = job.get('aggregation') or overlap_maps.aggregate(job)
     phases = job['settings'].get('enabled_phases', ['HCP','BCC','FCC'])
-    if view not in ('support','hex','spread','samples','separate','raw'):
+    if view not in ('support','hex','hex_support','spread','samples','separate','raw'):
         raise ValueError('Unknown stability PNG view.')
     if phase is not None and phase not in phases:
         raise ValueError('PNG phase is not enabled for this analysis.')
@@ -101,7 +102,8 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
         raise ValueError('Placement disagreement requires a phase and multiple passes.')
     w = round(1800*source['width']/max(source['width'],source['height']))
     h = round(1800*source['height']/max(source['width'],source['height']))
-    canvas = Image.new('RGB',(w+80,h+320),'#0c121a')
+    blend_key=view in ('support','hex_support') and phase is None and len(phases)==2
+    canvas = Image.new('RGB',(w+80,h+320+(60 if blend_key else 0)),'#0c121a')
     with Image.open(BytesIO(item['preview'])) as preview:
         background = preview.convert('RGBA').resize((w,h))
     layer = Image.new('RGBA',(w,h)); draw = ImageDraw.Draw(layer)
@@ -109,14 +111,17 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     def fill(c,value):
         return (*tuple(int(c[j:j+2],16) for j in (1,3,5)),round(255*opacity*(.15+.85*value)))
     max_samples = max((c['samples'] for c in a['cells']),default=1)
-    if view == 'hex':
+    if view in ('hex', 'hex_support'):
         # Reconstruct older exports lacking hex fields from their raw windows.
         hexes = a.get('hex') or overlap_maps.aggregate(job)['hex']
         for cell in hexes['cells']:
             p=cell['winner']; value=cell['phases'][p]['support'] if p else 0
             points=[((cell['cx']+hexes['radius_x']*math.cos(math.radians(30+i*60)))*w/source['width'],
                      (cell['cy']+hexes['radius_y']*math.sin(math.radians(30+i*60)))*h/source['height']) for i in range(6)]
-            draw.polygon(points,fill=fill(color(p),value))
+            c=color(p)
+            if view == 'hex_support':
+                c,value=blend_support([(color(phase_key),cell['phases'][phase_key]['support']) for phase_key in ([phase] if phase else phases)])
+            draw.polygon(points,fill=fill(c,value))
         # Do not paint hex portions outside measured window footprints.
         mask=Image.new('L',(w,h)); md=ImageDraw.Draw(mask)
         for region in job['regions']:
@@ -133,7 +138,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
         for cell in a['cells']:
             if view == 'spread' and cell['passes'] < 2: continue
             if view == 'support' and phase is None:
-                entries=sorted(((color(p),cell['phases'][p]['support']) for p in phases if cell['phases'][p]['support']>0),key=lambda x:-x[1]) or [('#596778',0)]
+                entries=[blend_support([(color(p),cell['phases'][p]['support']) for p in phases])]
             else:
                 value=cell['samples']/max_samples if view=='samples' else cell['separate_support'] if view=='separate' else cell['phases'][phase]['spread' if view=='spread' else 'support']
                 c='#00d9e8' if view=='samples' else '#d692fa' if view=='separate' else color(phase)
@@ -147,7 +152,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     try: font=ImageFont.truetype('DejaVuSans.ttf',18); title=ImageFont.truetype('DejaVuSans.ttf',26)
     except OSError: font=ImageFont.load_default(size=18); title=ImageFont.load_default(size=26)
     draw.text((40,20),source['name'],font=title,fill='white')
-    titles=dict(support='Passing frequency'+(' · '+phase if phase else ' · all phases'),hex='Top match · averaged hex grid',
+    titles=dict(support='Passing frequency'+(' · '+phase if phase else ' · all phases'),hex='Top match · averaged hex grid',hex_support='Passing support · hex grid',
         spread='Placement disagreement · '+str(phase),samples='Sample coverage',separate='Separate-pattern frequency',raw='Raw centres · classification circles')
     draw.text((40,h+85),titles[view],font=title,fill='white')
     g=job['grid']
@@ -169,7 +174,15 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
                 draw.line((x+j,y+25,x+j,y+38),fill=ramp)
             draw.text((x+108,y+22),'low → high' if view=='samples' else '0 → 100%',font=font,fill='#a4adba')
         x+=length
-    notes=dict(support='Brightness = passing frequency, 0–100%; bands split only where multiple phases pass.',
+    if blend_key:
+        y=max(y+55,h+215)
+        draw.text((40,y),f"{phases[0]} only → equal support → {phases[1]} only",font=font,fill='#a4adba')
+        for j in range(min(300,w)):
+            t=j/max(1,min(300,w)-1)
+            c,_=blend_support([(color(phases[0]),1-t),(color(phases[1]),t)])
+            draw.line((40+j,y+25,40+j,y+36),fill=c)
+    notes=dict(support='Hue = relative phase support; opacity = strongest passing frequency. Blending does not prove coexistence.',
+        hex_support='Hue = relative phase support; opacity = strongest passing frequency. Blending does not prove coexistence.',
         hex='Highest mean rank; brightness = winner passing frequency. Rejected winners can appear.',
         spread='Brightness = range of per-pass support, 0–100%; not an uncertainty estimate.',
         samples='Darker to brighter = fewer to more contributing windows; counts are correlated.',

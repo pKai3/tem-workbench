@@ -48,24 +48,26 @@ class StabilityBatch(unittest.TestCase):
         self.assertEqual(s['windows'],1);self.assertEqual(s['planned_windows'],3)
         self.assertEqual(s['coverage_percent'],50)
 
-    def test_png_aspect_and_phase_bands(self):
+    def test_png_aspect_and_blended_support(self):
         job=self.job();job['source']['height']=200
         preview=BytesIO();Image.new('L',(100,200),120).save(preview,format='PNG')
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'map.png'
             map_png(dict(preview=preview.getvalue()),job,path,dict(hcp_compatible='#ff0000',bcc_compatible='#00ff00'),1)
             with Image.open(path) as result:
-                self.assertEqual(result.size,(980,2120))
+                self.assertEqual(result.size,(980,2180))
                 colors=result.getcolors(result.width*result.height)
+                self.assertEqual(result.getpixel((200,300)),(255,255,0))
+                self.assertEqual(result.getpixel((200,350)),(255,255,0))
                 self.assertIn((255,0,0),[c for _,c in colors])
                 self.assertIn((0,255,0),[c for _,c in colors])
 
     def test_png_choices_and_all_stability_views(self):
         job=self.job();job['regions'][0]['models'][1]['valid']=False
-        choices=['support_all','support_phases','spread_phases','hex','samples','separate','raw']
+        choices=['support_all','support_phases','spread_phases','hex','hex_support','samples','separate','raw']
         options=dict(export_png=True,png_views=choices,overlap=dict(passes=3))
         products=png_exports(options,['HCP','BCC'])
-        self.assertEqual(len(products),9)
+        self.assertEqual(len(products),10)
         self.assertFalse(any('fcc' in name for name,_,_ in products))
         self.assertEqual(png_exports({**options,'export_png':False},['HCP']),[])
         for bad in [dict(png_views=['bogus']),dict(png_views=[]),dict(overlap=None),dict(overlap=dict(passes=1))]:
@@ -77,7 +79,7 @@ class StabilityBatch(unittest.TestCase):
                 path=Path(tmp)/(name+'.png')
                 map_png(dict(preview=preview.getvalue()),job,path,opacity=1,view=view,phase=phase)
                 with Image.open(path) as result:
-                    result.load();self.assertEqual(result.size,(1880,2120))
+                    result.load();self.assertEqual(result.size,(1880,2180 if view in ('support','hex_support') and phase is None else 2120))
                     # All views must leave unsampled right half unchanged.
                     self.assertEqual(result.getpixel((1700,900)),(120,120,120))
                     hashes.append(path.read_bytes())

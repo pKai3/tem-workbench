@@ -110,7 +110,7 @@ def png_exports(options, phases):
     """Validate selected products and expand per-phase views, preserving old callers."""
     overlap = options.get('overlap') is not None
     choices = options.get('png_views', ['support_all'] if overlap else ['classification'])
-    allowed = {'support_all','support_phases','hex','spread_phases','samples','separate','raw'} if overlap else {'classification'}
+    allowed = {'support_all','support_phases','hex','hex_support','spread_phases','samples','separate','raw'} if overlap else {'classification'}
     if not isinstance(choices,list) or any(not isinstance(v,str) or v not in allowed for v in choices):
         raise ValueError('Choose PNG map views supported by the selected grid mode.')
     if not options.get('export_png'):return []
@@ -202,6 +202,8 @@ class BatchGrids:
         with app.lock, app.job_lock:
             if self.running() or (app.grid_thread and app.grid_thread.is_alive()) or app.closing:
                 raise ValueError('Finish or cancel the current grid or batch first.')
+            if getattr(app, 'window_probe', None) and app.window_probe.running():
+                raise ValueError('Finish or cancel the window size check first.')
             cutoff=float(body.get('cutoff',400000))
             if not 0<=cutoff<=100000000:raise ValueError('Invalid magnification cutoff.')
             rows=[eligibility(row,cutoff,body.get('inclusive',True)) for row in app.engine.catalog()]
