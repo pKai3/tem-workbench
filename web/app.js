@@ -86,7 +86,16 @@ let zoneJob=null, zoneSymbols=phaseMaps();
 const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢','◀','▶','✦','✳','◉','⊞','⊠','✧'];
 const phaseColors=Object.fromEntries(PHASES.map(phase=>[phase,colors[phase.toLowerCase()+'_compatible']]));
 let generation=0, busy=false, pending=false, timer=null, drag=null, sourceRequest=0, opened=false;
-function message(text,error=false){$('message').textContent=text;$('message').classList.toggle('error',error)}
+function message(text,error=false){
+ $('message').textContent=text;$('message').classList.toggle('error',error);
+ if(error)exportNotice('Action failed',text,'error');
+}
+// Polling must not reopen an already dismissed error on every refresh.
+const jobErrorNotices={};
+function reportJobError(kind,key,text){
+ const identity=JSON.stringify([key,text]);
+ if(text&&jobErrorNotices[kind]!==identity){jobErrorNotices[kind]=identity;message(text,true)}
+}
 async function api(path,body,signal){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,{...options,signal});const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
 function readPreference(key,fallback){
  try{
@@ -870,6 +879,15 @@ function scheduleOverlapPreview(){
  },180);
 }
 $('show-overlap-preview').onchange=scheduleOverlapPreview;
+function updateOverlapSizePreview(){
+ const windowOutput=$('map-window-resolved'),spacingOutput=$('map-spacing-resolved');
+ windowOutput.textContent='— nm';spacingOutput.textContent='— nm';
+ const o=overlapRequest();if(!o||!meta||isDiffraction())return;
+ const {width,spacing}=overlapDimensions(o,meta);
+ const validWindow=Number.isFinite(width)&&width>0&&(o.size_mode!=='image_percent'||(o.window_percent>=.1&&o.window_percent<=100));
+ if(validWindow)windowOutput.textContent=`≈ ${width.toFixed(2)} nm`;
+ if(validWindow&&Number.isFinite(spacing)&&spacing>0&&(o.spacing_mode!=='window_percent'||(o.spacing_percent>=1&&o.spacing_percent<=100)))spacingOutput.textContent=`≈ ${spacing.toFixed(2)} nm`;
+}
 function updateGridSizeNote(){
  scheduleOverlapPreview();
  const overlap=Boolean(overlapRequest());$('overlap-controls').hidden=!overlap;
@@ -877,6 +895,7 @@ function updateGridSizeNote(){
  const relativeSpacing=$('map-spacing-mode').value==='window_percent';
  $('map-window').closest('label').hidden=relative;$('map-percent-label').hidden=!relative;
  $('map-spacing').closest('label').hidden=relativeSpacing;$('map-spacing-percent-label').hidden=!relativeSpacing;
+ updateOverlapSizePreview();
  updateBatchPngControls();
  for(const id of ['grid-count','grid-min','adaptive','check-passing'])$(id).closest('label').hidden=overlap;
  $('batch-panel').hidden=false;
@@ -1144,6 +1163,7 @@ updateGridOpacity();
 function isGridRunning(){return Boolean(jobId&&(!grid||grid.state==='running'))}
 function gridStatus(){
  if(!grid)return;
+ reportJobError('grid',grid.id,grid.error?'Grid stopped: '+grid.error:'');
  $('grid-status').textContent=`${grid.processed} regions analysed · ${grid.pending} pending · ${grid.cancelling?'stopping':grid.state}${grid.execution?` · ${grid.execution.workers} worker${grid.execution.workers===1?'':'s'} · ${grid.execution.elapsed_seconds.toFixed(1)} s`:''}${grid.error?' — '+grid.error:''}`+(grid.rescore?` · reweighted in ${(grid.rescore.elapsed_ms/1000).toFixed(2)} s using cached fits`:'');
 }
 async function poll(id){
@@ -1179,9 +1199,20 @@ $('clear-grid').onclick=()=>{
 const exportButtonTimers=new Map();
 function exportNotice(title,detail='',state='busy'){
  const notice=$('export-notice');notice.dataset.state=state;
+ // A modal makes elements outside it inert, including top-layer popovers.
+ const host=[...document.querySelectorAll('dialog:modal')].at(-1)||document.body;
+ if(notice.parentElement!==host)host.append(notice);
+ notice.setAttribute('role',state==='error'?'alert':'status');
+ notice.setAttribute('aria-live',state==='error'?'assertive':'polite');
  $('export-notice-title').textContent=title;$('export-notice-detail').textContent=detail;notice.hidden=false;
+ // Manual popovers stay visible above open dialogs without moving keyboard focus.
+ if(notice.showPopover&&!notice.matches(':popover-open'))notice.showPopover();
 }
-$('export-notice-close').onclick=()=>{$('export-notice').hidden=true};
+document.addEventListener('close',event=>{
+ const notice=$('export-notice');
+ if(event.target.contains?.(notice)&&!notice.hidden)exportNotice($('export-notice-title').textContent,$('export-notice-detail').textContent,notice.dataset.state);
+},true);
+$('export-notice-close').onclick=()=>{const notice=$('export-notice');if(notice.hidePopover&&notice.matches(':popover-open'))notice.hidePopover();notice.hidden=true};
 function beginExport(id,title){
  const button=$(id);clearTimeout(exportButtonTimers.get(id));
  button.dataset.exportLabel??=button.textContent;button.dataset.exportState='busy';button.setAttribute('aria-busy','true');button.disabled=true;button.textContent='Exporting…';
@@ -1189,7 +1220,7 @@ function beginExport(id,title){
 }
 function finishExport(id,path,error=null){
  const button=$(id);button.removeAttribute('aria-busy');button.dataset.exportState=error?'error':'saved';button.textContent=error?'Export failed':'✓ Saved';
- if(error){exportNotice('Export failed',error,'error');message(error,true)}
+ if(error){message(error,true);exportNotice('Export failed',error,'error')}
  else{const name=path.split(/[\\/]/).pop();exportNotice('✓ Export saved · '+name,path,'saved');message('Saved: '+path)}
  exportButtonTimers.set(id,setTimeout(()=>{button.textContent=button.dataset.exportLabel;delete button.dataset.exportState},5000));
 }
@@ -2662,6 +2693,9 @@ function renderBatchTimeEstimate(data){
  host.textContent=`Estimated finish: ${day}${time} · ${duration}`;
 }
 function renderBatch(data){
+ const failure=data.failures?.at(-1);
+ const error=data.error?'Batch stopped: '+data.error:failure?`Batch image failed (${failure.file_id||'unknown image'}, ${failure.stage||'analysis'}): ${failure.error}`:'';
+ reportJobError('batch',[data.output_directory,data.failures?.length||0],error);
  const running=data.state==='running';batchRunning=running;$('batch-cancel').disabled=!running;$('batch-preview').disabled=running;syncBatchSelection();
  $('batch-status').textContent=`${data.state} · ${data.finished||0}/${data.total||0} images · ${data.current||''}${data.current_grid?' · '+data.current_grid.processed+' regions analysed':''}${data.failures?.length?' · '+data.failures.length+' failure(s)':''}${data.error?' · '+data.error:''}${data.output_directory?' · Saved to '+data.output_directory:''}`;
  renderBatchTimeEstimate(data);

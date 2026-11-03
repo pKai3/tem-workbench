@@ -293,3 +293,8 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 #reset-material{flex:none;width:28px;min-height:28px;padding:0;font-size:19px;line-height:1}
 
 .image-browser-folder-label{min-width:160px;max-width:300px;flex:1}.image-browser-folder-label select{width:100%;text-overflow:ellipsis}
+
+/* Resolved physical sizes stay beside the percentage that controls them. */
+.resolved-map-input{display:flex;align-items:center;gap:8px}.resolved-map-input output{color:var(--cyan);white-space:nowrap;font-variant-numeric:tabular-nums}
+/* Visible while scrolled or inside a modal; errors remain until dismissed. */
+#export-notice{margin:0;top:auto;left:auto;max-height:min(50vh,440px);overflow:auto}#export-notice::backdrop{background:transparent;pointer-events:none}
