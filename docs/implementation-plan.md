@@ -376,3 +376,10 @@ Starting centre coordinates similarly display one decimal place without rounding
 Follow-up controls: manual minimum FFT peak strength has a synchronized slider (hidden in auto modes); changes apply on release. Set centre sits beside centre coordinates, leaving the four peak tools on one row. The compact Edit radius label retains its full explanation on hover. Exclusion actions align with the two peak-edit action columns.
 
 Centre changes now show the normal delayed analysis spinner, including while Set centre remains selected. Peak-edit modes still suppress it to keep editing unobstructed.
+
+
+## File switching during analysis — 4 November 2026
+
+Interactive analysis no longer holds the shared catalogue lock while fitting. Source arrays remain referenced by the running request; mutable template and detector cache containers are isolated per request. Switching files abandons the previous browser request and immediately permits the new source/analysis to load. Late replies and cleanup cannot replace the new result or clear its loading state. An abandoned server calculation may finish in the background; this does not forcibly terminate numeric routines or change grid cancellation.
+
+Validation: a blocked-analysis regression confirms a second source completes before the first is released, with isolated caches. Browser request-function tests cover late success and failure without stale results, errors or spinner cleanup affecting the new request.

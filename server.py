@@ -76,6 +76,27 @@ class Workbench:
         self.window_probe = WindowSizeProbe()
 
 
+    def analyze_interactive(self, body):
+        # Snapshot mutable caches while retaining immutable source arrays. Matching
+        # must not hold the catalogue lock and block opening a different image.
+        with self.lock:
+            original_engine = self.engine
+            engine = copy.copy(original_engine)
+            engine._template_cache = dict(self.engine._template_cache)
+            source = self.engine.load(body['file_id'])
+            item = dict(source)
+            item['_diffraction_cache'] = {
+                'entries': list(source.get('_diffraction_cache', {}).get('entries', []))}
+        result = engine.analyze(item, body['roi'], body.get('settings', {}))
+        with self.lock:
+            if self.engine is original_engine:
+                self.engine._template_cache.update(engine._template_cache)
+                while len(self.engine._template_cache) > 4:
+                    self.engine._template_cache.pop(next(iter(self.engine._template_cache)))
+            if self.engine.loaded.get(body['file_id']) is source:
+                source['_diffraction_cache'] = item['_diffraction_cache']
+        return item, result
+
     def config_info(self):
         return {'window_size_probe': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(8, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
@@ -675,9 +696,7 @@ def make_handler(app):
                     LOG.info('Opened image: %s (%s×%s)', item['info']['name'], item['info']['width'], item['info']['height'])
                     self.send(item['info'])
                 elif self.path == '/api/analyze':
-                    with app.lock:
-                        item=app.engine.load(body['file_id'])
-                        result=app.engine.analyze(item, body['roi'], body.get('settings', {}))
+                    item, result = app.analyze_interactive(body)
                     if time.monotonic()-app.last_preview_log >= 1:
                         app.last_preview_log = time.monotonic()
                         if result.get('image_kind') == 'diffraction':

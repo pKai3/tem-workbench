@@ -86,6 +86,7 @@ let zoneJob=null, zoneSymbols=phaseMaps();
 const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢','◀','▶','✦','✳','◉','⊞','⊠','✧'];
 const phaseColors=Object.fromEntries(PHASES.map(phase=>[phase,colors[phase.toLowerCase()+'_compatible']]));
 let generation=0, busy=false, pending=false, timer=null, drag=null, sourceRequest=0, opened=false;
+let analysisController=null;
 function message(text,error=false){
  $('message').textContent=text;$('message').classList.toggle('error',error);
  if(error)exportNotice('Action failed',text,'error');
@@ -288,7 +289,31 @@ function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
 function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi={x:0,y:0,w:meta.width,h:meta.height};$('region-size').textContent=`${meta.width} × ${meta.height} px · full detector`;drawDetector();return;}const min=32,max=Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=preserveHeight?roi.h:roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`;rememberRegionSize()}
 // Invalidate the old result immediately; never attach it to a newly moved region.
 function schedule(delay=120){generation++;pending=true;result=null;updateStrengthMode();hideRegionPreview();beginSpectrumLoading();syncSpectrumExportControls();if(isDiffraction()){drawDetector();renderTranslation()}$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
-async function analyze(){if(busy||!meta||!pending)return;pending=false;busy=true;const version=generation,body=requestBody();try{const data=await api('analyze',body);if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}}catch(e){if(version===generation){result=null;message(e.message,true);$('phase-label').textContent='Analysis unavailable'}}finally{busy=false;syncPeakEditControls();if(version===generation&&!pending)finishSpectrumLoading();syncSpectrumExportControls();if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20)}}
+function abandonAnalysis(){
+ analysisController?.abort();analysisController=null;busy=false;
+ clearTimeout(timer);timer=null;
+}
+async function analyze(){
+ if(busy||!meta||!pending)return;
+ pending=false;busy=true;
+ const controller=new AbortController();analysisController=controller;
+ const version=generation,body=requestBody();
+ try{
+  const data=await api('analyze',body,controller.signal);
+  if(controller!==analysisController)return;
+  if(version===generation||(drag&&body.file_id===fileId&&JSON.stringify(body.settings)===JSON.stringify(settings()))){result=data;await renderResult(data,version,body)}
+ }catch(e){
+  if(controller===analysisController&&version===generation&&e.name!=='AbortError'){result=null;message(e.message,true);$('phase-label').textContent='Analysis unavailable'}
+ }finally{
+  // An abandoned request must not clear the new image's busy state or spinner.
+  if(controller===analysisController){
+   analysisController=null;busy=false;syncPeakEditControls();
+   if(version===generation&&!pending)finishSpectrumLoading();
+   syncSpectrumExportControls();
+   if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20);
+  }
+ }
+}
 let rasterContext=null,rasterResolve=null,rasterDrag=false;
 const rasterFields=['raster-x1','raster-y1','raster-x2','raster-y2'];
 function rasterPoints(){const v=rasterFields.map(id=>$(id).value===''?NaN:Number($(id).value));return [[v[0],v[1]],[v[2],v[3]]]}
@@ -355,6 +380,7 @@ async function openFile(){
  if(typeof resetWindowSizeProbe==='function')resetWindowSizeProbe();
  const id=$('file').value;if(!id)return;updateFileNavigation();$('calibrate-image').hidden=!config.files.find(f=>f.id===id)?.raster;$('run-grid').disabled=true;
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
+ abandonAnalysis();
  const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;detectorRaw=null;opened=false;drag=null;maskDrag=null;displayedDiffraction=null;snapPointer=null;radiusDrag=null;peakUndo=[];document.body.classList.remove('editing-peaks');
  scheduleOverlapPreview();syncMapLoading();finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
  message('Opening source image…');
