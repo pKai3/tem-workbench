@@ -6,7 +6,7 @@ This is the maintained implementation status and roadmap. The original three ana
 
 ## Exact window count — 3 November 2026
 
-Overlapping-map settings show a compact blue “≈ N windows” readout beside Placement passes instead of the options-summary paragraph. The number is calculated exactly despite the requested approximate-style prefix. Counting uses the same backend sampling layout as the run, even with the preview unchecked; requests are debounced and stale responses ignored. Invalid layouts show their error in the same location. No FFT analysis runs to obtain the count.
+The Centres layout dropdown precedes the centre-spacing controls. Overlapping-map settings show a compact blue “≈ N windows” readout beside Placement passes instead of the options-summary paragraph. The number is calculated exactly despite the requested approximate-style prefix. Counting uses the same backend sampling layout as the run, even with the preview unchecked; requests are debounced and stale responses ignored. Invalid layouts show their error in the same location. No FFT analysis runs to obtain the count.
 
 ## Overlapping-window preview — 3 November 2026
 
