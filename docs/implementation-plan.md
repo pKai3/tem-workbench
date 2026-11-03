@@ -4,6 +4,14 @@ Last updated: 3 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
+## Overlapping-window preview — 3 November 2026
+
+Replaced the all-window outline overlay with sampling-centre dots and a selected window and all immediate neighbours from the same placement pass (normally six for hexagonal or four for square centres). High-contrast 3-pixel outlines have black backing; the selected window is solid cyan and its neighbours dashed gold. Shared area is shaded, centres are joined by connector lines without numbered labels, and actual window dimensions and centre distance are shown above the image. A pass selector defaults to the first pass and optionally shows all shifted passes. Hovering changes the selected neighbourhood without analysis. Existing results/ROI and their legends are temporarily hidden during planning and restored on closing; exports remain independent of this preview. Uses the existing backend sampling layout without changing analysis or placement.
+
+## Incremental placement passes — proposed, 3 November 2026
+
+Increasing passes during or after a run should retain completed windows and analyse only new placements when image and analysis settings match. Current jobs start fresh, and centring the complete sample bounds can shift earlier passes as the pass count changes. Before implementing extension, use a stable placement origin across pass counts; match reuse by exact source/window/settings; preserve completed and in-flight work; update aggregation and progress for the expanded pass set. Existing exported layouts must retain their original coordinates. This is pending, not delivered by the preview change.
+
 ## Map update feedback — 3 November 2026
 
 A centred spinner and “Updating map…” badge appear immediately while penalty changes queue or rescore the current map, including overlapping stability maps. The indicator clears after success/error, grid clearing or image switching, and stays visible across queued slider changes. It is display-only and excluded from map exports. The zone-symbol checkbox is hidden for overlapping maps, where Centre markers controls symbols; before a run its visibility follows the selected search mode.
