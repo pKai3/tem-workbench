@@ -4,6 +4,10 @@ Last updated: 3 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
+## Grid symbol label — 3 November 2026
+
+Renamed the grid checkbox to **Show zone-axis symbols**. Rendering already uses all phases enabled in the grid settings, including ORT; the old HCP/BCC/FCC list was only a stale label. Display behaviour and matching are unchanged.
+
 ## Phase settings layout — 3 November 2026
 
 Phase colour/search controls use one compact four-column row, with ORT alongside HCP/BCC/FCC. Reference lattice inputs are disabled and greyed for excluded phases, retaining their values for re-enabling; this follows manual phase changes, material presets, resets and restored settings. The scale-fitting selector is capped at a compact width instead of stretching across Processing settings. A reset arrow beside Material restores its lattice references, including disabled phases. Custom edits remember their last chosen preset for reset (Titanium fallback); phase search/colour selections are retained.
