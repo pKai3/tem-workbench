@@ -304,3 +304,5 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .overlap-preview-toolbar{padding:10px 12px;margin:0 0 10px;background:#0c121a;border:1px solid #59d4cb;border-radius:6px;font-size:12px;line-height:1.5}
 .overlap-preview-toolbar[hidden]{display:none}.preview-toolbar-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px}.preview-toolbar-row label{display:flex;flex-direction:row;align-items:center;gap:6px}.preview-toolbar-row select,.preview-toolbar-row button{min-height:30px;padding:4px 8px}.preview-toolbar-row button{margin-left:auto}.preview-window-key{display:flex;flex-wrap:wrap;gap:6px 16px;margin:5px 0}.preview-first{color:#70f5ff}.preview-second{color:#ffdb69}.overlap-preview-toolbar p{margin:5px 0 0;color:var(--muted)}#overlap-preview-pair{font-variant-numeric:tabular-nums}
 .overlap-planning #grid-map,.overlap-planning #roi-box,.overlap-planning #roi-handle,.overlap-planning #saved-regions-map,.overlap-planning .map-legends,.overlap-planning #roi-hint{display:none}
+
+#grid-size-note.window-count{color:#dce6ef;font-size:14px;font-weight:600}

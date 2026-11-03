@@ -4,6 +4,10 @@ Last updated: 3 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
+## Exact window count — 3 November 2026
+
+Overlapping-map settings show a compact exact window count instead of the options-summary paragraph and area estimate. Counting uses the same backend sampling layout as the run, even with the preview unchecked; requests are debounced and stale responses ignored. Invalid layouts show their error in the same location. No FFT analysis runs to obtain the count.
+
 ## Overlapping-window preview — 3 November 2026
 
 Replaced the all-window outline overlay with sampling-centre dots and a selected window and all immediate neighbours from the same placement pass (normally six for hexagonal or four for square centres). High-contrast 3-pixel outlines have black backing; the selected window is solid cyan and its neighbours dashed gold. Shared area is shaded, centres are joined by connector lines without numbered labels, and actual window dimensions and centre distance are shown in the expandable preview box directly beneath the Preview overlapping windows checkbox. A pass selector defaults to the first pass and optionally shows all shifted passes. Hovering changes the selected neighbourhood without analysis. Existing results/ROI and their legends are temporarily hidden during planning and restored on closing; exports remain independent of this preview. Uses the existing backend sampling layout without changing analysis or placement.

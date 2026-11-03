@@ -919,9 +919,10 @@ function scheduleOverlapPreview(){
  const options=overlapRequest(),active=Boolean(options)&&meta&&!isDiffraction();
  $('overlap-preview-control').hidden=!active;
  setOverlapPlanning(Boolean(active&&$('show-overlap-preview').checked));
- if(!overlapPlanning())return;
+ if(!active)return;
+ $('grid-size-note').textContent='Counting windows…';
  $('overlap-preview-summary').textContent='Preparing window layout…';$('overlap-preview-pair').textContent='';$('overlap-preview-pass').disabled=true;
- if(!config?.overlap_preview){$('overlap-preview-summary').textContent='Restart Workbench and reload to enable preview.';return}
+ if(!config?.overlap_preview){$('grid-size-note').textContent=$('overlap-preview-summary').textContent='Restart Workbench and reload to count windows.';return}
  const sourceVersion=sourceRequest;
  overlapPreviewTimer=setTimeout(async()=>{
   try{
@@ -929,6 +930,8 @@ function scheduleOverlapPreview(){
    const data=await api('overlap-preview',{file_id:fileId,overlap:options});
    if(version!==overlapPreviewVersion||sourceVersion!==sourceRequest)return;
    overlapPreviewData=data;
+   $('grid-size-note').textContent=`${data.samples.length.toLocaleString()} windows`;
+   if(!overlapPlanning())return;
    const select=$('overlap-preview-pass'),previous=select.value;
    select.replaceChildren();
    for(const pass of [...new Set(data.samples.map(s=>s.pass_id))].sort((a,b)=>a-b)){const option=document.createElement('option');option.value=String(pass);option.textContent=`Pass ${pass+1}`;select.append(option)}
@@ -937,7 +940,7 @@ function scheduleOverlapPreview(){
    select.disabled=false;
    $('overlap-preview-summary').textContent=`${data.samples.length.toLocaleString()} planned FFT windows · ${options.passes} placement pass${options.passes===1?'':'es'}`;
    renderOverlapPreview();
-  }catch(error){if(version===overlapPreviewVersion&&sourceVersion===sourceRequest)$('overlap-preview-summary').textContent=error.message}
+  }catch(error){if(version===overlapPreviewVersion&&sourceVersion===sourceRequest)$('grid-size-note').textContent=$('overlap-preview-summary').textContent=error.message}
  },180);
 }
 $('show-overlap-preview').onchange=scheduleOverlapPreview;
@@ -965,13 +968,9 @@ function updateGridSizeNote(){
  $('batch-panel').hidden=false;
 
  $('check-passing').disabled=!config?.check_passing||!$('adaptive').checked;
- const note=$('grid-size-note');if(!meta||isDiffraction()){note.textContent='';return}
- if(overlap){const o=overlapRequest(),area=meta.width*meta.pixel_x_nm*meta.height*meta.pixel_y_nm;
-  const {width,spacing}=overlapDimensions(o,meta);
-  const estimate=Math.ceil(area/(spacing**2*(o.layout==='hex'?Math.sqrt(3)/2:1))*o.passes);
-  const sigma=Number($('fft-smoothing').value),blur=sigma/width;
-  const sizes=Number.isFinite(width)&&width>0?`Current image: ${width.toFixed(2)} nm window (${Math.round(width/meta.pixel_x_nm)} × ${Math.round(width/meta.pixel_y_nm)} px), ${spacing.toFixed(2)} nm spacing. Smoothing σ ${sigma} bins ≈ ${blur.toFixed(3)} nm⁻¹; bin setting stays unchanged. `:'';
-  note.textContent=sizes+`Square FFT windows, ${o.layout==='hex'?'hexagonal':'square'} centres; ${o.passes} shifted placement pass(es). Rough upper estimate ${Number.isFinite(estimate)?estimate:'—'} windows (limit ${(config?.overlap_max_windows||10000).toLocaleString()}). Full windows only; layout centred with balanced outer margins. Edges have fewer samples. Matching runs separately for every window. ${relative?'Batch window sizes resolve separately for each image.':'Batch windows keep the same physical size.'} ${relativeSpacing?'Centre spacing follows window size.':'Centre spacing stays fixed in nm.'}`;return}
+ const note=$('grid-size-note');note.classList.toggle('window-count',overlap);
+ if(!meta||isDiffraction()){note.textContent='';return}
+ if(overlap)return;
  const count=Number($('grid-count').value),minimum=Number($('grid-min').value);
  if(!Number.isInteger(count)||count<2||count>24||!Number.isFinite(minimum)||minimum<=0){note.textContent='Choose 2–24 regions per side and a positive stopping limit in nm.';return}
  const extent=Math.min(meta.width,meta.height),pixel=Math.min(meta.pixel_x_nm,meta.pixel_y_nm);
