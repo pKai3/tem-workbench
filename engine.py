@@ -287,11 +287,12 @@ class Engine:
             raise ValueError('Direct diffraction analyses use the full detector image; use exclusion masks for unwanted areas.')
         if min(w, h) < 32 or x < 0 or y < 0 or x+w > iw or y+h > ih or (not direct and abs(w-h) > 1):
             raise ValueError('Choose a square region within the image, at least 32 pixels wide.')
-        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('g_min', 3.), ('g_max', 10.), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('ca_penalty_strength', scale_fitting.DEFAULT_CA_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT)]}
+        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('g_min', 3.), ('g_max', 10.), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('ca_penalty_strength', scale_fitting.DEFAULT_CA_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT), ('peak_evidence_half_weight_nm_inv', 0.)]}
         if not all(np.isfinite(v) for v in values.values()):
             raise ValueError('Analysis settings must be finite numbers.')
         if not (.85 <= values['scale'] <= 1.15 and 0 <= values['g_min'] < 30 and 4 <= values['g_max'] <= 30 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['ca_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
             raise ValueError('Analysis settings are outside the supported range.')
+        peak_evidence.validate_falloff(values['peak_evidence_half_weight_nm_inv'])
         detector_defaults = {'fft_smoothing_sigma': .65, 'fft_threshold_floor': 1.8,
                              'fft_minimum_enrichment': 3., 'fft_minimum_separation': .5,
                              'fft_max_peaks': 70}
@@ -355,7 +356,7 @@ class Engine:
             s['weak_maxima'] = context['maxima']
             for model in candidates:
                 peak_evidence.inspect(model, context)
-                peak_evidence.apply(model, settings['peak_evidence_weight'])
+                peak_evidence.apply(model, settings['peak_evidence_weight'], settings.get('peak_evidence_half_weight_nm_inv', 0.))
             models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
         return models, candidates
 
@@ -522,6 +523,8 @@ class Engine:
             classification['flags'].append('Only three independent profiles were detected; the current crystal screen requires four. Some high-symmetry projections have only three first-order profiles. Higher-order reflections or a larger fitting band may supply additional evidence; three profiles alone do not identify a phase.')
         if settings.get('peak_evidence_weight', 0):
             classification['flags'].append('Prediction-site evidence is an exploratory ranking adjustment. Weak maxima are checked against local background and rotated controls; they do not count toward the initial fit screen or separate-pattern criteria. Missing spots are not proof of an absent reflection.')
+        if settings.get('peak_evidence_half_weight_nm_inv', 0):
+            classification['flags'].append(f"Missing-prediction costs fall smoothly with reciprocal radius: half weight at {settings['peak_evidence_half_weight_nm_inv']:g} nm⁻¹. Detected-peak agreement and weak bonuses are unchanged. This is a heuristic, not a CTF correction.")
         if not can_index:
             classification['label'] = 'insufficient'
             classification['flags'].append('No usable sampling in the phase-fitting band.' if s.get('kind') == 'diffraction' else f"The stored sampling does not cover the full {settings.get('g_min', 3.):g}–{settings['g_max']:g} nm⁻¹ fitting band; lower the outer limit to enable phase fitting.")
@@ -572,15 +575,17 @@ class Engine:
             if settings['scale_mode'] != 'fixed':
                 c = model.get('scale_c') if model.get('scale_parameter_count') == 2 else None
                 scale_fitting.penalize(model, model['scale_a'], c, settings['scale_penalty_strength'], settings.get('ca_penalty_strength', .10))
-            peak_evidence.apply(model, settings.get('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT))
+            peak_evidence.apply(model, settings.get('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT), settings.get('peak_evidence_half_weight_nm_inv', 0.))
         return candidates
 
-    def rescore(self, result, strength, evidence_weight=None, ca_penalty_strength=None):
+    def rescore(self, result, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None):
         """Only ranking/classification changes; all measured evidence is reused."""
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= .5:
             raise ValueError('Scale penalty must be between 0 and 0.5.')
         settings = {**result['settings'], 'scale_penalty_strength': 0. if result['settings'].get('material') == 'unknown' else strength}
+        if half_weight_nm_inv is not None:
+            settings['peak_evidence_half_weight_nm_inv'] = peak_evidence.validate_falloff(half_weight_nm_inv)
         if evidence_weight is not None:
             settings['peak_evidence_weight'] = float(evidence_weight)
         if ca_penalty_strength is not None:

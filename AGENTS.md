@@ -7,3 +7,7 @@
 - Preserve the agreed task order unless the user changes it. Do not implement a roadmap item merely because it is listed.
 - Record completion dates and commit references when available. Keep the README linked to the plan rather than duplicating its contents.
 - Update architecture diagrams only when the user explicitly requests a refresh. Routine feature changes do not require diagram/PDF regeneration; when requested, follow `docs/architecture/README.md`.
+
+## UI conventions
+
+- Keep settings labels and controls concise and visible. Put longer explanations in hover-to-reveal help, also available through keyboard focus or tapping an info button. Keep errors and active progress visible.

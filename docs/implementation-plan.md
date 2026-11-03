@@ -1,6 +1,6 @@
 # TEM Workbench implementation plan
 
-Last updated: 3 November 2026
+Last updated: 4 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
@@ -357,3 +357,18 @@ Set centre works on the detector and reciprocal plot, converting clicks using th
 ## Plain demo downloads — 3 November 2026
 
 Demo downloads accept plain DM4 folders/ZIPs without a manifest. Original-DM4 catalogue entries are discovered from files with the same stable filename-derived IDs as before. Matching PNGs are optional; existing local previews are reused and missing previews are generated locally during installation. ZIP integrity/path checks remain, and pack identity uses original filenames/content rather than manifests or previews. Legacy NPZ reading is retained. The optional developer packaging helper now copies only DM4s; users can update a shared Dropbox folder directly. This change does not alter the hosted Dropbox folder automatically.
+
+## Radial missing-peak cost and settings layout — 4 November 2026
+
+Implemented adjustable missing-prediction falloff, shared by FFT and direct diffraction: each missing node costs `2^(-(g/r)^2)` relative to its previous weight. The new UI starts at a half-weight radius `r = 8 nm⁻¹`; zero restores equal weighting. The denominator remains the number of assessable predictions. Strong coverage and weak-peak bonuses are unchanged. Cached maps can be reweighted without repeating FFTs; exports retain the setting and weighted/unweighted evidence factors. Legacy results without this field restore zero to preserve their original scores.
+
+FFT controls use two aligned rows on wide screens, with scale fitting and a consistent penalty-control grid to the right; narrower screens stack the panels. Long FFT/scale descriptions now appear through hover/focus help. This is the ongoing UI convention, recorded in AGENTS.md. Errors and live progress remain visible.
+
+Validation: 41 focused analysis tests passed, including radial weighting, disabled/legacy behaviour, cached map reweighting and export propagation. Browser checks covered control synchronization, fitting-limit relocation, desktop alignment and responsive help. This changes missing-peak weighting, not the acceptance threshold; a candidate can remain below threshold because of other costs.
+
+The same layout pass aligns phase-colour and material fields under matched headings, moving their explanatory notes into help. Direct diffraction now groups centre/calibration, detection and inner/outer bounds in aligned rows, with a separate peak-edit panel. Centre-fit and peak-edit details are available from help icons; existing control IDs, settings and edit behaviour are preserved.
+
+At desktop widths, direct diffraction, peak editing and scale fitting share one row as three peer panels. Below 1400 px the groups wrap to retain usable input widths.
+
+Diffraction calibration fields and metadata display five significant figures; full calibration values remain in analysis state, persistence and exports. Hovering a calibration input reveals its full value.
+Starting centre coordinates similarly display one decimal place without rounding the stored values.

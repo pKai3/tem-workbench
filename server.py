@@ -87,7 +87,7 @@ class Workbench:
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
                 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
-                'peak_evidence': 'local-maxima-v1', 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
+                'peak_evidence': 'local-maxima-v3', 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
     def set_folders(self, data, output):
         with self.lock, self.job_lock:
@@ -397,7 +397,7 @@ class Workbench:
                                    'best_zones': self.best_zones(r), 'pass_id': r.get('pass_id')} for r in regions])
             return result
 
-    def rescore(self, job_id, strength, evidence_weight=None, ca_penalty_strength=None):
+    def rescore(self, job_id, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None):
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= .5:
             raise ValueError('Scale penalty must be between 0 and 0.5.')
@@ -415,12 +415,15 @@ class Workbench:
             ca_penalty_strength = float(job['settings'].get('ca_penalty_strength', .10) if ca_penalty_strength is None else ca_penalty_strength)
             if not np.isfinite(ca_penalty_strength) or not 0 <= ca_penalty_strength <= .5:
                 raise ValueError('c/a penalty must be between 0 and 0.5.')
+            half_weight_nm_inv = float(job['settings'].get('peak_evidence_half_weight_nm_inv', 0.) if half_weight_nm_inv is None else half_weight_nm_inv)
+            if not np.isfinite(half_weight_nm_inv) or not 0 <= half_weight_nm_inv <= 30:
+                raise ValueError('Missing-peak half-weight radius must be between 0 and 30 nm⁻¹.')
             started = time.perf_counter()
             # Build a replacement before publishing, so a failure cannot leave
             # half the map at the new penalty. Parent/child boundaries stay fixed.
-            regions = [self.engine.rescore(region, strength, evidence_weight, ca_penalty_strength) for region in job['regions']]
-            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight, 'ca_penalty_strength': ca_penalty_strength},
-                       rescore={'strength': strength, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_weight': evidence_weight, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
+            regions = [self.engine.rescore(region, strength, evidence_weight, ca_penalty_strength, half_weight_nm_inv) for region in job['regions']]
+            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_half_weight_nm_inv': half_weight_nm_inv},
+                       rescore={'strength': strength, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_weight': evidence_weight, 'peak_evidence_half_weight_nm_inv': half_weight_nm_inv, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                                 'region_count': len(regions), 'reused_fits': True, 'boundaries_unchanged': True,
                                 'at': datetime.now().astimezone().isoformat()})
             if job['grid'].get('mode') == 'overlap':
@@ -724,7 +727,7 @@ def make_handler(app):
                         started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)), body.get('workers', 0), overlap=body.get('overlap'))
                     self.send(started)
                 elif self.path == '/api/rescore-grid':
-                    self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight'), body.get('ca_penalty_strength')))
+                    self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight'), body.get('ca_penalty_strength'), body.get('peak_evidence_half_weight_nm_inv')))
                 elif self.path == '/api/cancel':
                     app.cancel_grid(body['job_id'])
                     LOG.info('Grid %s cancellation requested', body['job_id'][:8])

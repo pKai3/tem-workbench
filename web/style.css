@@ -304,3 +304,143 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .overlap-preview-toolbar{padding:10px 12px;margin:0 0 10px;background:#0c121a;border:1px solid #59d4cb;border-radius:6px;font-size:12px;line-height:1.5}
 .overlap-preview-toolbar[hidden]{display:none}.preview-toolbar-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px}.preview-toolbar-row label{display:flex;flex-direction:row;align-items:center;gap:6px}.preview-toolbar-row select,.preview-toolbar-row button{min-height:30px;padding:4px 8px}.preview-toolbar-row button{margin-left:auto}.preview-window-key{display:flex;flex-wrap:wrap;gap:6px 16px;margin:5px 0}.preview-first{color:#70f5ff}.preview-second{color:#ffdb69}.overlap-preview-toolbar p{margin:5px 0 0;color:var(--muted)}#overlap-preview-pair{font-variant-numeric:tabular-nums}
 .overlap-planning #grid-map,.overlap-planning #roi-box,.overlap-planning #roi-handle,.overlap-planning #saved-regions-map,.overlap-planning .map-legends,.overlap-planning #roi-hint{display:none}
+
+/* Shared columns keep the two FFT rows aligned; fitting stays centred at right. */
+.processing-layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(460px,1fr);gap:14px;align-items:stretch}
+.processing-layout .fft-processing{display:flex;flex-direction:column;align-items:stretch;margin:0;gap:14px;min-width:0;padding:12px}
+.processing-layout .fft-processing-heading{align-self:flex-start;height:28px}
+.fft-entry-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:end;gap:12px;min-width:0}
+.fft-entry-row>label{min-width:0;gap:6px}
+.fft-processing-heading+.fft-entry-row>label:last-child{grid-column:span 2}
+.fft-entry-row input[type=number]{width:100%;min-width:0;height:32px}
+.fft-entry-row .strength-controls{min-width:0;height:32px}
+.fft-entry-row .strength-controls select{flex:1;width:0;height:32px}
+.fft-entry-row .strength-controls input{flex:0 0 64px;width:64px}
+.fft-entry-row .strength-controls output{white-space:nowrap}
+.fft-entry-row .fitting-limits{display:contents}
+.fft-entry-row .fitting-limits label{min-width:0;gap:6px}
+.fft-window-checks{display:flex;flex-direction:column;gap:4px;order:1;align-self:end}
+.fft-window-checks .check{min-height:22px;white-space:nowrap}
+.processing-layout .fft-processing p{flex:none;margin-top:0}
+.processing-layout .scale-settings{min-width:0;padding:12px;border:1px solid var(--line);border-radius:7px;background:#101925;text-align:left}
+.scale-settings .calibration-bar{justify-content:center;padding:0;gap:12px}
+.scale-settings .calibration-bar>label:first-child{flex:0 1 400px;gap:14px}
+.scale-settings .calibration-bar>label:first-child>span{display:flex;align-items:center;justify-content:center;height:28px;font-weight:600}
+.scale-settings .calibration-bar select{height:32px;min-height:32px;padding:5px 8px}
+.scale-settings .analysis-tools{display:block;margin-top:14px}
+.scale-settings .penalty-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;margin:0;padding:0;border:0;background:none;align-items:end}
+.scale-settings .penalty-field{min-width:0;gap:6px}
+.scale-settings .penalty-field[hidden]{display:none}
+.scale-settings .penalty-field label{min-height:16px}
+.scale-settings .weight-inputs{min-width:0}
+.scale-settings .weight-inputs input[type=number]{flex:0 0 64px;width:64px;height:32px}
+.scale-settings .weight-inputs input[type=range]{flex:1;width:0;min-width:40px;max-width:none}
+.scale-settings .penalty-controls p{grid-column:1/-1}
+.scale-settings #calibration-note{font-size:11px;line-height:1.4;margin:10px 0 0}
+.processing-layout #diffraction-controls{grid-column:1/-1;margin:0}
+body.diffraction .processing-layout .fft-processing{display:none}
+body.diffraction .scale-settings{grid-column:1/-1;width:100%;max-width:1000px;justify-self:center}
+@media(max-width:1399px){.processing-layout{grid-template-columns:1fr}.scale-settings .penalty-controls{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:800px){.fft-entry-row{grid-template-columns:repeat(3,minmax(0,1fr))}.scale-settings .penalty-controls{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.fft-entry-row{grid-template-columns:repeat(2,minmax(0,1fr))}.scale-settings .penalty-controls{grid-template-columns:1fr}}
+
+/* Descriptions are available on hover and keyboard focus without occupying rows. */
+.settings-help{position:relative;display:inline-flex;align-items:center;font-weight:400;text-align:left}
+.settings-help-button{border:0;background:transparent;color:var(--muted);padding:0;min-height:24px;width:24px;line-height:24px;cursor:help}
+.settings-help-button:hover,.settings-help-button:focus-visible{color:var(--cyan)}
+.settings-help-popup{display:none;position:absolute;z-index:30;top:100%;left:0;width:min(360px,75vw);padding:10px 12px;background:#0b121b;border:1px solid #40556a;border-radius:6px;box-shadow:0 4px 16px #0008;line-height:1.5;font-size:12px;color:var(--muted)}
+.settings-help:hover .settings-help-popup,.settings-help:focus-within .settings-help-popup{display:block}
+.settings-help-popup .hint{display:block;margin:0;font-size:12px;line-height:1.5}
+.settings-help-popup .hint+.hint{margin-top:8px}
+.scale-heading{gap:5px}
+.scale-settings .settings-help-popup{left:auto;right:0}
+.scale-settings .settings-help-popup #calibration-note{font-size:12px;margin:0}
+
+.fft-processing-heading,.scale-heading{position:relative}
+.fft-processing-heading .settings-help,.scale-heading .settings-help{position:static}
+.settings-help-popup{width:min(360px,calc(100vw - 100px))}
+.scale-settings .settings-help-popup{left:50%;right:auto;transform:translateX(-50%)}
+
+/* Shared material row and compact diffraction groups. */
+.material-settings{display:grid;grid-template-columns:440px minmax(0,1fr);align-items:stretch}
+.material-settings .phase-color-controls{align-content:start;padding:12px;gap:12px 10px}
+.phase-colors-heading,.material-heading,.diffraction-heading,.peak-edit-heading{position:relative;display:flex;align-items:center;gap:6px;min-height:28px}
+.settings-heading-label{display:flex;align-items:center;gap:6px}
+.phase-colors-heading .settings-help,.material-heading .settings-help,.diffraction-heading .settings-help,.peak-edit-heading .settings-help{position:static}
+.material-settings .material-bar{display:grid;grid-template-columns:minmax(170px,1.5fr) repeat(7,minmax(76px,1fr));align-content:start;align-items:end;gap:12px 10px;padding:12px}
+.material-heading{grid-column:1/-1;font-size:12px;color:var(--muted)}
+.material-settings label{min-width:0;gap:6px}
+.material-settings input,.material-settings select{height:32px;min-height:32px;box-sizing:border-box;font-size:12px}
+.material-settings .material-choice-control{height:32px}
+#diffraction-controls{grid-template-columns:minmax(0,1fr) 360px;padding:12px;gap:20px}
+.diffraction-main{display:flex;flex-direction:column;gap:14px}
+#diffraction-controls .diffraction-heading button{min-height:28px;height:28px;padding:0;width:28px}
+#diffraction-controls .diffraction-heading .settings-help-button,#diffraction-controls .peak-edit-heading .settings-help-button{padding:0;width:24px}
+#diffraction-controls .diffraction-calibration{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));align-items:end;gap:12px;margin:0}
+#diffraction-controls .diffraction-detection{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:end;gap:12px;margin:0}
+.diffraction-detection .spot-contrast-control{grid-column:span 2}
+#diffraction-controls label{min-width:0;gap:6px}
+#diffraction-controls input[type=number],#diffraction-controls select{width:100%;min-width:0;height:32px}
+#diffraction-controls .spot-contrast-inputs input[type=range]{flex:1;min-width:0;width:0}
+#diffraction-controls .translation-controls{margin:0;gap:12px;justify-content:flex-start}
+#diffraction-controls .translation-controls .settings-help{align-self:end}
+#diffraction-controls .translation-controls .settings-help-popup{left:0;width:min(360px,calc(100vw - 100px))}
+#diffraction-controls .fitting-limits{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));margin:0;gap:12px}
+#diffraction-controls .fitting-limits label{width:auto;min-width:0}
+#diffraction-controls .fitting-limits .fft-fitting-limit{display:none}
+#diffraction-controls .peak-edit-heading{margin-bottom:14px}
+#diffraction-controls .peak-edit-panel .settings-help-popup{left:auto;right:0}
+#diffraction-controls .settings-help-popup .hint{margin:0}
+#diffraction-controls #diff-snap-radius,#diffraction-controls #diff-dedupe-radius{width:100%}
+body.diffraction .scale-settings{max-width:none}
+body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1600px){
+ .material-settings{grid-template-columns:360px minmax(0,1fr)}
+ .material-settings .material-bar{grid-template-columns:repeat(4,minmax(0,1fr))}
+ #diffraction-controls .diffraction-calibration{grid-template-columns:repeat(3,minmax(0,1fr))}
+ #diffraction-controls .fitting-limits{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:1000px){
+ .material-settings{grid-template-columns:1fr}
+ #diffraction-controls{grid-template-columns:1fr}
+ .peak-edit-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:600px){
+ #diffraction-controls .diffraction-calibration,#diffraction-controls .diffraction-detection,#diffraction-controls .fitting-limits{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #diffraction-controls .diffraction-calibration button{grid-column:1/-1}
+ .material-settings .material-bar{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .phase-color-controls .settings-help-popup,.material-heading .settings-help-popup,.diffraction-heading .settings-help-popup{left:0;right:auto}
+}
+#diffraction-controls .diffraction-main{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px 12px;align-items:end}
+.diffraction-heading,#diffraction-controls .diffraction-calibration{grid-column:1/-1}
+#diffraction-controls .diffraction-detection{grid-column:1/5;grid-row:3}
+#diffraction-controls .fitting-limits{grid-column:5/7;grid-row:3;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
+#diffraction-controls .translation-controls{grid-column:1/-1;grid-row:4}
+.peak-edit-controls{align-items:end}
+@media(max-width:1600px){
+ #diffraction-controls .diffraction-detection{grid-column:1/-1;grid-row:3}
+ #diffraction-controls .fitting-limits{grid-column:1/4;grid-row:4}
+ #diffraction-controls .translation-controls{grid-column:4/7;grid-row:4}
+}
+@media(max-width:600px){
+ #diffraction-controls .fitting-limits{grid-column:1/-1;grid-row:4}
+ #diffraction-controls .translation-controls{grid-column:1/-1;grid-row:5}
+}
+/* Three peer panels in direct mode; wrap only when controls would be cramped. */
+@media(min-width:1400px){
+ body.diffraction .processing-layout{grid-template-columns:minmax(520px,1.5fr) minmax(270px,.85fr) minmax(340px,1fr);gap:14px;align-items:stretch}
+ body.diffraction #diffraction-controls:not([hidden]){display:contents}
+ body.diffraction .diffraction-main,body.diffraction .peak-edit-panel{border:1px solid var(--line);border-radius:7px;background:#101925;padding:12px;min-width:0}
+ body.diffraction #diffraction-controls .diffraction-main{align-content:start;gap:12px}
+ body.diffraction #diffraction-controls .diffraction-calibration{grid-template-columns:repeat(3,minmax(0,1fr))}
+ body.diffraction #diffraction-controls .diffraction-detection{grid-column:1/-1;grid-row:3}
+ body.diffraction #diffraction-controls .fitting-limits{grid-column:1/4;grid-row:4}
+ body.diffraction #diffraction-controls .translation-controls{grid-column:4/7;grid-row:4;gap:6px;align-self:end}
+ body.diffraction #diffraction-controls .translation-controls .check{font-size:11px;min-height:28px}
+ body.diffraction #diffraction-controls #diff-shift-limit{width:72px}
+ body.diffraction .scale-settings{grid-column:auto;width:auto;justify-self:stretch}
+ body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body.diffraction .scale-settings .calibration-bar>label:first-child{min-width:0;width:100%}
+ body.diffraction .scale-settings .calibration-bar select{width:100%;min-width:0}
+}
