@@ -81,7 +81,7 @@ function isDiffraction(){return meta?.image_kind==='diffraction'}
 let chosenFits=new Set(), favorites=new Set();
 let regionProject={revision:0,regions:[]},selectedRegionId=null,regionRequest=0;
 let folderTarget=null,folderListing=null,folderBrowseVersion=0;
-let rescoreTimer=null, rescoreBusy=false, rescorePending=false, rescoreRevision=0, scalePenalty=.10, caPenalty=.10, peakEvidenceWeight=.10;
+let rescoreTimer=null, rescoreBusy=false, rescoreJobId=null, rescorePending=false, rescoreRevision=0, scalePenalty=.10, caPenalty=.10, peakEvidenceWeight=.10;
 let zoneJob=null, zoneSymbols=phaseMaps();
 const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢','◀','▶','✦','✳','◉','⊞','⊠','✧'];
 const phaseColors=Object.fromEntries(PHASES.map(phase=>[phase,colors[phase.toLowerCase()+'_compatible']]));
@@ -355,7 +355,7 @@ async function openFile(){
  const id=$('file').value;if(!id)return;updateFileNavigation();$('calibrate-image').hidden=!config.files.find(f=>f.id===id)?.raster;$('run-grid').disabled=true;
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
  const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;detectorRaw=null;opened=false;drag=null;maskDrag=null;displayedDiffraction=null;snapPointer=null;radiusDrag=null;peakUndo=[];document.body.classList.remove('editing-peaks');
- finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
+ syncMapLoading();finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
  message('Opening source image…');
  try{
   if(isGridRunning())await api('cancel',{job_id:jobId});
@@ -889,7 +889,7 @@ function updateOverlapSizePreview(){
  if(validWindow&&Number.isFinite(spacing)&&spacing>0&&(o.spacing_mode!=='window_percent'||(o.spacing_percent>=1&&o.spacing_percent<=100)))spacingOutput.textContent=`≈ ${spacing.toFixed(2)} nm`;
 }
 function updateGridSizeNote(){
- scheduleOverlapPreview();
+ syncZoneToggle();scheduleOverlapPreview();
  const overlap=Boolean(overlapRequest());$('overlap-controls').hidden=!overlap;
  const relative=$('map-size-mode').value==='image_percent';
  const relativeSpacing=$('map-spacing-mode').value==='window_percent';
@@ -1114,9 +1114,13 @@ function drawOverlapMap(){
 for(const id of ['map-view','map-phase'])$(id).onchange=()=>{if(grid?.grid.mode==='overlap')drawOverlapMap()};
 const savedMapSymbol=readPreference('tem-map-symbol','zone');if(['circle','both','zone'].includes(savedMapSymbol))$('map-symbol').value=savedMapSymbol;
 $('map-symbol').onchange=()=>{writePreference('tem-map-symbol',$('map-symbol').value);if(grid?.grid.mode==='overlap')drawOverlapMap()};
+function syncZoneToggle(){
+ // Display controls follow the existing map, or the selected mode before a run.
+ $('show-zones').closest('label').hidden=(grid?.grid.mode??$('grid-mode').value)==='overlap';
+}
 function drawGrid(){
  $('overlap-display').hidden=grid?.grid.mode!=='overlap';
- $('show-zones').closest('label').hidden=grid?.grid.mode==='overlap';
+ syncZoneToggle();
  if(grid?.grid.mode==='overlap'){drawOverlapMap();return}
  hideRegionPreview();renderClassLegend();
  if(zoneJob!==grid?.id){zoneJob=grid?.id;zoneSymbols=phaseMaps()}
@@ -1231,6 +1235,11 @@ async function save(body,id){
  finally{if(id==='save-grid')updatePenaltyControls();else $(id).disabled=!result||busy||pending}
 }
 $('save-region').onclick=()=>{if(result)save({file_id:fileId,roi:result.roi,settings:result.settings},'save-region')};$('save-grid').onclick=()=>{if(jobId)save({job_id:jobId},'save-grid')};
+function syncMapLoading(){
+ const show=Boolean(meta&&grid&&jobId&&!isDiffraction()&&(rescorePending||(rescoreBusy&&rescoreJobId===jobId)));
+ $('map-loading').hidden=!show;
+ $('overview').setAttribute('aria-busy',String(show));
+}
 function updatePenaltyControls(){
  const automatic=$('scenario').value.startsWith('auto_'),running=isGridRunning();
  const disabled=!config?.grid_rescore||!automatic||running;
@@ -1246,6 +1255,7 @@ function updatePenaltyControls(){
  $('peak-evidence-weight').disabled=!config?.peak_evidence||!config?.grid_rescore||running;$('peak-evidence-slider').disabled=$('peak-evidence-weight').disabled;
  const mismatch=Boolean(grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||(config?.peak_evidence&&peakEvidenceWeight!==grid.settings.peak_evidence_weight)));
  const updating=rescorePending||rescoreBusy;
+ syncMapLoading();
  $('grid-map').classList.toggle('stale',updating||mismatch);
  $('save-grid').disabled=!grid||running||updating||mismatch||$('save-grid').dataset.exportState==='busy';syncMapExportControls();
  $('clear-grid').disabled=!grid&&!jobId;
@@ -1267,13 +1277,13 @@ function penaltyChanged(input){
 async function rescoreGrid(){
  if(rescoreBusy||!rescorePending)return;
  const id=jobId,version=rescoreRevision,strength=effectiveScalePenalty(),evidenceWeight=peakEvidenceWeight,caWeight=caPenalty;
- rescoreBusy=true;rescorePending=false;updatePenaltyControls();
+ rescoreBusy=true;rescoreJobId=id;rescorePending=false;updatePenaltyControls();
  try{
   const status=await api('rescore-grid',{job_id:id,scale_penalty_strength:strength,peak_evidence_weight:evidenceWeight,ca_penalty_strength:caWeight});
   if(id===jobId&&version===rescoreRevision){grid=status;drawGrid();gridStatus()}
  }catch(e){if(id===jobId&&version===rescoreRevision)message(e.message,true)}
  finally{
-  rescoreBusy=false;updatePenaltyControls();
+  rescoreBusy=false;rescoreJobId=null;updatePenaltyControls();
   if(rescorePending){clearTimeout(rescoreTimer);rescoreTimer=setTimeout(rescoreGrid,0)}
  }
 }
