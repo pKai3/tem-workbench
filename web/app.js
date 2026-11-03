@@ -936,7 +936,6 @@ function scheduleOverlapPreview(){
    if([...select.options].some(o=>o.value===previous))select.value=previous;
    select.disabled=false;
    $('overlap-preview-summary').textContent=`${data.samples.length.toLocaleString()} planned FFT windows · ${options.passes} placement pass${options.passes===1?'':'es'}`;
-   $('overlap-preview-note').textContent='Layout preview above the image';
    renderOverlapPreview();
   }catch(error){if(version===overlapPreviewVersion&&sourceVersion===sourceRequest)$('overlap-preview-summary').textContent=error.message}
  },180);
