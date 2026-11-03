@@ -4,6 +4,10 @@ Last updated: 4 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
+## HCP display notation — completed 4 November 2026
+
+Marker styles now includes a remembered **HCP notation** selector (four-index default, three-index optional). It updates zone axes and indexed reflections in fit tables, vectors, map legends and hover cards without rerunning analysis. Current-view FFT PNG/GIF and map PNG exports inherit the displayed labels. Zone-symbol identities and selected individual overlays remain unchanged. Numerical JSON/CSV records retain their existing three-index schema; server-generated batch figures are unchanged.
+
 ## Paper draft and architecture refresh — completed 4 November 2026
 
 Created a [methods manuscript draft](paper/README.md), editable Markdown and reproducible PDF/figure renderer. It describes implementation `64118d8`, credits original indexing, local-FFT/PCA/NMF and orientation-mapping work, and separates historical software checks from pending scientific validation. No new experimental analysis or accuracy claim. Authorship, experimental figures, independent ground truth and submission declarations remain to be completed.

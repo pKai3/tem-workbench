@@ -267,9 +267,9 @@ function requestBody(){return {file_id:fileId,roi:{...roi},settings:settings()}}
 function el(tag,attrs,text){const e=document.createElementNS(NS,tag);for(const [k,v]of Object.entries(attrs))e.setAttribute(k,v);if(text!==undefined)e.textContent=text;return e}
 // Convert labels only; numerical fits and saved three-index records stay unchanged.
 function indexGcd(a,b){while(b){[a,b]=[b,a%b]}return Math.abs(a)}
-function zoneIndices(model){
+function zoneIndices(model,notation=$('hcp-notation').value){
  const [u,v,w]=model.zone_3index;
- if(model.phase!=='HCP')return [u,v,w];
+ if(model.phase!=='HCP'||notation==='3')return [u,v,w];
  const indices=[2*u-v,2*v-u,-u-v,3*w];
  const divisor=indices.reduce((g,n)=>indexGcd(g,Math.abs(n)),0)||1;
  return indices.map(n=>n/divisor);
@@ -277,7 +277,7 @@ function zoneIndices(model){
 function planeIndices(model,hkl,sign=1){
  const [h,k,l]=hkl.map(n=>n*sign);
  // Preserve reflection order: plane indices must not be reduced by their GCD.
- return model.phase==='HCP'?[h,k,-h-k,l]:[h,k,l];
+ return model.phase==='HCP'&&$('hcp-notation').value!=='3'?[h,k,-h-k,l]:[h,k,l];
 }
 function indexLabel(indices,brackets='[]'){
  // Combining overlines also work in plain-text SVG tooltips.
@@ -285,6 +285,20 @@ function indexLabel(indices,brackets='[]'){
 }
 function zoneLabel(model){return indexLabel(zoneIndices(model))}
 function planeLabel(model,hkl,sign=1){return indexLabel(planeIndices(model,hkl,sign),'()')}
+// Presentation preference only: do not invalidate analysis or change symbol identity.
+$('hcp-notation').value=readPreference('tem-hcp-notation','4')==='3'?'3':'4';
+$('hcp-notation').onchange=()=>{
+ writePreference('tem-hcp-notation',$('hcp-notation').value);
+ hideRegionPreview();
+ if(result){
+  const selected=new Set(chosenFits);
+  renderModels(result);renderEvidence(result);renderFitChoices(result);
+  chosenFits=selected;
+  for(const box of $('fit-list').querySelectorAll('input[data-fit]'))box.checked=chosenFits.has(box.dataset.fit);
+  drawFFT();
+ }
+ drawGrid();
+};
 function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
 function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi={x:0,y:0,w:meta.width,h:meta.height};$('region-size').textContent=`${meta.width} × ${meta.height} px · full detector`;drawDetector();return;}const min=32,max=Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=preserveHeight?roi.h:roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`;rememberRegionSize()}
 // Invalidate the old result immediately; never attach it to a newly moved region.
@@ -513,7 +527,7 @@ function geometryDescription(data){
  return 'Geometry check: pattern count remains unresolved.';
 }
 // Shared column definitions keep both candidate tables aligned.
-const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axis: HCP [u v t w], BCC/FCC/ORT [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Scale Δ\n%","Change from reference, %. Independent-axis mode shows a*/c*. Overall + c/a shows s* (reciprocal size) and the real c/a ratio change. Lattice dimensions change inversely to reciprocal scales."]];
+const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP uses the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Scale Δ\n%","Change from reference, %. Independent-axis mode shows a*/c*. Overall + c/a shows s* (reciprocal size) and the real c/a ratio change. Lattice dimensions change inversely to reciprocal scales."]];
 function renderFitHeader(head, showToggle=false){
  const row=document.createElement('tr');
  const columns=showToggle?[['show','Show','Toggle this overlay'],...FIT_COLUMNS]:FIT_COLUMNS;
@@ -1077,7 +1091,7 @@ function renderGridSummary(){
  container.append(heading,summary,table,note);
  for(const phase of analysisPhases(grid.settings))container.append(renderZoneBreakdown(phase,totalArea,expanded.has(phase)));
 }
-function zoneKey(model){return zoneIndices(model).join(',')}
+function zoneKey(model){return zoneIndices(model,'4').join(',')}
 function zoneSymbol(phase,key){
  if(!zoneSymbols[phase].has(key)){
   const index=zoneSymbols[phase].size;
