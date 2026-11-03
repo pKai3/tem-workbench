@@ -372,3 +372,7 @@ At desktop widths, direct diffraction, peak editing and scale fitting share one 
 
 Diffraction calibration fields and metadata display five significant figures; full calibration values remain in analysis state, persistence and exports. Hovering a calibration input reveals its full value.
 Starting centre coordinates similarly display one decimal place without rounding the stored values.
+
+Follow-up controls: manual minimum FFT peak strength has a synchronized slider (hidden in auto modes); changes apply on release. Set centre sits beside centre coordinates, leaving the four peak tools on one row. The compact Edit radius label retains its full explanation on hover. Exclusion actions align with the two peak-edit action columns.
+
+Centre changes now show the normal delayed analysis spinner, including while Set centre remains selected. Peak-edit modes still suppress it to keep editing unobstructed.

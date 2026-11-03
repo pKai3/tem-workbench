@@ -444,3 +444,14 @@ body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(
  body.diffraction .scale-settings .calibration-bar>label:first-child{min-width:0;width:100%}
  body.diffraction .scale-settings .calibration-bar select{width:100%;min-width:0}
 }
+
+/* Compact peak tools and synchronized manual strength control. */
+.fft-entry-row .strength-controls input[type=range]{flex:0 1 90px;width:70px;min-width:45px;padding:0}
+.centre-tool-buttons{display:flex;gap:5px;align-items:end;min-width:0}
+#diffraction-controls .centre-tool-buttons button{flex:1;min-width:0;padding:7px 5px;white-space:nowrap;font-size:11px}
+[data-detector-tool][aria-pressed="true"]{border-color:var(--accent,#5ddcd3);color:var(--accent,#5ddcd3);background:#18353a}
+.detector-tool-buttons{display:grid;grid-template-columns:minmax(0,.65fr) minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr);gap:5px}
+#diffraction-controls .detector-tool-buttons button{min-width:0;padding:7px 4px;white-space:nowrap;font-size:11px}
+#diffraction-controls .peak-edit-panel .exclusion-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+.peak-edit-controls>label:not(.check){white-space:nowrap}
+@media(max-width:600px){.centre-tool-buttons{grid-column:1/-1}}

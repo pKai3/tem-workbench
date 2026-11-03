@@ -1402,6 +1402,9 @@ function updateStrengthMode(){
  $('fft-strength-mode').disabled=!config?.fft_auto_strength;
  $('fft-min-strength').disabled=!config?.fft_detection_controls||automatic;
  $('fft-min-strength').hidden=automatic;
+ $('fft-min-strength-slider').hidden=automatic;
+ $('fft-min-strength-slider').disabled=$('fft-min-strength').disabled;
+ $('fft-min-strength-slider').value=$('fft-min-strength').value;
  $('fft-auto-strength-value').hidden=!automatic;
  $('fft-auto-strength-value').textContent=config?.fft_auto_strength?'Choosing…':'Restart required';
  $('fft-auto-strength-status').hidden=!automatic||isDiffraction();
@@ -1438,7 +1441,7 @@ $('material').onchange=()=>{
  setPhaseSelection(config?.phase_selection?materialPhases():PHASES);materialView();rememberBasicControls();calibrationView();updatePenaltyControls();invalidateAnalysisSettings();
 };
 for(const id of ['scenario','model-scale',...Object.keys(REFERENCE_CONTROLS),'fft-g-min','g-max','threshold',...Object.keys(FFT_DETECTOR_CONTROLS),'fft-hann','fft-mean','fft-strength-mode'])$(id).onchange=()=>{
- if(id==='fft-strength-mode')updateStrengthMode();
+ if(id==='fft-strength-mode'||id==='fft-min-strength')updateStrengthMode();
  if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
   if(meta)restoreCalibration();message('Use a model size between 0.850 and 1.150.',true);return;
  }
@@ -1452,6 +1455,12 @@ for(const id of ['scenario','model-scale',...Object.keys(REFERENCE_CONTROLS),'ff
  if(id==='g-max'&&isDiffraction())syncDetectorControls();
  rememberBasicControls();invalidateAnalysisSettings();
 };
+$('fft-min-strength').oninput=()=>{
+ const field=$('fft-min-strength');
+ if(field.value!==''&&field.validity.valid)$('fft-min-strength-slider').value=field.value;
+};
+$('fft-min-strength-slider').oninput=()=>{$('fft-min-strength').value=$('fft-min-strength-slider').value};
+$('fft-min-strength-slider').onchange=()=>{$('fft-min-strength').value=$('fft-min-strength-slider').value;$('fft-min-strength').onchange()};
 $('model-scale').oninput=()=>{
  const field=$('model-scale'),value=Number(field.value);
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
@@ -1975,7 +1984,7 @@ function syncSpectrumExportControls(){
  syncMapExportControls();
  for(const id of ['export-png','export-gif']){$(id).disabled=spectrumExportBusy||mapExportBusy||busy||pending||!result||!fftRaw||!config?.spectrum_exports;$(id).title=config?.spectrum_exports?'Save the current view to the output folder':'Restart TEM Workbench to enable image exports'}
 }
-function setSpectrumSpinner(show){show=show&&!peakEditing()&&!(isDiffraction()&&$('diff-tool').value==='center');for(const id of ['fft-loading','fft-zoom-loading'])$(id).hidden=!show}
+function setSpectrumSpinner(show){show=show&&!peakEditing();for(const id of ['fft-loading','fft-zoom-loading'])$(id).hidden=!show}
 function beginSpectrumLoading(){
  hideSpectrumHover();
  if(spectrumLoading)return;spectrumLoading=true;$('fft-stage').setAttribute('aria-busy','true');
