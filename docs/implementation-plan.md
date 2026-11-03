@@ -4,6 +4,18 @@ Last updated: 4 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
+## Paper draft and architecture refresh — completed 4 November 2026
+
+Created a [methods manuscript draft](paper/README.md), editable Markdown and reproducible PDF/figure renderer. It describes implementation `64118d8`, credits original indexing, local-FFT/PCA/NMF and orientation-mapping work, and separates historical software checks from pending scientific validation. No new experimental analysis or accuracy claim. Authorship, experimental figures, independent ground truth and submission declarations remain to be completed.
+
+Refreshed the explicitly requested [architecture atlas](architecture/README.md) to eight panels: signal extraction, template fitting, scores, classification, adaptive/batch searches, overlapping maps and parallel execution/state. Routine future changes still do not require a refresh unless requested.
+
+## Shared-spectrum PCA/NMF — proposed, 4 November 2026
+
+Discussed following Jany, Janas and Krok (Micron 130, 102800; DOI 10.1016/j.micron.2019.102800): collect nonnegative local spectra on a common reciprocal grid; use PCA to inform component count; estimate NMF spectral factors and spatial loadings; inspect/index factors using the crystal matcher. Compare with the existing independent-window pipeline, which aggregates results only after fitting.
+
+Potential benefit is more stable recovery of weak recurring patterns. This is unimplemented and not a guaranteed improvement. Components may encode orientation, thickness, background or imaging contrast rather than phase. Rare components and sharp boundaries must be retained; loadings are not phase fractions. Define normalization, nonnegative representation, component count, reproducible initialization, memory limits and provenance before implementation. Test minority-pattern recovery, boundary localization, calibration sensitivity and runtime on independently characterized images with held-out tuning. This proposal does not supersede the agreed analysis priorities or authorize starting implementation.
+
 ## Window-size check and blended support — 3 November 2026
 
 **Implemented:** Suggest window size sits beside Search mode. It tests 5%, 7.5%, 10% and 15% of the shorter image side at five paired locations, using the selected manual, auto geometry or auto rank settings. A separate cancellable job keeps the source/settings snapshot; grid and batch starts are blocked until it finishes. No map runs automatically. Equal X/Y calibration and at least two usable sizes are required; unsupported sizes are skipped rather than silently clamped.

@@ -1,8 +1,8 @@
 # Architecture and numerical workflow
 
-This atlas describes the implemented TEM Workbench pipeline, including the detector-view toggle and automatic minimum-strength search. It is a reusable implementation reference for development and future methods writing, not a validation study or a paper draft.
+This atlas describes the implemented TEM Workbench pipeline, including automatic strength objectives, orthorhombic geometry, overlapping maps, batch execution and parallel workers. It is a reusable implementation reference for development and future methods writing, not a validation study or a paper draft.
 
-[Download the six-page PDF](tem-workbench-architecture.pdf).
+[Download the eight-page PDF](tem-workbench-architecture.pdf).
 
 ![TEM Workbench system architecture](01-system.svg)
 
@@ -13,7 +13,9 @@ This atlas describes the implemented TEM Workbench pipeline, including the detec
 | [3. Crystal predictions](03-templates.svg) | Reciprocal cells, reflection rules, finite zone library, rotation/scale fitting and assignment | `crystal_templates.py`, `scale_fitting.py`, `analysis_core.score_hypothesis` |
 | [4. Scores and Auto strength](04-scores.svg) | Position score, scale preference, weak/missing evidence, acceptance screen and threshold search | `peak_evidence.py`, `scale_fitting.scale_cost`, `engine.analyze` |
 | [5. Interpretation](05-decisions.svg) | Compatible, ambiguous and separate-pattern labels; independent geometry check | `phase_comparison.classify`, `analysis_core.classify`, `analysis_core.purity` |
-| [6. Grid and saved state](06-grid-state.svg) | Adaptive children, passing-parent probes, reweighting, named regions and exports | `adaptive_refinement.py`, `server.py`, `engine.rescore`, `workbench_project.py` |
+| [6. Grid workflow](06-grid-state.svg) | Adaptive children, passing-parent probes, size checks, batch runs and reweighting | `adaptive_refinement.py`, `window_size_probe.py`, `batch_grids.py` |
+| [7. Overlapping maps](07-overlap.svg) | Shifted centre layouts, footprint weighting, equal-pass aggregation and interpretation | `overlap_maps.py`, `web/app.js` |
+| [8. Execution and state](08-execution.svg) | Spawned workers, request isolation, smoothing threads, saved state and provenance | `parallel_execution.py`, `server.py`, `engine.py`, `workbench_project.py` |
 
 All pages are SVG with editable text and paths. The PDF includes bookmarks and embedded fonts. The canonical source is [architecture.json](architecture.json): each page contains named nodes, their descriptions/equations, positions and connecting arrows. Editing a generated SVG alone is possible for publication finishing, but regeneration will overwrite it. Put durable changes in the JSON.
 
@@ -49,3 +51,7 @@ Refresh this atlas only when explicitly requested. It is a reviewed snapshot, no
 - Automatic minimum strength searches the profile subsets already admitted by the other detector settings. It can improve rank by excluding poorly matched profiles; it is not independent evidence that a phase is correct.
 - Geometry-only grids have separate acceptance criteria. They describe periodic organization of peaks without assigning a crystal structure.
 - **Auto: overall scale + HCP c/a** is now an optional mode. It uses the same broad positional search as independent a*/c*, but decomposes the ranking cost into overall reciprocal scale `s = sqrt(sa × sc)` and real-space ratio multiplier `r = sa/sc`. Cost is `λ[ln(s)/ln(1.05)]² + μ[ln(r)/ln(1.05)]²`, with independently adjustable weights defaulting to 0.10. Cubic and c-insensitive HCP fits have no ratio term. Existing per-axis bounds remain; no tighter material-specific c/a cap is imposed. This ranks explored positional fits; it does not optimize coordinates against the penalty.
+
+## Manuscript and proposed extensions
+
+The [methods manuscript](../paper/README.md) provides connected mathematical descriptions and literature references. The atlas covers implemented behaviour only. PCA-assisted NMF of local spectra is proposed in the manuscript and maintained plan; it is not part of the current analysis pipeline.

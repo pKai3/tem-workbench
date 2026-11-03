@@ -1,14 +1,16 @@
 {
-  "diagram_sha256": "21a6d0a9e71d86c3c7fe09c27d9b208ec8919e20433594d76b63fe5f8a0c6a21",
+  "diagram_sha256": "e80eba976c2ead954dc931616478e276cb1acd0e4221e50de39610624a4f2d5d",
   "renderer_sha256": "10e47264ec37eb30808e58995e9db11ae2704f1012b8fa79b0d97a7b47132347",
   "font": "DejaVuSans.ttf",
   "artifacts": {
-    "01-system.svg": "9f2d0d99809cb64c09a9836c2f171aa946a0f318ac413d623b133c8811e04291",
-    "02-signals.svg": "dbb3a1c3dd77996435cf6f18078a7969050ec7bd2759eb7260f83eeeb1d3e214",
-    "03-templates.svg": "e4d33acc49540733b88b2a6ac8403bd09387fdebfaa58275c6d4553472876f69",
-    "04-scores.svg": "bf7a3b054a7042d8ec4ef8fce201a2bdcefd21f10273d474bf4b3a36d29d778a",
-    "05-decisions.svg": "87596f55fb4008db2c4731f408da7e4dccabe4d44748f0ba2ff7c3ea67226719",
-    "06-grid-state.svg": "d9c0ece9930089b673e5c25d7baeef96614eff866e9020a2aced50f03a8b6e29",
-    "tem-workbench-architecture.pdf": "cc3eab2aaeb567e1499f2c817de3ba52223d60b964c73d352420d6d9e7da91bc"
+    "01-system.svg": "1d32cb50ffac2726593df78696545dc5e64a1f655b87a0f45f39f1a74b745354",
+    "02-signals.svg": "2e8dea09dca88abe3e14d8772785b632efcb38476eb8bd2cf8d7463922d9d07a",
+    "03-templates.svg": "112ab45faa5249f070e8b81b3f7fbfb83f4adb51701c39161c064e4551d9e376",
+    "04-scores.svg": "ba38487915e45f7c3500f14efd69f8d082a70640d285a51aa45d42961c48d66e",
+    "05-decisions.svg": "b197ef3ddd3b4db4cf172dd839ee9caa08020460b7192e8c30a98a0f14aad091",
+    "06-grid-state.svg": "a5df1a84449af157304c9da3913dbfe59afe362582e4b352bf3b0d9cf131242d",
+    "07-overlap.svg": "1b6d33b3f67947d617ce8486632711d1f47bc86d82014b4eb3d0fc08971f4563",
+    "08-execution.svg": "5058825d8ee2a2c352ab3a99e90fafec3a851f69b62cd36bb00131b35ab6efe3",
+    "tem-workbench-architecture.pdf": "5b67bebaefbe88adab8cbca6a2374db94df913fb6927b04fe3cbd59758b95bdf"
   }
 }

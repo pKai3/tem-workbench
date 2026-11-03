@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="1200" height="900" preserveAspectRatio="xMinYMin meet" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+<title>Execution, persistence and auditability</title>
+<desc>Parallel work is isolated from display choices; saved records retain settings and source identity.</desc>
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="1200" height="900"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-900)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="0" width="1200" height="900" style="stroke: rgb(100%,100%,100%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="34" y="870" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 10px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1740) scale(1,-1)">TEM WORKBENCH / METHODS ATLAS</text>
+			<text x="1130.82421875" y="870" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 10px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,1740) scale(1,-1)">08 / 08</text>
+			<text x="34" y="832" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 26px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1664) scale(1,-1)">Execution, persistence and auditability</text>
+			<text x="34" y="807" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 11.8px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,1614) scale(1,-1)">Parallel work is isolated from display choices; saved records retain settings and source identity.</text>
+			<polyline points="580 663, 620 663" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="620 663, 614.2697 659.9318, 614.2697 666.0682" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="580 427, 620 427" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="620 427, 614.2697 423.9318, 614.2697 430.0682" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="580 191, 620 191" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="620 191, 614.2697 187.9318, 614.2697 194.0682" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="307 558, 307 532" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="307 532, 303.9318 537.7303, 310.0682 537.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="307 322, 307 296" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="307 296, 303.9318 301.7303, 310.0682 301.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="893 558, 893 532" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="893 532, 889.9318 537.7303, 896.0682 537.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<polyline points="893 322, 893 296" style="stroke: rgb(38%,46%,51%); stroke-linecap: butt; stroke-width: 1.15; fill: None; fill-rule: evenodd;"/>
+			<polygon points="893 296, 889.9318 301.7303, 896.0682 301.7303" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(38%,46%,51%); fill-rule: evenodd;"/>
+			<rect x="34" y="558" width="546" height="210" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="48" y="747" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 16px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1494) scale(1,-1)">1 Parallel ROI analysis</text>
+			<text x="48" y="722.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1444) scale(1,-1)">Spawned processes analyse whole ROIs. Source pixels are mapped</text>
+			<text x="48" y="702.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1405) scale(1,-1)">read-only from a temporary array file, avoiding repeated image</text>
+			<text x="48" y="683.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1366) scale(1,-1)">transfer.</text>
+			<text x="48" y="659.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1319) scale(1,-1)">Numeric-library threads and worker FFT threads are limited to</text>
+			<text x="48" y="640.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1280) scale(1,-1)">prevent nested oversubscription. Ordered publication preserves</text>
+			<text x="48" y="620.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1241) scale(1,-1)">adaptive decisions. Worker failure and cancellation are surfaced to</text>
+			<text x="48" y="601.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1202) scale(1,-1)">the UI.</text>
+			<rect x="620" y="558" width="546" height="210" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="634" y="747" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 16px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1494) scale(1,-1)">2 Interactive responsiveness</text>
+			<text x="634" y="722.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1444) scale(1,-1)">Interactive analysis uses request-local cache containers, then</text>
+			<text x="634" y="702.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1405) scale(1,-1)">merges bounded reusable entries. It does not hold the shared</text>
+			<text x="634" y="683.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1366) scale(1,-1)">engine lock during expensive fitting.</text>
+			<text x="634" y="659.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1319) scale(1,-1)">Browser aborts/replaces obsolete requests and ignores stale results.</text>
+			<text x="634" y="640.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1280) scale(1,-1)">An old numerical calculation may still finish in the background;</text>
+			<text x="634" y="620.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,1241) scale(1,-1)">switching source does not guarantee hard cancellation.</text>
+			<rect x="34" y="322" width="546" height="210" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="48" y="511" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 16px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1022) scale(1,-1)">3 Caches and direct-mode threads</text>
+			<text x="48" y="486.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,972) scale(1,-1)">Prepared diffraction fields and detections can be reused when</text>
+			<text x="48" y="466.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,933) scale(1,-1)">relevant source/settings match. Independent smoothing scales use</text>
+			<text x="48" y="447.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,894) scale(1,-1)">a selectable thread pool.</text>
+			<text x="48" y="423.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,847) scale(1,-1)">Prediction coordinates and weak-peak preparation are reused within</text>
+			<text x="48" y="404.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,808) scale(1,-1)">Auto trials. Direct crystal matching remains sequential; more</text>
+			<text x="48" y="384.70000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,769) scale(1,-1)">smoothing threads do not parallelize every stage.</text>
+			<rect x="620" y="322" width="546" height="210" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(100%,100%,100%); fill-rule: evenodd;"/>
+			<text x="634" y="511" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 16px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,1022) scale(1,-1)">4 Saved state and exports</text>
+			<text x="634" y="486.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,972) scale(1,-1)">Local preferences retain basic controls. Project entries store named</text>
+			<text x="634" y="466.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,933) scale(1,-1)">ROIs, tags, source references and analysis settings, with guarded</text>
+			<text x="634" y="447.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,894) scale(1,-1)">atomic updates.</text>
+			<text x="634" y="423.7" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,847) scale(1,-1)">JSON exports retain numerical results, settings and provenance;</text>
+			<text x="634" y="404.2" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,808) scale(1,-1)">map images render results. Reanalysis requires the original source</text>
+			<text x="634" y="384.70000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,769) scale(1,-1)">pixels and compatible calibration, not just a screenshot.</text>
+			<rect x="34" y="86" width="546" height="210" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(91%,95%,95%); fill-rule: evenodd;"/>
+			<text x="48" y="275" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 16px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,550) scale(1,-1)">5 Auxiliary acquisition map</text>
+			<text x="48" y="250.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,500) scale(1,-1)">Stage metadata provides approximate relative footprints, with</text>
+			<text x="48" y="230.70000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,461) scale(1,-1)">per-reference coordinate rotation and remembered manual</text>
+			<text x="48" y="211.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,422) scale(1,-1)">adjustments.</text>
+			<text x="48" y="187.70000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,375) scale(1,-1)">Nested reference navigation and crop previews assist inspection.</text>
+			<text x="48" y="168.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,336) scale(1,-1)">This is not image registration or a verified stage calibration; it does</text>
+			<text x="48" y="148.70000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,297) scale(1,-1)">not change the measured reciprocal vectors.</text>
+			<rect x="620" y="86" width="546" height="210" rx="5" ry="5" style="stroke: rgb(64%,70%,74%); stroke-linecap: butt; stroke-width: 0.9; fill: rgb(91%,95%,95%); fill-rule: evenodd;"/>
+			<text x="634" y="275" style="font-family: DejaVu Sans, Arial, sans-serif; font-weight: bold; font-size: 16px;fill: rgb(8%,35%,50%); stroke:none;" transform="translate(0,550) scale(1,-1)">6 Reproducibility and scope</text>
+			<text x="634" y="250.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,500) scale(1,-1)">Record source identity, calibration, detector/search settings, manual</text>
+			<text x="634" y="230.70000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,461) scale(1,-1)">edits, engine revision and runtime versions. Compare numerical</text>
+			<text x="634" y="211.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,422) scale(1,-1)">tolerances as well as discrete labels across platforms.</text>
+			<text x="634" y="187.70000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,375) scale(1,-1)">Current implementation and future proposals are separated in the</text>
+			<text x="634" y="168.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,336) scale(1,-1)">maintained plan. This atlas is reviewed on request; source hashes</text>
+			<text x="634" y="148.70000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,297) scale(1,-1)">flag intervening code changes without automatically certifying</text>
+			<text x="634" y="129.20000000000005" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 15px;fill: rgb(9%,16%,22%); stroke:none;" transform="translate(0,258) scale(1,-1)">correctness.</text>
+			<path d="M 34,28 L 1166,28 Z" style="stroke: rgb(84%,88%,90%); stroke-linecap: butt; stroke-width: 0.8;"/>
+			<text x="34" y="13" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 9px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,26) scale(1,-1)">Sources: parallel_execution.py · server.py · workbench_project.py · preview_files.py · acquisition_map.py</text>
+			<text x="989.73974609375" y="13" style="font-family: DejaVu Sans, Arial, sans-serif; font-size: 9px;fill: rgb(31%,39%,45%); stroke:none;" transform="translate(0,26) scale(1,-1)">Implementation snapshot · 2026-11-04</text>
+		</g>
+	</g>
+</svg>

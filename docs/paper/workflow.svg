@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="490" height="285" preserveAspectRatio="xMinYMin meet" viewBox="0 0 490 285" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="490" height="285"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-285)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="239" width="235" height="42" rx="5" ry="5" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,95%,97%); fill-rule: evenodd;"/>
+			<text x="63.61645507812499" y="266.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,532) scale(1,-1)">Real-space image crops</text>
+			<text x="34.157714843749986" y="254.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,508) scale(1,-1)">Mean / Hann → FFT → peak detection</text>
+			<rect x="255" y="239" width="235" height="42" rx="5" ry="5" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,95%,97%); fill-rule: evenodd;"/>
+			<text x="319.073486328125" y="266.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,532) scale(1,-1)">Direct diffraction image</text>
+			<text x="290.12890625" y="254.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,508) scale(1,-1)">Centre / calibration → spot detection</text>
+			<path d="M 117,239 L 117,224 Z" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 1;"/>
+			<polygon points="117 224, 114 230, 120 230" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(8%,20%,29%); fill-rule: evenodd;"/>
+			<path d="M 372,239 L 372,224 Z" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 1;"/>
+			<polygon points="372 224, 369 230, 375 230" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(8%,20%,29%); fill-rule: evenodd;"/>
+			<rect x="0" y="187" width="490" height="37" rx="5" ry="5" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,95%,97%); fill-rule: evenodd;"/>
+			<text x="181.54736328125" y="211.5" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,423) scale(1,-1)">Observed reciprocal profiles</text>
+			<text x="119.17138671874999" y="199.5" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,399) scale(1,-1)">Opposite grouping · weights · measurement descriptors</text>
+			<path d="M 117,187 L 117,170 Z" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 1;"/>
+			<polygon points="117 170, 114 176, 120 176" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(8%,20%,29%); fill-rule: evenodd;"/>
+			<path d="M 372,187 L 372,170 Z" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 1;"/>
+			<polygon points="372 170, 369 176, 375 176" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(8%,20%,29%); fill-rule: evenodd;"/>
+			<rect x="0" y="116" width="235" height="54" rx="5" ry="5" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,95%,97%); fill-rule: evenodd;"/>
+			<text x="63.31323242187499" y="155.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,310) scale(1,-1)">Crystal-template search</text>
+			<text x="27.844970703124986" y="143.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,286) scale(1,-1)">Rotate / scale → one-to-one assignment</text>
+			<text x="30.450927734374986" y="131.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,262) scale(1,-1)">Position + scale + peak-evidence rank</text>
+			<rect x="255" y="116" width="235" height="54" rx="5" ry="5" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,95%,97%); fill-rule: evenodd;"/>
+			<text x="324.31396484375" y="155.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,310) scale(1,-1)">Geometry-only check</text>
+			<text x="308.88916015625" y="143.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,286) scale(1,-1)">Freely fitted reciprocal grids</text>
+			<text x="292.65576171875" y="131.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,262) scale(1,-1)">Primary / residual-pattern evidence</text>
+			<path d="M 117,116 L 117,99 Z" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 1;"/>
+			<polygon points="117 99, 114 105, 120 105" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(8%,20%,29%); fill-rule: evenodd;"/>
+			<path d="M 372,116 L 372,99 Z" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 1;"/>
+			<polygon points="372 99, 369 105, 375 105" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(8%,20%,29%); fill-rule: evenodd;"/>
+			<rect x="0" y="62" width="490" height="37" rx="5" ry="5" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,95%,97%); fill-rule: evenodd;"/>
+			<text x="153.1455078125" y="86.5" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,173) scale(1,-1)">Acceptance and competing explanations</text>
+			<text x="116.22265624999997" y="74.5" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,149) scale(1,-1)">Compatible · ambiguous · separate patterns · unresolved</text>
+			<path d="M 245,62 L 245,46 Z" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 1;"/>
+			<polygon points="245 46, 242 52, 248 52" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(8%,20%,29%); fill-rule: evenodd;"/>
+			<rect x="0" y="0" width="490" height="46" rx="5" ry="5" style="stroke: rgb(8%,20%,29%); stroke-linecap: butt; stroke-width: 0.7; fill: rgb(92%,95%,97%); fill-rule: evenodd;"/>
+			<text x="147.65234375" y="35.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,70) scale(1,-1)">Independent windows → spatial summaries</text>
+			<text x="117.23559570312499" y="23.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,46) scale(1,-1)">Uniform / adaptive grids · overlapping placement passes</text>
+			<text x="153.2421875" y="11.0" style="font-family: Paper; font-size: 9px;fill: rgb(8%,20%,29%); stroke:none;" transform="translate(0,22) scale(1,-1)">Inspectable results, settings and exports</text>
+		</g>
+	</g>
+</svg>
