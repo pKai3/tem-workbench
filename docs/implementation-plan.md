@@ -8,6 +8,10 @@ This is the maintained implementation status and roadmap. The original three ana
 
 Phase colour/search controls use one compact four-column row, with ORT alongside HCP/BCC/FCC. Reference lattice inputs are disabled and greyed for excluded phases, retaining their values for re-enabling; this follows manual phase changes, material presets, resets and restored settings. The scale-fitting selector is capped at a compact width instead of stretching across Processing settings. A reset arrow beside Material restores its lattice references, including disabled phases. Custom edits remember their last chosen preset for reset (Titanium fallback); phase search/colour selections are retained.
 
+## External review responses — 3 November 2026
+
+Both supplied Claude review responses are archived unchanged in [docs/reviews](reviews/README.md), with the real-image response identified as the latest. Both review `166cab9`. The newer response includes ST1203, ST1221, Ti_0274 and ST1144, but not ST1156; reviewer experiments have not been independently reproduced here. Candidate diversity, rank-auto normalization, weak-peak settings consistency and caching remain review proposals. No matcher changes are included with this archive; preserve the baseline while assessing the real-image findings.
+
 ## Analysis priorities and current status
 
 | Order | Task | Status |
