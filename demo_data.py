@@ -2,6 +2,7 @@
 from pathlib import Path
 import hashlib
 import json
+import re
 import numpy as np
 
 ID = 'demo/st1221'
@@ -9,6 +10,14 @@ NAME = 'ST1221 · demo'
 DIRECTORY = Path(__file__).resolve().parent / 'demo'
 DIFFRACTION_ID = 'demo/st1144'
 DEMOS = {}
+
+
+def source_id(path):
+    """Keep the IDs used by existing demo packs and saved regions."""
+    stem = Path(path).stem
+    sample = re.search(r'_(STA?)_(\d+)', stem, re.I)
+    key = (sample[1]+sample[2]).lower() if sample else re.sub(r'[^a-z0-9_-]', '_', stem.lower())
+    return 'demo/'+key
 
 
 def refresh():
@@ -27,19 +36,12 @@ def refresh():
                                    'stem': stem, 'directory': path.parent}
         except (OSError, ValueError):
             continue
-    # Downloaded packs keep the original source filenames and stable demo IDs.
-    from demo_packs import validate_manifest
-    for path in sorted(DIRECTORY.glob('packs/*/pack.json'), key=lambda p: p.parent.stat().st_mtime_ns):
-        try:
-            manifest = json.loads(path.read_text())
-            validate_manifest(manifest)
-            for item in manifest['images']:
-                source = path.parent/item['file']
-                if source.is_file():
-                    demos[item['id']] = {'name': item['name']+' · demo', 'source': source,
-                                         'preview': path.parent/item['preview']}
-        except (OSError, ValueError, KeyError, TypeError):
-            continue
+    # Discover originals directly; no pack manifest is required.
+    from preview_files import sidecar_path
+    for source in sorted(DIRECTORY.glob('packs/*/*'), key=lambda p: p.parent.stat().st_mtime_ns):
+        if source.is_file() and source.suffix.lower() == '.dm4':
+            demos[source_id(source)] = {'name': source.stem+' · demo', 'source': source,
+                                        'preview': sidecar_path(source)}
     DEMOS.clear()
     DEMOS.update(demos)
 

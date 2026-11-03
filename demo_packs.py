@@ -1,10 +1,9 @@
 """Explicitly requested demo downloads, verified and installed without ZIP extraction."""
 from pathlib import Path
 import hashlib
-import json
 import logging
-import re
 import ssl
+import stat
 import sys
 import tempfile
 import threading
@@ -38,34 +37,24 @@ def download_url(url):
     return urllib.parse.urlunsplit(parsed)
 
 
-def validate_manifest(manifest):
-    """Require only named DM4/PNG pairs, with unique stable catalog IDs."""
-    if not isinstance(manifest, dict) or manifest.get('schema_version') != 2:
-        raise ValueError('Unsupported demo pack. Use an original-DM4 demo pack.')
-    files, images = manifest.get('files'), manifest.get('images')
-    if not isinstance(files, dict) or not isinstance(images, list) or not images:
-        raise ValueError('The demo pack is missing its image list.')
-    used, ids = set(), set()
-    for item in images:
-        if not isinstance(item, dict) or not re.fullmatch(r'demo/[a-z0-9_-]+', item.get('id', '')) or item['id'] in ids:
-            raise ValueError('Invalid or duplicate demo ID.')
-        if not isinstance(item.get('name'), str) or not item['name'].strip():
-            raise ValueError('Missing demo image name.')
-        ids.add(item['id'])
-        for key, suffix in (('file', '.dm4'), ('preview', '.png')):
-            name = item.get(key)
-            if not isinstance(name, str) or '/' in name or '\\' in name or Path(name).name != name or Path(name).suffix.lower() != suffix or name in used:
-                raise ValueError('Invalid or repeated demo filename.')
-            used.add(name)
-    if set(files) != used:
-        raise ValueError('Demo pack must contain exactly the listed DM4 and PNG pairs.')
-    for entry in files.values():
-        if not isinstance(entry, dict) or not isinstance(entry.get('size'), int) or entry['size'] < 0 or not re.fullmatch(r'[a-f0-9]{64}', str(entry.get('sha256', ''))):
-            raise ValueError('Invalid demo pack checksums or sizes.')
+def generate_missing_previews(directory):
+    """Create sidecars locally, preserving any existing previews."""
+    from preview_files import sidecar_path, PreviewBatch
+    sources = {p.name: p for p in Path(directory).iterdir() if p.suffix.lower() == '.dm4'}
+    if not any(not sidecar_path(p).exists() for p in sources.values()):
+        return
+    from engine import Engine
+    engine = Engine({'data_root': str(Path(directory).resolve())})
+    engine.files = sources
+    batch = PreviewBatch(sources, engine.file_preview, directory)
+    batch.run()
+    if batch.status()['failed']:
+        raise ValueError('Could not generate demo previews: ' + '; '.join(batch.status()['errors']))
 
 
-def install_archive(archive, directory):
-    """Validate the entire pack before publishing its directory."""
+def install_archive(archive, directory, progress=None):
+    """Install DM4s from a plain ZIP/shared folder; previews and manifests are optional."""
+    from demo_data import source_id
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive) as z, tempfile.TemporaryDirectory(dir=directory) as temp:
@@ -74,40 +63,43 @@ def install_archive(archive, directory):
             raise ValueError('Invalid demo pack file list.')
         if sum(i.file_size for i in infos) > MAX_BYTES:
             raise ValueError('Demo pack is too large.')
-        headers = [i for i in infos if i.filename == 'pack.json' or i.filename.endswith('/pack.json')]
-        if len(headers) != 1:
-            raise ValueError('Choose a demo-pack ZIP or shared folder containing pack.json.')
-        header = headers[0]
-        prefix = header.filename[:-len('pack.json')]
-        if any(part in ('.', '..') for part in prefix.split('/') if part):
-            raise ValueError('Invalid demo pack folder.')
-        if header.file_size > 1024*1024:
-            raise ValueError('Demo pack manifest is too large.')
-        raw = z.read(header)
-        manifest = json.loads(raw)
-        validate_manifest(manifest)
-        files = manifest['files']
-        if {prefix+name for name in files} != {i.filename for i in infos} - {header.filename}:
-            raise ValueError('Demo pack contents differ from its manifest.')
-        for name, expected in files.items():
-            if Path(name).name != name or '/' in name or '\\' in name or Path(name).suffix.lower() not in ('.dm4', '.png'):
-                raise ValueError('Invalid demo pack filename.')
-            info = z.getinfo(prefix+name)
-            if info.file_size != expected['size']:
-                raise ValueError('Demo pack file size mismatch.')
+        for info in infos:
+            path = Path(info.filename)
+            if (path.is_absolute() or '..' in path.parts or '\\' in info.filename
+                    or ':' in info.filename or stat.S_ISLNK(info.external_attr >> 16)):
+                raise ValueError('Invalid demo pack path.')
+        sources = [i for i in infos if Path(i.filename).suffix.lower() == '.dm4'
+                   and '__MACOSX' not in Path(i.filename).parts and not Path(i.filename).name.startswith('._')]
+        if not sources:
+            raise ValueError('The download contains no DM4 images.')
+        names = [Path(i.filename).name.casefold() for i in sources]
+        ids = [source_id(Path(i.filename)) for i in sources]
+        if len(set(names)) != len(names) or len(set(ids)) != len(ids):
+            raise ValueError('Demo images must have distinct filenames and image IDs.')
+        # Read through ZipFile to check CRCs. Never extract archive paths directly.
+        inventory = hashlib.sha256()
+        for info in sorted(sources, key=lambda i: Path(i.filename).name):
+            name = Path(info.filename).name
             digest = hashlib.sha256()
             with z.open(info) as source, (Path(temp)/name).open('wb') as dest:
                 while chunk := source.read(1024*1024):
-                    digest.update(chunk)
-                    dest.write(chunk)
-            if digest.hexdigest() != expected['sha256']:
-                raise ValueError('Demo pack checksum mismatch: '+name)
-        images = manifest['images']
-        (Path(temp)/'pack.json').write_bytes(raw)
-        target = directory/hashlib.sha256(raw).hexdigest()[:20]
-        if not target.exists():
+                    digest.update(chunk); dest.write(chunk)
+            inventory.update(name.encode()+b'\0'+digest.digest())
+            previews = [i for i in infos if Path(i.filename).parent == Path(info.filename).parent
+                        and Path(i.filename).stem == Path(info.filename).stem
+                        and Path(i.filename).suffix.lower() == '.png']
+            if previews:
+                with z.open(previews[0]) as source, (Path(temp)/Path(name).with_suffix('.png')).open('wb') as dest:
+                    while chunk := source.read(1024*1024): dest.write(chunk)
+        # Identity depends only on originals, not wrappers, manifests or previews.
+        target = directory/inventory.hexdigest()[:20]
+        if progress: progress('Generating missing PNG previews…')
+        if target.exists():
+            generate_missing_previews(target)
+        else:
+            generate_missing_previews(Path(temp))
             Path(temp).rename(target)
-        return len(images)
+        return len(sources)
 
 
 class DemoDownload:
@@ -159,7 +151,7 @@ class DemoDownload:
                 if self.cancel.is_set():
                     self.update(state='cancelled', message='Download cancelled.'); return
                 self.update(message='Checking and installing…')
-                count = install_archive(archive, self.directory)
+                count = install_archive(archive, self.directory, lambda text: self.update(message=text))
                 self.update(state='complete', message=f'{count} demo images installed.')
                 LOG.info('Installed demo pack: %s images', count)
         except Exception as exc:

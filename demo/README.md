@@ -1,31 +1,21 @@
-# Optional TEM demo packs
+# Optional TEM demo images
 
-Images are hosted separately, keeping GitHub source downloads small. Each pack contains **unchanged original DM4 files**, a PNG preview beside each one, and `pack.json` listing image IDs, filenames and SHA-256 checksums. The DM4 preserves its microscope metadata and calibration. No pixel conversion is applied.
-
-The current examples are ST1221 (real-space FFT inspection), ST1144 (direct diffraction) and ST1203 (a strong BCC candidate example). These are inspection examples, not confirmed phase-identification standards.
+Images are hosted separately, keeping GitHub source downloads small. Put **unchanged original DM4 files** into a shared Dropbox folder, or a ZIP served over HTTPS. No manifest or PNG files are required. Add more DM4s directly to the shared folder whenever needed.
 
 ## Download
 
-Open **Optional demo images**, paste a pack link and click **Download demo images**. Dropbox shared folders are supported: Dropbox creates a ZIP when downloading, and the app accepts its enclosing folder. A direct HTTPS ZIP link from another host also works. Nothing downloads until requested. Progress and cancellation are available; failed downloads leave existing demos intact.
+Under **Data Sources and Outputs**, paste the link and click **Download demo images**. Dropbox zips the shared folder automatically; enclosing folders are supported. Nothing downloads until requested. Download progress and cancellation are available.
 
-Installed images are in `demo/packs/`, ignored by Git, and appear in the **Demo** group. They use the normal DM4 reader (`ncempy`, included by the desktop installer). A source-only installation can install it with `python -m pip install ncempy`. Retain `demo/packs/` when moving an installation to avoid downloading again. Legacy NPZ demos remain readable for existing installations.
+The app discovers the DM4 images, keeps their microscope metadata and calibration, and generates missing same-name PNG previews locally. Existing previews are reused. Previews are greyscale and at most 1400 pixels along the longest side, with log intensity for direct diffraction. They never replace the analysis data. Optional PNGs in an older download are accepted; old `pack.json` files are ignored.
 
-## Build and host
+Installed images are in `demo/packs/`, ignored by Git, and appear in the **Demo** group. They use the normal DM4 reader (`ncempy`, included by the desktop installer). A source-only installation can install it with `python -m pip install ncempy`. Keep `demo/packs/` when moving an installation to avoid downloading again. Legacy NPZ demos remain readable.
 
-Create a folder for Dropbox to zip on download:
+The original examples are ST1221 (real-space FFT inspection), ST1144 (direct diffraction) and ST1203 (a strong BCC candidate example). These are inspection examples, not confirmed phase-identification standards.
 
-```sh
-python tools/build_demo_pack.py --folder "/path/to/TEM Demo Images" /path/to/image.dm4 /path/to/another.dm4
-```
+## Updating the shared folder
 
-Or create a portable ZIP:
+Add or remove DM4s in the shared folder, then download again in the app. Keep filenames distinct. IDs such as `demo/st1221` stay stable for saved regions. Downloading the same originals again reuses their installed pack, regardless of the ZIP wrapper or whether previews were included. Expanded packs are installed separately; previously installed images are retained.
 
-```sh
-python tools/build_demo_pack.py /path/to/tem-demo-images.zip /path/to/image.dm4 /path/to/another.dm4
-```
+The downloader checks ZIP integrity, rejects unsafe archive paths, and only installs DM4s and matching previews. Use a trusted hosting link. No data images or previews belong in Git.
 
-The builder copies original DM4 bytes and generates 1400-pixel greyscale PNG previews (log intensity for direct diffraction). The previews never replace analysis data. Duplicate IDs and existing output paths are rejected.
-
-Share the output folder or ZIP. Keep `pack.json` and the listed files together. To add examples, rebuild in a new location using the existing DM4s plus the new ones, then replace the hosted contents with the new files and manifest. The app remembers the link; download again to install the expanded pack. IDs such as `demo/st1221` remain stable, preserving saved-region references.
-
-Checksums detect incomplete or corrupted downloads; use a trusted hosting link. The app verifies all files before making a pack available. No data images or previews need to be committed to Git.
+An optional developer helper, `tools/build_demo_pack.py`, copies DM4s into a new folder (`--folder`) or ZIP. It is not needed for a Dropbox folder and produces no manifest or previews.
