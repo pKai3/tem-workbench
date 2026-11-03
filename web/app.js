@@ -1327,7 +1327,7 @@ function renderAutoStrength(data){
  output.hidden=!info||data.image_kind==='diffraction';
  if(!info)return;
  $('fft-auto-strength-value').textContent=info.status==='optimized'?`Selected ${info.selected_strength.toFixed(3)}`:'Unavailable';
- output.textContent=info.status==='optimized'?`Auto strength: ${info.selected_strength.toFixed(3)} · ${info.tested_sets} peak sets compared${info.objective==='geometry'?' · geometry objective'+(info.selection==='no_geometry'?' · no supported geometry':''):(info.selection==='passing'?'':' · no passing fit')}`:'Auto strength unavailable: check enabled phases and image sampling.';
+ output.textContent=info.status==='optimized'?`Auto strength: ${info.selected_strength.toFixed(3)} · ${info.tested_sets} peak sets compared${info.objective==='geometry'?' · geometry objective'+(info.selection==='no_geometry'?' · no supported geometry':''):' · dominant-pattern selection'+(info.selection==='passing'?'':' · no passing fit')}`:'Auto strength unavailable: check enabled phases and image sampling.';
 }
 function resetFFTControls(){
  let changed=false;

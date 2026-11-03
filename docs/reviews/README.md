@@ -8,4 +8,4 @@ These are review responses supplied by the project owner, preserved unchanged. T
 
 The updated review reports that a simple seed-deduplication change recovered synthetic second orientations but slightly reduced some real-image scores; it recommends preserving useful scale variants while adding orientation diversity. It also cautions against lowering the detector cutoff alone. Both reviews identify rank-auto's changing peak-set denominator as a concern for weaker patterns.
 
-Review scripts and experimental patches were not supplied with these PDFs. Recommendations are proposals, not implemented behaviour. See the [maintained implementation plan](../implementation-plan.md) for current status.
+Review scripts and experimental patches were not supplied with these PDFs. The [implementation response and local checks](2026-11-03-follow-up.md) distinguish the fixes now implemented from recommendations still deferred. See the [maintained implementation plan](../implementation-plan.md) for current status.

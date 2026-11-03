@@ -74,6 +74,23 @@ def score_hypothesis(peaks,T,q,scale,ang,tol,g_max=10.,g_min=3.):
  angles=np.array([np.arctan2(x['observed_q'][1],x['observed_q'][0]) for x in matches]);spread=float(np.max(abs(np.sin(angles[:,None]-angles[None,:])))) if len(angles)>1 else 0
  return {'template_id':T['id'],'phase':T['phase'],'zone_3index':T['zone_3index'],'mirror':T['mirror'],'rotation_deg':float(np.degrees(ang)%180),'shared_scale':scale,'score':float(score),'coverage':float(coverage),'quality_coverage':float(quality),'chance_density_penalty':penalty,'matched_profile_count':len(matches),'predicted_visible_band_node_count':len(P),'nonparallel_spread_sine':spread,'rms_nm_inv':float(np.sqrt(np.mean([x['residual_nm_inv']**2 for x in matches]))),'matches':matches,'predicted_nodes':[{'q':v.tolist(),'hkl':h.tolist()} for v,h in zip(P,hi)],'valid':bool(len(matches)>=4 and spread>.5 and score>.20 and coverage>.30)}
 
+def additional_orientation_seeds(angles, scores, support, initial, limit=2):
+ """Supplement existing seeds with distinct orientations AND measured support.
+
+ Preserve all existing scale/angle starts. A >2 degree rotation (modulo pi)
+ and <=80% support overlap avoids spending extra slots on symmetry copies.
+ This is a bounded search heuristic, not an orientation-resolution claim.
+ """
+ chosen=list(initial);extra=[];ids=[set(np.flatnonzero(row>0)) for row in support]
+ for i in np.argsort(scores)[::-1]:
+  if scores[i]<.2:break
+  if i in chosen:continue
+  if any(abs(np.sin(angles[i]-angles[j]))<=np.sin(np.radians(2)) or
+         len(ids[i]&ids[j])/max(len(ids[i]|ids[j]),1)>.8 for j in chosen):continue
+  chosen.append(int(i));extra.append(int(i))
+  if len(extra)>=limit:break
+ return extra
+
 def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a=.417,g_max=10.,g_min=3.):
  if len(peaks)<4:return []
  O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);og=np.linalg.norm(O,axis=1);oa=np.arctan2(O[:,1],O[:,0]);tree=cKDTree(np.r_[O,-O]);candidates=[]
@@ -81,7 +98,8 @@ def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a
   qs=T['q']*({'BCC':.330/bcc_a,'FCC':.417/fcc_a}.get(T['phase'],1));g=np.linalg.norm(qs,axis=1)*scale;ta=np.arctan2(qs[:,1],qs[:,0]);pairs=np.argwhere(abs(og[:min(16,len(og)),None]-g[None,:])<tol)
   if not len(pairs):continue
   angles=np.unique(np.round(((oa[pairs[:,0]]-ta[pairs[:,1]])%np.pi)/np.radians(.5))*np.radians(.5));cs=np.cos(angles);sn=np.sin(angles);P=np.empty((len(angles),len(qs),2));P[:,:,0]=scale*(cs[:,None]*qs[None,:,0]-sn[:,None]*qs[None,:,1]);P[:,:,1]=scale*(sn[:,None]*qs[None,:,0]+cs[:,None]*qs[None,:,1]);dist,ind=tree.query(P.reshape(-1,2));dist=dist.reshape(len(angles),-1);ind=ind.reshape(len(angles),-1)%len(O);vals=np.exp(-.5*(dist/(tol/2))**2);vals[(dist>tol)|((g<g_min)|(g>g_max))[None,:]]=0;support=np.zeros((len(angles),len(O)));np.maximum.at(support,(np.repeat(np.arange(len(angles)),len(qs)),ind.ravel()),vals.ravel());quick=support@w/w.sum()
-  for ai in np.argsort(quick)[-2:]:
+  initial=list(np.argsort(quick)[-2:])
+  for ai in initial+additional_orientation_seeds(angles,quick,support,initial):
    if quick[ai]<.2:continue
    ang=float(angles[ai]);r=score_hypothesis(peaks,T,qs,scale,ang,tol,g_max,g_min)
    if r:
@@ -105,7 +123,7 @@ def retain(candidates,topn=5):
  out=[]
  for c in sorted(candidates,key=lambda x:x['score'],reverse=True):
   ids=set(x['profile_id'] for x in c['matches'])
-  if any(c['phase']==v['phase'] and len(ids&set(x['profile_id'] for x in v['matches']))/max(len(ids|set(x['profile_id'] for x in v['matches'])),1)>.8 for v in out):continue
+  if any(c['phase']==v['phase'] and c['zone_3index']==v['zone_3index'] and len(ids&set(x['profile_id'] for x in v['matches']))/max(len(ids|set(x['profile_id'] for x in v['matches'])),1)>.8 for v in out):continue
   if sum(v['phase']==c['phase'] for v in out)>=topn:continue
   out.append(c)
  return out

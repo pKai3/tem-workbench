@@ -10,7 +10,13 @@ Phase colour/search controls use one compact four-column row, with ORT alongside
 
 ## External review responses — 3 November 2026
 
-Both supplied Claude review responses are archived unchanged in [docs/reviews](reviews/README.md), with the real-image response identified as the latest. Both review `166cab9`. The newer response includes ST1203, ST1221, Ti_0274 and ST1144, but not ST1156; reviewer experiments have not been independently reproduced here. Candidate diversity, rank-auto normalization, weak-peak settings consistency and caching remain review proposals. No matcher changes are included with this archive; preserve the baseline while assessing the real-image findings.
+Both supplied Claude review responses are archived unchanged in [docs/reviews](reviews/README.md), with the real-image response identified as the latest. Both review `166cab9`. The newer response includes ST1203, ST1221, Ti_0274 and ST1144, but not ST1156. Its full experimental matrix has not been independently reproduced.
+
+**Implemented follow-up:** crop-local weak-candidate and template-coordinate reuse, reuse of geometry-auto's selected geometry, up to two supplementary orientation seeds while preserving the existing scale variants, the same orientation expansion for fixed-scale search, consistent zone-aware candidate retention, and FFT weak checks using the selected smoothing/floor. Rank-auto is now labelled **Auto · dominant rank**, with explicit subset-score interpretation and admitted-pool metadata in exports. Three-profile results explain the unchanged four-profile screen. See the [finding-by-finding response and validation](reviews/2026-11-03-follow-up.md).
+
+Validation: 169 tests pass, including ten new review regressions, noise-only and single-orientation controls, and existing spawned-worker checks. On 24 local real-image cases (1221/1203/0274/1156, centred 6/20 nm, manual/geometry/rank), caching alone preserved analysis data exactly apart from runtime/version identifiers; the completed changes preserved all labels and did not lower either phase's best score. These are stability checks, not phase ground truth. Additional search costs time; no universal speedup is claimed.
+
+**Still experimental:** fixed-pool/pair crystal objectives, detector recurrence/prominence admission, robust radial backgrounds, auto/physical smoothing, per-peak uncertainty, three-profile acceptance and library/parameter complexity corrections. The dominant-rank objective and existing acceptance thresholds are unchanged. Retaining/exploring another orientation does not guarantee it passes the global-coverage screen. Native Windows verification of these changes remains outstanding. No architecture refresh.
 
 ## Analysis priorities and current status
 

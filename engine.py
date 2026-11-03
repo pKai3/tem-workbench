@@ -328,7 +328,7 @@ class Engine:
             raise ValueError('Central exclusion must be smaller than the outer fitting limit.')
         return {'x': x, 'y': y, 'w': w, 'h': h}, values
 
-    def _fit_spectrum(self, s, settings, templates, can_index, context):
+    def _fit_spectrum(self, s, settings, templates, can_index, context, prediction_cache=None):
         """Compare one detected profile set; the FFT pixels are already prepared."""
         tol = max(.10, core.peak_width(s))
         candidates = []
@@ -350,7 +350,7 @@ class Engine:
                                           settings['scale_mode'], bcc_a=settings['bcc_a'],
                                           scale_penalty_strength=settings['scale_penalty_strength'],
                                           ca_penalty_strength=settings['ca_penalty_strength'],
-                                          candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'])
+                                          candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'], prediction_cache=prediction_cache)
         if can_index:
             s['weak_maxima'] = context['maxima']
             for model in candidates:
@@ -381,6 +381,7 @@ class Engine:
                               minimum_enrichment=0. if auto_strength else settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
                               max_peaks=settings['fft_max_peaks'])
         templates = self.templates_for(settings)
+        selected_geometry = None
         if direct:
             models, candidates = self._fit_spectrum(s, settings, templates, can_index, context)
         else:
@@ -388,6 +389,9 @@ class Engine:
             # Reuse one FFT and test every distinct admitted profile set, including
             # stricter cutoffs. Other detector controls and the fit screen stay fixed.
             pool = s['peaks']
+            # These caches live only for this crop/settings, never across requests.
+            prediction_cache = {}
+            weak_candidates = peak_evidence.prepare_candidates(s, crop.shape, sx, sy) if can_index else None
             levels = ([s['profile_threshold']] + sorted({p['log_radial_enrichment'] for p in pool})
                       if auto_strength else [settings['fft_minimum_enrichment']])
             geometry_auto = auto_strength and settings['fft_auto_objective'] == 'geometry'
@@ -411,9 +415,10 @@ class Engine:
                     attempts.append({'strength': float(strength), 'profiles': len(peaks), **evidence})
                     if best is None or merit > best[0]:
                         best = (merit, trial, None, None)
+                        selected_geometry = geometry
                     continue
-                context = peak_evidence.prepare(trial, crop.shape, sx, sy) if can_index else None
-                trial_models, trial_candidates = self._fit_spectrum(trial, settings, templates, can_index, context)
+                context = peak_evidence.for_peaks(weak_candidates, peaks) if can_index else None
+                trial_models, trial_candidates = self._fit_spectrum(trial, settings, templates, can_index, context, prediction_cache)
                 passing = [m for m in trial_models if m['valid']]
                 leader = max(passing or trial_models, key=lambda m: m['score'], default=None)
                 rank = leader['score'] if leader else None
@@ -426,7 +431,7 @@ class Engine:
                     best = (merit, trial, trial_models, trial_candidates)
             _, s, models, candidates = best
             if geometry_auto:
-                context = peak_evidence.prepare(s, crop.shape, sx, sy)
+                context = peak_evidence.for_peaks(weak_candidates, s['peaks'])
                 models, candidates = self._fit_spectrum(s, settings, templates, can_index, context)
             if settings['fft_auto_strength']:
                 s['auto_peak_strength'] = {
@@ -434,12 +439,16 @@ class Engine:
                     'selected_strength': s['minimum_peak_enrichment'],
                     'tested_sets': len(attempts) if auto_strength else 0,
                     'objective': settings['fft_auto_objective'],
+                    'scope': 'geometry_patterns' if geometry_auto else 'dominant_pattern',
+                    'pool_profiles': len(pool),
+                    'pool_weight': pool_weight,
+                    'selected_weight_fraction': sum(p['weight'] for p in s['peaks'])/max(pool_weight, 1e-12),
                     'selection': ('geometry_supported' if best[0][0] else 'no_geometry') if geometry_auto else ('passing' if best[0][0] else 'below_threshold' if models else 'no_fit'),
                     'trials': attempts if auto_strength else [],
                 }
         tol = max(.10, core.peak_width(s))
         classification = self.classify(s, models, settings, width_nm, height_nm, can_index)
-        periodicity = core.purity(s['peaks'], tol, g_max=settings['g_max'], g_min=settings['g_min']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False}
+        periodicity = selected_geometry if selected_geometry is not None else (core.purity(s['peaks'], tol, g_max=settings['g_max'], g_min=settings['g_min']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False})
         log = s.pop('log')
         detector_signal = s.pop('detector_signal', None)
         # Return an encoded log-power field; display contrast is adjusted in the browser only.
@@ -509,6 +518,8 @@ class Engine:
                 classification['flags'].append('The leading fit reaches an automatic scale limit.')
             if primary and primary.get('scale_note'):
                 classification['flags'].append(primary['scale_note'])
+        if can_index and len(s['peaks']) == 3:
+            classification['flags'].append('Only three independent profiles were detected; the current crystal screen requires four. Some high-symmetry projections have only three first-order profiles. Higher-order reflections or a larger fitting band may supply additional evidence; three profiles alone do not identify a phase.')
         if settings.get('peak_evidence_weight', 0):
             classification['flags'].append('Prediction-site evidence is an exploratory ranking adjustment. Weak maxima are checked against local background and rotated controls; they do not count toward the initial fit screen or separate-pattern criteria. Missing spots are not proof of an absent reflection.')
         if not can_index:
@@ -536,8 +547,10 @@ class Engine:
         auto = s.get('auto_peak_strength')
         if auto and auto['status'] == 'optimized':
             classification['flags'].append(
-                f"Auto peak strength used {auto['selected_strength']:.3f}, comparing {auto['tested_sets']} detected-profile sets. "
-                'Rank was used to select the cutoff; it is not independent confirmation. Cached reweighting keeps these profiles; rerun to optimize the cutoff again.')
+                f"Auto peak strength used {auto['selected_strength']:.3f}, comparing {auto['tested_sets']} detected-profile sets. " +
+                ('Geometry selected the cutoff before crystal matching. ' if auto.get('objective') == 'geometry' else
+                 'Dominant-pattern selection: rank optimizes a changing subset of peaks and may discard a weaker pattern. Scores use that subset and are not directly comparable with manual or geometry-auto scores. ') +
+                'Cached reweighting keeps these profiles; rerun to optimize the cutoff again.')
         elif auto:
             classification['flags'].append('Auto peak strength was skipped: enable a phase and ensure the image samples the fitting band.')
         window = settings.get('fft_window', 'hann')

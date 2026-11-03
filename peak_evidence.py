@@ -9,11 +9,12 @@ from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.optimize import linear_sum_assignment
 import analysis_core as core
 
-VERSION = 'local-maxima-v1'
+VERSION = 'local-maxima-v2'
 DEFAULT_WEIGHT = .10
 
 
-def prepare(spectrum, shape, sx, sy):
+def prepare_candidates(spectrum, shape, sx, sy):
+    """Compute crop-only weak candidates once; trial exclusions happen later."""
     log = spectrum['log']
     h, w = shape
     g_max = spectrum.get('g_max', 10.)
@@ -22,22 +23,22 @@ def prepare(spectrum, shape, sx, sy):
     fy = -core.fftshift(core.fftfreq(h, sy)); fy = fy[abs(fy) <= g_max*1.05]
     xx, yy = np.meshgrid(fx, fy)
     g = np.hypot(xx, yy); df = spectrum['df']
-    radial_bin = np.floor(g/df).astype(int)
-    count = np.bincount(radial_bin.ravel())
-    radial_mean = np.bincount(radial_bin.ravel(), weights=log.ravel())/np.maximum(count, 1)
-    residual = gaussian_filter(log-radial_mean[radial_bin], .65)
+    residual = spectrum.get('detector_signal')
+    if residual is None:
+        radial_bin = np.floor(g/df).astype(int)
+        count = np.bincount(radial_bin.ravel())
+        radial_mean = np.bincount(radial_bin.ravel(), weights=log.ravel())/np.maximum(count, 1)
+        residual = gaussian_filter(log-radial_mean[radial_bin], spectrum.get('detection_smoothing_sigma_bins', .65))
+    floor = spectrum.get('detection_threshold_floor', 1.8)
     radius = max(.10, core.peak_width(spectrum))
     mask = ((residual == maximum_filter(residual, size=3, mode='nearest')) &
-            (residual >= 1.8) & (g > 0) & (g >= g_min) & (g <= g_max) &
+            (residual >= floor) & (g > 0) & (g >= g_min) & (g <= g_max) &
             ((yy > 1e-8) | ((abs(yy) < 1e-8) & (xx > 0))))
-    strong = np.array([[p['qx'], p['qy']] for p in spectrum['peaks']]).reshape(-1, 2)
     candidates = []
     dx, dy = 1/(w*sx), 1/(h*sy)
     rx, ry = int(np.ceil(4*radius/dx)), int(np.ceil(4*radius/dy))
     for y, x in np.argwhere(mask):
         q = np.array([fx[x], fy[y]])
-        if len(strong) and np.minimum(np.linalg.norm(strong-q, axis=1), np.linalg.norm(strong+q, axis=1)).min() < radius:
-            continue  # Do not count a strong profile or its shoulder again.
         x0, x1 = max(0, x-rx), min(len(fx), x+rx+1)
         y0, y1 = max(0, y-ry), min(len(fy), y+ry+1)
         distance = np.hypot(xx[y0:y1, x0:x1]-q[0], yy[y0:y1, x0:x1]-q[1])
@@ -53,17 +54,33 @@ def prepare(spectrum, shape, sx, sy):
                            'local_contrast': prominence, 'background': background,
                            'background_spread': noise,
                            'strength': min(.5, (prominence-1)/6)})
-    # One weak feature per window-broadened profile, independent of phase.
-    maxima = []
-    for peak in sorted(candidates, key=lambda p: p['enrichment'], reverse=True):
-        q = np.array(peak['q'])
-        if any(min(np.linalg.norm(q-np.array(p['q'])), np.linalg.norm(q+np.array(p['q']))) < radius for p in maxima):
-            continue
-        peak['weak_id'] = len(maxima)+1
-        maxima.append(peak)
-    return {'maxima': maxima, 'radius': radius, 'g_min': g_min, 'g_max': g_max,
+    return {'candidates': sorted(candidates, key=lambda p: p['enrichment'], reverse=True),
+            'radius': radius, 'g_min': g_min, 'g_max': g_max,
             'x_limit': float(min(abs(fx[0]), abs(fx[-1]))),
             'y_limit': float(min(abs(fy[0]), abs(fy[-1])))}
+
+
+def for_peaks(prepared, peaks):
+    """Exclude strong profiles BEFORE deduplicating weak candidates.
+
+    A trial can remove a strong profile, revealing its former weak neighbours.
+    Filtering a previously deduplicated list would incorrectly lose those.
+    """
+    strong = np.array([[p['qx'], p['qy']] for p in peaks]).reshape(-1, 2)
+    radius = prepared['radius']
+    maxima = []
+    for peak in prepared['candidates']:
+        q = np.array(peak['q'])
+        if len(strong) and np.minimum(np.linalg.norm(strong-q, axis=1), np.linalg.norm(strong+q, axis=1)).min() < radius:
+            continue
+        if any(min(np.linalg.norm(q-np.array(p['q'])), np.linalg.norm(q+np.array(p['q']))) < radius for p in maxima):
+            continue
+        maxima.append({**peak, 'weak_id': len(maxima)+1})
+    return {**{k: v for k, v in prepared.items() if k != 'candidates'}, 'maxima': maxima}
+
+
+def prepare(spectrum, shape, sx, sy):
+    return for_peaks(prepare_candidates(spectrum, shape, sx, sy), spectrum['peaks'])
 
 
 def qualities(points, maxima, radius):

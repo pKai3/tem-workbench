@@ -155,14 +155,20 @@ def prediction_points(template, scale_a, scale_c, bcc_a=.330, hkl=None, fcc_a=.4
     return q @ metric_transform(template, scale_a, scale_c)*reference
 
 
-def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min):
+def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min, prediction_cache=None):
     lengths = np.linalg.norm(observed, axis=1)
     angles = np.arctan2(observed[:, 1], observed[:, 0])
     low, high = template.get('scale_bounds', BOUNDS)
     ratios = np.unique(np.r_[(np.geomspace(low/high, high/low, 41) if high/low>2 else np.linspace(low/high, high/low, 11)), 1.]) if double else [1.]
     seeds = []
+    all_seeds, all_support = [], []
     for ratio in ratios:
-        q = prediction_points(template, 1., ratio, bcc_a, fcc_a=fcc_a)
+        key = (id(template), float(ratio), bcc_a, fcc_a)
+        q = prediction_cache.get(key) if prediction_cache is not None else None
+        if q is None:
+            q = prediction_points(template, 1., ratio, bcc_a, fcc_a=fcc_a)
+            if prediction_cache is not None:
+                prediction_cache[key] = q
         g = np.linalg.norm(q, axis=1)
         lower, upper = max(low, low/ratio), min(high, high/ratio)
         if lower > upper+1e-10:
@@ -190,6 +196,9 @@ def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weight
         np.maximum.at(support, (np.repeat(np.arange(len(scale)), len(q)), nearest.ravel()), quality.ravel())
         quick = support @ weights/weights.sum()
         quick[visible.sum(axis=1) < 4] = 0
+        for i in np.flatnonzero(quick >= .2):
+            all_seeds.append((float(quick[i]), float(angle[i]), float(scale[i]), float(scale[i]*ratio)))
+            all_support.append(support[i])
         for i in np.argsort(quick)[-3:]:
             if quick[i] >= .2:
                 seeds.append((float(quick[i]), float(angle[i]), float(scale[i]), float(scale[i]*ratio)))
@@ -201,6 +210,12 @@ def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weight
         selected.append(seed)
         if len(selected) == (4 if double else 3):
             break
+    if all_seeds:
+        initial = [all_seeds.index(seed) for seed in selected]
+        extra = core.additional_orientation_seeds(
+            np.array([seed[1] for seed in all_seeds]),
+            np.array([seed[0] for seed in all_seeds]), all_support, initial)
+        selected.extend(all_seeds[i] for i in extra)
     return selected
 
 
@@ -265,7 +280,7 @@ def _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min):
     return result
 
 
-def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10., g_min=3., ca_penalty_strength=DEFAULT_CA_PENALTY):
+def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10., g_min=3., ca_penalty_strength=DEFAULT_CA_PENALTY, prediction_cache=None):
     if mode not in MODES[1:]:
         raise ValueError('Unknown automatic scale mode.')
     strength = float(scale_penalty_strength)
@@ -292,7 +307,7 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
                   float(template['c_direction'] @ template['c_direction']) > 1e-10)
         if len(template['q']) < 4:
             continue
-        seeds = _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min)
+        seeds = _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min, prediction_cache)
         for seed in seeds:
             result = _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min)
             if result:
@@ -310,17 +325,9 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
 
 
 def retain(candidates, topn=5):
-    retained = []
-    for candidate in sorted(candidates, key=lambda m: m['score'], reverse=True):
-        ids = {m['profile_id'] for m in candidate['matches']}
-        if any(candidate['phase'] == other['phase'] and
-               candidate['zone_3index'] == other['zone_3index'] and
-               len(ids & {m['profile_id'] for m in other['matches']}) /
-               max(len(ids | {m['profile_id'] for m in other['matches']}), 1) > .8 for other in retained):
-            continue
-        if sum(candidate['phase'] == other['phase'] for other in retained) < topn:
-            retained.append(candidate)
-    return retained
+    # One retention rule for fixed and fitted scales. Different zone labels remain
+    # available as alternatives; shared-profile checks prevent double evidence.
+    return core.retain(candidates, topn)
 
 
 def rerank(candidates, strength, topn=5, ca_penalty_strength=DEFAULT_CA_PENALTY):
