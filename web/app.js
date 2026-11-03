@@ -920,7 +920,7 @@ function scheduleOverlapPreview(){
  $('overlap-preview-control').hidden=!active;
  setOverlapPlanning(Boolean(active&&$('show-overlap-preview').checked));
  if(!active)return;
- $('grid-size-note').textContent='Counting windows…';
+ $('grid-size-note').textContent='';$('map-window-count').textContent='— windows';
  $('overlap-preview-summary').textContent='Preparing window layout…';$('overlap-preview-pair').textContent='';$('overlap-preview-pass').disabled=true;
  if(!config?.overlap_preview){$('grid-size-note').textContent=$('overlap-preview-summary').textContent='Restart Workbench and reload to count windows.';return}
  const sourceVersion=sourceRequest;
@@ -930,7 +930,7 @@ function scheduleOverlapPreview(){
    const data=await api('overlap-preview',{file_id:fileId,overlap:options});
    if(version!==overlapPreviewVersion||sourceVersion!==sourceRequest)return;
    overlapPreviewData=data;
-   $('grid-size-note').textContent=`${data.samples.length.toLocaleString()} windows`;
+   $('map-window-count').textContent=`≈ ${data.samples.length.toLocaleString()} windows`;
    if(!overlapPlanning())return;
    const select=$('overlap-preview-pass'),previous=select.value;
    select.replaceChildren();
@@ -968,7 +968,7 @@ function updateGridSizeNote(){
  $('batch-panel').hidden=false;
 
  $('check-passing').disabled=!config?.check_passing||!$('adaptive').checked;
- const note=$('grid-size-note');note.classList.toggle('window-count',overlap);
+ const note=$('grid-size-note');
  if(!meta||isDiffraction()){note.textContent='';return}
  if(overlap)return;
  const count=Number($('grid-count').value),minimum=Number($('grid-min').value);
