@@ -1,4 +1,4 @@
-# TEM Workbench 1.0.1
+# TEM Workbench 1.0.2
 
 - Windows demo downloads now use native Windows certificate trust and chain validation, including managed network certificates trusted by Windows.
 - Certificate failures show an actionable message. HTTPS certificate and hostname verification remain enabled.
