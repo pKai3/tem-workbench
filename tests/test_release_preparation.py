@@ -79,6 +79,16 @@ class ReleasePreparationTests(unittest.TestCase):
         source = self.git('rev-parse', 'HEAD')
         self.assertEqual(prepare(self.root, source)['commit'], source)
 
+    def test_prepared_crlf_files_are_not_rewritten(self):
+        self.git('config', 'core.autocrlf', 'false')
+        (self.root / 'VERSION').write_bytes(b'1.2.0\r\n')
+        (self.root / 'RELEASE_NOTES.md').write_bytes(b'# TEM Workbench 1.2.0\r\n\r\n- Ready.\r\n')
+        self.git('commit', '-qam', 'Prepare Windows release')
+        self.git('push', '-q', 'origin', 'main')
+        source = self.git('rev-parse', 'HEAD')
+        self.assertEqual(prepare(self.root, source)['commit'], source)
+        self.assertIn(b'\r\n', (self.root / 'RELEASE_NOTES.md').read_bytes())
+
     def test_newer_code_push_skips_stale_verified_commit(self):
         (self.root / 'app.py').write_text('# later change\n')
         self.git('commit', '-qam', 'Later work')

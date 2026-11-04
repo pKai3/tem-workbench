@@ -57,8 +57,11 @@ def prepare(root, expected):
         notes = '# TEM Workbench ' + current + '\n\n' + body + '\n\nUse **Check for updates → Install update and restart**.\n'
     else:
         notes = re.sub(r'\A# [^\n]*', '# TEM Workbench ' + current, notes)
-    (root / 'VERSION').write_text(current + '\n', encoding='utf-8', newline='\n')
-    (root / 'RELEASE_NOTES.md').write_text(notes, encoding='utf-8', newline='\n')
+    # Preserve an already prepared release, including Windows checkout newlines.
+    for name, content in (('VERSION', current + '\n'), ('RELEASE_NOTES.md', notes)):
+        path = root / name
+        if path.read_text(encoding='utf-8') != content:
+            path.write_text(content, encoding='utf-8', newline='\n')
     git('add', 'VERSION', 'RELEASE_NOTES.md')
     if git('diff', '--cached', '--name-only'):
         git('commit', '-m', 'Release ' + tag)
