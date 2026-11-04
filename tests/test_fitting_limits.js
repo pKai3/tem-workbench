@@ -6,7 +6,7 @@ function $(id){if(!controls.has(id))controls.set(id,{value:id==='g-max'?'10':'3'
 const context={assert,$,meta:{sha256_pixels:'image-a',name:'A'},fileId:'a',result:{spectrum:{extent:[-10,10,-10,10]}},direct:false,diffractionSettings:{exclude_radius_nm_inv:2.5},invalidations:0,repaints:0,
  readPreference:(k,d)=>storage.get(k)??d,writePreference:(k,v)=>storage.set(k,v),
  clamp:(v,a,b)=>Math.min(b,Math.max(a,v)),isDiffraction:()=>context.direct,
- hideSpectrumHover(){},hideCentreLoupe(){},rememberDiffraction(){},message(){},setTimeout:fn=>fn(),
+ hideSpectrumHover(){},hideCentreLoupe(){},rememberDiffraction(){},syncDetectorControls(){},message(){},setTimeout:fn=>fn(),
  DOMPoint:class{constructor(x,y){this.x=x;this.y=y}matrixTransform(){return this}},
  invalidateAnalysisSettings(){context.invalidations++}};
 vm.createContext(context);
@@ -36,6 +36,42 @@ storage.set('tem-basic-settings',{'g-max':9,'fft-g-min':2});$('remove-fitting-ov
 assert.equal(run('savedFittingLimits()'),null);assert.equal(Number($('g-max').value),9);assert.equal(Number($('fft-g-min').value),2);
 context.direct=true;run('setFittingLimits({inner:2.1,outer:11.2})');
 assert.equal(context.diffractionSettings.exclude_radius_nm_inv,2.1);assert.equal($('diff-radius').value,'2.1');
+// A -> unsaved B -> A must resolve the new image's limits in either mode.
+for(const direct of [false,true]){
+ context.direct=direct;
+ context.meta={sha256_pixels:'saved-band',name:'Saved'};
+ storage.set('tem-fitting-limits:saved-band',{inner:1.2,outer:6});
+ run('restoreFittingLimits()');
+ assert.equal(run('currentFittingLimits().outer'),6);
+ context.meta={sha256_pixels:'no-band',name:'No override'};
+ run('restoreFittingLimits()');
+ assert.equal(run('currentFittingLimits().outer'),9);
+ assert.equal(run('currentFittingLimits().inner'),direct?2.5:2);
+ assert.equal(run('fittingLimitsLocal'),false);
+ context.meta={sha256_pixels:'saved-band',name:'Saved'};
+ run('restoreFittingLimits()');
+ assert.equal(run('currentFittingLimits().inner'),1.2);
+ assert.equal(run('currentFittingLimits().outer'),6);
+}
+// Numeric edits must become local before the shared-settings persistence callback.
+for(const id of ['fft-g-min','diff-radius','g-max']){
+ run('fittingLimitsLocal=false');$(id).events.input();
+ assert.equal(run('fittingLimitsLocal'),true,`${id} input is image-local`);
+}
+context.BASIC_NUMBERS={'fft-g-min':[0,29.9],'g-max':[4,30]};context.BASIC_FLAGS=[];
+context.OVERLAY_MODES=[];context.enabledPhases=['HCP'];
+context.validControlNumber=(id,value)=>Number.isFinite(value)&&value>=context.BASIC_NUMBERS[id][0]&&value<=context.BASIC_NUMBERS[id][1];
+vm.runInContext(source.slice(source.indexOf('function rememberBasicControls(){'),source.indexOf('function rememberRegionSize(){')),context);
+context.direct=false;context.meta={sha256_pixels:'typed-band',name:'Typed'};
+run('restoreFittingLimits()');
+$('g-max').value='7';$('g-max').events.input();run('rememberBasicControls()');
+$('fft-g-min').value='1';$('fft-g-min').events.input();run('rememberBasicControls()');
+$('save-fitting-override').onclick();
+assert.equal(storage.get('tem-basic-settings')['g-max'],9);
+assert.equal(storage.get('tem-basic-settings')['fft-g-min'],2);
+context.meta={sha256_pixels:'no-band',name:'No override'};run('restoreFittingLimits()');
+assert.equal(run('currentFittingLimits().outer'),9);
+assert.equal(run('currentFittingLimits().inner'),2);
 console.log('Fitting limits: quantization, bounds, release-only analysis, cancellation, image isolation and override removal passed.');
 
 // Live peak-overlay refresh must preserve radius handles on both images.

@@ -10,6 +10,8 @@ Compacted the desktop centre/calibration controls into one row with aligned peer
 
 ## Interactive fitting limits — completed 4 November 2026
 
+Follow-up: numeric radius edits now stay image-local just like drag edits. Opening an image explicitly restores both shared limits (direct inner default 2.5 nm⁻¹) before applying its own override, ignoring stale detector-radius memory. Regression checks cover switching from saved overrides to unsaved images and back in both modes.
+
 FFT/direct-pattern fitting-circle labels have draggable arrow handles; the captured diffraction image also shows labels and handles. Dragging snaps to 0.1 nm⁻¹, updates the circles/labels and numeric fields live, and recalculates once on release. Inner/outer limits cannot cross; cancellation restores the previous limits. These are reciprocal-space search limits, not calibration changes.
 
 **Save override / Remove override** beside the fitting-limit inputs remember or clear both limits per image (pixel hash) in browser storage. Dragged limits stay local to the open image until explicitly saved; opening another image restores shared controls or that image’s saved override. Removing restores shared FFT limits (direct inner default 2.5 nm⁻¹). Exported result settings contain the effective limits; drag handles are omitted from spectrum PNG/GIF exports. Existing grids must be rerun when limits change. Browser-local overrides do not transfer between computers.

@@ -319,9 +319,16 @@ function syncFittingOverrideButtons(){
  $('save-fitting-override').textContent=saved&&!same?'Update override':'Save override';
  $('fitting-override-status').textContent=saved?(same?'Saved for this image':'Override saved · unsaved changes'):fittingLimitsLocal?'Unsaved limits':'';
 }
+function sharedFittingLimits(){
+ const basic=readPreference('tem-basic-settings',{});
+ const limits={inner:isDiffraction()?2.5:Number(basic['fft-g-min']??3),outer:Number(basic['g-max']??10)};
+ return validFittingLimits(limits)?limits:{inner:isDiffraction()?2.5:3,outer:10};
+}
 function restoreFittingLimits(){
  const saved=savedFittingLimits();fittingLimitsLocal=Boolean(saved);
- if(saved)setFittingLimits(saved);
+ // Always resolve both limits: neither live controls nor detector memory is a fallback.
+ setFittingLimits(saved??sharedFittingLimits());
+ if(isDiffraction())syncDetectorControls();
  syncFittingOverrideButtons();
 }
 function fittingLimitValue(kind,value,limits){
@@ -360,12 +367,14 @@ $('save-fitting-override').onclick=()=>{
 };
 $('remove-fitting-override').onclick=()=>{
  if(!meta)return;writePreference(fittingOverrideKey(),null);fittingLimitsLocal=false;
- const basic=readPreference('tem-basic-settings',{}),limits={inner:isDiffraction()?2.5:(basic['fft-g-min']??3),outer:basic['g-max']??10};
- setFittingLimits(validFittingLimits(limits)?limits:{inner:isDiffraction()?2.5:3,outer:10});
+ setFittingLimits(sharedFittingLimits());
  if(isDiffraction())rememberDiffraction();
  syncFittingOverrideButtons();invalidateAnalysisSettings();message('Image override removed; shared fitting limits restored.');
 };
-for(const id of ['fft-g-min','diff-radius','g-max'])$(id).addEventListener('change',syncFittingOverrideButtons);
+for(const id of ['fft-g-min','diff-radius','g-max']){
+ // Register before persistence handlers: typed limits, like dragged limits, belong to this image.
+ for(const event of ['input','change'])$(id).addEventListener(event,()=>{fittingLimitsLocal=true;syncFittingOverrideButtons()});
+}
 for(const id of ['fft','overview']){
  const host=$(id);
  const distance=(event,d)=>{
