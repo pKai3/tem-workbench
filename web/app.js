@@ -2096,6 +2096,8 @@ function moveCentreLoupe(p,event){
  if(!isDiffraction()||!['view','center'].includes($('diff-tool').value)){hideCentreLoupe();return}
  if(p.x<0||p.y<0||p.x>=meta.width||p.y>=meta.height){hideCentreLoupe();return}
  const x=p.x,y=p.y,loupe=$('centre-loupe');
+ // Escape the image panel's containment so fixed coordinates follow the viewport.
+ if(loupe.parentElement!==document.body)document.body.append(loupe);
  $('centre-loupe-title').textContent=$('diff-tool').value==='center'?'Magnified centre':'Detector preview';
  $('centre-loupe-hint').hidden=$('diff-tool').value!=='center';
  if(!$('centre-loupe-image').getAttribute('href'))prepareCentreLoupe();

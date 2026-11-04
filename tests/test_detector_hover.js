@@ -7,12 +7,13 @@ function $(id){
   setAttribute(k,v){this.attributes[k]=v},getAttribute(k){return this.attributes[k]}});
  return controls.get(id);
 }
-const context={$,isDiffraction:()=>true,meta:{width:4096,height:4096},fileId:'test',innerWidth:1200,innerHeight:900,encodeURIComponent,
+const document={body:{append(card){card.parentElement=this}}};
+const context={document,$,isDiffraction:()=>true,meta:{width:4096,height:4096},fileId:'test',innerWidth:1200,innerHeight:900,encodeURIComponent,
  clamp:(v,a,b)=>Math.min(b,Math.max(a,v))};
 vm.createContext(context);
 vm.runInContext(source.slice(source.indexOf('function hideCentreLoupe()'),source.indexOf("$('diff-tool').onchange=")),context);
 function move(x,y,px=2000,py=2000){context.moveCentreLoupe({x:px,y:py},{clientX:x,clientY:y});return $('centre-loupe')}
-let card=move(100,100);assert.equal(card.hidden,false);assert.equal(card.style.left,'118px');assert.equal(card.style.top,'118px');
+let card=move(100,100);assert.equal(card.parentElement,document.body);assert.equal(card.hidden,false);assert.equal(card.style.left,'118px');assert.equal(card.style.top,'118px');
 card=move(240,160);assert.equal(card.style.left,'258px');assert.equal(card.style.top,'178px');
 // Same pointer, different detector half: position remains at the pointer.
 card=move(240,160,3000,3000);assert.equal(card.style.left,'258px');assert.equal(card.style.top,'178px');
