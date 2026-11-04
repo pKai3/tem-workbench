@@ -2597,7 +2597,7 @@ function drawReflectionVectors(qp){
   const seen=new Set();
   for(const {g,hkl,sign,name}of vectors){
    if(seen.has(name))continue;seen.add(name);
-   const prefix=abc?name:`${name} ${planeLabel(model,hkl,sign)}`;
+   const prefix=abc?name:`${phase} ${planeLabel(model,hkl,sign)}`;
    const dimensions=[...new Set(vectors.filter(v=>v.name===name).map(v=>reflectionCellDimensions(dimensionModel,v.hkl,v.g)).filter(Boolean))].join(' · ');
    lines.push([`${prefix} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm${dimensions?' · '+dimensions:''}`,9,baseline,'#edf5fc']);baseline+=13;
   }
@@ -2619,7 +2619,7 @@ function drawReflectionVectors(qp){
    const group=el('g',{'data-reflection-vector':phase});
    const line=el('path',{d:`M${ox} ${oy}L${x} ${y}M${x-7*ux+3*uy} ${y-7*uy-3*ux}L${x} ${y}L${x-7*ux-3*uy} ${y-7*uy+3*ux}`,stroke:color,'stroke-width':1.2,fill:'none'});
    if(!model.valid)line.setAttribute('stroke-dasharray','4 3');group.append(line);$('fft-overlay').append(group);
-   const identifier=abc&&groups.length===1?name:`${phase} ${name}`;
+   const identifier=abc?(groups.length===1?name:`${phase} ${name}`):`${phase} ${planeLabel(model,hkl,sign)}`;
    const label=addVectorLabel(group,{'data-vector-label':phase},[[identifier,9.5,11,color]],16,.88);
    const {x:lx,y:ly}=vectorLabelPosition(x,y,label.w,label.h,occupied,anchors);
    label.group.setAttribute('transform',`translate(${lx} ${ly})`);
@@ -2628,7 +2628,7 @@ function drawReflectionVectors(qp){
     const lead=el('path',{d:`M${x+8*(edgeX-x)/distance} ${y+8*(edgeY-y)/distance}L${edgeX} ${edgeY}`,stroke:color,'stroke-width':.7,'stroke-dasharray':'2 2',opacity:.7,fill:'none','data-vector-leader':phase});
     group.insertBefore(lead,label.group);
    }
-   group.append(el('title',{},abc?`${name}: ${planeLabel(model,hkl,sign)} from the fitted prediction lattice. Letters run from longest to shortest reciprocal length; equal lengths share a letter. These are not unit-cell edges or a separate phase test.`:`${phase} ${name}: ${planeLabel(model,hkl,sign)} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm. ${fitted?'Fitted grid distance and plane spacing.':'Measured reciprocal distance and plane spacing, indexed by this candidate fit.'} Opposite observations count as one profile.`));
+   group.append(el('title',{},abc?`${name}: ${planeLabel(model,hkl,sign)} from the fitted prediction lattice. Letters run from longest to shortest reciprocal length; equal lengths share a letter. These are not unit-cell edges or a separate phase test.`:`${phase} ${planeLabel(model,hkl,sign)} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm. ${fitted?'Fitted grid distance and plane spacing.':'Measured reciprocal distance and plane spacing, indexed by this candidate fit.'} Opposite observations count as one profile.`));
   }
  }
 }
