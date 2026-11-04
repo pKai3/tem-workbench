@@ -2092,20 +2092,25 @@ function prepareCentreLoupe(){
  const img=$('centre-loupe-image');img.setAttribute('width',meta.width);img.setAttribute('height',meta.height);
  img.setAttribute('href','/api/preview?id='+encodeURIComponent(fileId)+'&native=1');
 }
-function moveCentreLoupe(p){
+function moveCentreLoupe(p,event){
  if(!isDiffraction()||!['view','center'].includes($('diff-tool').value)){hideCentreLoupe();return}
  if(p.x<0||p.y<0||p.x>=meta.width||p.y>=meta.height){hideCentreLoupe();return}
  const x=p.x,y=p.y,loupe=$('centre-loupe');
  $('centre-loupe-title').textContent=$('diff-tool').value==='center'?'Magnified centre':'Detector preview';
  $('centre-loupe-hint').hidden=$('diff-tool').value!=='center';
  if(!$('centre-loupe-image').getAttribute('href'))prepareCentreLoupe();
- loupe.hidden=false;loupe.classList.toggle('to-left',x>meta.width/2);loupe.classList.toggle('to-top',y>meta.height/2);
+ loupe.hidden=false;
  $('centre-loupe-view').setAttribute('viewBox',`${x-64} ${y-64} 128 128`);
  $('centre-loupe-cross').setAttribute('d',`M${x-56},${y}h53M${x+3},${y}h53M${x},${y-56}v53M${x},${y+3}v53`);
  $('centre-loupe-coords').textContent=`${x.toFixed(1)}, ${y.toFixed(1)} px`;
+ const box=loupe.getBoundingClientRect(),margin=8,offset=18;
+ loupe.style.left=clamp(event.clientX+offset+box.width>innerWidth-margin?event.clientX-offset-box.width:event.clientX+offset,margin,Math.max(margin,innerWidth-box.width-margin))+'px';
+ loupe.style.top=clamp(event.clientY+offset+box.height>innerHeight-margin?event.clientY-offset-box.height:event.clientY+offset,margin,Math.max(margin,innerHeight-box.height-margin))+'px';
 }
 $('diff-tool').onchange=()=>{maskDrag=null;snapPointer=null;hideCentreLoupe();syncPeakTool();drawDetector();drawSnapOverlays();if($('diff-tool').value==='center')prepareCentreLoupe()};
 $('overview').addEventListener('pointerleave',hideCentreLoupe);
+document.addEventListener('scroll',hideCentreLoupe,true);
+window.addEventListener('resize',hideCentreLoupe);
 $('overview').addEventListener('keydown',e=>{if(e.key==='Escape'&&isDiffraction()){$('diff-tool').value='view';maskDrag=null;hideCentreLoupe();syncPeakTool();drawDetector();drawSnapOverlays()}});
 function detectorPointerDown(e){
  const tool=$('diff-tool').value;if(tool==='view')return;e.preventDefault();
@@ -2116,7 +2121,7 @@ function detectorPointerDown(e){
  maskDrag={x,y,rect:null};$('overview').setPointerCapture(e.pointerId);
 }
 function detectorPointerMove(e){
- const p=point(e);moveCentreLoupe(p);if(!maskDrag)return;const x=clamp(p.x,0,meta.width),y=clamp(p.y,0,meta.height);
+ const p=point(e);moveCentreLoupe(p,e);if(!maskDrag)return;const x=clamp(p.x,0,meta.width),y=clamp(p.y,0,meta.height);
  maskDrag.rect={x:Math.min(maskDrag.x,x),y:Math.min(maskDrag.y,y),w:Math.abs(x-maskDrag.x),h:Math.abs(y-maskDrag.y)};drawDetector();
 }
 function detectorPointerEnd(e){

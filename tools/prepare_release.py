@@ -18,7 +18,7 @@ from workbench_updates import version
 def prepare(root, expected):
     root = Path(root)
     def git(*args):
-        return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
+        return subprocess.check_output(['git', '-C', str(root), *args], text=True, encoding='utf-8').strip()
     if git('status', '--porcelain', '--untracked-files=no'):
         raise ValueError('Release preparation requires clean tracked files.')
     if git('rev-parse', 'HEAD') != expected:
@@ -34,7 +34,7 @@ def prepare(root, expected):
             return {'ready': 'false'}  # A newer push has its own verification run.
         git('checkout', '--detach', remote)
     head = git('rev-parse', 'HEAD')
-    current = (root / 'VERSION').read_text().strip()
+    current = (root / 'VERSION').read_text(encoding='utf-8').strip()
     current_number = version(current)
     tags = [tag for tag in git('tag', '--list').splitlines()
             if re.fullmatch(r'v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)', tag)]
@@ -48,7 +48,7 @@ def prepare(root, expected):
     number = current_number if previous is None or current_number > previous else (*previous[:2], previous[2] + 1)
     current = '.'.join(map(str, number))
     tag = 'v' + current
-    notes = (root / 'RELEASE_NOTES.md').read_text()
+    notes = (root / 'RELEASE_NOTES.md').read_text(encoding='utf-8')
     old_notes = git('show', latest + ':RELEASE_NOTES.md') if latest else ''
     if not notes.strip() or notes.strip() == old_notes:
         subjects = git('log', '--reverse', '--format=%s', (latest + '..HEAD') if latest else 'HEAD').splitlines()
@@ -57,8 +57,8 @@ def prepare(root, expected):
         notes = '# TEM Workbench ' + current + '\n\n' + body + '\n\nUse **Check for updates → Install update and restart**.\n'
     else:
         notes = re.sub(r'\A# [^\n]*', '# TEM Workbench ' + current, notes)
-    (root / 'VERSION').write_text(current + '\n')
-    (root / 'RELEASE_NOTES.md').write_text(notes)
+    (root / 'VERSION').write_text(current + '\n', encoding='utf-8', newline='\n')
+    (root / 'RELEASE_NOTES.md').write_text(notes, encoding='utf-8', newline='\n')
     git('add', 'VERSION', 'RELEASE_NOTES.md')
     if git('diff', '--cached', '--name-only'):
         git('commit', '-m', 'Release ' + tag)
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     parser.add_argument('--expected', required=True)
     args = parser.parse_args()
     result = prepare(ROOT, args.expected)
-    with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+    with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
         for key, value in result.items():
             output.write(f'{key}={value}\n')
     print(result)

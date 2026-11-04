@@ -83,19 +83,16 @@ def build_bundle(root, build_directory, environ=None, architecture=None, launch_
     if (root / 'VERSION').is_file():
         metadata['CFBundleShortVersionString'] = (root / 'VERSION').read_text().strip()
         metadata['CFBundleVersion'] = metadata['CFBundleShortVersionString']
-    if (root / 'VERSION').is_file():
-        metadata['CFBundleShortVersionString'] = (root / 'VERSION').read_text().strip()
     metadata['WorkbenchLauncherPath'] = str(Path(launch_root or root) / 'Launch TEM Workbench.command')
-    if True:  # Record the selected per-installation environment for Finder.
-        # Finder does not inherit a Terminal's custom environment setting.
-        sys.path.insert(0, str(root))
-        try:
-            from workbench_environment import environment_folder, validate_environment_location
-            environment = environment_folder(root, 'darwin', environ)
-            validate_environment_location(environment, root, environ)
-        finally:
-            sys.path.pop(0)
-        metadata['WorkbenchEnvironmentPath'] = str(environment)
+    # Finder does not inherit a Terminal's custom environment setting.
+    sys.path.insert(0, str(root))
+    try:
+        from workbench_environment import environment_folder, validate_environment_location
+        environment = environment_folder(root, 'darwin', environ)
+        validate_environment_location(environment, root, environ)
+    finally:
+        sys.path.pop(0)
+    metadata['WorkbenchEnvironmentPath'] = str(environment)
 
     app = build_directory / APP_NAME
     contents = app / 'Contents'
