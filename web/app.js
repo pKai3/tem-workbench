@@ -2456,7 +2456,8 @@ function reflectionCellDimensions(model,hkl,g){
  if(model.phase==='HCP'){
   if(l===0&&(h!==0||k!==0))return dimension('a',d*Math.sqrt(4*(h*h+h*k+k*k)/3));
   if(h===0&&k===0&&l!==0)return dimension('c',d*Math.abs(l));
-  return 'a/c coupled';
+  const ratio=model.fitted_c_nm/model.fitted_a_nm;
+  return Number.isFinite(ratio)&&ratio>0?dimension('a',d*Math.sqrt(4*(h*h+h*k+k*k)/3+l*l/(ratio*ratio))):'a unavailable';
  }
  if(model.phase==='ORT'){
   const axes=hkl.map((value,index)=>({value,index})).filter(axis=>axis.value!==0);
@@ -2587,7 +2588,7 @@ function drawReflectionVectors(qp){
    lines.push([`${prefix} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm${dimensions?' · '+dimensions:''}`,9,baseline,'#edf5fc']);baseline+=13;
   }
   const panel=addVectorLabel($('fft-overlay'),{'data-vector-key':phase},lines,baseline-7,.92);
-  panel.group.append(el('title',{},(fitted?'Distances and cell dimensions from the fitted grid.':'Distances measured at detected spots; cell dimensions derived using the assigned reflection indices, not the joint fit.')+' Coupled reflections cannot determine each listed cell dimension independently.'));
+  panel.group.append(el('title',{},(fitted?'Distances and cell dimensions from the fitted grid.':'Distances measured at detected spots; cell dimensions derived using the assigned reflection indices, not the joint fit.')+' Mixed HCP reflections derive a using the fitted c/a ratio; that a is not independent of the ratio. Coupled orthorhombic reflections cannot determine each listed cell dimension independently.'));
   return panel;
  });
  let top=415-panels.reduce((sum,p)=>sum+p.h,0)-Math.max(0,panels.length-1)*4;

@@ -7,7 +7,11 @@ assert.equal(derive('BCC',[-1,-1,0],1/.4273),'a 0.6043 nm');
 assert.equal(derive('FCC',[2,0,0],2/.417),'a 0.4170 nm');
 assert.equal(derive('HCP',[-1,0,0],1/.4879),'a 0.5634 nm');
 assert.equal(derive('HCP',[0,0,-2],1/.445),'c 0.8900 nm');
-assert.equal(derive('HCP',[1,0,1],4),'a/c coupled');
+assert.equal(derive('HCP',[1,0,1],4),'a unavailable');
+const hcp={phase:'HCP',fitted_a_nm:.295,fitted_c_nm:.468};
+const gMixed=Math.sqrt(4/(3*.295**2)+1/.468**2);
+assert.equal(context.reflectionCellDimensions(hcp,[1,0,1],gMixed),'a 0.2950 nm');
+assert.equal(context.reflectionCellDimensions(hcp,[1,0,1],gMixed/2),'a 0.5900 nm');
 for(let i=0;i<3;i++){const hkl=[0,0,0];hkl[i]=-2;assert.equal(derive('ORT',hkl,5),'abc'[i]+' 0.4000 nm')}
 assert.equal(derive('ORT',[1,0,1],4),'a/c coupled');
 assert.equal(derive('BCC',[1,1,0],0),'');

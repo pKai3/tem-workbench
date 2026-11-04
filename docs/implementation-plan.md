@@ -20,7 +20,7 @@ Fixed a live-overlay refresh bug that removed the fitting-limit handles immediat
 
 ## Vector cell dimensions — completed 4 November 2026
 
-Bottom-left vector rows include cell dimensions derived from the same g/d: cubic a, HCP basal a or axial c, and pure-axis orthorhombic a/b/c. Mixed reflections are labelled coupled rather than claiming independent dimensions. Vector options now separate Measured planes (P1/P2 observations), Fitted planes (P1/P2 predicted positions for the same indexed matches), and A/B/C (fitted grid). Each supports passing/any winner and enabled-phase choices; selection is remembered. Equal-letter rows consolidate their dimension details. The key tooltip explains the distinction; PNG/GIF inherit these rows. HCP keys also show the fitted c/a ratio beside the zone axis, or unconstrained when c is not observable.
+Bottom-left vector rows include cell dimensions derived from the same g/d: cubic a, HCP basal a or axial c, and pure-axis orthorhombic a/b/c. Mixed HCP reflections show a derived using the fitted c/a ratio, with that dependency explained on hover. Mixed orthorhombic reflections remain labelled coupled. Vector options now separate Measured planes (P1/P2 observations), Fitted planes (P1/P2 predicted positions for the same indexed matches), and A/B/C (fitted grid). Each supports passing/any winner and enabled-phase choices; selection is remembered. Equal-letter rows consolidate their dimension details. The key tooltip explains the distinction; PNG/GIF inherit these rows. HCP keys also show the fitted c/a ratio beside the zone axis, or unconstrained when c is not observable.
 
 ## HCP display notation — completed 4 November 2026
 
