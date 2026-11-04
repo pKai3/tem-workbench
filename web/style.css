@@ -462,3 +462,13 @@ body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(
 .fitting-override-actions{display:flex;align-items:center;flex-wrap:wrap;gap:6px;grid-column:1/-1}
 .fitting-override-actions button{font-size:11px;padding:5px 8px}
 .fitting-override-actions .hint{font-size:11px}
+
+/* Centre refinement belongs directly beneath the centre coordinates. */
+#diffraction-controls .diffraction-calibration .translation-controls{grid-column:1/4;grid-row:2;align-items:center;gap:6px;align-self:start}
+#diffraction-controls .diffraction-calibration .translation-controls>label:last-child{flex-direction:row;align-items:center;gap:6px;white-space:nowrap}
+@media(max-width:600px){
+ #diffraction-controls .diffraction-calibration .translation-controls{grid-column:1/-1;grid-row:auto;flex-wrap:wrap}
+}
+/* Establish coordinates and the fitting band before spot-detection settings. */
+body.diffraction #diffraction-controls .fitting-limits{grid-row:3;grid-column:1/-1}
+body.diffraction #diffraction-controls .diffraction-detection{grid-row:4;grid-column:1/-1}

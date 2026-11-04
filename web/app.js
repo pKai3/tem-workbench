@@ -1961,7 +1961,7 @@ function validDiffraction(d){
 function setupImageKind(){
  const limits=document.querySelector('.fitting-limits');
  const limitHost=isDiffraction()?document.querySelector('.diffraction-main'):$('fft-entry-second');
- limitHost.appendChild(limits);
+ if(isDiffraction())limitHost.insertBefore(limits,limitHost.querySelector('.diffraction-detection'));else limitHost.appendChild(limits);
  const direct=isDiffraction();syncSignalToggle();applyInspectorLayout();hideRegionPreview();document.body.classList.toggle('diffraction',direct);$('diffraction-controls').hidden=!direct;
  $('source-title').textContent=direct?'Diffraction detector':'Real space';$('inspector-title').textContent=direct?'Pattern analysis':'Selected region';
  $('source-caption').textContent=direct?'Diffraction space':'Real space';$('spectrum-title').textContent=direct?'Diffraction space':'FFT space';$('brightness-title').textContent=direct?'Brightness':'FFT brightness';
@@ -2092,9 +2092,11 @@ function prepareCentreLoupe(){
  img.setAttribute('href','/api/preview?id='+encodeURIComponent(fileId)+'&native=1');
 }
 function moveCentreLoupe(p){
- if(!isDiffraction()||$('diff-tool').value!=='center'){hideCentreLoupe();return}
+ if(!isDiffraction()||!['view','center'].includes($('diff-tool').value)){hideCentreLoupe();return}
  if(p.x<0||p.y<0||p.x>=meta.width||p.y>=meta.height){hideCentreLoupe();return}
  const x=p.x,y=p.y,loupe=$('centre-loupe');
+ $('centre-loupe-title').textContent=$('diff-tool').value==='center'?'Magnified centre':'Detector preview';
+ $('centre-loupe-hint').hidden=$('diff-tool').value!=='center';
  if(!$('centre-loupe-image').getAttribute('href'))prepareCentreLoupe();
  loupe.hidden=false;loupe.classList.toggle('to-left',x>meta.width/2);loupe.classList.toggle('to-top',y>meta.height/2);
  $('centre-loupe-view').setAttribute('viewBox',`${x-64} ${y-64} 128 128`);
