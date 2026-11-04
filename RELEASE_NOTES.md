@@ -1,4 +1,4 @@
-# TEM Workbench 1.0.8
+# TEM Workbench 1.0.9
 
 - Disable Save override at default limits when no override exists; refresh its state after diffraction reset.
 
