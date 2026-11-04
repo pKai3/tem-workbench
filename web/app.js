@@ -326,12 +326,15 @@ function restoreFittingLimits(){
 function fittingLimitValue(kind,value,limits){
  return Math.round(clamp(value,kind==='inner'?0:Math.max(4,limits.inner+.1),kind==='inner'?Math.min(29.9,limits.outer-.1):30)*10)/10;
 }
-function fittingLimitHandle(group,kind,x,y,size=8){
+function fittingLimitHandle(group,kind,x,y,size=8,angle=0){
  const handle=el('g',{'data-fitting-handle':kind,role:'slider',tabindex:0,'aria-label':kind==='inner'?'Central exclusion radius':'Outer fitting radius','aria-valuenow':currentFittingLimits()[kind],'pointer-events':'all',style:'cursor:ew-resize;touch-action:none'});
  handle.append(el('title',{},'Drag to adjust in 0.1 nm⁻¹ steps; arrow keys also adjust. Analysis updates on release.'));
- handle.append(el('rect',{x:x-size*.8,y:y-size*.8,width:size*1.6,height:size*1.6,rx:size*.25,fill:'#101925',stroke:'#9eceff','stroke-width':.8}));
- handle.append(el('text',{x,y:y+size*.36,fill:'#9eceff','font-size':size*1.2,'text-anchor':'middle','pointer-events':'none'},'↔'));
- group.append(handle);
+ // The transparent target is 30% wider/taller than the visible grip.
+ handle.append(el('rect',{x:x-size*1.04,y:y-size*1.04,width:size*2.08,height:size*2.08,fill:'transparent'}));
+ const grip=el('g',{transform:`rotate(${angle} ${x} ${y})`,'pointer-events':'none'});
+ grip.append(el('rect',{x:x-size*.8,y:y-size*.8,width:size*1.6,height:size*1.6,rx:size*.25,fill:'#101925',stroke:'#9eceff','stroke-width':.8}));
+ grip.append(el('text',{x,y:y+size*.36,fill:'#9eceff','font-size':size*1.2,'text-anchor':'middle','pointer-events':'none'},'↔'));
+ handle.append(grip);group.append(handle);
 }
 function repaintFittingLimits(){
  if(result){
@@ -789,9 +792,10 @@ function drawFittingBand(qp){
   // Keep a handle available even when central exclusion is zero.
   const boundary=el('ellipse',{cx,cy,rx:xr,ry:yr,fill:'none',stroke:'#b3c2d0','stroke-width':.7,'stroke-dasharray':'3 3',opacity:.8});
   boundary.append(el('title',{},`${description}: ${r} nm⁻¹. Shaded areas are excluded from fitting.`));group.append(boundary);
-  const x=r===outer?cx+xr*.70:cx,y=r===outer?cy-yr*.70-4:cy-yr-4;
+  const x=r===outer?cx+xr*.70:cx,y=r===outer?cy-yr*.70-10:cy-yr-10;
   group.append(el('text',{x:clamp(x,38,382),y:clamp(y,10,410),fill:'#c2cfda','font-size':8,'text-anchor':'middle',stroke:'#05090e','stroke-width':2.5,'paint-order':'stroke'},`${r.toFixed(1)} nm⁻¹`));
-  fittingLimitHandle(group,r===outer?'outer':'inner',clamp(x,38,382)+27,clamp(y,10,410)-3,6);
+  const outerHandle=r===outer,hx=cx+(outerHandle?Math.SQRT1_2*xr:0),hy=cy-(outerHandle?Math.SQRT1_2*yr:yr);
+  fittingLimitHandle(group,outerHandle?'outer':'inner',hx,hy,6,Math.atan2(hy-cy,hx-cx)*180/Math.PI);
  }
  $('fft-overlay').prepend(group);
 }
@@ -2027,9 +2031,10 @@ function drawDetector(){
  const outerCircle=el('ellipse',{cx:d.center_x,cy:d.center_y,rx:outer/d.pixel_x_nm_inv,ry:outer/d.pixel_y_nm_inv,class:'detector-centre','data-boundary':'outer','stroke-dasharray':'9 5'});
  outerCircle.append(el('title',{},`Outer fitting limit: ${outer} nm⁻¹`));group.append(outerCircle);
  for(const [kind,r]of [['inner',d.exclude_radius_nm_inv],['outer',outer]]){
-  const size=meta.width/70,x=clamp(d.center_x+(kind==='outer'?.7:0)*r/d.pixel_x_nm_inv,size*4,meta.width-size*6),y=clamp(d.center_y-(kind==='outer'?.7:1)*r/d.pixel_y_nm_inv-size,2*size,meta.height-size);
+  const size=meta.width/70,x=clamp(d.center_x+(kind==='outer'?.7:0)*r/d.pixel_x_nm_inv,size*4,meta.width-size*6),y=clamp(d.center_y-(kind==='outer'?.7:1)*r/d.pixel_y_nm_inv-size*1.5,2*size,meta.height-size);
   group.append(el('text',{x,y,fill:'#b7d8ed','font-size':size,'text-anchor':'middle',stroke:'#05090e','stroke-width':size*.25,'paint-order':'stroke'},`${r.toFixed(1)} nm⁻¹`));
-  fittingLimitHandle(group,kind,x+size*3.5,y-size*.35,size*.75);
+  const hx=d.center_x+(kind==='outer'?Math.SQRT1_2:0)*r/d.pixel_x_nm_inv,hy=d.center_y-(kind==='outer'?Math.SQRT1_2:1)*r/d.pixel_y_nm_inv;
+  fittingLimitHandle(group,kind,hx,hy,size*.75,Math.atan2(hy-d.center_y,hx-d.center_x)*180/Math.PI);
  }
  group.append(el('path',{d:`M${d.center_x-cross},${d.center_y}h${2*cross}M${d.center_x},${d.center_y-cross}v${2*cross}`,class:'detector-centre'}));
  if(peakEditing()){
@@ -2054,7 +2059,7 @@ function drawDetectorExclusions(qp){
  }
 }
 const savedDiffWorkers=readPreference('tem-diffraction-workers',0);
-$('diff-workers').value=[0,1,2,4,8].includes(savedDiffWorkers)?String(savedDiffWorkers):'0';
+$('diff-workers').value=[0,1,2,4,8,10,12,14,16].includes(savedDiffWorkers)?String(savedDiffWorkers):'0';
 $('diff-workers').onchange=()=>{writePreference('tem-diffraction-workers',Number($('diff-workers').value));if(isDiffraction())schedule(0)};
 function configureDiffractionWorkers(){
  const select=$('diff-workers');select.disabled=!config.diffraction_workers;

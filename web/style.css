@@ -429,11 +429,14 @@ body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(
 }
 /* Three peer panels in direct mode; wrap only when controls would be cramped. */
 @media(min-width:1400px){
- body.diffraction .processing-layout{grid-template-columns:minmax(520px,1.5fr) minmax(270px,.85fr) minmax(340px,1fr);gap:14px;align-items:stretch}
+ body.diffraction .processing-layout{grid-template-columns:minmax(590px,1.65fr) minmax(270px,.85fr) minmax(340px,1fr);gap:14px;align-items:stretch}
  body.diffraction #diffraction-controls:not([hidden]){display:contents}
  body.diffraction .diffraction-main,body.diffraction .peak-edit-panel{border:1px solid var(--line);border-radius:7px;background:#101925;padding:12px;min-width:0}
  body.diffraction #diffraction-controls .diffraction-main{align-content:start;gap:12px}
- body.diffraction #diffraction-controls .diffraction-calibration{grid-template-columns:repeat(3,minmax(0,1fr))}
+ body.diffraction #diffraction-controls .diffraction-calibration{grid-template-columns:1fr 1fr 1.3fr 1fr 1fr .85fr;gap:8px}
+ body.diffraction #diffraction-controls .diffraction-calibration label{font-size:11px;white-space:nowrap}
+ body.diffraction #diffraction-controls .diffraction-calibration button{height:32px;min-height:32px;padding:5px;font-size:11px}
+ body.diffraction .diffraction-main,body.diffraction .peak-edit-panel,body.diffraction .scale-settings{align-self:stretch;margin:0;height:auto}
  body.diffraction #diffraction-controls .diffraction-detection{grid-column:1/-1;grid-row:3}
  body.diffraction #diffraction-controls .fitting-limits{grid-column:1/4;grid-row:4}
  body.diffraction #diffraction-controls .translation-controls{grid-column:4/7;grid-row:4;gap:6px;align-self:end}

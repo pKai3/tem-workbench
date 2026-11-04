@@ -63,3 +63,15 @@ for(const direct of [false,true]){
  }
 }
 console.log('Live FFT/diffraction overlay refresh preserves fitting-radius handles.');
+
+// The visible grip points along the radius; its unrotated target is enlarged.
+context.el=(tag,attrs={},text)=>({tag,attrs,text,children:[],append(...nodes){this.children.push(...nodes)}});
+const gripRoot={children:[],append(node){this.children.push(node)}};
+context.gripRoot=gripRoot;
+run('fittingLimitHandle(gripRoot,"outer",100,80,10,-45)');
+const gripHandle=gripRoot.children[0],target=gripHandle.children[1],grip=gripHandle.children[2];
+assert.equal(grip.attrs.transform,'rotate(-45 100 80)');
+assert.equal(target.attrs.width/grip.children[0].attrs.width,1.3);
+assert.equal(target.attrs.height/grip.children[0].attrs.height,1.3);
+assert.equal(grip.attrs['pointer-events'],'none');
+console.log('Radius grip orientation and enlarged hit area passed.');

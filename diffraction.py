@@ -298,8 +298,8 @@ def _deduplicate_spots(spots, minimum):
 
 # Native Gaussian filters release the GIL. Bound both threads and queued arrays.
 def smoothing_worker_count(requested=0):
-    if isinstance(requested, bool) or not isinstance(requested, int) or not 0 <= requested <= 8:
-        raise ValueError('Use Auto (0) or 1–8 diffraction smoothing threads.')
+    if isinstance(requested, bool) or not isinstance(requested, int) or not 0 <= requested <= 16:
+        raise ValueError('Use Auto (0) or 1–16 diffraction smoothing threads.')
     return min(requested or 2, os.cpu_count() or 1)
 
 

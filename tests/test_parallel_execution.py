@@ -50,8 +50,11 @@ class SpawnChecks(unittest.TestCase):
     def test_detector_worker_validation_and_cache(self):
         from test_diffraction import pattern
         array,info,_=pattern()
-        for value in [-1,9,True,2.5,'2']:
+        for value in [-1,17,True,2.5,'2']:
             with self.assertRaises(ValueError):diffraction.validate(info,{'smoothing_workers':value})
+        with patch('diffraction.os.cpu_count',return_value=32):
+            for count in (10,12,14,16):
+                self.assertEqual(diffraction.smoothing_worker_count(count),count)
         with patch('diffraction.os.cpu_count',return_value=1):
             self.assertEqual(diffraction.smoothing_worker_count(8),1)
         settings=diffraction.validate(info,{'smoothing_workers':1}); cache={}

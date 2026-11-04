@@ -4,6 +4,10 @@ Last updated: 4 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
+## Diffraction controls and radius grips — 4 November 2026
+
+Compacted the desktop centre/calibration controls into one row with aligned peer-panel heights. Fitting-limit grips now sit on their circles, pointing radially inward/outward, with a 30% wider/taller hit target. Smoothing offers 10/12/14/16 threads as well as existing choices, capped by available logical CPUs; Auto remains two. Actual concurrent work also depends on the number of smoothing scales.
+
 ## Interactive fitting limits — completed 4 November 2026
 
 FFT/direct-pattern fitting-circle labels have draggable arrow handles; the captured diffraction image also shows labels and handles. Dragging snaps to 0.1 nm⁻¹, updates the circles/labels and numeric fields live, and recalculates once on release. Inner/outer limits cannot cross; cancellation restores the previous limits. These are reciprocal-space search limits, not calibration changes.
