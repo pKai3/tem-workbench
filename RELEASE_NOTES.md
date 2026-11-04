@@ -1,4 +1,4 @@
-# TEM Workbench 1.0.7
+# TEM Workbench 1.0.8
 
 - Restore 2.5–10 nm⁻¹ fitting limits in both modes for images without overrides; ignore contaminated legacy shared limits. FFT Reset defaults uses the same band.
 
