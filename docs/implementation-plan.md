@@ -4,6 +4,12 @@ Last updated: 4 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
+## Interactive fitting limits — completed 4 November 2026
+
+FFT/direct-pattern fitting-circle labels have draggable arrow handles; the captured diffraction image also shows labels and handles. Dragging snaps to 0.1 nm⁻¹, updates the circles/labels and numeric fields live, and recalculates once on release. Inner/outer limits cannot cross; cancellation restores the previous limits. These are reciprocal-space search limits, not calibration changes.
+
+**Save override / Remove override** beside the fitting-limit inputs remember or clear both limits per image (pixel hash) in browser storage. Dragged limits stay local to the open image until explicitly saved; opening another image restores shared controls or that image’s saved override. Removing restores shared FFT limits (direct inner default 2.5 nm⁻¹). Exported result settings contain the effective limits; drag handles are omitted from spectrum PNG/GIF exports. Existing grids must be rerun when limits change. Browser-local overrides do not transfer between computers.
+
 ## HCP display notation — completed 4 November 2026
 
 Marker styles now includes a remembered **HCP notation** selector (four-index default, three-index optional). It updates zone axes and indexed reflections in fit tables, vectors, map legends and hover cards without rerunning analysis. Current-view FFT PNG/GIF and map PNG exports inherit the displayed labels. Zone-symbol identities and selected individual overlays remain unchanged. Numerical JSON/CSV records retain their existing three-index schema; server-generated batch figures are unchanged.

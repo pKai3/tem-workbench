@@ -143,6 +143,7 @@ function rememberBasicControls(){
  if(OVERLAY_MODES.includes($('overlay').value))saved.overlay=$('overlay').value;
  saved.material=$('material').value;saved.enabled_phases=[...enabledPhases];
  if(Number(saved['fft-g-min'])>=Number(saved['g-max'])){saved['fft-g-min']=previous?.['fft-g-min']??3;saved['g-max']=previous?.['g-max']??10}
+ if(fittingLimitsLocal)for(const id of ['g-max','fft-g-min'])saved[id]=previous?.[id]??(id==='g-max'?10:3);
  writePreference('tem-basic-settings',saved);
 }
 function rememberRegionSize(){
@@ -299,6 +300,102 @@ $('hcp-notation').onchange=()=>{
  }
  drawGrid();
 };
+// Per-image fitting-band overrides are display controls feeding normal analysis settings.
+let fittingLimitDrag=null,fittingLimitsLocal=false;
+function fittingOverrideKey(){return 'tem-fitting-limits:'+meta.sha256_pixels}
+function validFittingLimits(v){return v&&Number.isFinite(v.inner)&&Number.isFinite(v.outer)&&v.inner>=0&&v.outer>=4&&v.outer<=30&&v.inner<v.outer}
+function savedFittingLimits(){const v=meta?readPreference(fittingOverrideKey(),null):null;return validFittingLimits(v)?v:null}
+function currentFittingLimits(){return {inner:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),outer:Number($('g-max').value)}}
+function setFittingLimits(v){
+ $('g-max').value=v.outer.toFixed(1);
+ if(isDiffraction()){$('diff-radius').value=v.inner.toFixed(1);diffractionSettings.exclude_radius_nm_inv=v.inner}
+ else $('fft-g-min').value=v.inner.toFixed(1);
+}
+function syncFittingOverrideButtons(){
+ const saved=savedFittingLimits();
+ $('save-fitting-override').disabled=!meta;
+ $('remove-fitting-override').disabled=!saved;
+ const same=saved&&JSON.stringify(saved)===JSON.stringify(currentFittingLimits());
+ $('fitting-override-status').textContent=saved?(same?'Saved for this image':'Override saved · unsaved changes'):fittingLimitsLocal?'Unsaved limits':'';
+}
+function restoreFittingLimits(){
+ const saved=savedFittingLimits();fittingLimitsLocal=Boolean(saved);
+ if(saved)setFittingLimits(saved);
+ syncFittingOverrideButtons();
+}
+function fittingLimitValue(kind,value,limits){
+ return Math.round(clamp(value,kind==='inner'?0:Math.max(4,limits.inner+.1),kind==='inner'?Math.min(29.9,limits.outer-.1):30)*10)/10;
+}
+function fittingLimitHandle(group,kind,x,y,size=8){
+ const handle=el('g',{'data-fitting-handle':kind,role:'slider',tabindex:0,'aria-label':kind==='inner'?'Central exclusion radius':'Outer fitting radius','aria-valuenow':currentFittingLimits()[kind],'pointer-events':'all',style:'cursor:ew-resize;touch-action:none'});
+ handle.append(el('title',{},'Drag to adjust in 0.1 nm⁻¹ steps; arrow keys also adjust. Analysis updates on release.'));
+ handle.append(el('rect',{x:x-size*.8,y:y-size*.8,width:size*1.6,height:size*1.6,rx:size*.25,fill:'#101925',stroke:'#9eceff','stroke-width':.8}));
+ handle.append(el('text',{x,y:y+size*.36,fill:'#9eceff','font-size':size*1.2,'text-anchor':'middle','pointer-events':'none'},'↔'));
+ group.append(handle);
+}
+function repaintFittingLimits(){
+ if(result){
+  const ex=result.spectrum.extent,qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];
+  $('fft-overlay').querySelectorAll('[data-fitting-band]').forEach(n=>n.remove());drawFittingBand(qp);
+ }
+ if(isDiffraction())drawDetector();
+ syncFittingOverrideButtons();
+}
+function finishFittingLimitDrag(cancel=false){
+ const drag=fittingLimitDrag;if(!drag)return;
+ if(drag.image!==fileId){fittingLimitDrag=null;return}
+ if(cancel){setFittingLimits(drag.original);fittingLimitsLocal=drag.wasLocal;repaintFittingLimits();fittingLimitDrag=null;return}
+ const changed=JSON.stringify(currentFittingLimits())!==JSON.stringify(drag.original);
+ if(!changed)fittingLimitsLocal=drag.wasLocal;
+ repaintFittingLimits();fittingLimitDrag=null;
+ if(changed)invalidateAnalysisSettings();
+}
+$('save-fitting-override').onclick=()=>{
+ if(!meta)return;const value=currentFittingLimits();if(!validFittingLimits(value))return;
+ writePreference(fittingOverrideKey(),value);fittingLimitsLocal=true;syncFittingOverrideButtons();message('Fitting limits saved for '+meta.name+'.');
+};
+$('remove-fitting-override').onclick=()=>{
+ if(!meta)return;writePreference(fittingOverrideKey(),null);fittingLimitsLocal=false;
+ const basic=readPreference('tem-basic-settings',{}),limits={inner:isDiffraction()?2.5:(basic['fft-g-min']??3),outer:basic['g-max']??10};
+ setFittingLimits(validFittingLimits(limits)?limits:{inner:isDiffraction()?2.5:3,outer:10});
+ if(isDiffraction())rememberDiffraction();
+ syncFittingOverrideButtons();invalidateAnalysisSettings();message('Image override removed; shared fitting limits restored.');
+};
+for(const id of ['fft-g-min','diff-radius','g-max'])$(id).addEventListener('change',syncFittingOverrideButtons);
+for(const id of ['fft','overview']){
+ const host=$(id);
+ const distance=(event,d)=>{
+  const p=new DOMPoint(event.clientX,event.clientY).matrixTransform(host.getScreenCTM().inverse());
+  if(id==='overview')return Math.hypot((p.x-d.cx)*d.sx,(p.y-d.cy)*d.sy);
+  const e=d.extent;return Math.hypot(e[0]+p.x/420*(e[1]-e[0]),e[3]-p.y/420*(e[3]-e[2]));
+ };
+ host.addEventListener('pointerdown',event=>{
+  const handle=event.target.closest('[data-fitting-handle]');if(!handle||!meta||event.button!==0)return;
+  if(id==='fft'&&!result)return;
+  event.preventDefault();event.stopImmediatePropagation();hideSpectrumHover();hideCentreLoupe();
+  const d=id==='overview'?effectiveDetector():null;
+  fittingLimitDrag={host,kind:handle.dataset.fittingHandle,image:fileId,original:currentFittingLimits(),wasLocal:fittingLimitsLocal,extent:result?.spectrum.extent,cx:d?.center_x,cy:d?.center_y,sx:d?.pixel_x_nm_inv,sy:d?.pixel_y_nm_inv};
+  fittingLimitDrag.start=distance(event,fittingLimitDrag);fittingLimitsLocal=true;host.setPointerCapture(event.pointerId);
+ },true);
+ host.addEventListener('pointermove',event=>{
+  const d=fittingLimitDrag;if(d?.host!==host)return;
+  event.preventDefault();event.stopImmediatePropagation();
+  const value=fittingLimitValue(d.kind,d.original[d.kind]+distance(event,d)-d.start,d.original);
+  setFittingLimits({...d.original,[d.kind]:value});repaintFittingLimits();
+ },true);
+ for(const name of ['pointerup','pointercancel','lostpointercapture'])host.addEventListener(name,event=>{
+  if(fittingLimitDrag?.host!==host)return;event.preventDefault();event.stopImmediatePropagation();
+  host.dataset.suppressFittingClick='1';setTimeout(()=>delete host.dataset.suppressFittingClick,0);finishFittingLimitDrag(name!=='pointerup');
+ },true);
+ host.addEventListener('click',event=>{if(host.dataset.suppressFittingClick||event.target.closest('[data-fitting-handle]')){event.preventDefault();event.stopImmediatePropagation()}},true);
+ host.addEventListener('keydown',event=>{
+  const handle=event.target.closest('[data-fitting-handle]');if(!handle||!['ArrowLeft','ArrowDown','ArrowRight','ArrowUp'].includes(event.key))return;
+  event.preventDefault();event.stopImmediatePropagation();const kind=handle.dataset.fittingHandle,v=currentFittingLimits();
+  const next=fittingLimitValue(kind,v[kind]+(['ArrowLeft','ArrowDown'].includes(event.key)?-.1:.1),v);
+  if(next===v[kind])return;fittingLimitsLocal=true;setFittingLimits({...v,[kind]:next});repaintFittingLimits();invalidateAnalysisSettings();
+ },true);
+}
+
 function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
 function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi={x:0,y:0,w:meta.width,h:meta.height};$('region-size').textContent=`${meta.width} × ${meta.height} px · full detector`;drawDetector();return;}const min=32,max=Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=preserveHeight?roi.h:roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`;rememberRegionSize()}
 // Invalidate the old result immediately; never attach it to a newly moved region.
@@ -395,6 +492,8 @@ async function openFile(){
  const id=$('file').value;if(!id)return;updateFileNavigation();$('calibrate-image').hidden=!config.files.find(f=>f.id===id)?.raster;$('run-grid').disabled=true;
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
  abandonAnalysis();
+ fittingLimitDrag=null;fittingLimitsLocal=false;
+ const sharedLimits=readPreference('tem-basic-settings',{});$('g-max').value=sharedLimits['g-max']??10;$('fft-g-min').value=sharedLimits['fft-g-min']??3;
  const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;detectorRaw=null;opened=false;drag=null;maskDrag=null;displayedDiffraction=null;snapPointer=null;radiusDrag=null;peakUndo=[];document.body.classList.remove('editing-peaks');
  scheduleOverlapPreview();syncMapLoading();finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
  message('Opening source image…');
@@ -406,7 +505,8 @@ async function openFile(){
   }
   const info=await api('open',{file_id:id});if(version!==sourceRequest)return;
   meta=info;fileId=id;opened=true;writePreference(lastImageKey(),id);grid=null;jobId=null;
-  setupImageKind();drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=isDiffraction();
+  const band=savedFittingLimits();if(band)$('g-max').value=band.outer;
+  setupImageKind();restoreFittingLimits();drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=isDiffraction();
   $('grid-status').textContent='Adaptive subdivides unresolved or ambiguous regions, two candidate structures, and substantial second patterns.';
   restoreCalibration();renderFavorites();updateGridSizeNote();
   $('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);
@@ -677,8 +777,8 @@ function spectrumTicks(extent){
  return Array.from({length:count*2+1},(_,i)=>(i-count)*step);
 }
 function drawFittingBand(qp){
- const outer=result.spectrum.g_max??result.settings.g_max??10;
- const inner=result.spectrum.g_min??result.settings.g_min??result.settings.diffraction?.exclude_radius_nm_inv??3;
+ const outer=fittingLimitDrag?currentFittingLimits().outer:(result.spectrum.g_max??result.settings.g_max??10);
+ const inner=fittingLimitDrag?currentFittingLimits().inner:(result.spectrum.g_min??result.settings.g_min??result.settings.diffraction?.exclude_radius_nm_inv??3);
  const [cx,cy]=qp(0,0),rx=Math.abs(qp(outer,0)[0]-cx),ry=Math.abs(qp(0,outer)[1]-cy);
  const ix=Math.abs(qp(inner,0)[0]-cx),iy=Math.abs(qp(0,inner)[1]-cy);
  const group=el('svg',{x:0,y:0,width:420,height:420,viewBox:'0 0 420 420',overflow:'hidden','pointer-events':'none','data-fitting-band':`${inner}-${outer}`});
@@ -686,13 +786,14 @@ function drawFittingBand(qp){
  group.append(el('path',{d:'M0 0H420V420H0Z'+ellipse,fill:'#000','fill-opacity':.25,'fill-rule':'evenodd'}));
  group.append(el('ellipse',{cx,cy,rx:ix,ry:iy,fill:'#000','fill-opacity':.16}));
  for(const [r,xr,yr,description]of [[outer,rx,ry,'Outer fitting limit'],[inner,ix,iy,'Central exclusion']]){
-  if(r===0)continue;
+  // Keep a handle available even when central exclusion is zero.
   const boundary=el('ellipse',{cx,cy,rx:xr,ry:yr,fill:'none',stroke:'#b3c2d0','stroke-width':.7,'stroke-dasharray':'3 3',opacity:.8});
   boundary.append(el('title',{},`${description}: ${r} nm⁻¹. Shaded areas are excluded from fitting.`));group.append(boundary);
   const x=r===outer?cx+xr*.70:cx,y=r===outer?cy-yr*.70-4:cy-yr-4;
-  group.append(el('text',{x:clamp(x,38,382),y:clamp(y,10,410),fill:'#c2cfda','font-size':8,'text-anchor':'middle',stroke:'#05090e','stroke-width':2.5,'paint-order':'stroke'},`${r} nm⁻¹`));
+  group.append(el('text',{x:clamp(x,38,382),y:clamp(y,10,410),fill:'#c2cfda','font-size':8,'text-anchor':'middle',stroke:'#05090e','stroke-width':2.5,'paint-order':'stroke'},`${r.toFixed(1)} nm⁻¹`));
+  fittingLimitHandle(group,r===outer?'outer':'inner',clamp(x,38,382)+27,clamp(y,10,410)-3,6);
  }
- $('fft-overlay').append(group);
+ $('fft-overlay').prepend(group);
 }
 function drawFFT(){
  hideSpectrumHover();
@@ -1874,7 +1975,7 @@ function setupImageKind(){
   syncDetectorControls();
  }
 }
-function rememberDiffraction(){if(isDiffraction()&&validDiffraction(diffractionSettings))writePreference(diffractionKey(),diffractionSettings)}
+function rememberDiffraction(){if(isDiffraction()&&validDiffraction(diffractionSettings)){const saved={...diffractionSettings};if(fittingLimitsLocal)saved.exclude_radius_nm_inv=readPreference(diffractionKey(),{}).exclude_radius_nm_inv??2.5;writePreference(diffractionKey(),saved)}}
 function syncDetectorControls(){
  if(!isDiffraction()||!diffractionSettings)return;
  for(const [id,key]of Object.entries(DETECTOR_FIELDS)){
@@ -1925,6 +2026,11 @@ function drawDetector(){
  const outer=Number($('g-max').value);
  const outerCircle=el('ellipse',{cx:d.center_x,cy:d.center_y,rx:outer/d.pixel_x_nm_inv,ry:outer/d.pixel_y_nm_inv,class:'detector-centre','data-boundary':'outer','stroke-dasharray':'9 5'});
  outerCircle.append(el('title',{},`Outer fitting limit: ${outer} nm⁻¹`));group.append(outerCircle);
+ for(const [kind,r]of [['inner',d.exclude_radius_nm_inv],['outer',outer]]){
+  const size=meta.width/70,x=clamp(d.center_x+(kind==='outer'?.7:0)*r/d.pixel_x_nm_inv,size*4,meta.width-size*6),y=clamp(d.center_y-(kind==='outer'?.7:1)*r/d.pixel_y_nm_inv-size,2*size,meta.height-size);
+  group.append(el('text',{x,y,fill:'#b7d8ed','font-size':size,'text-anchor':'middle',stroke:'#05090e','stroke-width':size*.25,'paint-order':'stroke'},`${r.toFixed(1)} nm⁻¹`));
+  fittingLimitHandle(group,kind,x+size*3.5,y-size*.35,size*.75);
+ }
  group.append(el('path',{d:`M${d.center_x-cross},${d.center_y}h${2*cross}M${d.center_x},${d.center_y-cross}v${2*cross}`,class:'detector-centre'}));
  if(peakEditing()){
   for(const peak of editableObservations()){
@@ -2214,7 +2320,7 @@ function appendSpectrumExportLegend(svg){
 }
 function spectrumSnapshot(){
  const svg=$('fft').cloneNode(true),markers=[...$('fft').querySelectorAll('.spectrum-marker')].map(m=>{const b=m.getBBox();return {x:b.x+b.width/2,y:b.y+b.height/2,offset:Number(m.getAttribute('data-motion-offset'))||0}});
- svg.querySelectorAll('.manual-snap-overlay').forEach(n=>n.remove());
+ svg.querySelectorAll('.manual-snap-overlay,[data-fitting-handle]').forEach(n=>n.remove());
  svg.setAttribute('font-family','Arial, sans-serif');
  for(const node of [svg,...svg.querySelectorAll('[id]')])node.removeAttribute('id');
  for(const attribute of ['tabindex','role','aria-controls','aria-haspopup','aria-label'])svg.removeAttribute(attribute);
@@ -2606,7 +2712,7 @@ function deletePeakEdit(index){
 }
 function drawSnapOverlays(){
  for(const svg of [$('overview'),$('fft'),$('fft-zoom-view').querySelector('svg')].filter(Boolean)){
-  svg.querySelectorAll('.manual-snap-overlay').forEach(n=>n.remove());
+  svg.querySelectorAll('.manual-snap-overlay,[data-fitting-handle]').forEach(n=>n.remove());
   if(!isDiffraction()||!diffractionSettings)continue;
   const source=svg===$('overview'),snapshot=editSnapshot();if(!source&&!snapshot)continue;
   const d=source?diffractionSettings:snapshot.settings.diffraction,e=snapshot?.spectrum.extent,c=snapshot?.spectrum.beam_center_px;
