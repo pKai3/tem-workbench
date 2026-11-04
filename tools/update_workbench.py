@@ -114,12 +114,50 @@ def recovery_launchers(plan, helper):
     write_json(directory / 'transaction.json', plan)
 
 
+def mac_dialog_python():
+    """Find a standard 3.14 with Tk without changing the analysis environment."""
+    if sys.platform != 'darwin':
+        return None
+    candidates = [
+        '/Library/Frameworks/Python.framework/Versions/3.14/bin/python3',
+        '/opt/homebrew/bin/python3.14', '/usr/local/bin/python3.14',
+        shutil.which('python3.14'),
+    ]
+    probe = ('import sys, struct, sysconfig; '
+             'assert sys.version_info[:2] == (3, 14); '
+             'assert struct.calcsize("P") == 8; '
+             'assert not sysconfig.get_config_var("Py_GIL_DISABLED"); '
+             'import tkinter')
+    for candidate in dict.fromkeys(candidates):
+        if not candidate or not Path(candidate).is_file():
+            continue
+        if Path(candidate).resolve() == Path(sys.executable).resolve():
+            continue
+        try:
+            result = subprocess.run([candidate, '-c', probe], stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0:
+            return candidate
+    return None
+
+
 def show_dialog(session_path=None, transaction_path=None):
     try:
         import tkinter as tk
     except ImportError as error:
-        raise UpdateError('The update window needs Python with Tcl/Tk. Use the full Python.org '
-                          'installation, or update this checkout manually with Git.') from error
+        python = mac_dialog_python()
+        if python:
+            # Replace only this helper process; the session still identifies the
+            # original analysis environment for updates and rollback.
+            arguments = (['dialog', '--session', str(session_path)] if session_path
+                         else ['recover', '--transaction', str(transaction_path)])
+            os.execv(python, [python, str(Path(__file__).resolve()), *arguments])
+        raise UpdateError('The update window needs Python with Tcl/Tk. Install the full Python.org '
+                          'Python 3.14, or add python-tk@3.14 to a Homebrew installation, '
+                          'then try again. Your analysis environment has not been changed.') from error
     from tkinter import messagebox, ttk
     session = json.loads(Path(session_path).read_bytes()) if session_path else None
     plan = json.loads(Path(transaction_path).read_bytes()) if transaction_path else None

@@ -428,3 +428,7 @@ The first physical Windows upgrade exposed a shortcut-description mismatch: the 
 ### Windows demo download certificates — 4 November 2026
 
 A Windows demo download reported a self-signed certificate in its chain. Use Truststore's native Windows SSL context for demo downloads so Windows-managed trust and chain building apply, without disabling verification or changing global SSL behaviour. Add a Windows-only dependency and clear certificate-error guidance. Tests cover context selection, mandatory hostname/certificate validation and failure without insecure retries; native Windows context construction runs in the desktop gate. The user's particular network/certificate chain still needs an on-device retry.
+
+### Mac updater with Homebrew Python — 4 November 2026
+
+When the analysis environment lacks Tk, the updater/recovery window locates an installed standard 64-bit Python 3.14 with Tk and relaunches only its helper under that interpreter. The session retains the original analysis environment; no packages or environments are changed to open the window. If none is available, give explicit Python.org/Homebrew Tk setup guidance.

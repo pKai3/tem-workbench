@@ -1,6 +1,4 @@
-# TEM Workbench 1.0.2
+# TEM Workbench
 
-- Windows demo downloads now use native Windows certificate trust and chain validation, including managed network certificates trusted by Windows.
-- Certificate failures show an actionable message. HTTPS certificate and hostname verification remain enabled.
-
-Install the update through the desktop launcher, or get the latest code and rerun Install TEM Workbench App.cmd to install the new Windows certificate dependency. Restart Workbench before retrying the demo download.
+- Fix the Mac update window failing to open when the analysis environment uses Homebrew Python without Tk. The window can use an existing Tk-capable Python 3.14 while preserving the active analysis environment.
+- If no suitable window runtime exists, explain how to install the missing component.
