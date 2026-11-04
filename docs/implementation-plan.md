@@ -22,6 +22,10 @@ Fixed a live-overlay refresh bug that removed the fitting-limit handles immediat
 
 Bottom-left vector rows include cell dimensions derived from the same g/d: cubic a, HCP basal a or axial c, and pure-axis orthorhombic a/b/c. Mixed HCP reflections show a derived using the fitted c/a ratio, with that dependency explained on hover. Mixed orthorhombic reflections remain labelled coupled. Vector options now separate Measured planes (P1/P2 observations), Fitted planes (P1/P2 predicted positions for the same indexed matches), and A/B/C (fitted grid). Each supports passing/any winner and enabled-phase choices; selection is remembered. Equal-letter rows consolidate their dimension details. The key tooltip explains the distinction; PNG/GIF inherit these rows. HCP keys also show the fitted c/a ratio beside the zone axis, or unconstrained when c is not observable.
 
+## Candidate cell changes — completed 4 November 2026
+
+Candidate tables now show **Cell Δ %** next to Cell nm. Cubic a, HCP a/c and orthorhombic a/b/c use real-space changes, 100 × (1 / reciprocal scale − 1): positive means larger than the reference. Overall + c/a mode retains the real c/a ratio change without inversion. Unconstrained values stay unconstrained. This is display-only; fitting, penalties and numerical exports retain their existing definitions.
+
 ## HCP display notation — completed 4 November 2026
 
 Marker styles now includes a remembered **HCP notation** selector (four-index default, three-index optional). It updates zone axes and indexed reflections in fit tables, vectors, map legends and hover cards without rerunning analysis. Current-view FFT PNG/GIF and map PNG exports inherit the displayed labels. Zone-symbol identities and selected individual overlays remain unchanged. Numerical JSON/CSV records retain their existing three-index schema; server-generated batch figures are unchanged.

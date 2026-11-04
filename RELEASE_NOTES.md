@@ -9,3 +9,4 @@
 - Add Fitted planes vector options alongside Measured planes and A/B/C, retaining enabled-phase filtering and saved selection.
 - Show the fitted HCP c/a ratio beside the zone axis in vector keys, including exports; retain unconstrained status when c is not observable.
 - Show a for mixed HCP vector reflections using the fitted c/a ratio, with its dependency explained on hover.
+- Rename candidate Scale Δ to Cell Δ and display real-space a/b/c changes: positive means larger than reference. Keep the real c/a change convention unchanged.

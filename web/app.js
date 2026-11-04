@@ -569,13 +569,14 @@ function scaleDetails(model){
  return `prediction scale ×${a.toFixed(4)}`;
 }
 function scalePercentages(model){
- const percent=value=>{if(value==null||!Number.isFinite(value))return 'unconstrained';const change=(value-1)*100;return (Math.abs(change)<.05?'0.0':(change>0?'+':'−')+Math.abs(change).toFixed(1))+'%'};
+ const percent=value=>{if(value==null||!Number.isFinite(value)||value<=0)return 'unconstrained';const change=(value-1)*100;return (Math.abs(change)<.05?'0.0':(change>0?'+':'−')+Math.abs(change).toFixed(1))+'%'};
+ // The stored scales move reciprocal predictions; the table describes real cells.
+ const cellPercent=scale=>percent(Number.isFinite(scale)&&scale>0?1/scale:null);
  const a=model.scale_a??model.shared_scale;
- if(model.phase==='ORT')return [...'abc'].map((axis,i)=>axis+'* '+percent(model.axis_observable?.[i]===false?null:model['scale_'+axis]??model.shared_scale)).join(' / ');
- if(model.scale_mode==='auto_hcp_ratio')return `s* ${percent(model.overall_prediction_scale)}`+(model.phase==='HCP'?` / c/a ${percent(model.ca_ratio_multiplier)}`:'');
- if(model.phase!=='HCP')return percent(a);
+ if(model.phase==='ORT')return [...'abc'].map((axis,i)=>axis+' '+cellPercent(model.axis_observable?.[i]===false?null:model['scale_'+axis]??model.shared_scale)).join(' / ');
+ if(model.phase!=='HCP')return `a ${cellPercent(a)}`;
  const c=model.scale_c??(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)?null:a);
- return `a* ${percent(a)} / c* ${percent(c)}`;
+ return `a ${cellPercent(a)} / c ${cellPercent(c)}`+(model.scale_mode==='auto_hcp_ratio'?` / c/a ${percent(model.ca_ratio_multiplier)}`:'');
 }
 function predictionCounts(model){
  const total=model.predicted_nodes?.length??model.predicted_visible_band_node_count;
@@ -640,7 +641,7 @@ function geometryDescription(data){
  return 'Geometry check: pattern count remains unresolved.';
 }
 // Shared column definitions keep both candidate tables aligned.
-const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP uses the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Scale Δ\n%","Change from reference, %. Independent-axis mode shows a*/c*. Overall + c/a shows s* (reciprocal size) and the real c/a ratio change. Lattice dimensions change inversely to reciprocal scales."]];
+const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP uses the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Cell Δ\n%","Real-space cell change from reference: positive means larger, negative means smaller. Each axis uses 100 × (1 / reciprocal scale − 1). HCP overall + c/a mode also shows the real c/a ratio change, with its sign unchanged. Unconstrained axes are not measurements."]];
 function renderFitHeader(head, showToggle=false){
  const row=document.createElement('tr');
  const columns=showToggle?[['show','Show','Toggle this overlay'],...FIT_COLUMNS]:FIT_COLUMNS;
