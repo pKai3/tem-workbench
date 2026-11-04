@@ -10,6 +10,8 @@ FFT/direct-pattern fitting-circle labels have draggable arrow handles; the captu
 
 **Save override / Remove override** beside the fitting-limit inputs remember or clear both limits per image (pixel hash) in browser storage. Dragged limits stay local to the open image until explicitly saved; opening another image restores shared controls or that image’s saved override. Removing restores shared FFT limits (direct inner default 2.5 nm⁻¹). Exported result settings contain the effective limits; drag handles are omitted from spectrum PNG/GIF exports. Existing grids must be rerun when limits change. Browser-local overrides do not transfer between computers.
 
+Fixed a live-overlay refresh bug that removed the fitting-limit handles immediately after drawing them. Peak-edit refreshes now preserve both radius controls; export snapshots still omit them. Regression coverage exercises refreshes in FFT and diffraction modes.
+
 ## HCP display notation — completed 4 November 2026
 
 Marker styles now includes a remembered **HCP notation** selector (four-index default, three-index optional). It updates zone axes and indexed reflections in fit tables, vectors, map legends and hover cards without rerunning analysis. Current-view FFT PNG/GIF and map PNG exports inherit the displayed labels. Zone-symbol identities and selected individual overlays remain unchanged. Numerical JSON/CSV records retain their existing three-index schema; server-generated batch figures are unchanged.

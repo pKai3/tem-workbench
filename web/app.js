@@ -2712,7 +2712,8 @@ function deletePeakEdit(index){
 }
 function drawSnapOverlays(){
  for(const svg of [$('overview'),$('fft'),$('fft-zoom-view').querySelector('svg')].filter(Boolean)){
-  svg.querySelectorAll('.manual-snap-overlay,[data-fitting-handle]').forEach(n=>n.remove());
+  // Refresh peak-edit rings without removing the independent fitting-limit controls.
+  svg.querySelectorAll('.manual-snap-overlay').forEach(n=>n.remove());
   if(!isDiffraction()||!diffractionSettings)continue;
   const source=svg===$('overview'),snapshot=editSnapshot();if(!source&&!snapshot)continue;
   const d=source?diffractionSettings:snapshot.settings.diffraction,e=snapshot?.spectrum.extent,c=snapshot?.spectrum.beam_center_px;

@@ -37,3 +37,29 @@ assert.equal(run('savedFittingLimits()'),null);assert.equal(Number($('g-max').va
 context.direct=true;run('setFittingLimits({inner:2.1,outer:11.2})');
 assert.equal(context.diffractionSettings.exclude_radius_nm_inv,2.1);assert.equal($('diff-radius').value,'2.1');
 console.log('Fitting limits: quantization, bounds, release-only analysis, cancellation, image isolation and override removal passed.');
+
+// Live peak-overlay refresh must preserve radius handles on both images.
+// Export cleanup deliberately removes them, but must not be reused for live UI.
+const liveNodes=new Map();
+for(const id of ['overview','fft']){
+ const nodes=[{kind:'handle',remove(){this.removed=true}},{kind:'snap',remove(){this.removed=true}}];
+ liveNodes.set(id,nodes);
+ $(id).querySelectorAll=selector=>nodes.filter(n=>!n.removed&&((n.kind==='snap'&&selector.includes('.manual-snap-overlay'))||(n.kind==='handle'&&selector.includes('[data-fitting-handle]'))));
+ $(id).append=()=>{};
+}
+$('fft-zoom-view').querySelector=()=>null;
+context.el=()=>({append(){}});
+context.editSnapshot=()=>({settings:{diffraction:{pixel_x_nm_inv:.01,pixel_y_nm_inv:.01}},spectrum:{extent:[-10,10,-10,10],beam_center_px:[200,200]}});
+context.peakEditing=()=>false;
+context.diffractionSettings={pixel_x_nm_inv:.01,pixel_y_nm_inv:.01,peak_edits:[]};
+vm.runInContext(source.slice(source.indexOf('function drawSnapOverlays(){'),source.indexOf('async function finishRadiusDrag')),context);
+for(const direct of [false,true]){
+ context.direct=direct;
+ for(const nodes of liveNodes.values())for(const node of nodes)node.removed=false;
+ run('drawSnapOverlays()');
+ for(const [id,nodes] of liveNodes){
+  assert.equal(Boolean(nodes[0].removed),false,`${id} radius handle survives ${direct?'diffraction':'FFT'} refresh`);
+  assert.equal(nodes[1].removed,true,`${id} stale peak-edit overlay is removed`);
+ }
+}
+console.log('Live FFT/diffraction overlay refresh preserves fitting-radius handles.');
