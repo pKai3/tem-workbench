@@ -208,22 +208,40 @@
   svg.append(node('path',{d:'M 20 601 h 160',stroke:'#fff','stroke-width':2}));
   svg.append(node('text',{x:20,y:593,fill:'#fff','font-size':12},`${fmt(bar)} µm · approximate`));
  }
- byId('acquisition-map-open').onclick=async()=>{
-  if(busy||!fileId)return;
-  history=[];hideHover();navigation();
-  byId('acquisition-preview-on').disabled=!config.acquisition_comparison;byId('acquisition-preview-on').title=config.acquisition_comparison?'':'Restart TEM Workbench and reload to enable comparison previews';
-  const ticket=++request;originId=fileId;busy=true;previews.clear();data=null;view=null;byId('acquisition-list').replaceChildren();byId('acquisition-status').textContent='Reading stage metadata for this labelled sample…';dialog.showModal();draw();
+ async function loadSample(seedId,opening=false){
+  const ticket=++request;
+  busy=true;history=[];hideHover();drag=null;moved=false;adjustId='';
+  data=null;view=null;reference=null;visible=[];
+  for(const id of ['acquisition-folder','acquisition-date','acquisition-reference','acquisition-adjust-image','acquisition-list','acquisition-error-list'])byId(id).replaceChildren();
+  byId('acquisition-errors').hidden=true;
+  byId('acquisition-reset-placement').disabled=true;
+  byId('acquisition-detail').textContent='';byId('acquisition-placement-status').textContent='';
+  byId('acquisition-status').textContent='Reading stage metadata for this labelled sample…';
+  navigation();draw();
   try{
-   const result=await api(`acquisition-map?id=${encodeURIComponent(originId)}`);if(ticket!==request)return;data=result;
-   const current=data.files.find(f=>f.id===originId);selectedFolder=current?.folder||'';
+   const result=await api(`acquisition-map?id=${encodeURIComponent(seedId)}`);if(ticket!==request)return;data=result;
+   const current=opening?data.files.find(f=>f.id===originId):null;selectedFolder=current?.folder||'';
    const dates=[...new Set(data.files.map(f=>f.date))].sort();options(byId('acquisition-date'),[['*','All dates'],...dates.map(d=>[d,d||'Date unknown'])],current?.date??'*');
-   byId('acquisition-reference').replaceChildren();byId('acquisition-scope').value='folder';
-   byId('acquisition-errors').hidden=!data.errors.length;byId('acquisition-error-list').replaceChildren();for(const err of data.errors){const p=document.createElement('p');p.textContent=`${err.name}: ${err.error}`;byId('acquisition-error-list').append(p)}
-   update();
-  }catch(e){byId('acquisition-status').textContent=e.message}finally{busy=false}
+   byId('acquisition-scope').value=opening?'folder':'sample';
+   byId('acquisition-errors').hidden=!data.errors.length;for(const err of data.errors){const p=document.createElement('p');p.textContent=`${err.name}: ${err.error}`;byId('acquisition-error-list').append(p)}
+   busy=false;update();
+  }catch(e){if(ticket===request){busy=false;byId('acquisition-status').textContent=e.message;draw()}}
+  finally{if(ticket===request)busy=false}
+ }
+ byId('acquisition-map-open').onclick=()=>{
+  if(!fileId)return;
+  originId=fileId;
+  const samples=[...new Set(config.files.map(f=>f.sample))].sort((a,b)=>a.localeCompare(b));
+  options(byId('acquisition-sample'),samples.map(s=>[s,s||'Unlabelled']),config.files.find(f=>f.id===originId)?.sample);
+  byId('acquisition-preview-on').disabled=!config.acquisition_comparison;byId('acquisition-preview-on').title=config.acquisition_comparison?'':'Restart TEM Workbench and reload to enable comparison previews';
+  dialog.showModal();return loadSample(originId,true);
+ };
+ byId('acquisition-sample').onchange=()=>{
+  const seed=config.files.find(f=>f.sample===byId('acquisition-sample').value);
+  if(seed)return loadSample(seed.id);
  };
  byId('acquisition-map-close').onclick=()=>dialog.close();
- dialog.addEventListener('close',hideHover);
+ dialog.addEventListener('close',()=>{++request;busy=false;hideHover()});
  for(const enabled of [false,true])byId(enabled?'acquisition-preview-on':'acquisition-preview-off').onclick=()=>{
   compare=enabled;hideHover();byId('acquisition-preview-on').setAttribute('aria-pressed',String(compare));byId('acquisition-preview-off').setAttribute('aria-pressed',String(!compare));
  };
