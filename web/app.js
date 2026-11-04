@@ -1575,12 +1575,16 @@ function renderAutoStrength(data){
 }
 function resetFFTControls(){
  let changed=false;
- for(const [id,value]of [['threshold',.35],...Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value]])=>[id,value])]){
+ for(const [id,value]of [['threshold',.35],['fft-g-min',3],['g-max',10],...Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value]])=>[id,value])]){
   changed||=$(id).value===''||Number($(id).value)!==value;$(id).value=value;
  }
  for(const id of ['fft-hann','fft-mean']){changed||=!$(id).checked;$(id).checked=true}
  changed||=$('fft-strength-mode').value!=='manual';$('fft-strength-mode').value='manual';updateStrengthMode();
- rememberBasicControls();if(changed)invalidateAnalysisSettings();message('FFT defaults restored.');
+ fittingLimitsLocal=Boolean(savedFittingLimits());
+ rememberBasicControls();
+ // Explicit reset also repairs older persisted limits; preserve named image overrides.
+ writePreference('tem-basic-settings',{...readPreference('tem-basic-settings',{}),'fft-g-min':3,'g-max':10});
+ syncFittingOverrideButtons();if(changed)invalidateAnalysisSettings();message('FFT defaults restored.');
 }
 $('reset-fft').onclick=resetFFTControls;
 $('reset-material').onclick=()=>{

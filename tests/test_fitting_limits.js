@@ -111,3 +111,23 @@ assert.equal(target.attrs.width/grip.children[0].attrs.width,1.3);
 assert.equal(target.attrs.height/grip.children[0].attrs.height,1.3);
 assert.equal(grip.attrs['pointer-events'],'none');
 console.log('Radius grip orientation and enlarged hit area passed.');
+
+// FFT reset must restore the band even when no detector setting changed.
+context.direct=false;context.FFT_DETECTOR_CONTROLS={};context.updateStrengthMode=()=>{};
+vm.runInContext(source.slice(source.indexOf('function resetFFTControls(){'),source.indexOf("$('reset-fft').onclick=")),context);
+context.meta={sha256_pixels:'reset-band',name:'Reset'};
+storage.set('tem-fitting-limits:reset-band',{inner:1,outer:6});
+storage.set('tem-basic-settings',{'fft-g-min':1,'g-max':6});
+run('restoreFittingLimits()');$('threshold').value=.35;
+for(const id of ['fft-hann','fft-mean'])$(id).checked=true;
+$('fft-strength-mode').value='manual';
+const beforeReset=context.invalidations;run('resetFFTControls()');
+assert.equal(run('currentFittingLimits().outer'),10);assert.equal(run('currentFittingLimits().inner'),3);
+assert.equal(context.invalidations,beforeReset+1);
+assert.equal(storage.get('tem-basic-settings')['g-max'],10);
+assert.equal(storage.get('tem-basic-settings')['fft-g-min'],3);
+assert.equal(storage.get('tem-fitting-limits:reset-band').outer,6,'Explicit saved image override is retained');
+assert.equal($('save-fitting-override').textContent,'Update override');
+context.meta={sha256_pixels:'reset-next',name:'Next'};run('restoreFittingLimits()');
+assert.equal(run('currentFittingLimits().outer'),10);
+console.log('FFT reset restores and remembers the 3–10 band without deleting image overrides.');

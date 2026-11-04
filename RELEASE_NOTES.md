@@ -12,3 +12,4 @@
 - Rename candidate Scale Δ to Cell Δ and display real-space a/b/c changes: positive means larger than reference. Keep the real c/a change convention unchanged.
 - Put Fitted planes above Measured planes; measured HCP c/a and mixed-reflection dimensions now use the displayed measured pair rather than the fitted ratio.
 - Label plane vectors directly with phase and reflection indices instead of P1/P2, respecting HCP three/four-index notation.
+- Fix FFT Reset defaults omitting fitting limits: restore and remember central 3 / outer 10 nm⁻¹ while retaining explicit saved image overrides.
