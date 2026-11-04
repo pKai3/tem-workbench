@@ -72,6 +72,27 @@ assert.equal(storage.get('tem-basic-settings')['fft-g-min'],2);
 context.meta={sha256_pixels:'no-band',name:'No override'};run('restoreFittingLimits()');
 assert.equal(run('currentFittingLimits().outer'),10);
 assert.equal(run('currentFittingLimits().inner'),2.5);
+// Save is meaningful only when the live band differs from saved values or defaults.
+for(const direct of [false,true]){
+ context.direct=direct;context.meta={sha256_pixels:'button-'+direct,name:'Buttons'};
+ run('restoreFittingLimits()');assert.equal($('save-fitting-override').disabled,true);
+ run('setFittingLimits({inner:2.5,outer:9});syncFittingOverrideButtons()');
+ assert.equal($('save-fitting-override').disabled,false);
+ assert.equal($('save-fitting-override').textContent,'Save override');
+ // Returning to defaults, including a reset, removes the unsaved state.
+ run('setFittingLimits(defaultFittingLimits());fittingLimitsLocal=true;syncFittingOverrideButtons()');
+ assert.equal($('save-fitting-override').disabled,true);
+ assert.equal($('fitting-override-status').textContent,'');
+ run('setFittingLimits({inner:2.5,outer:9})');$('save-fitting-override').onclick();
+ assert.equal($('save-fitting-override').disabled,true);
+ // Persistence key order must not change equality.
+ storage.set('tem-fitting-limits:button-'+direct,{outer:9,inner:2.5});
+ run('restoreFittingLimits()');assert.equal($('save-fitting-override').disabled,true);
+ run('setFittingLimits(defaultFittingLimits());syncFittingOverrideButtons()');
+ assert.equal($('save-fitting-override').disabled,false);
+ assert.equal($('save-fitting-override').textContent,'Update override');
+ $('remove-fitting-override').onclick();assert.equal($('save-fitting-override').disabled,true);
+}
 console.log('Fitting limits: quantization, bounds, release-only analysis, cancellation, image isolation and override removal passed.');
 
 // Live peak-overlay refresh must preserve radius handles on both images.

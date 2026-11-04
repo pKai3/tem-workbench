@@ -442,3 +442,7 @@ A Windows demo download reported a self-signed certificate in its chain. Use Tru
 ### Mac updater with Homebrew Python — 4 November 2026
 
 When the analysis environment lacks Tk, the updater/recovery window locates an installed standard 64-bit Python 3.14 with Tk and relaunches only its helper under that interpreter. The session retains the original analysis environment; no packages or environments are changed to open the window. If none is available, give explicit Python.org/Homebrew Tk setup guidance.
+
+### Override save button state — 4 November 2026
+
+Save override is disabled when an unsaved image uses the default 2.5–10 nm⁻¹ band, or when its limits equal the saved override. Numeric comparison ignores object key order. Changed saved limits show Update override; returning to defaults clears the unsaved message when no override exists. Diffraction Reset settings explicitly refreshes the buttons. Regression covers both modes, save/reset/remove and restored preferences. User will run the next full batch; regenerate the results presentation after new exports are supplied.

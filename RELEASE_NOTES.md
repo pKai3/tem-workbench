@@ -1,5 +1,7 @@
 # TEM Workbench 1.0.8
 
+- Disable Save override at default limits when no override exists; refresh its state after diffraction reset.
+
 - Restore 2.5–10 nm⁻¹ fitting limits in both modes for images without overrides; ignore contaminated legacy shared limits. FFT Reset defaults uses the same band.
 
 

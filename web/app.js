@@ -314,10 +314,11 @@ function setFittingLimits(v){
 function syncFittingOverrideButtons(){
  const saved=savedFittingLimits();
  $('remove-fitting-override').disabled=!saved;
- const same=saved&&JSON.stringify(saved)===JSON.stringify(currentFittingLimits());
- $('save-fitting-override').disabled=!meta||Boolean(same);
+ const current=currentFittingLimits(),baseline=saved??defaultFittingLimits();
+ const same=['inner','outer'].every(key=>Math.abs(current[key]-baseline[key])<1e-9);
+ $('save-fitting-override').disabled=!meta||!validFittingLimits(current)||same;
  $('save-fitting-override').textContent=saved&&!same?'Update override':'Save override';
- $('fitting-override-status').textContent=saved?(same?'Saved for this image':'Override saved · unsaved changes'):fittingLimitsLocal?'Unsaved limits':'';
+ $('fitting-override-status').textContent=saved?(same?'Saved for this image':'Override saved · unsaved changes'):same?'':'Unsaved limits';
 }
 function defaultFittingLimits(){
  // Legacy shared preferences may contain another image's override. Never use them here.
@@ -2876,7 +2877,7 @@ $('reset-diffraction').onclick=()=>{
  if(!isDiffraction())return;
  const edits=diffractionSettings.peak_edits||[],c=meta.beam_center;
  diffractionSettings={center_x:c.x,center_y:c.y,pixel_x_nm_inv:meta.pixel_x_nm_inv,pixel_y_nm_inv:meta.pixel_y_nm_inv,exclude_radius_nm_inv:2.5,spot_sigma_px:2,spot_snr:9,refine_center:true,max_center_shift_px:50,masks:[],peak_edits:edits};
- $('g-max').value=10;$('diff-workers').value='0';writePreference('tem-diffraction-workers',0);rememberBasicControls();commitDetector();message('Diffraction settings reset; peak edits kept.');
+ $('g-max').value=10;$('diff-workers').value='0';writePreference('tem-diffraction-workers',0);rememberBasicControls();commitDetector();syncFittingOverrideButtons();message('Diffraction settings reset; peak edits kept.');
 };
 
 let batchFolderSelection=null;
