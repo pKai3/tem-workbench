@@ -50,19 +50,19 @@ function syncOverlayMenus(patternValue=$('overlay').value,vectorValue=$('reflect
  if(enabledPhases.length)append(pattern,[...winners,...phaseChoices]);
  append(pattern,[['geometry','Primary + Secondary Geometry'],['custom','Choose individual fits']]);
  vectors.replaceChildren(new Option('Off','off'));
- if(enabledPhases.length)for(const [label,prefix,caption] of [['Fitted A/B/C','fitted_','A/B/C · '],['Indexed reflections','','Indexed · ']]){
+ if(enabledPhases.length)for(const [label,prefix,caption] of [['Fitted A/B/C','fitted_','A/B/C · '],['Measured planes','','Measured planes · '],['Fitted planes','planes_','Fitted planes · ']]){
   const group=document.createElement('optgroup');group.label=label;
   append(group,[...winners,...phaseChoices],prefix,caption);vectors.append(group);
  }
  const restore=(select,value,fallback)=>{
   const values=[...select.options].map(option=>option.value);
-  const prefix=value.startsWith('fitted_')?'fitted_':'',choice=prefix?value.slice(7):value;
+  const prefix=['fitted_','planes_'].find(prefix=>value.startsWith(prefix))||'',choice=prefix?value.slice(prefix.length):value;
   if(choice==='both'&&enabledPhases.join(',')==='HCP,BCC')value=prefix+'all';
   if(choice==='all'&&enabledPhases.length===1)value=prefix+enabledPhases[0];
   select.value=values.includes(value)?value:fallback;
  };
  restore(pattern,patternValue,enabledPhases.length?'winner':'none');
- restore(vectors,vectorValue,enabledPhases.length?(vectorValue.startsWith('fitted_')?'fitted_winner':'winner'):'off');
+ restore(vectors,vectorValue,enabledPhases.length?(vectorValue.startsWith('fitted_')?'fitted_winner':vectorValue.startsWith('planes_')?'planes_winner':'winner'):'off');
 }
 function finishPhaseChange(previous){
  writePreference('tem-phase-colors',phaseColorChoices);rememberBasicControls();
@@ -2448,13 +2448,37 @@ async function exportMap(){
 }
 $('export-map').onclick=exportMap;
 
-function matchedReflectionVectors(model){
+function reflectionCellDimensions(model,hkl,g){
+ if(!Number.isFinite(g)||g<=0||!Array.isArray(hkl)||hkl.length!==3)return '';
+ const [h,k,l]=hkl,d=1/g,dimension=(name,value)=>`${name} ${value.toFixed(4)} nm`;
+ // Use the vector's own distance: measured planes or fitted planes/A/B/C.
+ if(model.phase==='BCC'||model.phase==='FCC')return dimension('a',d*Math.hypot(h,k,l));
+ if(model.phase==='HCP'){
+  if(l===0&&(h!==0||k!==0))return dimension('a',d*Math.sqrt(4*(h*h+h*k+k*k)/3));
+  if(h===0&&k===0&&l!==0)return dimension('c',d*Math.abs(l));
+  return 'a/c coupled';
+ }
+ if(model.phase==='ORT'){
+  const axes=hkl.map((value,index)=>({value,index})).filter(axis=>axis.value!==0);
+  if(axes.length===1)return dimension('abc'[axes[0].index],d*Math.abs(axes[0].value));
+  return axes.map(axis=>'abc'[axis.index]).join('/')+' coupled';
+ }
+ return '';
+}
+function vectorCellRatio(model){
+ if(model.phase!=='HCP')return '';
+ const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
+ const c=model.fitted_c_nm??(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)?null:model.nominal_c_nm/model.shared_scale);
+ return model.c_axis_visible===false||!Number.isFinite(a)||!Number.isFinite(c)||a<=0||c<=0?' · c/a unconstrained':` · c/a ${(c/a).toFixed(4)}`;
+}
+function matchedReflectionVectors(model,fitted=false){
  const selected=[];
  for(const match of (model.matches||[]).filter(m=>m.observed_q&&m.hkl).sort((a,b)=>Math.hypot(...a.observed_q)-Math.hypot(...b.observed_q))){
   const sign=match.observed_q[1]<0||(match.observed_q[1]===0&&match.observed_q[0]<0)?-1:1,q=match.observed_q.map(v=>sign*v),g=Math.hypot(...q);
   if(!g||selected.some(s=>Math.abs(s.q[0]*q[1]-s.q[1]*q[0])/(s.g*g)<.15))continue;
   const indexSign=match.predicted_q&&match.observed_q[0]*match.predicted_q[0]+match.observed_q[1]*match.predicted_q[1]<0?-sign:sign;
-  selected.push({q,g,hkl:match.hkl,sign:indexSign});if(selected.length===2)break;
+  const vector=fitted&&match.predicted_q?match.predicted_q.map(v=>indexSign*v):q;
+  selected.push({q:vector,g:Math.hypot(...vector),hkl:match.hkl,sign:indexSign});if(selected.length===2)break;
  }
  return selected;
 }
@@ -2543,25 +2567,28 @@ function vectorLabelPosition(x,y,w,h,occupied,anchors){
  occupied.push(chosen);return chosen;
 }
 function drawReflectionVectors(qp){
- const mode=$('reflection-vectors').value,fitted=mode.startsWith('fitted_'),choice=fitted?mode.slice(7):mode;
+ const mode=$('reflection-vectors').value,abc=mode.startsWith('fitted_'),fitted=abc||mode.startsWith('planes_'),choice=fitted?mode.slice(7):mode;
  const models=overlayModels(result,choice),occupied=[],groups=[];
  for(const model of models){
-  const vectors=(fitted?fittedReferenceVectors(model):matchedReflectionVectors(model)).map((v,i)=>({...v,name:fitted?v.name:`P${i+1}`}));
+  const vectors=(abc?fittedReferenceVectors(model):matchedReflectionVectors(model,fitted)).map((v,i)=>({...v,name:abc?v.name:`P${i+1}`}));
   if(vectors.length)groups.push({phase:model.phase,model,vectors});
  }
  // Keep full measurements together below the zone/angle summary. Equal-length
  // fitted vectors share a letter and therefore a single measurement row.
  const panels=groups.map(({phase,model,vectors})=>{
-  const lines=[[phase+' '+zoneLabel(model),10,12,phaseColors[phase]]];
+  const lines=[[phase+' '+zoneLabel(model)+vectorCellRatio(model),10,12,phaseColors[phase]]];
   let baseline=26;
-  if(fitted){lines.push([fittedVectorSummary(vectors),9,baseline,'#dce6ef']);baseline+=13}
+  if(abc){lines.push([fittedVectorSummary(vectors),9,baseline,'#dce6ef']);baseline+=13}
   const seen=new Set();
   for(const {g,hkl,sign,name}of vectors){
    if(seen.has(name))continue;seen.add(name);
-   const prefix=fitted?name:`${name} ${planeLabel(model,hkl,sign)}`;
-   lines.push([`${prefix} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm`,9,baseline,'#edf5fc']);baseline+=13;
+   const prefix=abc?name:`${name} ${planeLabel(model,hkl,sign)}`;
+   const dimensions=[...new Set(vectors.filter(v=>v.name===name).map(v=>reflectionCellDimensions(model,v.hkl,v.g)).filter(Boolean))].join(' · ');
+   lines.push([`${prefix} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm${dimensions?' · '+dimensions:''}`,9,baseline,'#edf5fc']);baseline+=13;
   }
-  return addVectorLabel($('fft-overlay'),{'data-vector-key':phase},lines,baseline-7,.92);
+  const panel=addVectorLabel($('fft-overlay'),{'data-vector-key':phase},lines,baseline-7,.92);
+  panel.group.append(el('title',{},(fitted?'Distances and cell dimensions from the fitted grid.':'Distances measured at detected spots; cell dimensions derived using the assigned reflection indices, not the joint fit.')+' Coupled reflections cannot determine each listed cell dimension independently.'));
+  return panel;
  });
  let top=415-panels.reduce((sum,p)=>sum+p.h,0)-Math.max(0,panels.length-1)*4;
  for(const panel of panels){
@@ -2577,7 +2604,7 @@ function drawReflectionVectors(qp){
    const group=el('g',{'data-reflection-vector':phase});
    const line=el('path',{d:`M${ox} ${oy}L${x} ${y}M${x-7*ux+3*uy} ${y-7*uy-3*ux}L${x} ${y}L${x-7*ux-3*uy} ${y-7*uy+3*ux}`,stroke:color,'stroke-width':1.2,fill:'none'});
    if(!model.valid)line.setAttribute('stroke-dasharray','4 3');group.append(line);$('fft-overlay').append(group);
-   const identifier=fitted&&groups.length===1?name:`${phase} ${name}`;
+   const identifier=abc&&groups.length===1?name:`${phase} ${name}`;
    const label=addVectorLabel(group,{'data-vector-label':phase},[[identifier,9.5,11,color]],16,.88);
    const {x:lx,y:ly}=vectorLabelPosition(x,y,label.w,label.h,occupied,anchors);
    label.group.setAttribute('transform',`translate(${lx} ${ly})`);
@@ -2586,12 +2613,12 @@ function drawReflectionVectors(qp){
     const lead=el('path',{d:`M${x+8*(edgeX-x)/distance} ${y+8*(edgeY-y)/distance}L${edgeX} ${edgeY}`,stroke:color,'stroke-width':.7,'stroke-dasharray':'2 2',opacity:.7,fill:'none','data-vector-leader':phase});
     group.insertBefore(lead,label.group);
    }
-   group.append(el('title',{},fitted?`${name}: ${planeLabel(model,hkl,sign)} from the fitted prediction lattice. Letters run from longest to shortest reciprocal length; equal lengths share a letter. These are not unit-cell edges or a separate phase test.`:`${phase} ${name}: ${planeLabel(model,hkl,sign)} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm. Measured reciprocal distance and plane spacing, indexed by this candidate fit. Opposite observations count as one profile.`));
+   group.append(el('title',{},abc?`${name}: ${planeLabel(model,hkl,sign)} from the fitted prediction lattice. Letters run from longest to shortest reciprocal length; equal lengths share a letter. These are not unit-cell edges or a separate phase test.`:`${phase} ${name}: ${planeLabel(model,hkl,sign)} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm. ${fitted?'Fitted grid distance and plane spacing.':'Measured reciprocal distance and plane spacing, indexed by this candidate fit.'} Opposite observations count as one profile.`));
   }
  }
 }
 
-const VECTOR_MODES=['off','fitted_winner','fitted_winner_any','fitted_HCP','fitted_BCC','fitted_FCC','fitted_ORT','fitted_both','fitted_all','winner','winner_any',...PHASES,'both','all'];
+const VECTOR_MODES=['off',...['winner','winner_any',...PHASES,'both','all'].map(choice=>'planes_'+choice),'fitted_winner','fitted_winner_any','fitted_HCP','fitted_BCC','fitted_FCC','fitted_ORT','fitted_both','fitted_all','winner','winner_any',...PHASES,'both','all'];
 const savedVectors=readPreference('tem-reflection-vectors','fitted_winner');
 syncOverlayMenus($('overlay').value,VECTOR_MODES.includes(savedVectors)?savedVectors:'fitted_winner');
 $('reflection-vectors').onchange=()=>{writePreference('tem-reflection-vectors',$('reflection-vectors').value);drawFFT()};

@@ -18,6 +18,10 @@ FFT/direct-pattern fitting-circle labels have draggable arrow handles; the captu
 
 Fixed a live-overlay refresh bug that removed the fitting-limit handles immediately after drawing them. Peak-edit refreshes now preserve both radius controls; export snapshots still omit them. Regression coverage exercises refreshes in FFT and diffraction modes.
 
+## Vector cell dimensions — completed 4 November 2026
+
+Bottom-left vector rows include cell dimensions derived from the same g/d: cubic a, HCP basal a or axial c, and pure-axis orthorhombic a/b/c. Mixed reflections are labelled coupled rather than claiming independent dimensions. Vector options now separate Measured planes (P1/P2 observations), Fitted planes (P1/P2 predicted positions for the same indexed matches), and A/B/C (fitted grid). Each supports passing/any winner and enabled-phase choices; selection is remembered. Equal-letter rows consolidate their dimension details. The key tooltip explains the distinction; PNG/GIF inherit these rows. HCP keys also show the fitted c/a ratio beside the zone axis, or unconstrained when c is not observable.
+
 ## HCP display notation — completed 4 November 2026
 
 Marker styles now includes a remembered **HCP notation** selector (four-index default, three-index optional). It updates zone axes and indexed reflections in fit tables, vectors, map legends and hover cards without rerunning analysis. Current-view FFT PNG/GIF and map PNG exports inherit the displayed labels. Zone-symbol identities and selected individual overlays remain unchanged. Numerical JSON/CSV records retain their existing three-index schema; server-generated batch figures are unchanged.
