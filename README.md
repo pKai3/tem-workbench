@@ -35,50 +35,22 @@ Under **Automatic grid → Search mode**, choose **Overlapping stability map**. 
 
 View each phase's passing frequency, disagreement between placement passes, sampling coverage, raw centres, or separately supported structures within the same window. Click a map location to inspect a contributing window. Exports retain raw fits and aggregation settings; PNG exports capture the selected view. These are overlapping candidate-support maps, **not physical phase fractions**. Windows are correlated, edges have fewer samples, and the FFT window sets spatial resolution. Batch grids also support this mode: the same physical window size, spacing and placement passes are applied to each selected image. Batch PNGs show all-phase passing frequencies; summaries pool covered raster area without summing overlapping window areas. Details and remaining work are in the [implementation plan](docs/implementation-plan.md#overlapping-window-phase-candidate-map).
 
-## Quick start
+## Installation and updates
 
-Use Python 3.10–3.14; Python 3.14 is preferred for new installations; validation on 3.14 is pending. Python 3.12 remains the previously tested environment. Python 3.15 is currently excluded from app setup because compatible prebuilt scientific dependencies are needed. Numerical dependencies are listed in [requirements.txt](requirements.txt).
+Download **TEM-Workbench-<version>.zip** from [Releases](https://github.com/pKai3/tem-workbench/releases/latest), extract it into a writable folder, and keep that folder in place. The optional demo images download separately inside the app.
 
-```sh
-git clone https://github.com/pKai3/tem-workbench.git
-cd tem-workbench
-python3.14 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python server.py --demo --open
-```
+- **macOS 13+:** double-click **Install TEM Workbench App.command**. Apple Command Line Tools are needed to build the Dock launcher. It installs into `~/Applications`.
+- **Windows 10/11 x86-64:** double-click **Install TEM Workbench App.cmd**. It creates Desktop and Start menu shortcuts using the same application icon as macOS.
 
-Substitute another installed compatible Python version if needed. Windows users can use the double-click installer below.
+Desktop setup uses standard **64-bit Python 3.14**, including Tcl/Tk on Windows. If missing, setup offers to download the official checksummed Python installer; installation proceeds only after consent. Python 3.15 and free-threaded builds are not supported by desktop setup. Packages are installed in an environment outside the source folder and cloud storage. Existing source-folder `.venv` directories are left intact.
 
-The server normally listens at **http://127.0.0.1:8767**. Use `--port 8768` to select another port. Stop a terminal-launched server with Ctrl+C. This application is intended for local use, not public web hosting.
+The desktop window provides Start/Stop, Open Workbench, live logs and **Check for updates**. Updates verify release files, prepare dependencies separately when needed, and keep rollback copies. Updates work without Git for extracted releases. A Git checkout must have clean tracked files and advance by fast-forward. Data, output, saved regions, calibration and local settings are preserved. Stop/export unfinished work before applying an update; running grids cannot survive a restart.
 
-Without `.tem-paths.json`, the application starts with any installed demos and defaults to `./data` and `./output`. `--demo` hides external images until folders are applied, even when a configuration file exists.
+**Existing installations:** rerun the platform installer once to move to the new launcher/update mechanism. See [SETUP.md](SETUP.md) for environment locations, console startup and recovery. This launcher is locally built/ad-hoc signed on macOS, not an Apple-notarized standalone distribution. Windows hardware smoke testing remains useful alongside automated native checks.
 
-### macOS launcher
+The server normally listens at **http://127.0.0.1:8767** and desktop launchers choose another free local port if occupied. It is intended for local use, not public web hosting.
 
-With Python 3.10–3.14 installed (3.14 preferred), double-click **Install TEM Workbench App.command**. The installer creates Workbench's own `.venv` inside the repository and installs NumPy, SciPy, Pillow and the DM4 reader before building a Dock application in `~/Applications`. It never installs packages into another application's environment. The first installation needs an internet connection and can take a few minutes. Rerunning the installer repairs missing dependencies. Building the launcher requires macOS 13 or newer and Apple Command Line Tools or Xcode.
-
-The launcher provides **Start/Stop**, **Open Workbench** and **View log** controls. It uses the repository checkout and a separate Python environment; it is not a standalone Python distribution. Keep the checkout in place, or reinstall the launcher after moving it. Closing the window leaves the application running; quitting stops the server it started.
-
-**Launch TEM Workbench.command** is also available for terminal-based startup. Both launchers always use `.venv/bin/python` relative to the Workbench folder. Legacy `python_executable` settings are ignored; the launchers use only the app’s own environment. A missing or incomplete environment produces an installer instruction rather than falling back to a different Python.
-
-Setup searches installed compatible Python versions in Homebrew, python.org and common Conda locations, including when launched from Finder. It prefers 3.14 and skips 3.15 even if `python3` points there. If no compatible version is available, it asks for one to be installed; it does not download Python itself. `TEM_WORKBENCH_PYTHON` can select a compatible **base interpreter for creating a new `.venv` only**. It cannot override the launch environment or redirect package installation. An existing compatible `.venv` is reused, so changing the preference does not upgrade it automatically. To test 3.14, stop Workbench, rename `.venv` to `.venv-3.12-backup` (or another unused name), and rerun the installer with Python 3.14 installed. An existing incompatible Workbench environment is kept at `.venv.previous` before a compatible one is created. Core scientific packages use prebuilt wheels to avoid unexpected HDF5/compiler setup.
-
-To prepare just the environment without rebuilding the Dock app, run `/usr/bin/python3 tools/python_runtime.py --prepare` from the repository on macOS.
-
-If the log reports **No module named PIL**, Pillow is missing from the Python actually running the app. Update the checkout and rerun **Install TEM Workbench App.command**. Install the app separately on each Mac; do not copy a `.venv` from another computer. Missing or broken dependencies now produce a setup message before the server starts.
-
-### Windows launcher
-
-On Windows 10/11, extract the GitHub ZIP (or clone the repository) into a writable local folder. Install **64-bit Python 3.14** from python.org, including the Python launcher, if no compatible Python is installed. Python 3.10–3.14 are supported; 3.15 is excluded. The installer does not download Python itself.
-
-1. Double-click **Install TEM Workbench App.cmd**. It creates the app's own `.venv`, installs the scientific packages and DM4 reader, and adds a desktop shortcut. No administrator rights are needed.
-2. Open **TEM Workbench** from the desktop or double-click **Launch TEM Workbench.cmd**. A control window starts the server and opens the interface in the default browser. It provides **Start/Stop**, **Open Workbench** and **View log**. Closing the control window stops only the server it started. The log is saved to `tem-workbench.log` in the app folder and replaced on each start.
-3. Choose data/output folders or download the optional demo pack under **Data Sources and Outputs**.
-
-Rerun the installer after updates to install any new dependencies. Keep the extracted folder in place; reinstall the shortcut if you move it. Do not copy `.venv` between computers or operating systems. Launch always uses `.venv\Scripts\python.exe`, independent of the default Python on PATH. The control window uses Python’s Tcl/Tk support (included by the standard python.org installer) and runs without a terminal. Rerun the installer to update an existing desktop shortcut. The `.cmd` installer runs its bundled PowerShell script with a process-only policy override; it does not change the machine's execution policy. Managed computers may require IT approval to run scripts.
-
-Windows setup has automated runtime checks, but still needs an end-to-end test on Windows hardware.
+Without `.tem-paths.json`, the application uses `./data` and `./output`, plus installed demos. Console option `--demo` hides external images until folders are applied.
 
 ## Opening images
 

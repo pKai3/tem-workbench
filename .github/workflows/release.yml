@@ -1,0 +1,76 @@
+name: Publish Workbench release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: workbench-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/updates.yml
+  tests:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/tests.yml
+  publish:
+    needs: [verify, tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Prepare the next version of the verified commit
+        id: release
+        env:
+          VERIFIED_COMMIT: ${{ github.sha }}
+        run: |
+          git fetch origin main --tags
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python tools/prepare_release.py --expected "$VERIFIED_COMMIT"
+      - name: Package committed application files
+        if: steps.release.outputs.ready == 'true'
+        run: python tools/build_release.py --output dist
+      - name: Publish version and tag without overwriting newer work
+        if: steps.release.outputs.ready == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: git push --atomic origin HEAD:refs/heads/main "refs/tags/$RELEASE_TAG"
+      - name: Publish the complete verified update
+        if: steps.release.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft > "$RUNNER_TEMP/release-state.json"; then
+            if python -c 'import json,sys; sys.exit(json.load(open(sys.argv[1]))["isDraft"])' "$RUNNER_TEMP/release-state.json"; then
+              echo 'This release is already published; leaving its assets unchanged.'
+              exit 0
+            fi
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "TEM Workbench $RELEASE_TAG" --notes-file RELEASE_NOTES.md
+          fi
+          gh release upload "$RELEASE_TAG" dist/*.zip dist/*.sha256 --clobber
+          release_api_url=$(gh release view "$RELEASE_TAG" --json apiUrl --jq .apiUrl)
+          gh api "$release_api_url" > "$RUNNER_TEMP/release-assets.json"
+          python - "$RUNNER_TEMP/release-assets.json" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          payload = json.loads(Path(sys.argv[1]).read_text())
+          assets = {a['name']: a for a in payload['assets']}
+          for path in Path('dist').iterdir():
+              asset = assets[path.name]
+              assert asset['size'] == path.stat().st_size, 'Upload size mismatch'
+              assert asset['digest'] == 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest(), 'Upload digest mismatch'
+          PY
+          gh release edit "$RELEASE_TAG" --draft=false --latest

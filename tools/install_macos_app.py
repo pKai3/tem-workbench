@@ -1,4 +1,4 @@
-"""Prepare Python dependencies and install the local Dock launcher without starting Workbench."""
+"""Build/install the local Dock launcher; never install packages or launch Workbench."""
 from __future__ import annotations
 
 import os
@@ -9,13 +9,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
-
-if __package__:
-    from .python_runtime import prepare_python
-else:
-    from python_runtime import prepare_python
+import argparse
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 APP_NAME = 'TEM Workbench.app'
 BUNDLE_ID = 'local.temworkbench.launcher'
 
@@ -26,9 +24,9 @@ def run(command, **kwargs):
 
 def require_build_tools():
     if sys.platform != 'darwin':
-        raise RuntimeError('This installer is for macOS. Follow the README Quick start on Windows.')
+        raise RuntimeError('This installer is for macOS. Use Install TEM Workbench App.cmd on Windows.')
     if int(platform.mac_ver()[0].split('.')[0]) < 13:
-        raise RuntimeError('The Dock app requires macOS 13 or newer. Use Launch TEM Workbench.command instead.')
+        raise RuntimeError('The Dock app requires macOS 13 or newer. See the console workflow in SETUP.md for older systems.')
     try:
         run(['/usr/bin/xcode-select', '-p'], capture_output=True)
         run(['/usr/bin/xcrun', '--find', 'swiftc'], capture_output=True)
@@ -36,7 +34,7 @@ def require_build_tools():
         raise RuntimeError(
             'The Dock app needs Apple Command Line Tools (or Xcode). In Terminal, run '
             'xcode-select --install and finish Apple’s installation, then double-click '
-            'Install TEM Workbench App.command. The Terminal launcher remains available.'
+            'Install TEM Workbench App.command. See SETUP.md for the console workflow.'
         ) from error
 
 
@@ -67,7 +65,7 @@ def validate_destination(destination):
         raise RuntimeError(f'An unrecognised item already exists at {destination}; it was not overwritten.') from error
 
 
-def build_bundle(root, build_directory, environ=None, architecture=None):
+def build_bundle(root, build_directory, environ=None, architecture=None, launch_root=None):
     """Machine-specific paths are generated only inside this temporary bundle."""
     root = Path(root).resolve()
     build_directory = Path(build_directory)
@@ -76,13 +74,28 @@ def build_bundle(root, build_directory, environ=None, architecture=None):
     if architecture not in ('arm64', 'x86_64'):
         raise RuntimeError(f'Unsupported Mac architecture: {architecture}')
     required = ('macos/Launcher.swift', 'macos/Info.plist', 'macos/Icon.swift',
-                'LICENSE', 'macos/TENSILE-LICENSE', 'Launch TEM Workbench.command', 'server.py',
-                'tools/python_runtime.py', 'requirements.txt', 'requirements-desktop.txt')
+                'LICENSE', 'Launch TEM Workbench.command', 'tools/run_macos.sh',
+                'server.py', 'workbench_environment.py')
     for name in required:
         if not (root / name).is_file():
             raise RuntimeError(f'Missing {name}. Download/extract the complete repository before installing.')
     metadata = plistlib.loads((root / 'macos/Info.plist').read_bytes())
-    metadata['WorkbenchLauncherPath'] = str(root / 'Launch TEM Workbench.command')
+    if (root / 'VERSION').is_file():
+        metadata['CFBundleShortVersionString'] = (root / 'VERSION').read_text().strip()
+        metadata['CFBundleVersion'] = metadata['CFBundleShortVersionString']
+    if (root / 'VERSION').is_file():
+        metadata['CFBundleShortVersionString'] = (root / 'VERSION').read_text().strip()
+    metadata['WorkbenchLauncherPath'] = str(Path(launch_root or root) / 'Launch TEM Workbench.command')
+    if True:  # Record the selected per-installation environment for Finder.
+        # Finder does not inherit a Terminal's custom environment setting.
+        sys.path.insert(0, str(root))
+        try:
+            from workbench_environment import environment_folder, validate_environment_location
+            environment = environment_folder(root, 'darwin', environ)
+            validate_environment_location(environment, root, environ)
+        finally:
+            sys.path.pop(0)
+        metadata['WorkbenchEnvironmentPath'] = str(environment)
 
     app = build_directory / APP_NAME
     contents = app / 'Contents'
@@ -90,14 +103,13 @@ def build_bundle(root, build_directory, environ=None, architecture=None):
     resources.mkdir(parents=True)
     (contents / 'MacOS').mkdir()
     (contents / 'Info.plist').write_bytes(plistlib.dumps(metadata))
-    for source, name in (('macos/Launcher.swift', 'Launcher.swift'), ('LICENSE', 'LICENSE'),
-                         ('macos/TENSILE-LICENSE', 'TENSILE-LICENSE')):
+    for source, name in (('macos/Icon.swift', 'Icon.swift'), ('macos/TENSILE-LICENSE', 'TENSILE-LICENSE'),
+                         ('macos/Launcher.swift', 'Launcher.swift'), ('LICENSE', 'LICENSE')):
         shutil.copyfile(root / source, resources / name)
-    icon_tool = build_directory / 'make-icon'
-    run(['/usr/bin/xcrun', 'swiftc', '-module-cache-path', build_directory / 'module-cache', '-framework', 'AppKit', root / 'macos/Icon.swift', '-o', icon_tool])
-    iconset = build_directory / 'TEMWorkbench.iconset'
-    run([icon_tool, iconset])
-    run(['/usr/bin/iconutil', '-c', 'icns', iconset, '-o', resources / 'TEMWorkbench.icns'])
+    run(['/usr/bin/xcrun', 'swift', '-module-cache-path', build_directory / 'icon-module-cache',
+         root / 'macos/Icon.swift', build_directory / 'TEMWorkbench.iconset'])
+    run(['/usr/bin/iconutil', '-c', 'icns', build_directory / 'TEMWorkbench.iconset',
+         '-o', resources / 'TEMWorkbench.icns'])
     run(['/usr/bin/xcrun', 'swiftc', '-O', '-target', architecture + '-apple-macos13.0',
          '-module-cache-path', build_directory / 'module-cache', '-framework', 'AppKit',
          root / 'macos/Launcher.swift', '-o', contents / 'MacOS/TEMWorkbench'])
@@ -144,8 +156,6 @@ def main():
     user_home = Path.home()
     destination = user_home / 'Applications' / APP_NAME
     validate_destination(destination)
-    print('Preparing Python dependencies. This can take a few minutes on the first install.', flush=True)
-    prepare_python(ROOT)
     print('Building the Dock app for this Mac. No data will be processed.', flush=True)
     # The temporary compiler cache can be large. Always remove it, including
     # on build failure; never leave it in the checkout or a synced data folder.
@@ -163,14 +173,21 @@ def main():
     print(f'Installed: {destination}\nUses this workbench folder: {ROOT}', flush=True)
     if backup:
         print(f'Previous app contents kept at: {backup}', flush=True)
-    print('Open the app in Finder and drag it to the Dock. Open Workbench opens its local page; View log shows live output.\n'
+    print('Open the app in Finder and drag it to the Dock. View log opens a live log window.\n'
           'Closing the launcher window leaves it running; Quit stops its server.\n'
-          'The app has not been launched. Python dependencies are ready; data and personal settings are unchanged.', flush=True)
+          'The app has not been launched. Data and personal settings are unchanged.', flush=True)
     return 0
 
 
 if __name__ == '__main__':
     try:
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument('--check', action='store_true', help='Check prerequisites without installing anything')
+        if parser.parse_args().check:
+            require_build_tools()
+            check_app_stopped()
+            validate_destination(Path.home() / 'Applications' / APP_NAME)
+            raise SystemExit(0)
         raise SystemExit(main())
     except KeyboardInterrupt:
         print('\nApp installation cancelled.', file=sys.stderr)
@@ -179,5 +196,5 @@ if __name__ == '__main__':
         print(f'\nCould not install the Dock app: {error}', file=sys.stderr)
         if isinstance(error, subprocess.CalledProcessError) and error.stderr:
             print(error.stderr, file=sys.stderr)
-        print('Resolve the error above and rerun this installer. See README.md for setup and troubleshooting.', file=sys.stderr)
+        print('See SETUP.md for installation help and the console workflow.', file=sys.stderr)
         raise SystemExit(1)

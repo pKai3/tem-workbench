@@ -24,3 +24,8 @@ outputs/
 /demo/*.png
 
 /.tem-image-calibrations.json
+
+/.tem-environment.json
+/.tem-update.lock
+/workbench-release.json
+/dist/

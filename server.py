@@ -789,7 +789,7 @@ def log_runtime_info():
              worker_count(), min(2, worker_limit()), worker_limit())
 
 
-def main():
+def main(argv=None, desktop_ready=None):
     logging.basicConfig(level=logging.INFO, format='%(asctime)s · %(levelname)s · %(message)s', datefmt='%H:%M:%S')
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, help='Optional settings for external TEM data')
@@ -797,9 +797,11 @@ def main():
     parser.add_argument('--port', type=int, default=8767)
     parser.add_argument('--open', action='store_true')
     parser.add_argument('--fallback-port', action='store_true', help='Use the next free local port if the default is occupied')
-    args=parser.parse_args()
+    args=parser.parse_args(argv)
     started = time.perf_counter()
     log_runtime_info()
+    version_file = ROOT / 'VERSION'
+    LOG.info('Application version: %s', version_file.read_text().strip() if version_file.is_file() else 'development')
     # Native launchers use terminate; allow orderly worker/mmap cleanup on POSIX.
     if hasattr(signal, 'SIGTERM'):
         def stop_backend(*_):
@@ -831,6 +833,12 @@ def main():
     url=f'http://127.0.0.1:{server.server_port}/'
     print(f'TEM Workbench: {url}', flush=True)
     print(f'Data: {app.engine.data_root}', flush=True)
+    if desktop_ready:
+        desktop_ready(server, url)
+    if os.environ.get('TEM_DESKTOP_READY_FILE') and os.environ.get('TEM_DESKTOP_NONCE'):
+        from workbench_updates import write_json
+        write_json(Path(os.environ['TEM_DESKTOP_READY_FILE']),
+                   {'nonce': os.environ['TEM_DESKTOP_NONCE'], 'url': url, 'pid': os.getpid()})
     LOG.info('Ready: %s (startup %.2f s)', url, time.perf_counter() - started)
     if args.open:
         webbrowser.open(url)

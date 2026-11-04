@@ -411,3 +411,12 @@ Centre changes now show the normal delayed analysis spinner, including while Set
 Interactive analysis no longer holds the shared catalogue lock while fitting. Source arrays remain referenced by the running request; mutable template and detector cache containers are isolated per request. Switching files abandons the previous browser request and immediately permits the new source/analysis to load. Late replies and cleanup cannot replace the new result or clear its loading state. An abandoned server calculation may finish in the background; this does not forcibly terminate numeric routines or change grid cancellation.
 
 Validation: a blocked-analysis regression confirms a second source completes before the first is released, with isolated caches. Browser request-function tests cover late success and failure without stale results, errors or spinner cleanup affecting the new request.
+
+
+## Desktop releases and versioning — in progress, 4 November 2026
+
+Approved handoff from Tensile Workbench: numbered GitHub releases on verified main pushes, Git-free archive updates with checksums, transaction recovery, persistent Mac/Windows launchers and external Python 3.14 environments. Full synthetic tests and native launcher checks run in GitHub; local checks target modified paths. Preserve research, project state, calibration overrides and existing environments. Initial end-to-end CI/release validation remains required. Implemented the shared updater, isolated external environments, official-Python bootstrap, persistent launchers and release workflows on feature/desktop-releases. Local validation: 98 focused tests passed (7 Windows-only skips); native Mac launcher typecheck passed. GitHub full-suite and Windows checks are next. Existing local .venv is preserved.
+
+### Queued UI correction
+
+Direct-diffraction hover preview currently jumps to a corner instead of tracking the cursor. Restore cursor-following placement with viewport-edge clamping after the release work. Reported 4 November 2026; not yet fixed.

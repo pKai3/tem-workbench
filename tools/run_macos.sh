@@ -1,0 +1,110 @@
+#!/bin/zsh
+set -u
+PROJECT_DIR="${${(%):-%x}:A:h:h}"
+
+find_python() {
+    local env_dir="${TEM_ENV_DIR:-$HOME/Library/Application Support/TEM Workbench/py314/venv}"
+    # Finder may not inherit Homebrew's PATH. Prefer the existing environment.
+    local -a candidates=("$env_dir/bin/python" "/opt/homebrew/bin/python3.14"
+        "/opt/homebrew/opt/python@3.14/bin/python3.14" "/usr/local/bin/python3.14"
+        "/usr/local/opt/python@3.14/bin/python3.14"
+        "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3")
+    local name found candidate
+    for name in python3.14 python3; do
+        found="$(command -v "$name" 2>/dev/null)" || continue
+        candidates+=("$found")
+    done
+    PYTHON_BIN=""
+    for candidate in "${candidates[@]}"; do
+        [[ -x "$candidate" ]] || continue
+        if "$candidate" -c 'import sys,struct,sysconfig; sys.exit(not (sys.version_info[:2]==(3,14) and struct.calcsize("P")==8 and not sysconfig.get_config_var("Py_GIL_DISABLED")))' >/dev/null 2>&1; then
+            PYTHON_BIN="$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+bootstrap_python() {
+    /bin/zsh "$PROJECT_DIR/tools/install_python_macos.sh"
+}
+
+ensure_python() {
+    PYTHON_INSTALLED=0
+    find_python && return 0
+    bootstrap_python || return 1
+    PYTHON_INSTALLED=1
+    find_python || { print -u2 -r -- 'Python 3.14 was not found after installation. Rerun Install TEM Workbench App.command, or see SETUP.md.'; return 1; }
+}
+
+open_installed_app() {
+    local app_path="${1:-$HOME/Applications/TEM Workbench.app}" installed_launcher
+    installed_launcher="$(/usr/libexec/PlistBuddy -c 'Print :WorkbenchLauncherPath' "$app_path/Contents/Info.plist" 2>/dev/null)" || installed_launcher=""
+    if [[ -z "$installed_launcher" || "${installed_launcher:A}" != "$PROJECT_DIR/Launch TEM Workbench.command" ]]; then
+        print -u2 -r -- 'Run Install TEM Workbench App.command from this folder first.'
+        return 1
+    fi
+    /usr/bin/open "$app_path"
+}
+
+run_macos_main() {
+    local action="${1:-}" result=0
+    if [[ "$action" == update-check || "$action" == update-dialog ]]; then
+        shift
+        find_python || return 1
+        if [[ "$action" == update-check ]]; then
+            exec "$PYTHON_BIN" "$PROJECT_DIR/tools/update_workbench.py" check "$@"
+        else
+            exec "$PYTHON_BIN" "$PROJECT_DIR/tools/update_workbench.py" dialog "$@"
+        fi
+    fi
+    if [[ "$action" == desktop && "${TEM_DESKTOP_APP:-0}" != 1 ]]; then
+        open_installed_app && return 0
+        result=$?
+        read -r 'reply?Press Return to close. '
+        return "$result"
+    fi
+    if [[ "$action" == desktop && "${TEM_DESKTOP_APP:-0}" == 1 ]]; then
+        find_python || { print -u2 -- 'Python 3.14 is missing. Rerun the app installer.'; return 1; }
+        exec "$PYTHON_BIN" "$PROJECT_DIR/workbench_environment.py" launch
+    fi
+    [[ "$action" == setup || "$action" == launch-check || "$action" == launch || "$action" == app || "$action" == install-app ]] || return 2
+    export PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1
+    if ensure_python; then
+        # Check a running app/build tools before an installer can change packages.
+        if [[ "$action" == install-app ]]; then
+            "$PYTHON_BIN" "$PROJECT_DIR/tools/install_macos_app.py" --check
+            result=$?
+        fi
+        if (( result == 0 )) && [[ "$PYTHON_INSTALLED" == 1 || "$action" == setup || "$action" == install-app ]]; then
+            "$PYTHON_BIN" "$PROJECT_DIR/workbench_environment.py" setup
+            result=$?
+        fi
+        if (( result == 0 )); then
+            if [[ "$action" == app || "$action" == install-app ]]; then
+                "$PYTHON_BIN" "$PROJECT_DIR/tools/install_macos_app.py"
+                result=$?
+            elif [[ "$action" == launch-check ]]; then
+                "$PYTHON_BIN" "$PROJECT_DIR/workbench_environment.py" check
+                result=$?
+            elif [[ "$action" == launch ]]; then
+                "$PYTHON_BIN" "$PROJECT_DIR/workbench_environment.py" "$action"
+                result=$?
+            fi
+        fi
+    else
+        result=1
+    fi
+    if (( result != 0 )); then
+        print -r -- 'Installation/launch stopped. Read the message above and SETUP.md.'
+    fi
+    if [[ "$action" == setup || "$action" == app || "$action" == install-app || "$result" != 0 ]]; then
+        read -r 'reply?Press Return to close. '
+    fi
+    return "$result"
+}
+
+if [[ "$ZSH_EVAL_CONTEXT" == toplevel ]]; then
+    run_macos_main "$@"
+    exit $?
+fi

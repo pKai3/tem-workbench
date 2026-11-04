@@ -2,6 +2,7 @@
 import AppKit
 import Foundation
 import Darwin
+import CryptoKit
 
 // Isolate only the server we launch. Never signal a user's Terminal session.
 if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--server-child" {
@@ -229,6 +230,13 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     private let browserButton = NSButton(title: "Open Workbench", target: nil, action: nil)
     private let logButton = NSButton(title: "View log", target: nil, action: nil)
     private let powerButton = NSButton(title: "Stop", target: nil, action: nil)
+    private let updateButton = NSButton(title: "Check for updates", target: nil, action: nil)
+    private let updateStatus = NSTextField(labelWithString: "Checking for updates…")
+    private var updateCheck: Process?
+    private var updateHelper: Process?
+    private var updateSession: URL?
+    private let updateNonce = UUID().uuidString
+    private var updating = false
     private var process: Process?
     private var processGroup: pid_t?
     private var rootExited = false
@@ -245,8 +253,14 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     private var browserURL: URL?
     private var liveLog: LiveLogWindowController?
     private let launcher = Bundle.main.object(forInfoDictionaryKey: "WorkbenchLauncherPath") as? String ?? ""
-    private let logDirectory = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/TEM Workbench", isDirectory: true)
+    private var readyDirectory: URL?
+    private var readyNonce = ""
+    private var startupDeadline: Date?
+    private var logDirectory: URL {
+        let key = SHA256.hash(data: Data(launcher.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/TEM Workbench/" + key, isDirectory: true)
+    }
     private var logURL: URL { logDirectory.appendingPathComponent("launcher.log") }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -257,6 +271,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         }
         RunLoop.main.add(timer!, forMode: .common)
         startServer()
+        checkForUpdates()
     }
 
     private func buildMenu() {
@@ -268,7 +283,8 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         for (title, action, key) in [
             ("Show launcher", #selector(showWindow), "l"),
             ("Open Workbench", #selector(openBrowser), "o"),
-            ("View log", #selector(viewLog), "")
+            ("View log", #selector(viewLog), ""),
+            ("Check for updates", #selector(showUpdates), "")
         ] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
             item.target = self
@@ -286,7 +302,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     }
 
     private func buildWindow() {
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 275),
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 325),
                           styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         window.title = "TEM Workbench"
         window.isReleasedWhenClosed = false
@@ -309,13 +325,14 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         stateRow.alignment = .centerY
         stateRow.spacing = 10
         status.widthAnchor.constraint(equalToConstant: 420).isActive = true
-        for button in [browserButton, logButton, powerButton] {
+        for button in [browserButton, logButton, powerButton, updateButton] {
             button.bezelStyle = .rounded
             button.target = self
         }
         browserButton.action = #selector(openBrowser)
         logButton.action = #selector(viewLog)
         powerButton.action = #selector(toggleServer)
+        updateButton.action = #selector(showUpdates)
         let buttons = NSStackView(views: [browserButton, logButton, powerButton])
         buttons.orientation = .horizontal
         buttons.spacing = 10
@@ -323,7 +340,12 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             "Closing this window leaves Workbench running in the Dock. Quit the app to stop its server.")
         help.font = .systemFont(ofSize: 11)
         help.textColor = .secondaryLabelColor
-        let stack = NSStackView(views: [heading, stateRow, buttons, help])
+        updateStatus.font = .systemFont(ofSize: 11)
+        updateStatus.textColor = .secondaryLabelColor
+        let updateRow = NSStackView(views: [updateButton, updateStatus])
+        updateRow.orientation = .horizontal
+        updateRow.spacing = 12
+        let stack = NSStackView(views: [heading, stateRow, buttons, updateRow, help])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 18
@@ -350,6 +372,25 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    private func existingServer() throws -> Bool {
+        let query = Process()
+        query.executableURL = URL(fileURLWithPath: "/bin/ps")
+        query.arguments = ["-axo", "command="]
+        let pipe = Pipe()
+        query.standardOutput = pipe
+        query.standardError = FileHandle.nullDevice
+        try query.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        query.waitUntilExit()
+        guard query.terminationStatus == 0 else {
+            throw NSError(domain: "WorkbenchLauncher", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Couldn't check for an existing Workbench server."])
+        }
+        let serverPath = URL(fileURLWithPath: launcher).deletingLastPathComponent()
+            .appendingPathComponent("server.py").path
+        return String(decoding: data, as: UTF8.self).split(separator: "\n").contains { $0.contains(serverPath) }
+    }
 
     private func prepareLog() throws {
         liveLog?.invalidateFile()
@@ -380,6 +421,13 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
                 throw NSError(domain: "WorkbenchLauncher", code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "Workbench folder not found. If you moved it, run Install TEM Workbench App.command from its new location."])
             }
+            if try existingServer() {
+                status.stringValue = "Workbench is already running outside this app. If it is open in Terminal, press Ctrl+C there, then click Start here."
+                powerButton.title = "Start"
+                powerButton.isEnabled = true
+                progress.stopAnimation(nil)
+                return
+            }
             try prepareLog()
             let child = Process()
             child.executableURL = Bundle.main.executableURL!
@@ -387,7 +435,19 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             child.currentDirectoryURL = URL(fileURLWithPath: launcher).deletingLastPathComponent()
             var environment = ProcessInfo.processInfo.environment
             environment["PYTHONUNBUFFERED"] = "1"
+            if let environmentPath = Bundle.main.object(forInfoDictionaryKey: "WorkbenchEnvironmentPath") as? String,
+               !environmentPath.isEmpty {
+                environment["TEM_ENV_DIR"] = environmentPath
+            }
             environment["TEM_DESKTOP_APP"] = "1"
+            readyNonce = UUID().uuidString
+            let readyFolder = FileManager.default.temporaryDirectory.appendingPathComponent("tem-ready-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: readyFolder, withIntermediateDirectories: true,
+                                                   attributes: [.posixPermissions: 0o700])
+            readyDirectory = readyFolder
+            environment["TEM_DESKTOP_READY_FILE"] = readyFolder.appendingPathComponent("ready.json").path
+            environment["TEM_DESKTOP_NONCE"] = readyNonce
+            startupDeadline = Date().addingTimeInterval(120)
             child.environment = environment
             input = try FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
             child.standardInput = input
@@ -421,6 +481,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 
     private func poll() {
         defer { liveLog?.refresh() }
+        pollUpdates()
         guard process != nil else { return }
         do {
             // Keep logs bounded; O_APPEND keeps child writers correct after truncation.
@@ -433,21 +494,27 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             }
             if let data = try reader?.readToEnd(), !data.isEmpty {
                 pendingText += String(decoding: data, as: UTF8.self)
-                // Only accept this launch's loopback URL. Keep the token out of status text.
-                let pattern = #"http://127\.0\.0\.1:[0-9]+/[^\s\u001B]*(?=\s)"#
-                if browserURL == nil, let range = pendingText.range(of: pattern, options: .regularExpression),
-                   let url = URL(string: String(pendingText[range])), url.host == "127.0.0.1" {
-                    browserURL = url
-                    if !stopping {
-                        status.stringValue = "Server running. Click Open Workbench to open its page."
-                        browserButton.isEnabled = true
-                        progress.stopAnimation(nil)
-                    }
-                }
                 pendingText = String(pendingText.suffix(65536))
             }
         } catch {
             // The server can continue if log viewing fails; stop/quit stay available.
+        }
+        if browserURL == nil, !stopping, let directory = readyDirectory,
+           let data = try? Data(contentsOf: directory.appendingPathComponent("ready.json")),
+           let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           value["nonce"] as? String == readyNonce,
+           let address = value["url"] as? String, let url = URL(string: address),
+           url.scheme == "http", url.host == "127.0.0.1", url.port != nil,
+           url.user == nil, url.password == nil, url.query == nil, url.fragment == nil, url.path == "/" {
+            browserURL = url
+            startupDeadline = nil
+            status.stringValue = "Server running. Workbench opens in your browser."
+            browserButton.isEnabled = true
+            progress.stopAnimation(nil)
+        }
+        if browserURL == nil, !stopping, let deadline = startupDeadline, Date() > deadline {
+            status.stringValue = "Startup timed out. View log for details."
+            requestStop()
         }
         let groupAlive = processGroup.map { kill(-$0, 0) == 0 || errno == EPERM } ?? false
         if rootExited && !groupAlive {
@@ -463,7 +530,10 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             finishHandles()
             status.stringValue = wasStopping ? "Workbench stopped. Click Start when you need it again." :
                 "Workbench exited (code \(exitCode)). View the log for details."
-            if quitting { NSApp.reply(toApplicationShouldTerminate: true) }
+            if quitting {
+                if updating { acknowledgeUpdate() }
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
         } else if rootExited && !stopping {
             requestStop()
         } else if stopping, let deadline = stopDeadline, Date() > deadline, !forcedStop {
@@ -474,12 +544,128 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     }
 
     private func finishHandles() {
+        if let directory = readyDirectory { try? FileManager.default.removeItem(at: directory) }
+        readyDirectory = nil
+        startupDeadline = nil
         try? reader?.close()
         try? output?.close()
         try? input?.close()
         reader = nil
         output = nil
         input = nil
+    }
+
+    private func makeUpdateSession() throws -> URL {
+        if let existing = updateSession { return existing }
+        let root = URL(fileURLWithPath: launcher).deletingLastPathComponent()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tem-update-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                               attributes: [.posixPermissions: 0o700])
+        let explicitEnvironment = Bundle.main.object(forInfoDictionaryKey: "WorkbenchEnvironmentPath") as? String
+        var environment = explicitEnvironment ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/TEM Workbench/py314/venv").path
+        let pointer = root.appendingPathComponent(".tem-environment.json")
+        if explicitEnvironment == nil, let data = try? Data(contentsOf: pointer),
+           let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let path = value["environment"] as? String { environment = path }
+        let session = directory.appendingPathComponent("session.json")
+        let value: [String: Any] = ["root": root.path, "environment": environment,
+            "pid": ProcessInfo.processInfo.processIdentifier, "nonce": updateNonce,
+            "app": Bundle.main.bundleURL.path]
+        try JSONSerialization.data(withJSONObject: value).write(to: session, options: .atomic)
+        updateSession = session
+        return session
+    }
+
+    private func updateProcess(_ action: String, arguments: [String]) throws -> Process {
+        let root = URL(fileURLWithPath: launcher).deletingLastPathComponent()
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        child.arguments = [root.appendingPathComponent("tools/run_macos.sh").path, action] + arguments
+        child.standardInput = FileHandle.nullDevice
+        child.standardOutput = FileHandle.nullDevice
+        child.standardError = FileHandle.nullDevice
+        child.currentDirectoryURL = root
+        var env = ProcessInfo.processInfo.environment
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        if let session = updateSession,
+           let data = try? Data(contentsOf: session),
+           let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let path = value["environment"] as? String { env["TEM_ENV_DIR"] = path }
+        child.environment = env
+        try child.run()
+        return child
+    }
+
+    private func checkForUpdates() {
+        do {
+            let session = try makeUpdateSession()
+            updateCheck = try updateProcess("update-check", arguments: ["--result",
+                session.deletingLastPathComponent().appendingPathComponent("check.json").path])
+        } catch { updateStatus.stringValue = "Update check unavailable." }
+    }
+
+    @objc private func showUpdates() {
+        guard !updating, updateHelper?.isRunning != true else { return }
+        do {
+            let session = try makeUpdateSession()
+            for name in ["request.json", "stopped.json", "error.json"] {
+                try? FileManager.default.removeItem(at: session.deletingLastPathComponent().appendingPathComponent(name))
+            }
+            updateHelper = try updateProcess("update-dialog", arguments: ["--session", session.path])
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Could not open updates"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+
+    private func pollUpdates() {
+        guard let session = updateSession else { return }
+        let directory = session.deletingLastPathComponent()
+        if let helper = updateHelper, !helper.isRunning {
+            updateHelper = nil
+            if helper.terminationStatus != 0 && !updating {
+                let alert = NSAlert()
+                alert.messageText = "Could not open updates"
+                alert.informativeText = "Rerun the app installer and try again."
+                if let data = try? Data(contentsOf: directory.appendingPathComponent("error.json")),
+                   let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let message = value["message"] as? String { alert.informativeText = message }
+                alert.runModal()
+            }
+        }
+        if let check = updateCheck, !check.isRunning {
+            if let data = try? Data(contentsOf: directory.appendingPathComponent("check.json")),
+               let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                if value["available"] as? Bool == true,
+                   let release = value["release"] as? [String: Any], let number = release["version"] as? String {
+                    updateStatus.stringValue = "Version \(number) is available."
+                } else { updateStatus.stringValue = value["message"] as? String ?? "Up to date." }
+            } else { updateStatus.stringValue = "Update check unavailable." }
+            updateCheck = nil
+        }
+        guard !updating, updateHelper?.isRunning == true,
+              let data = try? Data(contentsOf: directory.appendingPathComponent("request.json")),
+              let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              value["nonce"] as? String == updateNonce,
+              value["action"] as? String == "stop-for-update" else { return }
+        updating = true
+        quitting = true
+        updateButton.isEnabled = false
+        if process == nil { acknowledgeUpdate() }
+        else { requestStop() }
+        NSApp.terminate(nil)
+    }
+
+    private func acknowledgeUpdate() {
+        guard let session = updateSession else { return }
+        let value = ["nonce": updateNonce]
+        if let data = try? JSONSerialization.data(withJSONObject: value) {
+            try? data.write(to: session.deletingLastPathComponent().appendingPathComponent("stopped.json"), options: .atomic)
+        }
     }
 
     @objc private func openBrowser() {
@@ -495,7 +681,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     private func confirmStop(quitting: Bool) -> Bool {
         let alert = NSAlert()
         alert.messageText = quitting ? "Quit and stop Workbench?" : "Stop Workbench?"
-        alert.informativeText = "This stops the server started by this app and any running calculations. Save any grid results before stopping. Saved results and source images are kept."
+        alert.informativeText = "This stops the server started by this app and any running calculations. Saved settings and source data are kept."
         alert.addButton(withTitle: quitting ? "Quit and stop" : "Stop")
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
@@ -509,7 +695,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         powerButton.isEnabled = false
         status.stringValue = "Stopping Workbench and closing its calculation session…"
         progress.startAnimation(nil)
-        // Only signal this app’s isolated server process group.
+        // The server closes its worker pools on SIGTERM; allow cleanup to finish.
         if let group = processGroup, kill(-group, SIGTERM) == -1, child.isRunning { child.terminate() }
     }
 
