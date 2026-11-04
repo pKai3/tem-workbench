@@ -53,8 +53,11 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.14'
+      - name: Install Windows certificate integration
+        if: runner.os == 'Windows'
+        run: python -m pip install 'truststore>=0.10,<1'
       - name: Exercise update, recovery and launcher workflows with synthetic files
-        run: python -m unittest -v tests.test_updates tests.test_windows_app tests.test_macos_app tests.test_python_bootstrap tests.test_windows_process tests.test_release_preparation tests.test_python_runtime
+        run: python -m unittest -v tests.test_updates tests.test_windows_app tests.test_macos_app tests.test_python_bootstrap tests.test_windows_process tests.test_release_preparation tests.test_python_runtime tests.test_download_tls
       - name: Compile the native Mac launcher
         if: runner.os == 'macOS'
         run: xcrun swiftc -typecheck -framework AppKit macos/Launcher.swift

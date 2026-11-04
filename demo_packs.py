@@ -7,6 +7,7 @@ import stat
 import sys
 import tempfile
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -16,6 +17,11 @@ MAX_BYTES = 4 * 1024**3
 
 
 def download_context():
+    if sys.platform == 'win32':
+        # Use Windows chain building and its managed trust store, including
+        # intermediate retrieval, instead of OpenSSL's copied CA certificates.
+        import truststore
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context = ssl.create_default_context()
     # python.org builds can lack a CA bundle until their certificate installer runs.
     # macOS already ships a trusted bundle; add it without weakening verification.
@@ -156,4 +162,12 @@ class DemoDownload:
                 LOG.info('Installed demo pack: %s images', count)
         except Exception as exc:
             LOG.warning('Demo download failed: %s', exc)
-            self.update(state='failed', message=str(exc))
+            reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+            if isinstance(reason, ssl.SSLCertVerificationError):
+                message = ('The demo download certificate could not be verified. '
+                           'If this is a managed network or antivirus HTTPS filter, ask IT to check '
+                           'its trusted certificates, or try another trusted network. '
+                           'Certificate verification remains enabled.')
+            else:
+                message = str(exc)
+            self.update(state='failed', message=message)

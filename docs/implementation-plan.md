@@ -424,3 +424,7 @@ The left detector preview follows the cursor in View and Set centre modes, with 
 ### Windows legacy shortcut upgrade — 4 November 2026
 
 The first physical Windows upgrade exposed a shortcut-description mismatch: the previous launcher was rejected as unrelated after dependencies installed successfully. Accept the old description only when its target, arguments and working directory match this checkout. Preserve protection for unrelated shortcuts. Report shortcut errors concisely; reserve Tcl/Tk advice for a failed desktop-interface check. Regression coverage includes a temporary native Windows .lnk roundtrip without touching Desktop or Start menu shortcuts. Publication remains gated by native Windows/Mac and analysis tests.
+
+### Windows demo download certificates — 4 November 2026
+
+A Windows demo download reported a self-signed certificate in its chain. Use Truststore's native Windows SSL context for demo downloads so Windows-managed trust and chain building apply, without disabling verification or changing global SSL behaviour. Add a Windows-only dependency and clear certificate-error guidance. Tests cover context selection, mandatory hostname/certificate validation and failure without insecure retries; native Windows context construction runs in the desktop gate. The user's particular network/certificate chain still needs an on-device retry.

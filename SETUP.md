@@ -40,6 +40,10 @@ If dependencies are missing, stop the app and rerun its installer. An incomplete
 
 Moving the application changes its installation identity. Rerun the installer; it preserves old environments. The first migration from the previous launcher also requires running the installer once.
 
+## Demo download certificates
+
+On Windows, demo downloads use the native Windows certificate store and chain validation through Truststore. Certificate and hostname verification stay enabled. If certificate verification still fails on a managed network or with antivirus HTTPS inspection, ask IT to check the trusted certificate chain or try another trusted network. The app never bypasses certificate checks.
+
 ## Release maintenance
 
 Verified main pushes produce numbered releases. Desktop tests run on Windows and macOS; the full synthetic suite gates publishing. The workflow increments the patch version unless VERSION already requests a higher version, commits version/notes, pushes the tag and commit atomically, and publishes only after verifying uploaded asset sizes and hashes. Release packages include committed application files only. Fetch and fast-forward the workflow's version commit before subsequent work.
