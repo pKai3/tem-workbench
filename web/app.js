@@ -126,7 +126,7 @@ function restoreBasicControls(){
  if(['manual','auto','geometry'].includes(saved['fft-strength-mode']))$('fft-strength-mode').value=saved['fft-strength-mode'];
  if(['titanium','iron','unknown','custom'].includes(saved.material))$('material').value=saved.material;
  setPhaseSelection(Array.isArray(saved.enabled_phases)&&saved.enabled_phases.every(phase=>PHASES.includes(phase))?saved.enabled_phases:materialPhases());
- if(Number($('fft-g-min').value)>=Number($('g-max').value))$('fft-g-min').value=3;
+ if(Number($('fft-g-min').value)>=Number($('g-max').value))$('fft-g-min').value=2.5;
  if(OVERLAY_MODES.includes(saved.overlay))syncOverlayMenus(saved.overlay);
  if($('overlay').value==='custom')$('fit-controls').open=true;
 }
@@ -142,8 +142,8 @@ function rememberBasicControls(){
  saved['fft-strength-mode']=$('fft-strength-mode').value;
  if(OVERLAY_MODES.includes($('overlay').value))saved.overlay=$('overlay').value;
  saved.material=$('material').value;saved.enabled_phases=[...enabledPhases];
- if(Number(saved['fft-g-min'])>=Number(saved['g-max'])){saved['fft-g-min']=previous?.['fft-g-min']??3;saved['g-max']=previous?.['g-max']??10}
- if(fittingLimitsLocal)for(const id of ['g-max','fft-g-min'])saved[id]=previous?.[id]??(id==='g-max'?10:3);
+ if(Number(saved['fft-g-min'])>=Number(saved['g-max'])){saved['fft-g-min']=previous?.['fft-g-min']??2.5;saved['g-max']=previous?.['g-max']??10}
+ if(fittingLimitsLocal)for(const id of ['g-max','fft-g-min'])saved[id]=previous?.[id]??(id==='g-max'?10:2.5);
  writePreference('tem-basic-settings',saved);
 }
 function rememberRegionSize(){
@@ -319,15 +319,14 @@ function syncFittingOverrideButtons(){
  $('save-fitting-override').textContent=saved&&!same?'Update override':'Save override';
  $('fitting-override-status').textContent=saved?(same?'Saved for this image':'Override saved · unsaved changes'):fittingLimitsLocal?'Unsaved limits':'';
 }
-function sharedFittingLimits(){
- const basic=readPreference('tem-basic-settings',{});
- const limits={inner:isDiffraction()?2.5:Number(basic['fft-g-min']??3),outer:Number(basic['g-max']??10)};
- return validFittingLimits(limits)?limits:{inner:isDiffraction()?2.5:3,outer:10};
+function defaultFittingLimits(){
+ // Legacy shared preferences may contain another image's override. Never use them here.
+ return {inner:2.5,outer:10};
 }
 function restoreFittingLimits(){
  const saved=savedFittingLimits();fittingLimitsLocal=Boolean(saved);
  // Always resolve both limits: neither live controls nor detector memory is a fallback.
- setFittingLimits(saved??sharedFittingLimits());
+ setFittingLimits(saved??defaultFittingLimits());
  if(isDiffraction())syncDetectorControls();
  syncFittingOverrideButtons();
 }
@@ -367,9 +366,9 @@ $('save-fitting-override').onclick=()=>{
 };
 $('remove-fitting-override').onclick=()=>{
  if(!meta)return;writePreference(fittingOverrideKey(),null);fittingLimitsLocal=false;
- setFittingLimits(sharedFittingLimits());
+ setFittingLimits(defaultFittingLimits());
  if(isDiffraction())rememberDiffraction();
- syncFittingOverrideButtons();invalidateAnalysisSettings();message('Image override removed; shared fitting limits restored.');
+ syncFittingOverrideButtons();invalidateAnalysisSettings();message('Image override removed; default fitting limits restored.');
 };
 for(const id of ['fft-g-min','diff-radius','g-max']){
  // Register before persistence handlers: typed limits, like dragged limits, belong to this image.
@@ -506,7 +505,7 @@ async function openFile(){
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
  abandonAnalysis();
  fittingLimitDrag=null;fittingLimitsLocal=false;
- const sharedLimits=readPreference('tem-basic-settings',{});$('g-max').value=sharedLimits['g-max']??10;$('fft-g-min').value=sharedLimits['fft-g-min']??3;
+ $('g-max').value=10;$('fft-g-min').value=2.5;
  const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;detectorRaw=null;opened=false;drag=null;maskDrag=null;displayedDiffraction=null;snapPointer=null;radiusDrag=null;peakUndo=[];document.body.classList.remove('editing-peaks');
  scheduleOverlapPreview();syncMapLoading();finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
  message('Opening source image…');
@@ -1575,7 +1574,7 @@ function renderAutoStrength(data){
 }
 function resetFFTControls(){
  let changed=false;
- for(const [id,value]of [['threshold',.35],['fft-g-min',3],['g-max',10],...Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value]])=>[id,value])]){
+ for(const [id,value]of [['threshold',.35],['fft-g-min',2.5],['g-max',10],...Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value]])=>[id,value])]){
   changed||=$(id).value===''||Number($(id).value)!==value;$(id).value=value;
  }
  for(const id of ['fft-hann','fft-mean']){changed||=!$(id).checked;$(id).checked=true}
@@ -1583,7 +1582,7 @@ function resetFFTControls(){
  fittingLimitsLocal=Boolean(savedFittingLimits());
  rememberBasicControls();
  // Explicit reset also repairs older persisted limits; preserve named image overrides.
- writePreference('tem-basic-settings',{...readPreference('tem-basic-settings',{}),'fft-g-min':3,'g-max':10});
+ writePreference('tem-basic-settings',{...readPreference('tem-basic-settings',{}),'fft-g-min':2.5,'g-max':10});
  syncFittingOverrideButtons();if(changed)invalidateAnalysisSettings();message('FFT defaults restored.');
 }
 $('reset-fft').onclick=resetFFTControls;

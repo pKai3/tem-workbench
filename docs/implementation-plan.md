@@ -10,13 +10,11 @@ Compacted the desktop centre/calibration controls into one row with aligned peer
 
 ## Interactive fitting limits — completed 4 November 2026
 
-FFT Reset defaults now includes the 3–10 nm⁻¹ fitting band, repairs the remembered shared limits and recalculates when only limits changed. Explicit saved image overrides remain available to update or remove.
-
-Follow-up: numeric radius edits now stay image-local just like drag edits. Opening an image explicitly restores both shared limits (direct inner default 2.5 nm⁻¹) before applying its own override, ignoring stale detector-radius memory. Regression checks cover switching from saved overrides to unsaved images and back in both modes.
+Follow-up 4 November: images without a saved fitting-band override now restore **2.5–10 nm⁻¹ in both modes**, including FFT Reset defaults, as requested. The old shared-settings fallback was unsafe because it could already contain a previous override; it is no longer consulted when opening an image or removing an override. Explicit per-image overrides remain intact. Regression coverage exercises the actual asynchronous file-open path, including contaminated legacy preferences, switching between modes, and returning to an overridden image.
 
 FFT/direct-pattern fitting-circle labels have draggable arrow handles; the captured diffraction image also shows labels and handles. Dragging snaps to 0.1 nm⁻¹, updates the circles/labels and numeric fields live, and recalculates once on release. Inner/outer limits cannot cross; cancellation restores the previous limits. These are reciprocal-space search limits, not calibration changes.
 
-**Save override / Remove override** beside the fitting-limit inputs remember or clear both limits per image (pixel hash) in browser storage. Dragged limits stay local to the open image until explicitly saved; opening another image restores shared controls or that image’s saved override. Removing restores shared FFT limits (direct inner default 2.5 nm⁻¹). Exported result settings contain the effective limits; drag handles are omitted from spectrum PNG/GIF exports. Existing grids must be rerun when limits change. Browser-local overrides do not transfer between computers.
+**Save override / Remove override** beside the fitting-limit inputs remember or clear both limits per image (pixel hash) in browser storage. Dragged limits stay local to the open image until explicitly saved; opening another image restores the 2.5–10 nm⁻¹ defaults or that image’s saved override. Removing restores those defaults. Exported result settings contain the effective limits; drag handles are omitted from spectrum PNG/GIF exports. Existing grids must be rerun when limits change. Browser-local overrides do not transfer between computers.
 
 Fixed a live-overlay refresh bug that removed the fitting-limit handles immediately after drawing them. Peak-edit refreshes now preserve both radius controls; export snapshots still omit them. Regression coverage exercises refreshes in FFT and diffraction modes.
 

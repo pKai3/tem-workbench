@@ -33,7 +33,7 @@ context.meta={sha256_pixels:'image-b',name:'B'};assert.equal(run('savedFittingLi
 context.meta={sha256_pixels:'image-a',name:'A'};run('setFittingLimits({inner:1,outer:12});restoreFittingLimits()');
 assert.equal(Number($('g-max').value),10.3);assert.equal(Number($('fft-g-min').value),3);
 storage.set('tem-basic-settings',{'g-max':9,'fft-g-min':2});$('remove-fitting-override').onclick();
-assert.equal(run('savedFittingLimits()'),null);assert.equal(Number($('g-max').value),9);assert.equal(Number($('fft-g-min').value),2);
+assert.equal(run('savedFittingLimits()'),null);assert.equal(Number($('g-max').value),10);assert.equal(Number($('fft-g-min').value),2.5);
 context.direct=true;run('setFittingLimits({inner:2.1,outer:11.2})');
 assert.equal(context.diffractionSettings.exclude_radius_nm_inv,2.1);assert.equal($('diff-radius').value,'2.1');
 // A -> unsaved B -> A must resolve the new image's limits in either mode.
@@ -45,8 +45,8 @@ for(const direct of [false,true]){
  assert.equal(run('currentFittingLimits().outer'),6);
  context.meta={sha256_pixels:'no-band',name:'No override'};
  run('restoreFittingLimits()');
- assert.equal(run('currentFittingLimits().outer'),9);
- assert.equal(run('currentFittingLimits().inner'),direct?2.5:2);
+ assert.equal(run('currentFittingLimits().outer'),10);
+ assert.equal(run('currentFittingLimits().inner'),2.5);
  assert.equal(run('fittingLimitsLocal'),false);
  context.meta={sha256_pixels:'saved-band',name:'Saved'};
  run('restoreFittingLimits()');
@@ -70,8 +70,8 @@ $('save-fitting-override').onclick();
 assert.equal(storage.get('tem-basic-settings')['g-max'],9);
 assert.equal(storage.get('tem-basic-settings')['fft-g-min'],2);
 context.meta={sha256_pixels:'no-band',name:'No override'};run('restoreFittingLimits()');
-assert.equal(run('currentFittingLimits().outer'),9);
-assert.equal(run('currentFittingLimits().inner'),2);
+assert.equal(run('currentFittingLimits().outer'),10);
+assert.equal(run('currentFittingLimits().inner'),2.5);
 console.log('Fitting limits: quantization, bounds, release-only analysis, cancellation, image isolation and override removal passed.');
 
 // Live peak-overlay refresh must preserve radius handles on both images.
@@ -122,12 +122,37 @@ run('restoreFittingLimits()');$('threshold').value=.35;
 for(const id of ['fft-hann','fft-mean'])$(id).checked=true;
 $('fft-strength-mode').value='manual';
 const beforeReset=context.invalidations;run('resetFFTControls()');
-assert.equal(run('currentFittingLimits().outer'),10);assert.equal(run('currentFittingLimits().inner'),3);
+assert.equal(run('currentFittingLimits().outer'),10);assert.equal(run('currentFittingLimits().inner'),2.5);
 assert.equal(context.invalidations,beforeReset+1);
 assert.equal(storage.get('tem-basic-settings')['g-max'],10);
-assert.equal(storage.get('tem-basic-settings')['fft-g-min'],3);
+assert.equal(storage.get('tem-basic-settings')['fft-g-min'],2.5);
 assert.equal(storage.get('tem-fitting-limits:reset-band').outer,6,'Explicit saved image override is retained');
 assert.equal($('save-fitting-override').textContent,'Update override');
 context.meta={sha256_pixels:'reset-next',name:'Next'};run('restoreFittingLimits()');
 assert.equal(run('currentFittingLimits().outer'),10);
-console.log('FFT reset restores and remembers the 3–10 band without deleting image overrides.');
+console.log('FFT reset restores and remembers the 2.5–10 band without deleting image overrides.');
+
+// Exercise the real asynchronous file-switch flow with stale shared/detector memory.
+// The metadata/API and drawing are stubbed; openFile and radius restoration are real.
+vm.runInContext(source.slice(source.indexOf('async function openFile(){'),source.indexOf('\nfunction point(event)')),context);
+Object.assign(context,{
+ config:{files:[{id:'override-fft'},{id:'plain-fft'},{id:'override-direct'},{id:'plain-direct'}]},
+ sourceRequest:0,generation:0,rescoreRevision:0,rescoreTimer:null,jobId:null,preferredRegionNm:7,
+ hoverCache:new Map(),clearTimeout(){},document:{body:{classList:{remove(){}}}},
+ lastImageKey:()=> 'last-image',isGridRunning:()=>false,
+ api:async(path,{file_id:id})=>({sha256_pixels:id,name:id,width:100,height:100,pixel_x_nm:.1,pixel_x_nm_inv:.01,pixel_y_nm_inv:.01,device:'test'}),
+ setupImageKind(){context.direct=context.meta.name.endsWith('direct');context.diffractionSettings={exclude_radius_nm_inv:1.1}},
+ schedule(){context.submittedLimits=JSON.parse(JSON.stringify(run('currentFittingLimits()')))}
+});
+for(const name of ['updateFileNavigation','abandonAnalysis','scheduleOverlapPreview','syncMapLoading','finishSpectrumLoading','beginSpectrumLoading','hideRegionPreview','syncSpectrumExportControls','resetRegionEditor','renderSavedRegions','renderFavorites','drawGrid','restoreCalibration','updateGridSizeNote','updateBox'])context[name]=()=>{};
+for(const id of ['overview','source-image'])$(id).setAttribute=()=>{};
+(async()=>{
+ storage.set('tem-basic-settings',{'fft-g-min':1.1,'g-max':6});
+ for(const id of ['override-fft','override-direct'])storage.set('tem-fitting-limits:'+id,{inner:1.1,outer:6});
+ for(const id of ['override-fft','plain-fft','override-direct','plain-direct','plain-fft','override-fft']){
+  $('file').value=id;await run('openFile()');
+  const override=id.startsWith('override');
+  assert.deepEqual(context.submittedLimits,{inner:override?1.1:2.5,outer:override?6:10},'Analysis receives the correct limits after opening '+id);
+ }
+ console.log('Asynchronous image switching ignores contaminated legacy settings in FFT and diffraction, including cross-mode switches.');
+})().catch(error=>{console.error(error);process.exitCode=1});
