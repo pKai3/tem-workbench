@@ -1,5 +1,6 @@
 """Windows launcher checks without installing packages or touching research data."""
 from contextlib import redirect_stdout
+import base64
 import io
 import json
 import os
@@ -8,6 +9,7 @@ import queue
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -214,9 +216,55 @@ class WindowsInstallerTests(unittest.TestCase):
     def test_missing_tk_does_not_create_shortcuts(self):
         with patch.object(installer, 'require_runtime'), patch.object(installer.sys, 'platform', 'win32'), \
              patch.object(installer.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'tk')) as run:
-            with self.assertRaises(subprocess.CalledProcessError):
+            with self.assertRaisesRegex(RuntimeError, 'Tcl/Tk'):
                 installer.install(self.root, self.folder)
         self.assertEqual(run.call_count, 1)
+
+    def test_shortcut_failure_reports_reason_without_encoded_command_or_tk_advice(self):
+        error = subprocess.CalledProcessError(1, ['powershell.exe', '-EncodedCommand', 'huge'],
+                                             stderr='An unrelated shortcut already exists.')
+        with patch.object(installer, 'require_runtime'), patch.object(installer.sys, 'platform', 'win32'), \
+             patch.object(installer.subprocess, 'run', side_effect=[Mock(), error]):
+            with self.assertRaises(RuntimeError) as raised:
+                installer.install(self.root, self.folder)
+        self.assertEqual(str(raised.exception),
+                         'Shortcut creation failed: An unrelated shortcut already exists.')
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Requires Windows shortcut COM support')
+    def test_native_legacy_shortcut_migration_checks_ownership(self):
+        env = installer.shortcut_environment(self.root, self.folder)
+        env['TW_TEST_SHORTCUT'] = str(self.base / 'legacy.lnk')
+        script = installer.SHORTCUT_OWNERSHIP_SCRIPT + r'''
+$ErrorActionPreference = 'Stop'
+$shell = New-Object -ComObject WScript.Shell
+$link = $shell.CreateShortcut($env:TW_TEST_SHORTCUT)
+$link.Description = 'Start TEM Workbench in your browser'
+$link.TargetPath = Join-Path $env:TW_SHORTCUT_ROOT '.venv\Scripts\pythonw.exe'
+$link.Arguments = '"' + (Join-Path $env:TW_SHORTCUT_ROOT 'tools\windows_app.py') + '"'
+$link.WorkingDirectory = $env:TW_SHORTCUT_ROOT
+$link.Save()
+$link = $shell.CreateShortcut($env:TW_TEST_SHORTCUT)
+if (-not (Test-WorkbenchShortcut $link)) { throw 'Genuine legacy shortcut rejected' }
+$original = $link.Arguments
+$link.Arguments = 'another_app.py'
+if (Test-WorkbenchShortcut $link) { throw 'Unrelated arguments accepted' }
+$link.Arguments = $original
+$link.TargetPath = Join-Path $env:TW_SHORTCUT_ROOT 'other.exe'
+if (Test-WorkbenchShortcut $link) { throw 'Unrelated target accepted' }
+$link.TargetPath = Join-Path $env:TW_SHORTCUT_ROOT '.venv\Scripts\pythonw.exe'
+$link.WorkingDirectory = $env:TEMP
+if (Test-WorkbenchShortcut $link) { throw 'Other checkout accepted' }
+$link.WorkingDirectory = $env:TW_SHORTCUT_ROOT
+$link.Description = 'Another app'
+if (Test-WorkbenchShortcut $link) { throw 'Unrelated description accepted' }
+$link.Description = 'TEM Workbench desktop launcher'
+if (-not (Test-WorkbenchShortcut $link)) { throw 'Current launcher rejected' }
+'''
+        encoded = base64.b64encode(script.encode('utf-16-le')).decode('ascii')
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive',
+                                 '-EncodedCommand', encoded], env=env, capture_output=True,
+                                text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_custom_reinstall_updates_selection_used_by_old_pinned_shortcuts(self):
         pointer = self.root / installer.POINTER

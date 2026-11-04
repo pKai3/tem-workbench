@@ -420,3 +420,7 @@ Approved handoff from Tensile Workbench: numbered GitHub releases on verified ma
 ### Diffraction hover preview — completed 4 November 2026
 
 The left detector preview follows the cursor in View and Set centre modes, with viewport-edge clamping instead of detector-quadrant corner anchoring. Native-pixel crops stay centred on the pointed detector position. Scrolling/resizing hides stale previews. Browser regression checks cover tracking, edges, crop coordinates and tool changes. No analysis or saved settings changed.
+
+### Windows legacy shortcut upgrade — 4 November 2026
+
+The first physical Windows upgrade exposed a shortcut-description mismatch: the previous launcher was rejected as unrelated after dependencies installed successfully. Accept the old description only when its target, arguments and working directory match this checkout. Preserve protection for unrelated shortcuts. Report shortcut errors concisely; reserve Tcl/Tk advice for a failed desktop-interface check. Regression coverage includes a temporary native Windows .lnk roundtrip without touching Desktop or Start menu shortcuts. Publication remains gated by native Windows/Mac and analysis tests.

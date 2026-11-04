@@ -1,10 +1,6 @@
 # TEM Workbench 1.0.0
 
-- Numbered, verified releases and Check for updates in the desktop launchers.
-- Windows Desktop and Start menu shortcuts; bounded live logs and reliable startup reporting.
-- A private Python 3.14 environment outside the checkout and cloud folders. Existing environments and analysis data are preserved.
-- Official Python installer offered when the required runtime is missing.
+- Fix Windows installation over an existing legacy TEM Workbench desktop shortcut. The installer recognizes the old launcher paths and upgrades it automatically.
+- Shortcut failures now report their actual cause without a long encoded command or unrelated Python/Tcl-Tk advice.
 
-- Direct diffraction hover previews now follow the cursor instead of jumping to image corners.
-
-Existing installations: run Install TEM Workbench App once to install the new launcher. Future updates use Check for updates → Install update and restart.
+If the previous installer stopped at shortcut creation, download this update and rerun Install TEM Workbench App.cmd. No Python reinstallation is needed for that error.

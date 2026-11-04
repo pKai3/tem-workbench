@@ -18,7 +18,23 @@ APP_FILES = ('tools/windows_app.py', 'tools/windows_server.py', 'tools/windows_p
 
 # Paths are passed as environment data, never interpolated into PowerShell code.
 # Inline commands do not require changing the user's script execution policy.
-SHORTCUT_SCRIPT = r'''
+SHORTCUT_OWNERSHIP_SCRIPT = r'''
+function Test-WorkbenchShortcut($shortcut) {
+    if ($shortcut.Description -eq 'TEM Workbench desktop launcher') { return $true }
+    # The previous installer used this description and a checkout-local venv.
+    # Require its complete target/arguments/root before migrating it.
+    $legacyPython = Join-Path $env:TW_SHORTCUT_ROOT '.venv\Scripts\pythonw.exe'
+    $legacyArguments = '"' + (Join-Path $env:TW_SHORTCUT_ROOT 'tools\windows_app.py') + '"'
+    return ($shortcut.Description -eq 'Start TEM Workbench in your browser' -and
+            $shortcut.TargetPath -eq $legacyPython -and
+            $shortcut.Arguments -eq $legacyArguments -and
+            $shortcut.WorkingDirectory -eq $env:TW_SHORTCUT_ROOT)
+}
+'''
+
+SHORTCUT_SCRIPT = SHORTCUT_OWNERSHIP_SCRIPT + r'''
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding
+try {
 $ErrorActionPreference = 'Stop'
 $shell = New-Object -ComObject WScript.Shell
 $description = 'TEM Workbench desktop launcher'
@@ -29,7 +45,7 @@ $destinations = @(
 foreach ($path in $destinations) {
     if (Test-Path -LiteralPath $path) {
         $existing = $shell.CreateShortcut($path)
-        if ($existing.Description -ne $description) {
+        if (-not (Test-WorkbenchShortcut $existing)) {
             throw "An unrelated shortcut already exists at $path. Rename it before installing."
         }
     }
@@ -42,7 +58,11 @@ foreach ($path in $destinations) {
     $shortcut.IconLocation = $env:TW_SHORTCUT_ICON + ',0'
     $shortcut.Description = $description
     $shortcut.Save()
-    Write-Host "Installed $path"
+    Write-Output "Installed $path"
+}
+} catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
 }
 '''
 
@@ -71,12 +91,23 @@ def install(root=ROOT, folder=None):
     folder = folder or environment_folder(root)
     env = shortcut_environment(root, folder)
     # Tcl/Tk belongs to the Python installation, not a package downloaded by pip.
-    subprocess.run([str(Path(folder) / 'Scripts/python.exe'), '-c',
-                    'import tkinter as tk; w = tk.Tk(); w.withdraw(); w.destroy()'],
-                   cwd=root, env=child_environment(folder), check=True)
+    try:
+        subprocess.run([str(Path(folder) / 'Scripts/python.exe'), '-c',
+                        'import tkinter as tk; w = tk.Tk(); w.withdraw(); w.destroy()'],
+                       cwd=root, env=child_environment(folder), check=True)
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError('Python could not open the desktop interface. Use the complete '
+                           'Python 3.14 installer with Tcl/Tk, then rerun this installer.') from error
     encoded = base64.b64encode(SHORTCUT_SCRIPT.encode('utf-16-le')).decode('ascii')
-    subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-                   cwd=root, env=env, check=True)
+    try:
+        result = subprocess.run(
+            ['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+            cwd=root, env=env, check=True, capture_output=True, encoding='utf-8', errors='replace')
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or 'PowerShell could not create the shortcuts.').strip()
+        raise RuntimeError('Shortcut creation failed: ' + detail) from error
+    if result.stdout:
+        print(result.stdout.strip(), flush=True)
     # A refreshed custom installation must also update the selection used by
     # older pinned shortcuts. They may still carry the previous --environment.
     if (Path(root) / POINTER).exists():
@@ -91,5 +122,5 @@ if __name__ == '__main__':
         install()
     except Exception as error:
         print('Could not install the Windows app:', error, file=sys.stderr)
-        print('Use the complete Python 3.14 installer with Tcl/Tk. See SETUP.md for help.', file=sys.stderr)
+        print('See SETUP.md for help.', file=sys.stderr)
         raise SystemExit(1)
