@@ -313,9 +313,10 @@ function setFittingLimits(v){
 }
 function syncFittingOverrideButtons(){
  const saved=savedFittingLimits();
- $('save-fitting-override').disabled=!meta;
  $('remove-fitting-override').disabled=!saved;
  const same=saved&&JSON.stringify(saved)===JSON.stringify(currentFittingLimits());
+ $('save-fitting-override').disabled=!meta||Boolean(same);
+ $('save-fitting-override').textContent=saved&&!same?'Update override':'Save override';
  $('fitting-override-status').textContent=saved?(same?'Saved for this image':'Override saved · unsaved changes'):fittingLimitsLocal?'Unsaved limits':'';
 }
 function restoreFittingLimits(){

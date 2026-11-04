@@ -323,9 +323,9 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .fft-window-checks .check{min-height:22px;white-space:nowrap}
 .processing-layout .fft-processing p{flex:none;margin-top:0}
 .processing-layout .scale-settings{min-width:0;padding:12px;border:1px solid var(--line);border-radius:7px;background:#101925;text-align:left}
-.scale-settings .calibration-bar{justify-content:center;padding:0;gap:12px}
+.scale-settings .calibration-bar{justify-content:flex-start;padding:0;gap:12px}
 .scale-settings .calibration-bar>label:first-child{flex:0 1 400px;gap:14px}
-.scale-settings .calibration-bar>label:first-child>span{display:flex;align-items:center;justify-content:center;height:28px;font-weight:600}
+.scale-settings .calibration-bar>label:first-child>span{display:flex;align-items:center;justify-content:flex-start;height:28px;font-weight:600}
 .scale-settings .calibration-bar select{height:32px;min-height:32px;padding:5px 8px}
 .scale-settings .analysis-tools{display:block;margin-top:14px}
 .scale-settings .penalty-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;margin:0;padding:0;border:0;background:none;align-items:end}
@@ -463,12 +463,27 @@ body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(
 .fitting-override-actions button{font-size:11px;padding:5px 8px}
 .fitting-override-actions .hint{font-size:11px}
 
-/* Centre refinement belongs directly beneath the centre coordinates. */
-#diffraction-controls .diffraction-calibration .translation-controls{grid-column:1/4;grid-row:2;align-items:center;gap:6px;align-self:start}
-#diffraction-controls .diffraction-calibration .translation-controls>label:last-child{flex-direction:row;align-items:center;gap:6px;white-space:nowrap}
-@media(max-width:600px){
- #diffraction-controls .diffraction-calibration .translation-controls{grid-column:1/-1;grid-row:auto;flex-wrap:wrap}
+/* Keep refinement alongside the centre/calibration fields when the panel fits. */
+body.diffraction #diffraction-controls .diffraction-calibration .translation-controls{grid-column:1/-1;grid-row:2;align-items:end;gap:6px;align-self:end;flex-wrap:nowrap}
+body.diffraction #diffraction-controls .diffraction-calibration .translation-controls>label:last-child{flex-direction:column;align-items:start;gap:5px;white-space:nowrap}
+body.diffraction #diffraction-controls .diffraction-calibration .translation-controls .check{min-height:32px;white-space:nowrap}
+@media(min-width:1800px){
+ body.diffraction #diffraction-controls .diffraction-calibration{grid-template-columns:1fr 1fr 1.3fr auto 1fr 1fr .85fr}
+ body.diffraction #diffraction-controls .diffraction-calibration .translation-controls{grid-column:4;grid-row:1}
 }
 /* Establish coordinates and the fitting band before spot-detection settings. */
 body.diffraction #diffraction-controls .fitting-limits{grid-row:3;grid-column:1/-1}
 body.diffraction #diffraction-controls .diffraction-detection{grid-row:4;grid-column:1/-1}
+
+/* Per-image actions sit beside the fitting limits they save. */
+body.diffraction #diffraction-controls .fitting-limits{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:end}
+body.diffraction #diffraction-controls .fitting-override-actions{grid-column:auto;min-height:32px;max-width:240px}
+@media(max-width:600px){
+ body.diffraction #diffraction-controls .fitting-limits{grid-template-columns:repeat(2,minmax(0,1fr))}
+ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:1/-1}
+}
+
+.fitting-override-actions{display:grid;grid-template-columns:repeat(2,max-content);gap:4px 6px;align-items:end}
+.fitting-override-actions button{grid-row:2;height:32px}
+.fitting-override-actions .hint{grid-column:1/-1;grid-row:1;min-width:0}
+.fitting-override-actions .hint:empty{display:none}
