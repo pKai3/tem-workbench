@@ -36,3 +36,15 @@ assert.equal(context.vectorCellRatio({phase:'HCP',fitted_a_nm:.295,fitted_c_nm:n
 assert.equal(context.vectorCellRatio({phase:'HCP',fitted_a_nm:.295,fitted_c_nm:.468,c_axis_visible:false}),' · c/a unconstrained');
 assert.equal(context.vectorCellRatio({phase:'BCC',fitted_a_nm:.33}),'');
 console.log('HCP vector key reports fitted c/a and preserves unconstrained axes.');
+
+const pair=[{hkl:[1,0,0],g:1/.4879},{hkl:[0,0,2],g:1/.445}];
+const pairCell=context.measuredHcpCell(pair);
+assert.ok(Math.abs(pairCell.a-2*.4879/Math.sqrt(3))<1e-12);
+assert.ok(Math.abs(pairCell.c-.89)<1e-12);
+assert.equal(context.vectorCellRatio(hcp,pair),' · c/a '+(.89/pairCell.a).toFixed(4));
+const mixedPair=[[1,0,1],[1,0,2]].map(hkl=>({hkl,g:Math.sqrt(4/(3*.31**2)+hkl[2]**2/.49**2)}));
+const mixedCell=context.measuredHcpCell(mixedPair);
+assert.ok(Math.abs(mixedCell.a-.31)<1e-12);assert.ok(Math.abs(mixedCell.c-.49)<1e-12);
+assert.equal(context.vectorCellRatio(hcp,[{hkl:[1,0,0],g:4},{hkl:[0,1,0],g:4}]),' · c/a unavailable');
+assert.equal(context.measuredHcpCell([{hkl:[1,0,0],g:10},{hkl:[1,0,1],g:1}]),null);
+console.log('Measured HCP ratios use independent displayed observations, including mixed pairs.');

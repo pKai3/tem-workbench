@@ -10,3 +10,4 @@
 - Show the fitted HCP c/a ratio beside the zone axis in vector keys, including exports; retain unconstrained status when c is not observable.
 - Show a for mixed HCP vector reflections using the fitted c/a ratio, with its dependency explained on hover.
 - Rename candidate Scale Δ to Cell Δ and display real-space a/b/c changes: positive means larger than reference. Keep the real c/a change convention unchanged.
+- Put Fitted planes above Measured planes; measured HCP c/a and mixed-reflection dimensions now use the displayed measured pair rather than the fitted ratio.

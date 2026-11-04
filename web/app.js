@@ -50,7 +50,7 @@ function syncOverlayMenus(patternValue=$('overlay').value,vectorValue=$('reflect
  if(enabledPhases.length)append(pattern,[...winners,...phaseChoices]);
  append(pattern,[['geometry','Primary + Secondary Geometry'],['custom','Choose individual fits']]);
  vectors.replaceChildren(new Option('Off','off'));
- if(enabledPhases.length)for(const [label,prefix,caption] of [['Fitted A/B/C','fitted_','A/B/C · '],['Measured planes','','Measured planes · '],['Fitted planes','planes_','Fitted planes · ']]){
+ if(enabledPhases.length)for(const [label,prefix,caption] of [['Fitted A/B/C','fitted_','A/B/C · '],['Fitted planes','planes_','Fitted planes · '],['Measured planes','','Measured planes · ']]){
   const group=document.createElement('optgroup');group.label=label;
   append(group,[...winners,...phaseChoices],prefix,caption);vectors.append(group);
  }
@@ -2467,8 +2467,19 @@ function reflectionCellDimensions(model,hkl,g){
  }
  return '';
 }
-function vectorCellRatio(model){
+function measuredHcpCell(vectors){
+ // Solve g² = 4(h²+hk+k²)/(3a²) + l²/c² from the displayed pair.
+ if(vectors.length<2)return null;
+ const rows=vectors.slice(0,2).map(({hkl:[h,k,l],g})=>[4*(h*h+h*k+k*k)/3,l*l,g*g]);
+ const [[u,v,y],[w,z,t]]=rows,det=u*z-w*v;
+ if(!Number.isFinite(det)||Math.abs(det)<=1e-8*Math.max(1,Math.abs(u*z),Math.abs(w*v)))return null;
+ const aa=(y*z-t*v)/det,cc=(u*t-w*y)/det;
+ if(!Number.isFinite(aa)||!Number.isFinite(cc)||aa<=0||cc<=0)return null;
+ return {a:1/Math.sqrt(aa),c:1/Math.sqrt(cc)};
+}
+function vectorCellRatio(model,vectors=null){
  if(model.phase!=='HCP')return '';
+ if(vectors){const cell=measuredHcpCell(vectors);return cell?` · c/a ${(cell.c/cell.a).toFixed(4)}`:' · c/a unavailable'}
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
  const c=model.fitted_c_nm??(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)?null:model.nominal_c_nm/model.shared_scale);
  return model.c_axis_visible===false||!Number.isFinite(a)||!Number.isFinite(c)||a<=0||c<=0?' · c/a unconstrained':` · c/a ${(c/a).toFixed(4)}`;
@@ -2578,18 +2589,20 @@ function drawReflectionVectors(qp){
  // Keep full measurements together below the zone/angle summary. Equal-length
  // fitted vectors share a letter and therefore a single measurement row.
  const panels=groups.map(({phase,model,vectors})=>{
-  const lines=[[phase+' '+zoneLabel(model)+vectorCellRatio(model),10,12,phaseColors[phase]]];
+  const measuredCell=!fitted&&phase==='HCP'?measuredHcpCell(vectors):null;
+  const dimensionModel=!fitted&&phase==='HCP'?{...model,fitted_a_nm:measuredCell?.a,fitted_c_nm:measuredCell?.c}:model;
+  const lines=[[phase+' '+zoneLabel(model)+vectorCellRatio(model,fitted?null:vectors),10,12,phaseColors[phase]]];
   let baseline=26;
   if(abc){lines.push([fittedVectorSummary(vectors),9,baseline,'#dce6ef']);baseline+=13}
   const seen=new Set();
   for(const {g,hkl,sign,name}of vectors){
    if(seen.has(name))continue;seen.add(name);
    const prefix=abc?name:`${name} ${planeLabel(model,hkl,sign)}`;
-   const dimensions=[...new Set(vectors.filter(v=>v.name===name).map(v=>reflectionCellDimensions(model,v.hkl,v.g)).filter(Boolean))].join(' · ');
+   const dimensions=[...new Set(vectors.filter(v=>v.name===name).map(v=>reflectionCellDimensions(dimensionModel,v.hkl,v.g)).filter(Boolean))].join(' · ');
    lines.push([`${prefix} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm${dimensions?' · '+dimensions:''}`,9,baseline,'#edf5fc']);baseline+=13;
   }
   const panel=addVectorLabel($('fft-overlay'),{'data-vector-key':phase},lines,baseline-7,.92);
-  panel.group.append(el('title',{},(fitted?'Distances and cell dimensions from the fitted grid.':'Distances measured at detected spots; cell dimensions derived using the assigned reflection indices, not the joint fit.')+' Mixed HCP reflections derive a using the fitted c/a ratio; that a is not independent of the ratio. Coupled orthorhombic reflections cannot determine each listed cell dimension independently.'));
+  panel.group.append(el('title',{},(fitted?'Distances and cell dimensions from the fitted grid.':'Distances measured at detected spots. HCP a, c and c/a are solved from the two displayed indexed reflections; unavailable means that pair cannot independently determine both dimensions.')+(fitted?' Mixed HCP reflections derive a using the fitted c/a ratio.':'')+' Coupled orthorhombic reflections cannot determine each listed cell dimension independently.'));
   return panel;
  });
  let top=415-panels.reduce((sum,p)=>sum+p.h,0)-Math.max(0,panels.length-1)*4;
