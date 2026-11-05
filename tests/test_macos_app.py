@@ -36,6 +36,8 @@ class MacAppTests(unittest.TestCase):
 
     def fake_build(self, architecture='arm64', environ=None):
         def command(args, **kwargs):
+            if args[0] == '/usr/bin/iconutil':
+                Path(args[args.index('-o') + 1]).write_bytes(b'fake icon')
             if 'swiftc' in args:
                 Path(args[args.index('-o') + 1]).write_bytes(b'fake executable')
             return subprocess.CompletedProcess(args, 0, stdout='', stderr='')
@@ -64,6 +66,46 @@ class MacAppTests(unittest.TestCase):
         self.assertEqual(commands[-1][1:3], ['--verify', '--strict'])
         self.assertFalse((self.root / 'data').exists())
         self.assertFalse((self.root / 'output').exists())
+
+    def test_reuse_refreshes_metadata_and_signature_without_compilation(self):
+        installed, _ = self.fake_build()
+        original = (installed / 'Contents/Info.plist').read_bytes()
+        (self.root / 'VERSION').write_text('9.8.7')
+        environment = self.base / 'new environment'
+        with patch.object(installer, 'run') as calls:
+            staged = installer.build_bundle(self.root, self.base / 'update',
+                environ={'TEM_ENV_DIR': str(environment)}, architecture='arm64', reuse_app=installed)
+        commands = [call.args[0] for call in calls.call_args_list]
+        self.assertFalse(any('swift' in c or 'swiftc' in c or c[0] == '/usr/bin/iconutil' for c in commands))
+        self.assertTrue(any('--force' in c for c in commands))
+        self.assertEqual(commands[-1][1:3], ['--verify', '--strict'])
+        metadata = plistlib.loads((staged / 'Contents/Info.plist').read_bytes())
+        self.assertEqual(metadata['CFBundleVersion'], '9.8.7')
+        self.assertEqual(metadata['WorkbenchEnvironmentPath'], str(environment))
+        self.assertEqual((installed / 'Contents/Info.plist').read_bytes(), original)
+        self.assertEqual((staged / 'Contents/MacOS/TEMWorkbench').read_bytes(), b'fake executable')
+        self.assertEqual((staged / 'Contents/Resources/TEMWorkbench.icns').read_bytes(), b'fake icon')
+
+    def test_reuse_rejects_changed_source_signature_recipe_or_architecture(self):
+        installed, _ = self.fake_build()
+        for failure, expected in (('launcher', {'icon'}), ('icon', {'launcher'}),
+                                  ('signature', set()), ('architecture', {'icon'}), ('recipe', set())):
+            with self.subTest(failure=failure):
+                def command(args, **kwargs):
+                    if ((failure == 'signature' and args[0] == '/usr/bin/codesign') or
+                            (failure == 'architecture' and args[0] == '/usr/bin/lipo')):
+                        raise subprocess.CalledProcessError(1, args)
+                source = self.root / 'macos' / ('Icon.swift' if failure == 'icon' else 'Launcher.swift')
+                original = source.read_bytes()
+                if failure in ('launcher', 'icon'):
+                    source.write_bytes(original + b'\n// changed')
+                try:
+                    with patch.object(installer, 'run', side_effect=command), \
+                         patch.object(installer, 'BUILD_RECIPE', 2 if failure == 'recipe' else 1):
+                        assets = installer.reusable_assets(installed, self.root, 'arm64', self.root)
+                    self.assertEqual(set(assets), expected)
+                finally:
+                    source.write_bytes(original)
 
     def test_custom_environment_recorded_for_finder(self):
         environment = self.base / 'local environment/venv'

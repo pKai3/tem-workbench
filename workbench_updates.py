@@ -409,9 +409,15 @@ def prepare_update(root, release, folder, progress=lambda text: None):
 
 def run_logged(command, directory, env=None):
     with (Path(directory) / 'update.log').open('a', encoding='utf-8') as log:
-        result = subprocess.run([str(x) for x in command], stdout=log, stderr=log,
-                                cwd=directory, env=env, timeout=1200,
-                                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        started = time.monotonic()
+        log.write(f'\n[{time.strftime("%Y-%m-%d %H:%M:%S")}] Starting: {list(map(str, command))!r}\n')
+        log.flush()
+        try:
+            result = subprocess.run([str(x) for x in command], stdout=log, stderr=log,
+                                    cwd=directory, env=env, timeout=1200,
+                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        finally:
+            log.write(f'Finished after {time.monotonic()-started:.1f} seconds.\n')
     if result.returncode:
         raise UpdateError('The update check failed. The existing installation is kept. See ' + str(Path(directory) / 'update.log'))
 

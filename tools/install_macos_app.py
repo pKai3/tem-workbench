@@ -16,6 +16,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 APP_NAME = 'TEM Workbench.app'
 BUNDLE_ID = 'local.temworkbench.launcher'
+# Bump when compiler flags/target or icon-generation recipe changes.
+# Shipped launchers before this field used recipe 1.
+BUILD_RECIPE = 1
 
 
 def run(command, **kwargs):
@@ -65,7 +68,38 @@ def validate_destination(destination):
         raise RuntimeError(f'An unrecognised item already exists at {destination}; it was not overwritten.') from error
 
 
-def build_bundle(root, build_directory, environ=None, architecture=None, launch_root=None):
+def reusable_assets(app, root, architecture, launch_root):
+    """Only reuse signed, native assets whose bundled source matches this release."""
+    if not app:
+        return {}
+    app = Path(app)
+    try:
+        validate_destination(app)
+        contents = app / 'Contents'
+        metadata = plistlib.loads((contents / 'Info.plist').read_bytes())
+        if (metadata.get('WorkbenchBuildRecipe', 1) != BUILD_RECIPE
+                or metadata.get('LSMinimumSystemVersion') != '13.0'
+                or metadata.get('WorkbenchLauncherPath') != str(Path(launch_root) / 'Launch TEM Workbench.command')):
+            return {}
+        run(['/usr/bin/codesign', '--verify', '--strict', app], capture_output=True)
+        assets = {}
+        for key, source, bundled, asset in (
+            ('launcher', 'macos/Launcher.swift', 'Resources/Launcher.swift', 'MacOS/TEMWorkbench'),
+            ('icon', 'macos/Icon.swift', 'Resources/Icon.swift', 'Resources/TEMWorkbench.icns')):
+            target = contents / asset
+            if target.is_file() and not target.is_symlink() and (contents / bundled).read_bytes() == (root / source).read_bytes():
+                assets[key] = target
+        if 'launcher' in assets:
+            try:
+                run(['/usr/bin/lipo', assets['launcher'], '-verify_arch', architecture], capture_output=True)
+            except (OSError, subprocess.CalledProcessError):
+                del assets['launcher']
+        return assets
+    except (OSError, ValueError, RuntimeError, plistlib.InvalidFileException, subprocess.CalledProcessError):
+        return {}
+
+
+def build_bundle(root, build_directory, environ=None, architecture=None, launch_root=None, reuse_app=None):
     """Machine-specific paths are generated only inside this temporary bundle."""
     root = Path(root).resolve()
     build_directory = Path(build_directory)
@@ -93,6 +127,8 @@ def build_bundle(root, build_directory, environ=None, architecture=None, launch_
     finally:
         sys.path.pop(0)
     metadata['WorkbenchEnvironmentPath'] = str(environment)
+    metadata['WorkbenchBuildRecipe'] = BUILD_RECIPE
+    reuse = reusable_assets(reuse_app, root, architecture, launch_root or root)
 
     app = build_directory / APP_NAME
     contents = app / 'Contents'
@@ -103,13 +139,23 @@ def build_bundle(root, build_directory, environ=None, architecture=None, launch_
     for source, name in (('macos/Icon.swift', 'Icon.swift'), ('macos/TENSILE-LICENSE', 'TENSILE-LICENSE'),
                          ('macos/Launcher.swift', 'Launcher.swift'), ('LICENSE', 'LICENSE')):
         shutil.copyfile(root / source, resources / name)
-    run(['/usr/bin/xcrun', 'swift', '-module-cache-path', build_directory / 'icon-module-cache',
-         root / 'macos/Icon.swift', build_directory / 'TEMWorkbench.iconset'])
-    run(['/usr/bin/iconutil', '-c', 'icns', build_directory / 'TEMWorkbench.iconset',
-         '-o', resources / 'TEMWorkbench.icns'])
-    run(['/usr/bin/xcrun', 'swiftc', '-O', '-target', architecture + '-apple-macos13.0',
-         '-module-cache-path', build_directory / 'module-cache', '-framework', 'AppKit',
-         root / 'macos/Launcher.swift', '-o', contents / 'MacOS/TEMWorkbench'])
+    if 'icon' in reuse:
+        print('Reusing unchanged Mac icon.', flush=True)
+        shutil.copy2(reuse['icon'], resources / 'TEMWorkbench.icns')
+    else:
+        print('Generating Mac icon…', flush=True)
+        run(['/usr/bin/xcrun', 'swift', '-module-cache-path', build_directory / 'icon-module-cache',
+             root / 'macos/Icon.swift', build_directory / 'TEMWorkbench.iconset'])
+        run(['/usr/bin/iconutil', '-c', 'icns', build_directory / 'TEMWorkbench.iconset',
+             '-o', resources / 'TEMWorkbench.icns'])
+    if 'launcher' in reuse:
+        print('Reusing unchanged Mac launcher.', flush=True)
+        shutil.copy2(reuse['launcher'], contents / 'MacOS/TEMWorkbench')
+    else:
+        print('Compiling Mac launcher…', flush=True)
+        run(['/usr/bin/xcrun', 'swiftc', '-O', '-target', architecture + '-apple-macos13.0',
+             '-module-cache-path', build_directory / 'module-cache', '-framework', 'AppKit',
+             root / 'macos/Launcher.swift', '-o', contents / 'MacOS/TEMWorkbench'])
     run(['/usr/bin/codesign', '--force', '--sign', '-', app])
     run(['/usr/bin/codesign', '--verify', '--strict', app])
     return app

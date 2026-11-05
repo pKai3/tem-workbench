@@ -450,3 +450,9 @@ When the analysis environment lacks Tk, the updater/recovery window locates an i
 ### Override save button state — 4 November 2026
 
 Save override is disabled when an unsaved image uses the default 2.5–10 nm⁻¹ band, or when its limits equal the saved override. Numeric comparison ignores object key order. Changed saved limits show Update override; returning to defaults clears the unsaved message when no override exists. Diffraction Reset settings explicitly refreshes the buttons. Regression covers both modes, save/reset/remove and restored preferences. User will run the next full batch; regenerate the results presentation after new exports are supplied.
+
+### Mac update launcher reuse — 5 November 2026
+
+Mac updates reuse the installed launcher's executable and icon independently when their bundled Swift sources match the incoming release, the existing bundle verifies, and the executable supports the current architecture. Metadata (version, stable launch path and Python environment), source/license resources and signature are always refreshed in a newly staged bundle; transactional install/rollback is unchanged. A build-recipe version invalidates reuse when compiler/icon-generation rules change. Missing/invalid assets or changed sources rebuild. Earlier signed bundles use the same recipe and are eligible for reuse. An update started by an older updater may still rebuild once before this updated preparation logic is installed. Update subprocess logs now include start times and durations. No persistent compiler cache or duplicate runtime is introduced.
+
+Validation: 16 Mac installer tests and 38 updater tests completed successfully (one platform-specific skip). A temporary native build reused the installed executable/icon, refreshed and verified the signature in 0.05 seconds, and preserved executable code after stripping signatures for comparison. The installed app was not changed.
