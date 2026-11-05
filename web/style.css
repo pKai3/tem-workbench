@@ -508,7 +508,7 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #acquisition-hover-crop-label{overflow-wrap:anywhere}
 
 #acquisition-hover{box-sizing:border-box;max-width:calc(100vw - 28px)}
-#acquisition-hover .acquisition-hover-images{grid-auto-flow:column;grid-template-columns:none;grid-auto-columns:minmax(0,1fr);align-items:start}
+#acquisition-hover .acquisition-hover-images{grid-auto-flow:column;grid-template-columns:none;grid-auto-columns:minmax(0,1fr);align-items:center}
 #acquisition-hover-extras{display:contents}
 #acquisition-hover .acquisition-hover-images>figure:nth-child(2){order:2}
 #acquisition-hover .acquisition-hover-images figure[hidden]{display:none}

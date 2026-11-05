@@ -10,7 +10,7 @@ class Element{
 const controls=new Map();const context={document:{createElement:tag=>new Element(tag),getElementById:id=>{if(!controls.has(id))controls.set(id,new Element('div'));return controls.get(id)}},config:{data_root:'test'},readPreference:(k,d)=>d,writePreference:()=>{},acquisitionNumber:f=>Number(f.id.slice(1))};
 vm.createContext(context);let source=fs.readFileSync('web/acquisition-map.js','utf8');
 source=source.slice(0,source.indexOf(" byId('acquisition-map-open').onclick="))+`
- globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*';treeSnapshot=null;treeMasterId=ref},view:id=>{reference=data.files.find(f=>f.id===id)},parent:()=>parentImage()?.id,render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,parents:comparisonParents,crop:cropDetails,label:groupName,startMove:startPlacementMove,move:applyPlacementMove,finishMove:finishPlacementMove,location:f=>location(f),place:(f,ref,x,y)=>placements.set(placementKey(f,ref),{x,y}),clearMoves:()=>placements.clear()};})();`;
+ globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*';treeSnapshot=null;treeMasterId=ref},view:id=>{reference=data.files.find(f=>f.id===id)},parent:()=>parentImage()?.id,render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,outside:outsideReferenceFraction,parents:comparisonParents,crop:cropDetails,label:groupName,startMove:startPlacementMove,move:applyPlacementMove,finishMove:finishPlacementMove,location:f=>location(f),place:(f,ref,x,y)=>placements.set(placementKey(f,ref),{x,y}),clearMoves:()=>placements.clear()};})();`;
 vm.runInContext(source,context);
 controls.get('acquisition-list')||context.document.getElementById('acquisition-list');
 context.document.getElementById('acquisition-units').value=1000;
@@ -114,3 +114,13 @@ for(let i=1;i<cross.length;i++)assert.deepEqual(Array.from(context.test.location
 context.test.finishMove(move,false);
 for(let i=0;i<cross.length;i++)assert.deepEqual(Array.from(context.test.location(cross[i])),before[i]);
 console.log('Whole-batch translation includes off-tree members and cancels cleanly.');
+
+// Outside preview threshold is based on image area, not centre position.
+context.test.clearMoves();
+const boundary=[row('i301',8000),row('i302',1000,4),row('i303',1000,4.1),row('i304',1000,0),row('i305',0,4)];
+context.test.set(boundary,[{id:'a',reference_id:'i301',members:boundary.map(f=>f.id)}],'i301');
+assert.equal(context.test.outside(boundary[1]),.5);
+assert.ok(Math.abs(context.test.outside(boundary[2])-.6)<1e-10);
+assert.equal(context.test.outside(boundary[3]),0);
+assert.equal(context.test.outside(boundary[4]),0);
+console.log('Outside preview uses calibrated footprint overlap.');
