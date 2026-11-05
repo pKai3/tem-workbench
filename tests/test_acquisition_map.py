@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from acquisition_map import MetadataIndex, describe, stage_position, reference_crop
+from acquisition_map import MetadataIndex, describe, stage_position, reference_crop, acquisition_batches
 from io import BytesIO
 import numpy as np
 from PIL import Image
@@ -56,6 +56,40 @@ class AcquisitionMetadata(unittest.TestCase):
             path.write_bytes(b'changed')
             index.read(path, reader)
             self.assertEqual(len(calls), 2)
+
+class AcquisitionBatches(unittest.TestCase):
+    @staticmethod
+    def row(n, alpha=0., beta=0., folder='ST', date='2026-10-01', width=100):
+        name=f'1MX_OneView_ST_{n}'
+        return dict(id=f'{folder}/{date}/{name}', name=name, folder=folder, date=date,
+                    stage_position=dict(x=1., y=2., alpha=alpha, beta=beta),
+                    field_nm=[width, width] if width else None)
+
+    def test_consecutive_equal_tilts_and_widest_reference(self):
+        rows=[self.row(3),self.row(1),self.row(2,width=500)]
+        groups=acquisition_batches(rows)
+        self.assertEqual(len(groups),1)
+        self.assertEqual(groups[0]['members'],[rows[1]['id'],rows[2]['id'],rows[0]['id']])
+        self.assertEqual(groups[0]['reference_id'],rows[2]['id'])
+        self.assertTrue(all(r['acquisition_batch']==groups[0]['id'] for r in rows))
+
+    def test_changes_gaps_missing_tilts_and_return_to_old_tilt_do_not_bridge(self):
+        rows=[self.row(1), self.row(2), self.row(3,alpha=1), self.row(4),
+              self.row(6), self.row(7,beta=None), self.row(8,beta=None),
+              self.row(9), self.row(10,beta=.000001)]
+        self.assertEqual([len(g['members']) for g in acquisition_batches(rows)],[2,1,1,1,1,1,1,1])
+
+    def test_folder_date_duplicates_and_unnumbered_are_separate(self):
+        a=self.row(1);duplicate=dict(a,id=a['id']+'copy')
+        rows=[a,duplicate,self.row(2),self.row(3,folder='STA'),self.row(4,date='other'),
+              dict(self.row(5),name='overview'),dict(self.row(6),name='no number')]
+        self.assertEqual(len(acquisition_batches(rows)),len(rows))
+
+    def test_diffraction_sequence_is_retained_without_becoming_reference(self):
+        rows=[self.row(1), self.row(2,width=None), self.row(3,width=500)]
+        group=acquisition_batches(rows)[0]
+        self.assertEqual(len(group['members']),3)
+        self.assertEqual(group['reference_id'],rows[2]['id'])
 
 class ReferenceCrop(unittest.TestCase):
     def setUp(self):

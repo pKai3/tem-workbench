@@ -12,7 +12,7 @@ import json
 import time
 import os
 import folder_paths
-from acquisition_map import MetadataIndex, stage_position, reference_crop, LENGTH_NM
+from acquisition_map import acquisition_batches, MetadataIndex, stage_position, reference_crop, LENGTH_NM
 from preview_files import sidecar_path
 import zlib
 import numpy as np
@@ -164,7 +164,7 @@ class Engine:
                 rows.append({**entry, **info, 'folder': str(Path(entry['id']).parent)})
             except Exception as exc:
                 errors.append({'name': entry['name'], 'error': str(exc)})
-        return {'sample': current['sample'], 'files': rows, 'errors': errors,
+        return {'sample': current['sample'], 'files': rows, 'batches': acquisition_batches(rows), 'errors': errors,
                 'stage_units': None}
 
     def acquisition_reference_crop(self, file_id, bounds):
