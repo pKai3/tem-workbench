@@ -1,5 +1,5 @@
-# TEM Workbench 1.0.12
+# TEM Workbench 1.0.13
 
-- Reuse unchanged Mac launcher assets during updates
+- Group acquisition maps by consecutive matching stage tilts
 
 Use **Check for updates → Install update and restart**.
