@@ -1,5 +1,5 @@
-# TEM Workbench 1.0.11
+# TEM Workbench 1.0.12
 
-- Log grid worker startup and stalled progress
+- Reuse unchanged Mac launcher assets during updates
 
 Use **Check for updates → Install update and restart**.
