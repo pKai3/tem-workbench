@@ -1,4 +1,4 @@
-# TEM Workbench — pending release
+# TEM Workbench 1.0.24
 
 - Keep Hann window and Remove mean beside the FFT processing heading.
 - Place the scale-fitting selector inline with its heading and use consistent compact processing headings.
