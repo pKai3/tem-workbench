@@ -1,5 +1,5 @@
-# TEM Workbench 1.0.18
+# TEM Workbench 1.0.19
 
-- Make acquisition hover previews standard without a toggle
+- Nest acquisition footprints and group coincident captures
 
 Use **Check for updates → Install update and restart**.
