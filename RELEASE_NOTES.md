@@ -1,5 +1,6 @@
-# TEM Workbench 1.0.14
+# TEM Workbench 1.0.15
 
-- Fix Windows desktop grid workers blocked by control input pipe
+- Record Windows control-pipe fix release validation [skip ci]
+- Show running backend version and fit full acquisition map extent
 
 Use **Check for updates → Install update and restart**.
