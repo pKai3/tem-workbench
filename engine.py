@@ -22,6 +22,7 @@ import scale_fitting
 import phase_comparison
 import demo_data
 import peak_evidence
+import forbidden_reflections
 import diffraction
 import raster_images
 from materials import scale_bounds, PHASES, reference_settings
@@ -59,7 +60,7 @@ class Engine:
         self.auto_templates = self.templates
         self._template_cache = {(10., 3., .295, .468, .330, .417, .3, .4, .5, .85, 1.15): self.templates}
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'orthorhombic.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'forbidden_reflections.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'orthorhombic.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
         self.acquisition_index = MetadataIndex()
@@ -448,6 +449,7 @@ class Engine:
                     'trials': attempts if auto_strength else [],
                 }
         tol = max(.10, core.peak_width(s))
+        forbidden_reflections.annotate(models, s, tol, settings['g_min'], settings['g_max'])
         classification = self.classify(s, models, settings, width_nm, height_nm, can_index)
         periodicity = selected_geometry if selected_geometry is not None else (core.purity(s['peaks'], tol, g_max=settings['g_max'], g_min=settings['g_min']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False})
         log = s.pop('log')
@@ -595,6 +597,7 @@ class Engine:
             settings['ca_penalty_strength'] = ca_penalty_strength
         candidates = self.cached_models(result, settings)
         models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
+        forbidden_reflections.annotate(models, result['spectrum'], max(.10, core.peak_width(result['spectrum'])), settings['g_min'], settings['g_max'])
         classification = self.classify(result['spectrum'], models, settings,
                                        result['width_nm'], result['height_nm'])
         return {**result, 'settings': settings, 'models': models, 'classification': classification}

@@ -810,6 +810,37 @@ function drawFittingBand(qp){
  }
  $('fft-overlay').prepend(group);
 }
+// Diagnostic markers only: never add observations or change candidate scoring.
+function drawForbiddenReflections(fits,qp){
+ const host=$('forbidden-list'),details=$('forbidden-details');host.replaceChildren();
+ const models=[...new Set(fits.filter(f=>!f.geometry).map(f=>f.model))];
+ details.hidden=!models.length;
+ for(const model of models){
+  const report=model.forbidden_reflections,section=document.createElement('div');section.className='forbidden-fit';
+  const heading=document.createElement('strong');heading.textContent=`${model.phase} ${zoneLabel(model)}`;heading.style.color=phaseColors[model.phase];section.append(heading);
+  const status=document.createElement('p');
+  if(!report)status.textContent='Reanalyse to check forbidden positions.';
+  else if(report.status==='not_applicable')status.textContent='No absence rules for generic primitive orthorhombic.';
+  else if(report.status==='unavailable')status.textContent='Not enough fitted directions to check forbidden positions.';
+  else{
+   status.textContent=`${report.profile_count} independent profile${report.profile_count===1?'':'s'} near forbidden positions${report.status==='partial'?' · partial check':''}.`;
+   status.title=`${report.rule}. Search radius ${report.search_radius_nm_inv.toFixed(3)} nm⁻¹. Already matched allowed profiles are excluded. Not used in rank or acceptance.`;
+   const rule=document.createElement('p');rule.textContent=report.rule;section.append(rule);
+   const list=document.createElement('ul'),listed=new Set();
+   for(const hit of report.hits){
+    const plane=planeLabel(model,hit.hkl),label=`${model.phase} ${plane} · profile ${hit.profile_id} · offset ${hit.residual_nm_inv.toFixed(3)} nm⁻¹`;
+    // Conjugates are one profile; retain both actual observed positions on the image.
+    if(!listed.has(hit.profile_id)){const row=document.createElement('li');row.textContent=label;list.append(row);listed.add(hit.profile_id)}
+    if(!$('show-forbidden').checked)continue;
+    const[x,y]=qp(...hit.observed_q);if(x<0||x>420||y<0||y>420)continue;
+    const shape=markerShape(x,y,'triangle',{stroke:'#ffbd69','stroke-width':1.4,fill:'none','data-marker-kind':'forbidden','data-marker-phase':model.phase},10);
+    shape.removeAttribute('class');shape.append(el('title',{},`${label} · ${report.rule} · diagnostic only`));$('fft-overlay').append(shape);
+   }
+   section.append(list);
+  }
+  section.append(status);host.append(section);
+ }
+}
 function drawFFT(){
  hideSpectrumHover();
  if(!result||!fftRaw)return;
@@ -846,6 +877,7 @@ for(const f of fits){
   }
  }
 }
+ drawForbiddenReflections(fits,qp);
  drawReflectionVectors(qp);
  if(result.image_kind==='diffraction')drawDetectorExclusions(qp);
  renderSpectrumLegend();syncFFTZoom();drawSnapOverlays();
@@ -866,6 +898,8 @@ function renderSpectrumLegend(){
    const labelStyle=dash==='5 3'?'Weak match':dash==='2 2'?'Below screen':dash==='1 3'?'No assigned peak':geometry?'Passing geometry':'Strong match · passing fit';
    add(styles,labelStyle,labelStyle,'line',{'stroke-dasharray':dash||''},dash==='5 3'?'A weak maximum is assigned. Long dashes take precedence whether the candidate passes or fails the screen.':dash==='1 3'?'Passing candidate, but no strong or qualifying weak peak is assigned at this position.':geometry?'Geometry-only fit; no crystal phase is assigned.':'');
    if(node.getAttribute('opacity')==='.35'||Number(node.getAttribute('opacity'))===.35)add(styles,'unchecked','Not assessable','line',{opacity:.35},'Faint predictions cannot be checked reliably; they are not evidence of a missing reflection.');
+  }else if(kind==='forbidden'){
+   add(identities,'forbidden','Near forbidden position','triangle',{stroke},'Measured profile near a nominal absence of a displayed fit. Diagnostic only; not used in rank or phase acceptance.');
   }else{
    const manual=node.getAttribute('data-manual-peak')==='true';
    const label=kind==='weak'?'Weak maximum':manual?'Manual peak':'Detected peak';
@@ -965,6 +999,8 @@ $('reset-phase-colors').onclick=()=>{
  const previous=[...enabledPhases];Object.assign(phaseColorChoices,PHASE_DEFAULT_COLORS);
  setPhaseSelection(config?.phase_selection?materialPhases():PHASES);finishPhaseChange(previous);
 };
+$('show-forbidden').checked=readPreference('tem-show-forbidden',true)!==false;
+$('show-forbidden').onchange=()=>{writePreference('tem-show-forbidden',$('show-forbidden').checked);drawFFT()};
 const savedMarkerStyles=readPreference('tem-marker-styles',{});
 for(const [id,fallback]of Object.entries({'hcp-marker':'diamond','bcc-marker':'diamond','fcc-marker':'diamond','ort-marker':'diamond','primary-geometry-marker':'square','secondary-geometry-marker':'square','weak-marker':'dot'})){
  const choices=id==='weak-marker'?[...MARKER_SHAPES,'follow','dot']:MARKER_SHAPES;

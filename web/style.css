@@ -552,3 +552,15 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .placement-layout #acquisition-align-preview:not([hidden]){margin-top:8px;gap:8px}
 .placement-layout #acquisition-align-image{width:56px;height:56px;flex:none}
 .placement-layout #acquisition-placement-status{margin:6px 0 0}
+
+/* Keep the FFT inputs, per-image limits and window switches on two rows. */
+#fft-entry-second{grid-template-columns:repeat(4,minmax(0,1fr)) max-content max-content}
+#fft-entry-second .fitting-override-actions{grid-column:auto}
+#fft-entry-second .fft-window-checks{order:1}
+@media(max-width:1000px){
+ #fft-entry-second{grid-template-columns:repeat(3,minmax(0,1fr))}
+ #fft-entry-second .fitting-override-actions{grid-column:span 2}
+}
+@media(max-width:480px){#fft-entry-second{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.forbidden-fit{margin:8px 0}.forbidden-fit p{margin:4px 0;font-size:12px}
+.forbidden-fit ul{margin:4px 0;padding-left:20px;font-size:12px}

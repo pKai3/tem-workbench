@@ -3,6 +3,7 @@
  const byId=id=>document.getElementById(id), dialog=byId('acquisition-map'), svg=byId('acquisition-canvas');
  const node=(name,attrs={},text)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',name);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;return n};
  let data=null, originId='', selectedFolder='', visible=[], reference=null, view=null, busy=false, drag=null, moved=false, request=0;
+ const moveHistory=[];
  const previews=new Map(), hoverCache=new Map(), rotations=new Map(), placements=new Map(), decoded=new Map();
  let adjust=false,adjustId="",zoomOutLimit=Infinity, batchId="", scopedBatches=[];
  const selectionKey=(sample=null)=>`tem-acquisition-selection:${JSON.stringify([config.data_root,sample])}`;
@@ -112,6 +113,7 @@
   reset.disabled=!manual;reset.textContent=f?`Reset ${number(f)}`:'Reset placement';
   reset.title=manual?`Reset saved placement of ${f.name}`:f?`${f.name} has no saved movement in this view`:'Hover an image on the map or tree to select its placement';
   byId('acquisition-placement-status').textContent=manual?`Manually placed · X ${fmt(manual.x)} µm, Y ${fmt(manual.y)} µm from reference centre (right/down). Saved on release.`:'Drag a footprint to place it; changes are remembered for this reference.';
+  syncUndo();
   svg.classList.toggle('adjusting',adjust);
   if(adjust&&f)preview(f.id);
  }
@@ -146,6 +148,7 @@
   return decoded.get(id);
  }
  function showComparison(f,e,live=false){
+  if(adjust||drag){hideHover();return}
   const parents=comparisonParents(f),ticket=++hoverTicket,ref=parents[0]||reference,detail=cropDetails(f,ref);
   const wasHidden=card.hidden;card.hidden=false;
   const peers=footprintPeers(f);
@@ -466,6 +469,7 @@
  }
  async function loadSample(seedId,opening=false){
   const ticket=++request;
+  moveHistory.length=0;syncUndo();
   busy=true;treeSnapshot=null;treeMasterId=null;batchId='';scopedBatches=[];hideHover();drag=null;moved=false;adjustId='';
   data=null;view=null;reference=null;visible=[];
   for(const id of ['acquisition-folder','acquisition-date','acquisition-reference','acquisition-batch','acquisition-align-batch','acquisition-list','acquisition-error-list'])byId(id).replaceChildren();
@@ -512,7 +516,36 @@
    }
   }
  }
- function finishPlacementMove(move,save){for(const [key,prior] of move.changes){if(save)writePreference(key,placements.get(key));else placements.set(key,prior)}}
+ function syncUndo(){const button=byId('acquisition-undo-move');button.disabled=!moveHistory.length||!!drag;}
+ function finishPlacementMove(move,save){
+  const changed=new Map([...move.changes].filter(([key,prior])=>JSON.stringify(prior)!==JSON.stringify(placements.get(key))));
+  for(const [key,prior] of move.changes){if(save)writePreference(key,placements.get(key));else placements.set(key,prior)}
+  if(save&&changed.size){moveHistory.push(changed);if(moveHistory.length>50)moveHistory.shift()}
+  syncUndo();
+ }
+ function undoPlacementMove(){
+  if(drag||!moveHistory.length)return;
+  for(const [key,prior] of moveHistory.pop()){placements.set(key,prior);writePreference(key,prior)}
+  hideHover();treeSnapshot=null;update(false);syncUndo();
+ }
+ // Edge picking ignores SVG paint order. Use screen pixels so zoom cannot shrink the grab area.
+ function boundaryTarget(p,screenScale=1){
+  let best=null,distance=9,area=Infinity;
+  for(const f of adjustable()){
+   const [x,y]=location(f),[w,h]=f.field_nm.map(v=>v/1000);
+   const left=(x-w/2-view.x)*800/view.w,top=(y-h/2-view.y)*620/view.h;
+   const right=left+w*800/view.w,bottom=top+h*620/view.h;
+   const dx=Math.max(left-p.x,0,p.x-right),dy=Math.max(top-p.y,0,p.y-bottom);
+   const inside=dx===0&&dy===0;
+   const d=(inside?Math.min(p.x-left,right-p.x,p.y-top,bottom-p.y):Math.hypot(dx,dy))*screenScale;
+   if(d<distance-1e-6||(Math.abs(d-distance)<1e-6&&w*h<area)){best=f;distance=d;area=w*h}
+  }
+  return best;
+ }
+ function pointerImage(e,p){
+  const matrix=svg.getScreenCTM(),edge=adjust&&boundaryTarget(p,Math.hypot(matrix.a,matrix.b));
+  return edge||visible.find(f=>f.id===e.target.closest('[data-image-id]')?.getAttribute('data-image-id'));
+ }
  byId('acquisition-map-open').onclick=()=>{
   if(!fileId)return;
   originId=fileId;
@@ -525,6 +558,11 @@
   const seed=config.files.find(f=>f.sample===byId('acquisition-sample').value);
   if(seed)return loadSample(seed.id);
  };
+ byId('acquisition-undo-move').onclick=undoPlacementMove;
+ dialog.addEventListener('keydown',e=>{
+  if(!dialog.open||e.defaultPrevented||e.shiftKey||e.altKey||!(e.metaKey||e.ctrlKey)||e.key.toLowerCase()!=='z'||e.target.closest('input,textarea,[contenteditable="true"]'))return;
+  if(moveHistory.length&&!drag){e.preventDefault();e.stopPropagation();undoPlacementMove()}
+ });
  byId('acquisition-map-close').onclick=()=>dialog.close();
  dialog.addEventListener('close',()=>{++request;busy=false;hideHover()});
  byId('acquisition-back').onclick=()=>{const parent=parentImage();if(parent){moved=false;selectReference(parent)}};
@@ -543,7 +581,7 @@
  byId('acquisition-reference').onchange=()=>{treeSnapshot=null;treeMasterId=null;update(false);fit(true)};
  byId('acquisition-rotation').onchange=rememberRotation;
  for(const id of ['acquisition-units','acquisition-flip-x','acquisition-flip-y'])byId(id).onchange=()=>{treeSnapshot=null;treeMasterId=null;update()};
- byId('acquisition-adjust').onchange=()=>{adjust=byId('acquisition-adjust').checked;hideHover();syncAdjustment();draw()};
+ byId('acquisition-adjust').onchange=()=>{adjust=byId('acquisition-adjust').checked;svg.style.cursor='';hideHover();syncAdjustment();draw()};
  byId('acquisition-reset-placement').onclick=()=>{const f=visible.find(f=>f.id===adjustId);if(!f)return;const key=placementKey(f,placementReference(f));placements.set(key,null);writePreference(key,null);hideHover();update(false)};
  byId('acquisition-fit').onclick=()=>fit(false);byId('acquisition-overview').onclick=()=>fit(true);
  function zoom(factor,px=400,py=310){if(!view||drag)return;hideHover();zoomOutLimit=(fittedView()?.w||view.w)*2;factor=Math.max(1e-7/view.w,Math.min(factor,zoomOutLimit/view.w));if(factor===1)return;view.x+=px/800*view.w*(1-factor);view.y+=py/620*view.h*(1-factor);view.w*=factor;view.h*=factor;draw()}
@@ -553,27 +591,32 @@
  svg.addEventListener('wheel',e=>{e.preventDefault();const p=point(e);zoom(e.deltaY>0?Math.sqrt(1.15):1/Math.sqrt(1.15),p.x,p.y)},{passive:false});
  svg.onpointerdown=e=>{
   if(!view||e.button!==0)return;hideHover();moved=false;const p=point(e);
-  const id=e.target.closest('[data-image-id]')?.getAttribute('data-image-id');let f=visible.find(f=>f.id===id);
+  const f=pointerImage(e,p);
   if(adjust&&f&&f.id!==reference.id&&field(f)){
    adjustId=f.id;const [x,y]=location(f);drag={x:p.x,y:p.y,view:{...view},image:f,start:{x,y},move:startPlacementMove(f,byId('acquisition-move-scope').value==='children',byId('acquisition-move-scope').value==='batch')};
-   syncAdjustment();if(byId('acquisition-move-scope').value!=='batch')showComparison(f,e,true);
+   syncAdjustment();
   }else drag={x:p.x,y:p.y,view:{...view}};
   if(drag.image)svg.setPointerCapture(e.pointerId);
  };
  svg.onpointermove=e=>{
-  if(!drag)return;const p=point(e),dx=p.x-drag.x,dy=p.y-drag.y;
+  const p=point(e);
+  if(!drag){
+   if(adjust){const f=pointerImage(e,p);if(f&&f.id!==reference.id&&field(f)){selectPlacementTarget(f);highlight(footprintPeers(f));svg.style.cursor='move'}else{highlight();svg.style.cursor=''}}
+   return;
+  }
+  const dx=p.x-drag.x,dy=p.y-drag.y;
   if(Math.hypot(dx,dy)>4||moved){
    moved=true;
-   if(drag.image){applyPlacementMove(drag.move,dx/800*drag.view.w,dy/620*drag.view.h);draw();if(byId('acquisition-move-scope').value!=='batch')showComparison(drag.image,e,true)}
+   if(drag.image){applyPlacementMove(drag.move,dx/800*drag.view.w,dy/620*drag.view.h);draw()}
    else{view.x=drag.view.x-dx/800*drag.view.w;view.y=drag.view.y-dy/620*drag.view.h;draw()}
   }
  };
  svg.onpointerup=e=>{
   const done=drag;drag=null;
   if(svg.hasPointerCapture(e.pointerId))svg.releasePointerCapture(e.pointerId);
-  if(done?.image){finishPlacementMove(done.move,moved);update(false);showComparison(done.image,e);}
+  if(done?.image){finishPlacementMove(done.move,moved);update(false);hideHover();}
  };
  svg.onpointercancel=e=>{if(drag?.image)finishPlacementMove(drag.move,false);drag=null;hideHover();syncAdjustment();draw()};
  window.addEventListener('pointerup',()=>{if(drag&&!drag.image)drag=null});
- svg.onpointerleave=()=>{if(drag&&!drag.image)drag=null;if(!drag)hideHover()};
+ svg.onpointerleave=()=>{if(drag&&!drag.image)drag=null;if(!drag){hideHover();svg.style.cursor=''}};
 })();

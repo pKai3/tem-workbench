@@ -72,8 +72,8 @@ class FalloffTests(unittest.TestCase):
 
     def test_cached_rescore_preserves_observations_and_settings(self):
         engine = Engine.__new__(Engine)
-        result = dict(settings=dict(scale_mode='fixed', peak_evidence_weight=.5),
-                      spectrum={'peaks': [{'qx': 3, 'qy': 0}]}, width_nm=5, height_nm=5,
+        result = dict(settings=dict(scale_mode='fixed', peak_evidence_weight=.5, g_min=2.5, g_max=10),
+                      spectrum={'df': .2, 'peaks': [{'profile_id': 0, 'qx': 3, 'qy': 0}]}, width_nm=5, height_nm=5,
                       _fit_cache=zlib.compress(json.dumps([model()]).encode()))
         original = copy.deepcopy(result)
         with patch('engine.core.retain', side_effect=lambda ms: ms), patch.object(engine, 'classify', return_value={}):

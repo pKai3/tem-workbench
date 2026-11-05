@@ -14,7 +14,10 @@ source=source.slice(0,source.indexOf(" byId('acquisition-map-open').onclick="))+
  remember:rememberSelection,restore:(sample,current=null,opening=false)=>{data.sample=sample;restoreSelection(current,opening)},seed:openingSeed,
  selection:()=>({folder:selectedFolder,batch:batchId}),
  updateSelection:()=>{renderImageTree=()=>{};navigation=()=>{};syncAdjustment=()=>{};preview=()=>{};fit=()=>{};draw=()=>{};update()},
- reference:()=>reference?.id};})();`;
+ reference:()=>reference?.id,
+ undo:()=>{update=()=>{};undoPlacementMove()},history:()=>moveHistory.length,
+ boundary:(p,scale=1)=>boundaryTarget(p,scale)?.id,
+ setView:v=>{view=v}};})();`;
 vm.runInContext(source,context);
 controls.get('acquisition-list')||context.document.getElementById('acquisition-list');
 context.document.getElementById('acquisition-units').value=1000;
@@ -205,3 +208,29 @@ assert.deepEqual(Array.from(context.test.parents(shifted[3],'all'),f=>f.id),['i1
 context.test.view('i1188');
 assert.equal(context.test.tree().roots.length,1,'another view recalculates its own saved placements');
 console.log('Tree follows visible saved placements while preserving origin-only navigation.');
+
+// Picking uses footprint edges rather than whichever filled SVG was painted last.
+context.test.clearMoves();
+const edgeFiles=[row('i901',8000),row('i902',4000),row('i903',1000)];
+context.test.set(edgeFiles,[{id:'a',reference_id:'i901',members:edgeFiles.map(f=>f.id)}],'i901');
+context.test.setView({x:-4,y:-3.1,w:8,h:6.2});
+assert.equal(context.test.boundary({x:350,y:310}),'i903');
+assert.equal(context.test.boundary({x:342,y:310}),'i903','grab outside edge');
+assert.equal(context.test.boundary({x:340,y:310}),undefined);
+assert.equal(context.test.boundary({x:345,y:310},2),undefined,'9 CSS-pixel threshold respects SVG scale');
+assert.equal(context.test.boundary({x:400,y:310}),undefined,'interior is not an edge');
+const edgeBefore=edgeFiles.map(f=>Array.from(context.test.location(f)));
+const historyBefore=context.test.history();
+move=context.test.startMove(edgeFiles[1],true);context.test.move(move,1,2);context.test.finishMove(move,true);
+assert.equal(context.test.history(),historyBefore+1);
+assert.deepEqual(Array.from(context.test.location(edgeFiles[2])),[1,2]);
+context.test.undo();
+assert.deepEqual(edgeFiles.map(f=>Array.from(context.test.location(f))),edgeBefore);
+assert.equal(context.test.history(),historyBefore);
+const key='tem-acquisition-placement:'+JSON.stringify(['test','i901','i903']);
+assert.equal(saved.get(key),null,'undo persists removal of new override');
+move=context.test.startMove(edgeFiles[1],true);context.test.move(move,1,2);context.test.finishMove(move,false);
+assert.equal(context.test.history(),historyBefore,'cancel creates no undo entry');
+move=context.test.startMove(edgeFiles[1],true);context.test.finishMove(move,true);
+assert.equal(context.test.history(),historyBefore,'click creates no undo entry');
+console.log('Acquisition edge selection and atomic persisted move undo passed.');
