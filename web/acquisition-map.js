@@ -22,7 +22,7 @@
   if(!Number.isFinite(value)){restoreRotation();return}
   rotations.set(rotationKey(),value);writePreference(rotationKey(),value);update(false);
  }
- let history=[], compare=false, hoverTimer=0, hoverTicket=0;
+ let history=[], compare=true, hoverTimer=0, hoverTicket=0;
  const card=byId('acquisition-hover');
  function hideHover(){clearTimeout(hoverTimer);hoverTicket++;card.hidden=true}
  function positionCard(e){
@@ -142,6 +142,48 @@
  function options(select,rows,value){select.replaceChildren();for(const [id,label] of rows){const o=document.createElement('option');o.value=id;o.textContent=label;select.append(o)}if(rows.some(r=>r[0]===value))select.value=value}
  function openImage(f){if(moved)return;dialog.close();clearFileSearch();byId('file').value=f.id;openFile()}
  function title(f){const p=f.stage_position;return `${f.name}\n${f.folder}\n${f.date} ${f.time}\nStage X ${coord(p.x)}, Y ${coord(p.y)} (raw); α ${coord(p.alpha)}, β ${coord(p.beta)}\n${field(f)?f.field_nm.map(fmt).join(' × ')+' nm':'No real-space footprint'}`}
+ const treeExpanded=new Map();
+ function renderImageTree(){
+  const list=byId('acquisition-list');list.replaceChildren();
+  const sorted=files=>[...files].sort((a,b)=>acquisitionNumber(a)-acquisitionNumber(b)||a.name.localeCompare(b.name));
+  function imageEntry(f,label=''){
+   const entry=document.createElement('div');entry.className='acquisition-entry';
+   if(f.id===reference?.id)entry.classList.add('acquisition-tree-reference');
+   const b=document.createElement('button');b.type='button';b.textContent=f.name;
+   b.title=title(f);b.setAttribute('aria-current',String(f.id===reference?.id));
+   const sub=document.createElement('small');
+   sub.textContent=[label,!location(f)?'Not placed':field(f)?`${fmt(f.field_nm[0])} nm wide`:'Point only'].filter(Boolean).join(' · ');
+   b.append(sub);b.onclick=()=>{moved=false;chooseImage(f)};bindHover(b,f);
+   const open=document.createElement('button');open.type='button';open.textContent='Open';open.title='Open for analysis';open.setAttribute('aria-label',`Open ${f.name} for analysis`);open.onclick=()=>{moved=false;openImage(f)};
+   entry.append(b,open);return entry;
+  }
+  const leaf=(f,label='')=>{const li=document.createElement('li');li.append(imageEntry(f,label));return li};
+  function children(parent,items,key,label){
+   if(!items.length)return;
+   const details=document.createElement('details');details.className='acquisition-tree-branch';
+   details.open=treeExpanded.get(key)??true;
+   details.addEventListener('toggle',()=>treeExpanded.set(key,details.open));
+   const summary=document.createElement('summary');summary.textContent=label;
+   const ul=document.createElement('ul');ul.append(...items);details.append(summary,ul);parent.append(details);
+  }
+  const root=document.createElement('ul');root.className='acquisition-tree';
+  const own=sorted(visible.filter(f=>f.id!==reference?.id&&f.acquisition_batch===reference?.acquisition_batch)).map(f=>leaf(f));
+  const branches=[];
+  for(const batch of scopedBatches){
+   if(batch.id===reference?.acquisition_batch)continue;
+   const members=sorted(visible.filter(f=>f.acquisition_batch===batch.id));if(!members.length)continue;
+   const anchor=batchReference(batch),shownAnchor=members.find(f=>f.id===anchor?.id);
+   const li=shownAnchor?leaf(shownAnchor,'Batch reference'):document.createElement('li');
+   if(!shownAnchor){const label=document.createElement('span');label.className='acquisition-tree-label';label.textContent='No calibrated batch reference';li.append(label)}
+   children(li,members.filter(f=>f.id!==shownAnchor?.id).map(f=>leaf(f)),`${reference?.id}:${batch.id}`,batchLabel(batch));
+   branches.push(li);
+  }
+  if(reference){
+   const top=leaf(reference,batchId==='*'?'Master image':'Reference image');
+   children(top,[...own,...branches],`${reference.id}:root:${batchId}`,batchId==='*'?'Images and batch references':'Images in this batch');root.append(top);
+  }else root.append(...branches);
+  list.append(root);
+ }
  function update(reset=true){
   if(!data)return;hideHover();
   const date=byId('acquisition-date').value;
@@ -164,15 +206,7 @@
   restoreRotation();
   const placed=visible.filter(f=>location(f));
   byId('acquisition-status').textContent=!data.batches?'Restart TEM Workbench to enable tilt batches.':`${data.sample} · ${scopedBatches.length} batches · ${placed.length}/${visible.length} images placed${batchId==='*'?' · Unaligned batches stay off the map until placed.':' · Matching tilts permit a stage estimate; verify alignment.'}`;
-  const list=byId('acquisition-list');list.replaceChildren();
-  for(const f of [...visible].sort((a,b)=>acquisitionNumber(a)-acquisitionNumber(b)||a.name.localeCompare(b.name))){
-   const b=document.createElement('button');b.type='button';b.textContent=f.name;b.title=title(f);b.setAttribute('aria-current',String(f.id===originId));
-   const sub=document.createElement('small');sub.textContent=!location(f)?'Not placed · align its batch reference first':positioned(f)?`X ${coord(f.stage_position.x)}, Y ${coord(f.stage_position.y)} · ${field(f)?fmt(f.field_nm[0])+' nm wide':'point only'}`:'Stage position unavailable';b.append(sub);b.onclick=()=>{moved=false;chooseImage(f)};
-   bindHover(b,f);b.title='Use as reference: '+f.name;
-   const entry=document.createElement('div');entry.className='acquisition-entry';
-   const open=document.createElement('button');open.type='button';open.textContent='Open';open.setAttribute('aria-label',`Open ${f.name} for analysis`);open.onclick=()=>{moved=false;openImage(f)};
-   entry.append(b,open);list.append(entry);
-  }
+  renderImageTree();
   navigation();syncAdjustment();
   if(reference&&field(reference))preview(reference.id);
   if(reset)fit(false);else draw();
