@@ -43,6 +43,8 @@ from preview_files import PreviewBatch, sidecar_path
 from workbench_project import Project
 
 ROOT = Path(__file__).resolve().parent
+# Capture at import: updating files must not relabel an already running backend.
+APP_VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip() if (ROOT / 'VERSION').is_file() else 'development'
 LOG = logging.getLogger('tem_workbench')
 GRID_WAIT_LOG_SECONDS = 10
 
@@ -99,7 +101,7 @@ class Workbench:
         return item, result
 
     def config_info(self):
-        return {'window_size_probe': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'app_version': APP_VERSION, 'window_size_probe': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -816,8 +818,7 @@ def main(argv=None, desktop_ready=None):
     args=parser.parse_args(argv)
     started = time.perf_counter()
     log_runtime_info()
-    version_file = ROOT / 'VERSION'
-    LOG.info('Application version: %s', version_file.read_text().strip() if version_file.is_file() else 'development')
+    LOG.info('Application version: %s', APP_VERSION)
     # Native launchers use terminate; allow orderly worker/mmap cleanup on POSIX.
     if hasattr(signal, 'SIGTERM'):
         def stop_backend(*_):

@@ -485,3 +485,5 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .fitting-override-actions button{grid-row:2;height:32px}
 .fitting-override-actions .hint{grid-column:1/-1;grid-row:1;min-width:0}
 .fitting-override-actions .hint:empty{display:none}
+
+.header-status{display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap;font-size:12px}#app-version{white-space:nowrap}

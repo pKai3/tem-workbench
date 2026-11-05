@@ -5,10 +5,14 @@ const document={getElementById(id){if(!controls.has(id))controls.set(id,{value:0
 const context={document,config:{data_root:'test'},readPreference:(k,d)=>saved.has(k)?saved.get(k):d};
 vm.createContext(context);
 let source=fs.readFileSync('web/acquisition-map.js','utf8');
+const zoomCode=source.slice(source.indexOf(' function zoom('),source.indexOf(" byId('acquisition-zoom-in').onclick="));
 source=source.slice(0,source.indexOf(" byId('acquisition-map-open').onclick="))+`
- globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};reference=files.find(f=>f.id===ref)},
+ ${zoomCode}
+ draw=()=>{};hideHover=()=>{};
+ globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;reference=files.find(f=>f.id===ref)},
  location:id=>location(data.files.find(f=>f.id===id)),
  place:(id,ref,value)=>{const f=data.files.find(f=>f.id===id),r=data.files.find(f=>f.id===ref);placements.set(placementKey(f,r),value)},
+ extent:()=>fittedView(),fitOverview:()=>fit(true),zoomOut:()=>zoom(1/.65),view:()=>view,
  clear:()=>placements.clear()};})();`;
 vm.runInContext(source,context);
 document.getElementById('acquisition-units').value=1000;
@@ -32,3 +36,15 @@ t.clear();saved.set('tem-acquisition-placement:'+JSON.stringify(['test','a','c']
 saved.set('tem-acquisition-rotation:'+JSON.stringify(['test','c']),90);
 assert.ok(Math.abs(location('d')[0]-.6)<1e-9);assert.ok(Math.abs(location('d')[1]-.7)<1e-9);
 console.log('Acquisition placements: batch isolation, rigid translation, local overrides, missing metadata and restored rotation passed.');
+
+// Fitting the small reference must not cap zoom-out before distant images fit.
+t.clear();saved.clear();t.set(files,groups,'a');t.place('c','a',{x:10,y:20});
+const extent=t.extent();t.fitOverview();
+assert.ok(extent.w>t.view().w*100);
+for(let i=0;i<30;i++)t.zoomOut();
+assert.ok(t.view().w>=extent.w);assert.ok(t.view().w<=extent.w*2+1e-9);
+// A newly moved batch extends the limit immediately, without requiring Fit all first.
+t.place('c','a',{x:100,y:200});const expanded=t.extent();
+for(let i=0;i<30;i++)t.zoomOut();
+assert.ok(t.view().w>=expanded.w);assert.ok(t.view().w<=expanded.w*2+1e-9);
+console.log('Acquisition zoom: reference view and moved placements retain access to full map extent.');

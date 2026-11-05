@@ -201,16 +201,22 @@
   const delta=local?[local.x,local.y]:stageOffset(f,anchor,Number(rotation)||0);
   return delta?[offset.x+delta[0],offset.y+delta[1]]:null;
  }
- function fit(overview){
-  if(!reference){view=null;draw();return}
+ // Apply the same level filter to fitting and drawing, before viewport clipping.
+ function mappedImages(){return visible.filter(f=>location(f)&&!(history.length&&field(f)&&field(reference)&&f.field_nm[0]*f.field_nm[1]>reference.field_nm[0]*reference.field_nm[1]*1.001))}
+ function fittedView(overview=false){
+  if(!reference)return null;
   let loX=Infinity,loY=Infinity,hiX=-Infinity,hiY=-Infinity;
-  for(const f of overview?[reference]:[reference,...visible.filter(f=>location(f))]){
+  for(const f of overview?[reference]:[reference,...mappedImages()]){
    const [x,y]=location(f),[w,h]=field(f)?f.field_nm.map(v=>v/1000):[0,0];
    loX=Math.min(loX,x-w/2);hiX=Math.max(hiX,x+w/2);loY=Math.min(loY,y-h/2);hiY=Math.max(hiY,y+h/2);
   }
   const width=Math.max(hiX-loX,(hiY-loY)*800/620,.01)*1.15;
-  zoomOutLimit=width*2;
-  view={x:(loX+hiX-width)/2,y:(loY+hiY-width*620/800)/2,w:width,h:width*620/800};draw();
+  return {x:(loX+hiX-width)/2,y:(loY+hiY-width*620/800)/2,w:width,h:width*620/800};
+ }
+ function fit(overview){
+  hideHover();view=fittedView(overview);
+  zoomOutLimit=(fittedView()?.w||0)*2;
+  draw();
  }
  function draw(){
   svg.replaceChildren();
@@ -222,11 +228,10 @@
    im.addEventListener('error',()=>{byId('acquisition-status').textContent+=' Overview preview unavailable.'},{once:true});svg.append(im);
    svg.append(node('rect',{x:sx(-w/2),y:sy(-h/2),width:w*800/view.w,height:h*620/view.h,fill:'none',stroke:'#fff','stroke-dasharray':'5 5'}));
   }
-  const placed=visible.filter(f=>location(f)).sort((a,b)=>adjust?(Number(a.id===adjustId)-Number(b.id===adjustId)||((b.field_nm?.[0]||0)-(a.field_nm?.[0]||0))):((b.field_nm?.[0]||0)-(a.field_nm?.[0]||0)));
+  const placed=mappedImages().sort((a,b)=>adjust?(Number(a.id===adjustId)-Number(b.id===adjustId)||((b.field_nm?.[0]||0)-(a.field_nm?.[0]||0))):((b.field_nm?.[0]||0)-(a.field_nm?.[0]||0)));
   const usedLabels=new Set();
   for(const f of placed){
    if(f.id===reference.id)continue;
-   if(history.length&&field(f)&&field(reference)&&f.field_nm[0]*f.field_nm[1]>reference.field_nm[0]*reference.field_nm[1]*1.001)continue;
    const [x,y]=location(f), px=sx(x),py=sy(y);const colour=f.id===originId?'#ff8197':field(f)?'#7abaff':'#ffc36b';
    const [w,h]=field(f)?f.field_nm.map(v=>v/1000):[0,0],pw=w*800/view.w,ph=h*620/view.h;
    if(px+pw/2<0||px-pw/2>800||py+ph/2<0||py-ph/2>620)continue;
@@ -307,7 +312,7 @@
  byId('acquisition-adjust-image').onchange=()=>{adjustId=byId('acquisition-adjust-image').value;hideHover();syncAdjustment();draw()};
  byId('acquisition-reset-placement').onclick=()=>{const f=visible.find(f=>f.id===adjustId);if(!f)return;placements.set(placementKey(f),null);writePreference(placementKey(f),null);hideHover();update(false)};
  byId('acquisition-fit').onclick=()=>fit(false);byId('acquisition-overview').onclick=()=>fit(true);
- function zoom(factor,px=400,py=310){if(!view||drag)return;hideHover();factor=Math.max(1e-7/view.w,Math.min(factor,zoomOutLimit/view.w));if(factor===1)return;view.x+=px/800*view.w*(1-factor);view.y+=py/620*view.h*(1-factor);view.w*=factor;view.h*=factor;draw()}
+ function zoom(factor,px=400,py=310){if(!view||drag)return;hideHover();zoomOutLimit=(fittedView()?.w||view.w)*2;factor=Math.max(1e-7/view.w,Math.min(factor,zoomOutLimit/view.w));if(factor===1)return;view.x+=px/800*view.w*(1-factor);view.y+=py/620*view.h*(1-factor);view.w*=factor;view.h*=factor;draw()}
  byId('acquisition-zoom-in').onclick=()=>zoom(.65);byId('acquisition-zoom-out').onclick=()=>zoom(1/.65);
  // Convert pointer coordinates through the SVG transform, including letterboxing.
  function point(e){return new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.getScreenCTM().inverse())}
