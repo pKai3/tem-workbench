@@ -1,4 +1,4 @@
-# TEM Workbench — acquisition map update
+# TEM Workbench 1.0.22
 
 - Keep the acquisition tree stable when navigating, with independent trees and an immediate-parent button.
 - Group coincident captures, label their acquisition numbers and detectors, and centre comparison crops beside stacked images.
