@@ -530,7 +530,7 @@ async function openFile(){
   if(isDiffraction())roi={x:0,y:0,w:info.width,h:info.height};
   else{const size=Math.min(info.width,info.height,Math.max(32,Math.round(preferredRegionNm/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size}}
   updateBox();renderSavedRegions();schedule(0);
-  message(isDiffraction()?'Direct diffraction: check the beam centre, mask the beam stop if needed, and inspect the spot fits.':'Drag the box to inspect a region, or run an automatic grid.');
+  message(isDiffraction()?'Direct diffraction: check the beam centre, mask the beam stop if needed, and inspect the spot fits.':'');
  }catch(e){if(version===sourceRequest){finishSpectrumLoading();syncSpectrumExportControls();message(e.message,true)}}
 }
 
