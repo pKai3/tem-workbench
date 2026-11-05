@@ -22,7 +22,7 @@
   if(!Number.isFinite(value)){restoreRotation();return}
   rotations.set(rotationKey(),value);writePreference(rotationKey(),value);update(false);
  }
- let history=[], hoverTimer=0, hoverTicket=0;
+ let treeSnapshot=null, treeMasterId=null, hoverTimer=0, hoverTicket=0;
  const card=byId('acquisition-hover');
  let highlighted=[];
  function highlight(files=[]){
@@ -57,8 +57,8 @@
   if(!placements.has(key)){const saved=readPreference(key,null);placements.set(key,saved&&Number.isFinite(saved.x)&&Number.isFinite(saved.y)?saved:null)}
   return placements.get(key);
  }
- function adjustable(){return visible.filter(f=>field(f)&&f.id!==reference?.id&&location(f)&&
-   (batchId!=='*'||f.acquisition_batch===reference?.acquisition_batch||batchOf(f)?.reference_id===f.id))}
+ function adjustable(){return visible.filter(f=>field(f)&&f.id!==reference?.id&&location(f))}
+ function placementReference(f){return f.acquisition_batch===reference?.acquisition_batch||batchOf(f)?.reference_id===f.id?reference:batchReference(batchOf(f))}
  function syncBatchAlignment(){
   const all=batchId==='*';
   byId('acquisition-align-label').hidden=!all;byId('acquisition-place-batch').hidden=!all;
@@ -72,7 +72,7 @@
  function syncAdjustment(){
   options(byId('acquisition-adjust-image'),adjustable().map(f=>[f.id,f.name]),adjustId);
   adjustId=byId('acquisition-adjust-image').value;
-  const f=visible.find(f=>f.id===adjustId),manual=f&&placement(f);
+  const f=visible.find(f=>f.id===adjustId),manual=f&&placement(f,placementReference(f));
   syncBatchAlignment();
   byId('acquisition-reset-placement').disabled=!manual;
   byId('acquisition-adjust-image').disabled=!adjust;
@@ -90,12 +90,9 @@
   return {bounds:overlap?bounds:null,info,status:overlap?'Loading…':'Outside source'};
  }
  function comparisonParents(f,mode=byId('acquisition-crop-source').value){
-  const tree=spatialTree();
-  function path(g){if(g.files.some(x=>x.id===f.id))return [];for(const child of g.children){const below=path(child);if(below)return [g,...below]}return null}
-  let chain=null;
-  for(const root of tree.roots){chain=path(root);if(chain)break}
+  const chain=treePath(f).slice(0,-1);
   if(!chain?.length)return []; // Tree roots and their alternate captures do not crop themselves.
-  const parents=chain.map(g=>g===tree.root?reference:g.files.find(x=>x.id===groupChoices.get(g.files[0].id))||g.files[0]).reverse();
+  const parents=chain.map(g=>g.files.find(x=>x.id===reference?.id)||g.files.find(x=>x.id===groupChoices.get(g.files[0].id))||g.files[0]).reverse();
   if(mode==='master')return parents.slice(-1); // The root of this image's own tree.
   return mode==='all'?parents:parents.slice(0,1);
  }
@@ -155,8 +152,9 @@
  function chooseImage(f){if(adjust){adjustId=batchId==='*'&&f.acquisition_batch!==reference?.acquisition_batch?batchOf(f)?.reference_id:f.id;hideHover();syncAdjustment();draw()}else selectReference(f)}
  function bindHover(el,f){el.onmouseenter=e=>hover(f,e);el.onmouseleave=()=>{if(!drag?.image)hideHover()};el.onfocus=e=>hover(f,e);el.onblur=hideHover}
  function navigation(){
-  byId('acquisition-back').disabled=!history.length;
-  byId('acquisition-level').textContent=reference?`${history.length?'Level '+history.length:'Overview'} · ${number(reference)}`:'No reference';
+  const depth=Math.max(0,treePath(reference).length-1);
+  byId('acquisition-back').disabled=!depth;
+  byId('acquisition-level').textContent=reference?`${depth?'Level '+depth:'Overview'} · ${number(reference)}`:'No reference';
   byId('acquisition-open-reference').disabled=!reference;
  }
  function selectReference(f){
@@ -167,11 +165,10 @@
    const oldRef=reference,angle=Number(byId('acquisition-rotation').value)||0;
    for(const image of visible){const manual=placement(image,oldRef);if(manual&&image.id!==f.id){const key=placementKey(image,f);placements.set(key,{...manual});writePreference(key,{...manual})}}
    const key=`tem-acquisition-rotation:${JSON.stringify([config.data_root,f.id])}`;rotations.set(key,angle);writePreference(key,angle);
-   options(byId('acquisition-reference'),[[f.id,f.name]],f.id);update(false);return;
+   options(byId('acquisition-reference'),[[f.id,f.name]],f.id);update(false,true);return;
   }
-  history.push({id:reference?.id,view:view?{...view}:null,zoomOutLimit,folder:selectedFolder,scope:byId('acquisition-scope').value,batchId});
-  batchId=f.acquisition_batch;
-  options(byId('acquisition-reference'),[[f.id,f.name]],f.id);update(false);fit(true);
+  spatialTree(); // Freeze the hierarchy before changing the viewing reference.
+  options(byId('acquisition-reference'),[[f.id,f.name]],f.id);update(false,true);fit(true);
  }
 
  async function preview(id){
@@ -211,18 +208,24 @@
   return cw&&ch?Math.abs(x-cx)<(w+cw)/2&&Math.abs(y-cy)<(h+ch)/2:Math.abs(x-cx)<=w/2&&Math.abs(y-cy)<=h/2;
  }
  function spatialTree(){
-  const groups=footprintGroups(),root=groups.find(g=>g.files.some(f=>f.id===reference?.id));
+  if(treeSnapshot)return treeSnapshot;
+  const groups=footprintGroups(),root=groups.find(g=>g.files.some(f=>f.id===(treeMasterId||reference?.id)));
   const unplaced=groups.filter(g=>!g.pos),placed=groups.filter(g=>g.pos),roots=[];
   const area=g=>g.rect?g.rect[2]*g.rect[3]:0;
   for(const g of placed){
-   // Keep the selected reference at the top of its tree. Other disconnected
-   // footprints form independent trees using the same spatial nesting rule.
-   const parent=g===root?null:placed.filter(p=>p!==g&&area(p)>area(g)&&overlaps(p,g)).sort((a,b)=>area(a)-area(b))[0];
+   // Parentage depends on footprint size, never on the current viewing reference.
+   const parent=placed.filter(p=>p!==g&&area(p)>area(g)&&overlaps(p,g)).sort((a,b)=>area(a)-area(b))[0];
    if(parent)parent.children.push(g);else roots.push(g);
   }
   roots.sort((a,b)=>(a===root?-1:b===root?1:0)||area(b)-area(a));
-  return {root,roots,unplaced};
+  return treeSnapshot={root,roots,unplaced};
  }
+ function treePath(f){
+  if(!f)return [];
+  function visit(g){if(g.files.some(x=>x.id===f.id))return [g];for(const child of g.children){const below=visit(child);if(below)return [g,...below]}return null}
+  for(const root of spatialTree().roots){const path=visit(root);if(path)return path}return [];
+ }
+ function parentImage(f=reference){const path=treePath(f),g=path.at(-2);return g&&(g.files.find(x=>x.id===groupChoices.get(g.files[0].id))||g.files[0])}
  const treeExpanded=new Map(),groupChoices=new Map(),groupSelectors=new Map();
  function chooseGroup(g){
   if(g.files.length===1){chooseImage(g.files[0]);return}
@@ -257,13 +260,14 @@
    const sub=document.createElement('small');sub.textContent=[isRoot?'Reference image':'',!g.pos?'Not placed':g.rect?`${fmt(f.field_nm[0])} nm wide`:'Point only'].filter(Boolean).join(' · ');box.append(sub);
    const open=document.createElement('button');open.type='button';open.textContent='Open';open.title='Open selected image for analysis';open.onclick=()=>{moved=false;openImage(f)};
    row.append(box,open);li.append(row);
-   branch(li,g.children,`${reference?.id}:${key}`,'Within this image');return li;
+   branch(li,g.children,`${treeMasterId}:${key}`,'Within this image');return li;
   }
   const tree=spatialTree(),ul=document.createElement('ul');ul.className='acquisition-tree';ul.append(...tree.roots.map(entry));list.append(ul);
-  branch(list,tree.unplaced,`${reference?.id}:unplaced`,'Not placed');
+  branch(list,tree.unplaced,`${treeMasterId}:unplaced`,'Not placed');
  }
- function update(reset=true){
-  if(!data)return;hideHover();
+ function update(reset=true,preserveTree=false){
+  if(!data)return;
+  if(!preserveTree)treeSnapshot=null;hideHover();
   const date=byId('acquisition-date').value;
   const dated=data.files.filter(f=>date==='*'||f.date===date);
   const folders=[...new Set(dated.map(f=>f.folder))].sort();
@@ -281,6 +285,7 @@
   const preferred=refs.some(f=>f.id===old)?old:batchReference(batchOf(visible[0]))?.id;
   options(byId('acquisition-reference'),refs.map(f=>[f.id,`${f.name} · ${fmt(f.field_nm[0])} nm wide`]),batchId==='*'?old:preferred);
   reference=refs.find(f=>f.id===byId('acquisition-reference').value)||null;
+  if(!treeMasterId)treeMasterId=reference?.id;
   restoreRotation();
   const placed=visible.filter(f=>location(f));
   byId('acquisition-status').textContent=!data.batches?'Restart TEM Workbench to enable tilt batches.':`${data.sample} · ${scopedBatches.length} batches · ${placed.length}/${visible.length} images placed${batchId==='*'?' · Unaligned batches stay off the map until placed.':' · Matching tilts permit a stage estimate; verify alignment.'}`;
@@ -314,7 +319,7 @@
   return delta?[offset.x+delta[0],offset.y+delta[1]]:null;
  }
  // Apply the same level filter to fitting and drawing, before viewport clipping.
- function mappedImages(){return visible.filter(f=>location(f)&&!(history.length&&field(f)&&field(reference)&&f.field_nm[0]*f.field_nm[1]>reference.field_nm[0]*reference.field_nm[1]*1.001))}
+ function mappedImages(){return visible.filter(f=>location(f)&&!(treePath(reference).length>1&&field(f)&&field(reference)&&f.field_nm[0]*f.field_nm[1]>reference.field_nm[0]*reference.field_nm[1]*1.001))}
  function fittedView(overview=false){
   if(!reference)return null;
   let loX=Infinity,loY=Infinity,hiX=-Infinity,hiY=-Infinity;
@@ -368,7 +373,7 @@
  }
  async function loadSample(seedId,opening=false){
   const ticket=++request;
-  busy=true;history=[];batchId='';scopedBatches=[];hideHover();drag=null;moved=false;adjustId='';
+  busy=true;treeSnapshot=null;treeMasterId=null;batchId='';scopedBatches=[];hideHover();drag=null;moved=false;adjustId='';
   data=null;view=null;reference=null;visible=[];
   for(const id of ['acquisition-folder','acquisition-date','acquisition-reference','acquisition-adjust-image','acquisition-batch','acquisition-align-batch','acquisition-list','acquisition-error-list'])byId(id).replaceChildren();
   byId('acquisition-errors').hidden=true;
@@ -389,6 +394,33 @@
  const cropMode=readPreference('tem-acquisition-crop-source','closest');
  byId('acquisition-crop-source').value=['closest','master','all'].includes(cropMode)?cropMode:'closest';
  byId('acquisition-crop-source').onchange=()=>{writePreference('tem-acquisition-crop-source',byId('acquisition-crop-source').value);hideHover()};
+ // Snapshot descendants before dragging so the move scope cannot change mid-drag.
+ function startPlacementMove(f,withChildren){
+  const group=treePath(f).at(-1),ids=new Set([f.id]);
+  function collect(g){for(const member of g.files)ids.add(member.id);if(withChildren)g.children.forEach(collect)}
+  if(group)collect(group);
+  return {positions:visible.map(image=>({image,pos:location(image)})).filter(item=>item.pos),ids,changes:new Map()};
+ }
+ function applyPlacementMove(move,dx,dy){
+  function set(image,ref,value){
+   const key=placementKey(image,ref);
+   if(!move.changes.has(key))move.changes.set(key,placement(image,ref));
+   placements.set(key,value);
+  }
+  const targets=move.positions.map(({image,pos})=>({image,pos:[pos[0]+(move.ids.has(image.id)?dx:0),pos[1]+(move.ids.has(image.id)?dy:0)]}));
+  // Update anchors first, then compensate stationary members or move descendants.
+  targets.sort((a,b)=>Number(batchOf(b.image)?.reference_id===b.image.id)-Number(batchOf(a.image)?.reference_id===a.image.id));
+  for(const {image,pos} of targets){
+   if(image.id===reference.id)continue;
+   const now=location(image);if(now&&Math.hypot(now[0]-pos[0],now[1]-pos[1])<1e-12)continue;
+   if(image.acquisition_batch===reference.acquisition_batch||batchOf(image)?.reference_id===image.id)set(image,reference,{x:pos[0],y:pos[1]});
+   else{
+    const anchor=batchReference(batchOf(image)),base=location(anchor);
+    if(base)set(image,anchor,{x:pos[0]-base[0],y:pos[1]-base[1]});
+   }
+  }
+ }
+ function finishPlacementMove(move,save){for(const [key,prior] of move.changes){if(save)writePreference(key,placements.get(key));else placements.set(key,prior)}}
  byId('acquisition-map-open').onclick=()=>{
   if(!fileId)return;
   originId=fileId;
@@ -403,27 +435,24 @@
  byId('acquisition-map-close').onclick=()=>dialog.close();
  dialog.addEventListener('close',()=>{++request;busy=false;hideHover()});
  byId('acquisition-open-reference').onclick=()=>{if(reference){moved=false;openImage(reference)}};
- byId('acquisition-back').onclick=()=>{
-  const prior=history.pop();if(!prior)return;
-  batchId=prior.batchId;selectedFolder=prior.folder;byId('acquisition-scope').value=prior.scope;options(byId('acquisition-reference'),[[prior.id,prior.id]],prior.id);update(false);view=prior.view;zoomOutLimit=prior.zoomOutLimit;draw();
- };
- byId('acquisition-folder').onchange=()=>{selectedFolder=byId('acquisition-folder').value;byId('acquisition-scope').value='folder';history=[];batchId='';byId('acquisition-reference').replaceChildren();update()};
- for(const id of ['acquisition-scope','acquisition-date'])byId(id).onchange=()=>{history=[];batchId='';byId('acquisition-reference').replaceChildren();update()};
- byId('acquisition-batch').onchange=()=>{batchId=byId('acquisition-batch').value;history=[];byId('acquisition-reference').replaceChildren();update();fit(true)};
+ byId('acquisition-back').onclick=()=>{const parent=parentImage();if(parent){moved=false;selectReference(parent)}};
+ byId('acquisition-folder').onchange=()=>{selectedFolder=byId('acquisition-folder').value;byId('acquisition-scope').value='folder';treeSnapshot=null;treeMasterId=null;batchId='';byId('acquisition-reference').replaceChildren();update()};
+ for(const id of ['acquisition-scope','acquisition-date'])byId(id).onchange=()=>{treeSnapshot=null;treeMasterId=null;batchId='';byId('acquisition-reference').replaceChildren();update()};
+ byId('acquisition-batch').onchange=()=>{batchId=byId('acquisition-batch').value;treeSnapshot=null;treeMasterId=null;byId('acquisition-reference').replaceChildren();update();fit(true)};
  byId('acquisition-align-batch').onchange=syncBatchAlignment;
  byId('acquisition-place-batch').onclick=()=>{
   const anchor=batchReference(scopedBatches.find(b=>b.id===byId('acquisition-align-batch').value));
   if(!anchor||!reference)return;
   if(!placement(anchor)){const value={x:0,y:0};placements.set(placementKey(anchor),value);writePreference(placementKey(anchor),value)}
   adjust=true;byId('acquisition-adjust').checked=true;adjustId=anchor.id;update(false);fit(false);
-  byId('acquisition-detail').textContent=`Drag ${anchor.name} to align its batch with the master. Other batch members follow.`;
+  byId('acquisition-detail').textContent=`Drag ${anchor.name} to align its batch with the master. Choose whether to move this image alone or its descendants.`;
  };
- byId('acquisition-reference').onchange=()=>{history=[];update(false);fit(true)};
+ byId('acquisition-reference').onchange=()=>{treeSnapshot=null;treeMasterId=null;update(false);fit(true)};
  byId('acquisition-rotation').onchange=rememberRotation;
- for(const id of ['acquisition-units','acquisition-flip-x','acquisition-flip-y'])byId(id).onchange=()=>{history=[];update()};
+ for(const id of ['acquisition-units','acquisition-flip-x','acquisition-flip-y'])byId(id).onchange=()=>{treeSnapshot=null;treeMasterId=null;update()};
  byId('acquisition-adjust').onchange=()=>{adjust=byId('acquisition-adjust').checked;hideHover();syncAdjustment();draw()};
  byId('acquisition-adjust-image').onchange=()=>{adjustId=byId('acquisition-adjust-image').value;hideHover();syncAdjustment();draw()};
- byId('acquisition-reset-placement').onclick=()=>{const f=visible.find(f=>f.id===adjustId);if(!f)return;placements.set(placementKey(f),null);writePreference(placementKey(f),null);hideHover();update(false)};
+ byId('acquisition-reset-placement').onclick=()=>{const f=visible.find(f=>f.id===adjustId);if(!f)return;const key=placementKey(f,placementReference(f));placements.set(key,null);writePreference(key,null);hideHover();update(false)};
  byId('acquisition-fit').onclick=()=>fit(false);byId('acquisition-overview').onclick=()=>fit(true);
  function zoom(factor,px=400,py=310){if(!view||drag)return;hideHover();zoomOutLimit=(fittedView()?.w||view.w)*2;factor=Math.max(1e-7/view.w,Math.min(factor,zoomOutLimit/view.w));if(factor===1)return;view.x+=px/800*view.w*(1-factor);view.y+=py/620*view.h*(1-factor);view.w*=factor;view.h*=factor;draw()}
  byId('acquisition-zoom-in').onclick=()=>zoom(.65);byId('acquisition-zoom-out').onclick=()=>zoom(1/.65);
@@ -435,7 +464,7 @@
   const id=e.target.closest('[data-image-id]')?.getAttribute('data-image-id');let f=visible.find(f=>f.id===id);
   if(adjust&&batchId==='*'&&f&&f.acquisition_batch!==reference.acquisition_batch)f=batchReference(batchOf(f));
   if(adjust&&f&&f.id!==reference.id&&field(f)){
-   adjustId=f.id;const [x,y]=location(f);drag={x:p.x,y:p.y,view:{...view},image:f,start:{x,y},prior:placement(f),key:placementKey(f)};
+   adjustId=f.id;const [x,y]=location(f);drag={x:p.x,y:p.y,view:{...view},image:f,start:{x,y},move:startPlacementMove(f,byId('acquisition-move-scope').value==='children')};
    syncAdjustment();showComparison(f,e,true);
   }else drag={x:p.x,y:p.y,view:{...view}};
   if(drag.image)svg.setPointerCapture(e.pointerId);
@@ -444,16 +473,16 @@
   if(!drag)return;const p=point(e),dx=p.x-drag.x,dy=p.y-drag.y;
   if(Math.hypot(dx,dy)>4||moved){
    moved=true;
-   if(drag.image){placements.set(drag.key,{x:drag.start.x+dx/800*drag.view.w,y:drag.start.y+dy/620*drag.view.h});draw();showComparison(drag.image,e,true)}
+   if(drag.image){applyPlacementMove(drag.move,dx/800*drag.view.w,dy/620*drag.view.h);draw();showComparison(drag.image,e,true)}
    else{view.x=drag.view.x-dx/800*drag.view.w;view.y=drag.view.y-dy/620*drag.view.h;draw()}
   }
  };
  svg.onpointerup=e=>{
   const done=drag;drag=null;
   if(svg.hasPointerCapture(e.pointerId))svg.releasePointerCapture(e.pointerId);
-  if(done?.image){if(moved)writePreference(done.key,placements.get(done.key));update(false);showComparison(done.image,e);}
+  if(done?.image){finishPlacementMove(done.move,moved);update(false);showComparison(done.image,e);}
  };
- svg.onpointercancel=e=>{if(drag?.image)placements.set(drag.key,drag.prior);drag=null;hideHover();syncAdjustment();draw()};
+ svg.onpointercancel=e=>{if(drag?.image)finishPlacementMove(drag.move,false);drag=null;hideHover();syncAdjustment();draw()};
  window.addEventListener('pointerup',()=>{if(drag&&!drag.image)drag=null});
  svg.onpointerleave=()=>{if(drag&&!drag.image)drag=null;if(!drag)hideHover()};
 })();

@@ -333,6 +333,8 @@ Parallel grid execution is reused by single-image and batch overlapping maps. Ba
 
 ## Approximate acquisition map — implemented 30 October 2026
 
+5 November 2026 — **Hierarchy navigation and move scope:** Selecting an image preserves the displayed forest and highlights the current view. ↑ Parent follows the immediate spatial parent even after jumping several levels; it does not replay click history. Changing scope or placement can rebuild the hierarchy. Move offers This image only or Image + descendants, using the subtree captured at drag start. Coincident captures move together; anchor movements compensate members outside the chosen subtree. Cancel restores all affected placements and release saves them. Targeted hierarchy/placement checks cover deep navigation, descendant moves and cancellation.
+
 5 November 2026 — **Shared capture previews:** Coincident detector captures use compact labels such as 123 (ADF & Hitachi). Full captures stack vertically with detector captions, while parent crops retain the horizontal ancestor sequence. The stack is bounded by viewport height.
 
 5 November 2026 — **Multiple spatial trees:** Placed footprints now form independent nested trees rather than being collected under Outside reference. The selected reference stays first; other roots are ordered by field area. Closest/Master/All parent previews follow the hovered image’s own tree, and tree roots do not crop themselves. Unplaced batches remain separate until aligned; no cross-batch stage placement is inferred. The map dialog now allows 1440 px width with a 300–420 px tree panel to accommodate nested filenames. Targeted tree and placement regressions pass.

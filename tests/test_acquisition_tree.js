@@ -7,10 +7,10 @@ class Element{
  addEventListener(k,f){this.listeners[k]=f}
  querySelectorAll(){return []}
 }
-const controls=new Map();const context={document:{createElement:tag=>new Element(tag),getElementById:id=>{if(!controls.has(id))controls.set(id,new Element('div'));return controls.get(id)}},config:{data_root:'test'},readPreference:(k,d)=>d,acquisitionNumber:f=>Number(f.id.slice(1))};
+const controls=new Map();const context={document:{createElement:tag=>new Element(tag),getElementById:id=>{if(!controls.has(id))controls.set(id,new Element('div'));return controls.get(id)}},config:{data_root:'test'},readPreference:(k,d)=>d,writePreference:()=>{},acquisitionNumber:f=>Number(f.id.slice(1))};
 vm.createContext(context);let source=fs.readFileSync('web/acquisition-map.js','utf8');
 source=source.slice(0,source.indexOf(" byId('acquisition-map-open').onclick="))+`
- globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*'},render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,parents:comparisonParents,crop:cropDetails,label:groupName};})();`;
+ globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*';treeSnapshot=null;treeMasterId=ref},view:id=>{reference=data.files.find(f=>f.id===id)},parent:()=>parentImage()?.id,render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,parents:comparisonParents,crop:cropDetails,label:groupName,startMove:startPlacementMove,move:applyPlacementMove,finishMove:finishPlacementMove,location:f=>location(f),place:(f,ref,x,y)=>placements.set(placementKey(f,ref),{x,y}),clearMoves:()=>placements.clear()};})();`;
 vm.runInContext(source,context);
 controls.get('acquisition-list')||context.document.getElementById('acquisition-list');
 context.document.getElementById('acquisition-units').value=1000;
@@ -63,3 +63,39 @@ console.log('Independent acquisition trees and local parent previews passed.');
 const pair=[{...row('i123',1000),name:'1.2MX_ADF_TiFe_0123'},{...row('i124',1000),id:'i123',name:'1.2MX_Hitachi_TiFe_0123'}];
 assert.equal(context.test.label({files:pair}),'123 (ADF & Hitachi)');
 console.log('Shared detector capture labels passed.');
+
+// A deep click changes the highlight/view only; Parent follows each actual ancestor.
+context.test.set(forestFiles,[{id:'a',reference_id:'i201',members:forestFiles.map(f=>f.id)}],'i201');
+const stable=context.test.tree();
+context.test.view('i205');
+assert.equal(context.test.tree(),stable);
+assert.equal(context.test.parent(),'i204');
+context.test.view('i204');assert.equal(context.test.parent(),'i203');
+context.test.view('i203');assert.equal(context.test.parent(),undefined);
+context.test.view('i202');assert.equal(context.test.parent(),'i201');
+console.log('Stable forest and level-by-level parent navigation passed.');
+
+context.test.clearMoves();context.test.set(files,groups,'i102');
+const start=Array.from(context.test.location(files[3]));
+let move=context.test.startMove(files[2],false);context.test.move(move,1,2);
+assert.deepEqual(Array.from(context.test.location(files[3])),start,'image-only leaves child stationary');
+context.test.finishMove(move,false);
+move=context.test.startMove(files[2],true);context.test.move(move,1,2);
+assert.deepEqual(Array.from(context.test.location(files[3])),[start[0]+1,start[1]+2]);
+context.test.finishMove(move,false);
+assert.deepEqual(Array.from(context.test.location(files[3])),start,'cancel restores descendants');
+console.log('Image-only, descendant translation and cancellation passed.');
+
+// Moving a foreign batch anchor must not silently move its children in image-only mode.
+const cross=[row('i301',10000),row('i302',4000,0,'b'),row('i303',1000,.2,'b')];
+const crossGroups=[{id:'a',reference_id:'i301',members:['i301']},{id:'b',reference_id:'i302',members:['i302','i303']}];
+context.test.clearMoves();context.test.set(cross,crossGroups,'i301');context.test.place(cross[1],cross[0],1,0);
+const childStart=Array.from(context.test.location(cross[2]));
+move=context.test.startMove(cross[1],false);context.test.move(move,1,2);
+assert.deepEqual(Array.from(context.test.location(cross[2])),childStart);
+context.test.finishMove(move,false);
+move=context.test.startMove(cross[1],true);context.test.move(move,1,2);
+assert.deepEqual(Array.from(context.test.location(cross[2])),[childStart[0]+1,childStart[1]+2]);
+context.test.finishMove(move,false);
+assert.deepEqual(Array.from(context.test.location(cross[2])),childStart);
+console.log('Cross-batch anchor movement respects selected move scope.');
