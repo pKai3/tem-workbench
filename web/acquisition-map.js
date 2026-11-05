@@ -92,10 +92,11 @@
  function comparisonParents(f,mode=byId('acquisition-crop-source').value){
   const tree=spatialTree();
   function path(g){if(g.files.some(x=>x.id===f.id))return [];for(const child of g.children){const below=path(child);if(below)return [g,...below]}return null}
-  const chain=tree.root?path(tree.root):null;
-  if(chain?.length===0)return []; // Reference and its alternate captures do not crop themselves.
-  if(mode==='master'||!chain)return reference?[reference]:[];
+  let chain=null;
+  for(const root of tree.roots){chain=path(root);if(chain)break}
+  if(!chain?.length)return []; // Tree roots and their alternate captures do not crop themselves.
   const parents=chain.map(g=>g===tree.root?reference:g.files.find(x=>x.id===groupChoices.get(g.files[0].id))||g.files[0]).reverse();
+  if(mode==='master')return parents.slice(-1); // The root of this image's own tree.
   return mode==='all'?parents:parents.slice(0,1);
  }
  async function decodedPreview(id){
@@ -109,11 +110,14 @@
   const parents=comparisonParents(f),ticket=++hoverTicket,ref=parents[0]||reference,detail=cropDetails(f,ref);
   const wasHidden=card.hidden;card.hidden=false;
   const peers=footprintPeers(f);
-  byId('acquisition-hover-title').textContent=peers.map(x=>x.name).join(' / ');
+  byId('acquisition-hover-title').textContent=groupName({files:peers})+(peers.length>1?' · same location':'');
+  byId('acquisition-hover-full-label').textContent=peers.length>1?captureLabel(f):'Full image';
+  const peerFigures=byId('acquisition-hover-peers');peerFigures.replaceChildren();
+  const captures=byId('acquisition-hover-captures');captures.classList.toggle('stacked',peers.length>1);captures.style.setProperty('--capture-count',peers.length);
   const extras=byId('acquisition-hover-extras');extras.replaceChildren();
   for(const other of peers.filter(x=>x.id!==f.id)){
    const figure=document.createElement('figure'),caption=document.createElement('figcaption'),im=document.createElement('img');
-   caption.textContent=other.name;caption.title=other.name;im.alt=other.name;figure.style.order='1';const frame=document.createElement('div');frame.append(im);figure.append(caption,frame);extras.append(figure);
+   caption.textContent=captureLabel(other);caption.title=other.name;im.alt=other.name;const frame=document.createElement('div');frame.append(im);figure.append(caption,frame);peerFigures.append(figure);
    imageURL(`/api/acquisition-preview?id=${encodeURIComponent(other.id)}`).then(url=>{if(ticket===hoverTicket)im.src=url}).catch(()=>{caption.textContent+=' · Preview unavailable'});
   }
   byId('acquisition-hover-crop').closest('figure').hidden=!parents.length;
@@ -132,7 +136,7 @@
    if(!details.bounds){caption.textContent+=` · ${details.status}`;continue}
    cropURL(parent,details).then(url=>{if(ticket===hoverTicket)im.src=url}).catch(()=>{caption.textContent+=' · Preview unavailable'});
   }
-  card.style.width=`${Math.min(240*(peers.length+parents.length)+20,innerWidth-28)}px`;
+  card.style.width=`${Math.min(240*(1+parents.length)+20,innerWidth-28)}px`;
   byId('acquisition-hover-info').textContent=(parents.length?detail.info:'Same footprint · alternate captures')+(live?' Live preview; original-pixel crop loads on release.':'');
   const render=async(type,promise)=>{try{const url=await promise;if(ticket!==hoverTicket)return;const im=byId(`acquisition-hover-${type}`);im.src=url;im.hidden=false;byId(`acquisition-hover-${type}-status`).textContent=''}catch{if(ticket===hoverTicket)byId(`acquisition-hover-${type}-status`).textContent='Preview unavailable'}};
   if(wasHidden){for(const type of ['full','crop']){byId(`acquisition-hover-${type}`).hidden=true;byId(`acquisition-hover-${type}-status`).textContent='Loading…'}}
@@ -195,7 +199,12 @@
   return groups;
  }
  function footprintPeers(f){return footprintGroups().find(g=>g.files.some(x=>x.id===f.id))?.files||[f]}
- const groupName=g=>[...new Set([...g.files].sort((a,b)=>acquisitionNumber(a)-acquisitionNumber(b)||a.name.localeCompare(b.name)).map(number))].join('/');
+ const captureLabel=f=>f.name.match(/(?:^|_)(ADF|Hitachi|OneView)(?:_|$)/i)?.[1]||f.name;
+ const groupName=g=>{
+  const files=[...g.files].sort((a,b)=>acquisitionNumber(a)-acquisitionNumber(b)||a.name.localeCompare(b.name));
+  const numbers=[...new Set(files.map(number))],kinds=[...new Set(files.map(captureLabel))];
+  return numbers.join('/')+(files.length>1&&kinds.length>1&&kinds.every(k=>!files.some(f=>f.name===k))?` (${kinds.join(' & ')})`:'');
+ };
  function overlaps(parent,child){
   if(!parent.rect||!child.pos)return false;
   const [x,y,w,h]=parent.rect,[cx,cy]=child.pos,[cw,ch]=child.rect?.slice(2)||[0,0];
@@ -203,18 +212,16 @@
  }
  function spatialTree(){
   const groups=footprintGroups(),root=groups.find(g=>g.files.some(f=>f.id===reference?.id));
-  const outside=[],unplaced=[],inside=[];
-  for(const g of groups){if(g===root)continue;if(!g.pos)unplaced.push(g);else if(root&&overlaps(root,g))inside.push(g);else outside.push(g)}
+  const unplaced=groups.filter(g=>!g.pos),placed=groups.filter(g=>g.pos),roots=[];
   const area=g=>g.rect?g.rect[2]*g.rect[3]:0;
-  function nest(items,fallback){
-   const tops=[];
-   for(const g of items){
-    const parent=items.filter(p=>p!==g&&area(p)>area(g)&&overlaps(p,g)).sort((a,b)=>area(a)-area(b))[0]||fallback;
-    if(parent)parent.children.push(g);else tops.push(g);
-   }
-   return tops;
+  for(const g of placed){
+   // Keep the selected reference at the top of its tree. Other disconnected
+   // footprints form independent trees using the same spatial nesting rule.
+   const parent=g===root?null:placed.filter(p=>p!==g&&area(p)>area(g)&&overlaps(p,g)).sort((a,b)=>area(a)-area(b))[0];
+   if(parent)parent.children.push(g);else roots.push(g);
   }
-  nest(inside,root);return {root,outside:nest(outside,null),unplaced};
+  roots.sort((a,b)=>(a===root?-1:b===root?1:0)||area(b)-area(a));
+  return {root,roots,unplaced};
  }
  const treeExpanded=new Map(),groupChoices=new Map(),groupSelectors=new Map();
  function chooseGroup(g){
@@ -252,8 +259,8 @@
    row.append(box,open);li.append(row);
    branch(li,g.children,`${reference?.id}:${key}`,'Within this image');return li;
   }
-  const tree=spatialTree(),ul=document.createElement('ul');ul.className='acquisition-tree';if(tree.root)ul.append(entry(tree.root));list.append(ul);
-  branch(list,tree.outside,`${reference?.id}:outside`,'Outside reference');branch(list,tree.unplaced,`${reference?.id}:unplaced`,'Not placed');
+  const tree=spatialTree(),ul=document.createElement('ul');ul.className='acquisition-tree';ul.append(...tree.roots.map(entry));list.append(ul);
+  branch(list,tree.unplaced,`${reference?.id}:unplaced`,'Not placed');
  }
  function update(reset=true){
   if(!data)return;hideHover();

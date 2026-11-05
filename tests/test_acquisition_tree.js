@@ -10,7 +10,7 @@ class Element{
 const controls=new Map();const context={document:{createElement:tag=>new Element(tag),getElementById:id=>{if(!controls.has(id))controls.set(id,new Element('div'));return controls.get(id)}},config:{data_root:'test'},readPreference:(k,d)=>d,acquisitionNumber:f=>Number(f.id.slice(1))};
 vm.createContext(context);let source=fs.readFileSync('web/acquisition-map.js','utf8');
 source=source.slice(0,source.indexOf(" byId('acquisition-map-open').onclick="))+`
- globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*'},render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,parents:comparisonParents,crop:cropDetails};})();`;
+ globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*'},render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,parents:comparisonParents,crop:cropDetails,label:groupName};})();`;
 vm.runInContext(source,context);
 controls.get('acquisition-list')||context.document.getElementById('acquisition-list');
 context.document.getElementById('acquisition-units').value=1000;
@@ -25,7 +25,7 @@ assert.equal(nested.children[0].files[0].id,'i101');
 assert.equal(nested.children[0].children[0].files[0].id,'i100');
 assert.ok(tree.root.children.some(g=>g.files[0].id==='i105'));
 assert.ok(tree.root.children.some(g=>g.files[0].id==='i106'),'partial overlap belongs on tree');
-assert.equal(tree.outside[0].files[0].id,'i107');assert.equal(tree.unplaced[0].files[0].id,'i108');
+assert.equal(tree.roots[1].files[0].id,'i107');assert.equal(tree.unplaced[0].files[0].id,'i108');
 assert.deepEqual(Array.from(context.test.parents(files[3],'closest'),f=>f.id),['i104']);
 assert.deepEqual(Array.from(context.test.parents(files[3],'all'),f=>f.id),['i104','i102']);
 assert.deepEqual(Array.from(context.test.parents(files[3],'master'),f=>f.id),['i102']);
@@ -45,3 +45,21 @@ context.test.set(files,groups,'i103');assert.deepEqual(Array.from(context.test.t
 // Similar but non-identical fields must not be merged.
 files[1].field_nm=[8001,8000];context.test.set(files,groups,'i102');assert.equal(context.test.tree().root.files.length,1);
 console.log('Spatial tree: grouped duplicates, recursive nesting, point locations, partial overlap, outside/unplaced, reference choice, collapse and tilt precision passed.');
+
+// Disconnected footprints form full independent trees, including parent crops.
+const forestFiles=[row('i201',8000),row('i202',4000),row('i203',6000,20),row('i204',2000,20),row('i205',500,20)];
+context.test.set(forestFiles,[{id:'a',reference_id:'i201',members:forestFiles.map(f=>f.id)}],'i201');
+const forest=context.test.tree();
+assert.equal(forest.roots.length,2);
+assert.equal(forest.roots[1].children[0].children[0].files[0].id,'i205');
+assert.deepEqual(Array.from(context.test.parents(forestFiles[4],'all'),f=>f.id),['i204','i203']);
+assert.deepEqual(Array.from(context.test.parents(forestFiles[4],'master'),f=>f.id),['i203']);
+assert.deepEqual(Array.from(context.test.parents(forestFiles[4],'closest'),f=>f.id),['i204']);
+assert.equal(context.test.parents(forestFiles[2],'all').length,0);
+context.test.render();
+assert.equal(controls.get('acquisition-list').children[0].children.length,2);
+console.log('Independent acquisition trees and local parent previews passed.');
+
+const pair=[{...row('i123',1000),name:'1.2MX_ADF_TiFe_0123'},{...row('i124',1000),id:'i123',name:'1.2MX_Hitachi_TiFe_0123'}];
+assert.equal(context.test.label({files:pair}),'123 (ADF & Hitachi)');
+console.log('Shared detector capture labels passed.');
