@@ -171,7 +171,7 @@ class WindowsLauncherTests(unittest.TestCase):
             loop.shutdown.assert_called_once_with()
 
     def test_child_requires_handshake_before_importing_or_verifying(self):
-        with patch.object(server.sys, 'stdin', io.StringIO('')), \
+        with patch.object(server, 'isolate_control_input', return_value=io.StringIO('')), \
              patch.object(environment, 'verify') as verify:
             self.assertEqual(server.main(), 1)
         verify.assert_not_called()
