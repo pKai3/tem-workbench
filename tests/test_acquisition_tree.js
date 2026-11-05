@@ -7,10 +7,14 @@ class Element{
  addEventListener(k,f){this.listeners[k]=f}
  querySelectorAll(){return []}
 }
-const controls=new Map();const context={document:{createElement:tag=>new Element(tag),getElementById:id=>{if(!controls.has(id))controls.set(id,new Element('div'));return controls.get(id)}},config:{data_root:'test'},readPreference:(k,d)=>d,writePreference:()=>{},acquisitionNumber:f=>Number(f.id.slice(1))};
+const controls=new Map(),saved=new Map();const context={clearTimeout:()=>{},document:{createElement:tag=>new Element(tag),getElementById:id=>{if(!controls.has(id))controls.set(id,new Element('div'));return controls.get(id)}},config:{data_root:'test'},readPreference:(k,d)=>saved.has(k)?saved.get(k):d,writePreference:(k,v)=>saved.set(k,v),acquisitionNumber:f=>Number(f.id.slice(1))};
 vm.createContext(context);let source=fs.readFileSync('web/acquisition-map.js','utf8');
 source=source.slice(0,source.indexOf(" byId('acquisition-map-open').onclick="))+`
- globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*';treeSnapshot=null;treeMasterId=ref},view:id=>{reference=data.files.find(f=>f.id===id)},parent:()=>parentImage()?.id,render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,outside:outsideReferenceFraction,parents:comparisonParents,crop:cropDetails,label:groupName,startMove:startPlacementMove,move:applyPlacementMove,finishMove:finishPlacementMove,location:f=>location(f),place:(f,ref,x,y)=>placements.set(placementKey(f,ref),{x,y}),clearMoves:()=>placements.clear()};})();`;
+ globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*';treeSnapshot=null;treeMasterId=ref},view:id=>{reference=data.files.find(f=>f.id===id)},parent:()=>parentImage()?.id,render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,outside:outsideReferenceFraction,parents:comparisonParents,crop:cropDetails,label:groupName,startMove:startPlacementMove,move:applyPlacementMove,finishMove:finishPlacementMove,location:f=>location(f),place:(f,ref,x,y)=>placements.set(placementKey(f,ref),{x,y}),clearMoves:()=>placements.clear(),leavesFirst,referenceChildCount,
+ remember:rememberSelection,restore:(sample,current=null,opening=false)=>{data.sample=sample;restoreSelection(current,opening)},seed:openingSeed,
+ selection:()=>({folder:selectedFolder,batch:batchId}),
+ updateSelection:()=>{renderImageTree=()=>{};navigation=()=>{};syncAdjustment=()=>{};preview=()=>{};fit=()=>{};draw=()=>{};update()},
+ reference:()=>reference?.id};})();`;
 vm.runInContext(source,context);
 controls.get('acquisition-list')||context.document.getElementById('acquisition-list');
 context.document.getElementById('acquisition-units').value=1000;
@@ -124,3 +128,54 @@ assert.ok(Math.abs(context.test.outside(boundary[2])-.6)<1e-10);
 assert.equal(context.test.outside(boundary[3]),0);
 assert.equal(context.test.outside(boundary[4]),0);
 console.log('Outside preview uses calibrated footprint overlap.');
+
+// Display sorting does not mutate the hierarchy or disturb order within each group.
+const ordered=context.test.leavesFirst([{children:[1],id:'branch1'},{children:[],id:'leaf1'},{children:[1],id:'branch2'},{children:[],id:'leaf2'}]);
+assert.deepEqual(Array.from(ordered,g=>g.id),['leaf1','leaf2','branch1','branch2']);
+
+// Equal-size parent/reference choices favour more covered smaller footprints.
+const ties=[row('i401',8000,0),row('i402',8000,5),row('i403',1000,2.5),row('i404',1000,6),row('i405',1000,7)];
+context.test.clearMoves();context.test.set(ties,[{id:'a',reference_id:'i401',members:ties.map(f=>f.id)}],'i401');
+context.test.tree();context.test.view('i403');assert.equal(context.test.parent(),'i402');
+assert.equal(context.test.referenceChildCount(ties[0],ties),1);
+assert.equal(context.test.referenceChildCount(ties[1],ties),3);
+context.document.getElementById('acquisition-date').value='today';
+context.document.getElementById('acquisition-scope').value='sample';
+context.document.getElementById('acquisition-reference').value='';
+context.test.updateSelection();assert.equal(context.test.reference(),'i402');
+context.document.getElementById('acquisition-reference').value='i401';
+context.test.updateSelection();assert.equal(context.test.reference(),'i401','retain explicit reference');
+
+// Saved state survives new map initialization, is sample/data-source scoped, and validates stale options.
+context.config.files=ties.map(f=>({...f,sample:'ST'}));
+context.test.restore('ST');
+context.document.getElementById('acquisition-date').value='today';
+context.document.getElementById('acquisition-scope').value='folder';
+context.document.getElementById('acquisition-align-batch').value='a';
+context.test.updateSelection();context.test.remember();
+assert.equal(context.test.seed().sample,'ST');
+context.document.getElementById('acquisition-date').value='*';
+context.document.getElementById('acquisition-scope').value='sample';
+context.document.getElementById('acquisition-reference').value='';
+context.document.getElementById('acquisition-align-batch').value='';
+context.test.restore('ST');
+assert.equal(context.document.getElementById('acquisition-scope').value,'folder');
+assert.equal(context.document.getElementById('acquisition-date').value,'today');
+assert.equal(context.document.getElementById('acquisition-reference').value,'i401');
+assert.equal(context.document.getElementById('acquisition-align-batch').value,'a');
+assert.equal(context.test.selection().folder,'test');
+assert.equal(context.test.selection().batch,'a');
+const stateKey='tem-acquisition-selection:'+JSON.stringify(['test','ST']);
+saved.set(stateKey,{...saved.get(stateKey),batch:'*'});context.test.restore('ST');
+assert.equal(context.test.selection().batch,'*');
+context.test.restore('STA');assert.equal(context.document.getElementById('acquisition-scope').value,'sample');
+context.config.data_root='different';context.test.restore('ST');
+assert.equal(context.document.getElementById('acquisition-date').value,'*');
+context.config.data_root='test';
+saved.set('tem-acquisition-selection:'+JSON.stringify(['test','ST']),{folder:'deleted',scope:'invalid',date:'deleted',batch:'deleted',reference:'deleted'});
+context.document.getElementById('acquisition-reference').value='';
+context.test.restore('ST');context.test.updateSelection();
+assert.equal(context.test.selection().folder,'test');assert.equal(context.test.selection().batch,'a');
+assert.equal(context.document.getElementById('acquisition-date').value,'*');
+assert.equal(context.test.reference(),'i402');
+console.log('Leaf ordering, most-covered ties, retained references, selection restoration and stale-state fallbacks passed.');

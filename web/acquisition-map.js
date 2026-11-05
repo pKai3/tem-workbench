@@ -5,6 +5,31 @@
  let data=null, originId='', selectedFolder='', visible=[], reference=null, view=null, busy=false, drag=null, moved=false, request=0;
  const previews=new Map(), hoverCache=new Map(), rotations=new Map(), placements=new Map(), decoded=new Map();
  let adjust=false,adjustId="",zoomOutLimit=Infinity, batchId="", scopedBatches=[];
+ const selectionKey=(sample=null)=>`tem-acquisition-selection:${JSON.stringify([config.data_root,sample])}`;
+ function rememberSelection(){
+  if(!data||busy)return;
+  writePreference(selectionKey(),data.sample);
+  writePreference(selectionKey(data.sample),{folder:selectedFolder,scope:byId('acquisition-scope').value,date:byId('acquisition-date').value,batch:batchId,reference:reference?.id||'',alignBatch:byId('acquisition-align-batch').value});
+ }
+ function restoreSelection(current,opening){
+  const saved=readPreference(selectionKey(data.sample),null);
+  const state=saved&&typeof saved==='object'?saved:{};
+  const dates=[...new Set(data.files.map(f=>f.date))].sort();
+  const date=dates.includes(state.date)||state.date==='*'?state.date:current?.date??'*';
+  options(byId('acquisition-date'),[['*','All dates'],...dates.map(d=>[d,d||'Date unknown'])],date);
+  const folders=data.files.filter(f=>date==='*'||f.date===date).map(f=>f.folder);
+  selectedFolder=folders.includes(state.folder)?state.folder:current?.folder||'';
+  byId('acquisition-scope').value=['folder','sample'].includes(state.scope)?state.scope:opening?'folder':'sample';
+  batchId=typeof state.batch==='string'?state.batch:'';
+  const ref=data.files.find(f=>f.id===state.reference);
+  if(ref)options(byId('acquisition-reference'),[[ref.id,ref.name]],ref.id);
+  const align=data.batches?.find(b=>b.id===state.alignBatch);
+  if(align)options(byId('acquisition-align-batch'),[[align.id,batchLabel(align)]],align.id);
+ }
+ function openingSeed(){
+  const sample=readPreference(selectionKey(),null);
+  return config.files.find(f=>f.sample===sample)||config.files.find(f=>f.id===originId);
+ }
  const batches=()=>data?.batches||[];
  const batchOf=f=>batches().find(b=>b.id===f?.acquisition_batch);
  const batchReference=b=>data?.files.find(f=>f.id===b?.reference_id);
@@ -192,7 +217,7 @@
  const coord=n=>Number.isFinite(n)?String(Number(n.toPrecision(9))):'unknown';
  const tilt=n=>Number.isFinite(n)?(String(n).replace(/[-.e+]/g,'').replace(/^0+/,'').length<3?n.toPrecision(3):String(n)):'unknown';
  const fmt=n=>Number(n).toPrecision(4).replace(/\.0+$/, '');
- function options(select,rows,value){select.replaceChildren();for(const [id,label] of rows){const o=document.createElement('option');o.value=id;o.textContent=label;select.append(o)}if(rows.some(r=>r[0]===value))select.value=value}
+ function options(select,rows,value){select.replaceChildren();for(const [id,label] of rows){const o=document.createElement('option');o.value=id;o.textContent=label;select.append(o)}select.value=rows.some(r=>r[0]===value)?value:rows[0]?.[0]??''}
  function openImage(f){if(moved)return;dialog.close();clearFileSearch();byId('file').value=f.id;openFile()}
  function title(f){const p=f.stage_position;return `${f.name}\n${f.folder}\n${f.date} ${f.time}\nStage X ${coord(p.x)}, Y ${coord(p.y)} (raw); α ${tilt(p.alpha)}, β ${tilt(p.beta)}\n${field(f)?f.field_nm.map(fmt).join(' × ')+' nm':'No real-space footprint'}`}
  // Group only identical calibrated footprints. Point-only records remain independent.
@@ -222,9 +247,11 @@
   const groups=footprintGroups(),root=groups.find(g=>g.files.some(f=>f.id===(treeMasterId||reference?.id)));
   const unplaced=groups.filter(g=>!g.pos),placed=groups.filter(g=>g.pos),roots=[];
   const area=g=>g.rect?g.rect[2]*g.rect[3]:0;
+  // Count eligible smaller footprints before attaching them, avoiding order-dependent ties.
+  const childCounts=new Map(placed.map(p=>[p,placed.filter(c=>area(p)>area(c)&&overlaps(p,c)).length]));
   for(const g of placed){
    // Parentage depends on footprint size, never on the current viewing reference.
-   const parent=placed.filter(p=>p!==g&&area(p)>area(g)&&overlaps(p,g)).sort((a,b)=>area(a)-area(b))[0];
+   const parent=placed.filter(p=>p!==g&&area(p)>area(g)&&overlaps(p,g)).sort((a,b)=>area(a)-area(b)||childCounts.get(b)-childCounts.get(a))[0];
    if(parent)parent.children.push(g);else roots.push(g);
   }
   roots.sort((a,b)=>(a===root?-1:b===root?1:0)||area(b)-area(a));
@@ -242,6 +269,7 @@
   const select=groupSelectors.get(g.files[0].id);select?.focus();select?.scrollIntoView({block:'nearest'});
   byId('acquisition-detail').textContent=`${groupName(g)} share this footprint. Choose an image in the tree, then Use reference.`;
  }
+ const leavesFirst=items=>[...items].sort((a,b)=>Number(a.children.length>0)-Number(b.children.length>0));
  function renderImageTree(){
   const list=byId('acquisition-list');list.replaceChildren();groupSelectors.clear();
   function branch(parent,items,key,label){
@@ -249,7 +277,7 @@
    const details=document.createElement('details');details.className='acquisition-tree-branch';details.open=treeExpanded.get(key)??true;
    details.addEventListener('toggle',()=>treeExpanded.set(key,details.open));
    const summary=document.createElement('summary');summary.textContent=label;
-   const ul=document.createElement('ul');ul.append(...items.map(entry));details.append(summary,ul);parent.append(details);
+   const ul=document.createElement('ul');ul.append(...leavesFirst(items).map(entry));details.append(summary,ul);parent.append(details);
   }
   function entry(g){
    const li=document.createElement('li'),row=document.createElement('div');row.className='acquisition-entry';
@@ -272,8 +300,24 @@
    row.append(box,open);li.append(row);
    branch(li,g.children,`${treeMasterId}:${key}`,'Within this image');return li;
   }
-  const tree=spatialTree(),ul=document.createElement('ul');ul.className='acquisition-tree';ul.append(...tree.roots.map(entry));list.append(ul);
+  const tree=spatialTree(),ul=document.createElement('ul');ul.className='acquisition-tree';ul.append(...[...tree.roots.filter(g=>g===tree.root),...leavesFirst(tree.roots.filter(g=>g!==tree.root))].map(entry));list.append(ul);
   branch(list,tree.unplaced,`${treeMasterId}:unplaced`,'Not placed');
+ }
+ function referenceChildCount(candidate,files){
+  const key=`tem-acquisition-rotation:${JSON.stringify([config.data_root,candidate.id])}`;
+  const rotation=rotations.has(key)?rotations.get(key):readPreference(key,0);
+  const parent={rect:[0,0,...candidate.field_nm.map(v=>v/1000)]};
+  // Coincident alternate captures count as one footprint, not extra children.
+  const footprints=new Set();
+  for(const f of files){
+   if(f.id===candidate.id||f.acquisition_batch!==candidate.acquisition_batch)continue;
+   if(field(f)&&f.field_nm[0]*f.field_nm[1]>=candidate.field_nm[0]*candidate.field_nm[1])continue;
+   const manual=placement(f,candidate),pos=manual?[manual.x,manual.y]:stageOffset(f,candidate,Number(rotation)||0);
+   if(!pos)continue;
+   const rect=field(f)?[...pos,...f.field_nm.map(v=>v/1000)]:null;
+   if(overlaps(parent,{pos,rect}))footprints.add(JSON.stringify(rect||pos));
+  }
+  return footprints.size;
  }
  function update(reset=true,preserveTree=false){
   if(!data)return;
@@ -289,18 +333,20 @@
   if(!scopedBatches.some(b=>b.id===batchId)&&batchId!=='*')batchId=scopedBatches.find(b=>b.members.includes(originId))?.id||scopedBatches[0]?.id||'';
   options(byId('acquisition-batch'),[['*','All acquisition batches'],...scopedBatches.map(b=>[b.id,batchLabel(b)])],batchId);
   visible=scoped.filter(f=>batchId==='*'||f.acquisition_batch===batchId);
+  const counts=new Map();
+  const count=f=>{if(!counts.has(f.id))counts.set(f.id,referenceChildCount(f,visible));return counts.get(f.id)};
   const refs=visible.filter(f=>field(f)&&(batchId!=='*'||location(f)||scopedBatches.some(b=>b.reference_id===f.id)))
-   .sort((a,b)=>b.field_nm[0]*b.field_nm[1]-a.field_nm[0]*a.field_nm[1]);
+   .sort((a,b)=>b.field_nm[0]*b.field_nm[1]-a.field_nm[0]*a.field_nm[1]||count(b)-count(a));
   const old=byId('acquisition-reference').value;
-  const preferred=refs.some(f=>f.id===old)?old:batchReference(batchOf(visible[0]))?.id;
-  options(byId('acquisition-reference'),refs.map(f=>[f.id,`${f.name} · ${fmt(f.field_nm[0])} nm wide`]),batchId==='*'?old:preferred);
+  const preferred=refs.some(f=>f.id===old)?old:refs[0]?.id;
+  options(byId('acquisition-reference'),refs.map(f=>[f.id,`${f.name} · ${fmt(f.field_nm[0])} nm wide`]),preferred);
   reference=refs.find(f=>f.id===byId('acquisition-reference').value)||null;
   if(!treeMasterId)treeMasterId=reference?.id;
   restoreRotation();
   const placed=visible.filter(f=>location(f));
   byId('acquisition-status').textContent=!data.batches?'Restart TEM Workbench to enable tilt batches.':`${data.sample} · ${scopedBatches.length} batches · ${placed.length}/${visible.length} images placed${batchId==='*'?' · Unaligned batches stay off the map until placed.':' · Matching tilts permit a stage estimate; verify alignment.'}`;
   renderImageTree();
-  navigation();syncAdjustment();
+  navigation();syncAdjustment();rememberSelection();
   if(reference&&field(reference))preview(reference.id);
   if(reset)fit(false);else draw();
  }
@@ -410,9 +456,7 @@
   navigation();draw();
   try{
    const result=await api(`acquisition-map?id=${encodeURIComponent(seedId)}`);if(ticket!==request)return;data=result;
-   const current=opening?data.files.find(f=>f.id===originId):null;selectedFolder=current?.folder||'';
-   const dates=[...new Set(data.files.map(f=>f.date))].sort();options(byId('acquisition-date'),[['*','All dates'],...dates.map(d=>[d,d||'Date unknown'])],current?.date??'*');
-   byId('acquisition-scope').value=opening?'folder':'sample';
+   restoreSelection(opening?data.files.find(f=>f.id===originId):null,opening);
    byId('acquisition-errors').hidden=!data.errors.length;for(const err of data.errors){const p=document.createElement('p');p.textContent=`${err.name}: ${err.error}`;byId('acquisition-error-list').append(p)}
    busy=false;update();
   }catch(e){if(ticket===request){busy=false;byId('acquisition-status').textContent=e.message;draw()}}
@@ -453,8 +497,9 @@
   if(!fileId)return;
   originId=fileId;
   const samples=[...new Set(config.files.map(f=>f.sample))].sort((a,b)=>a.localeCompare(b));
-  options(byId('acquisition-sample'),samples.map(s=>[s,s||'Unlabelled']),config.files.find(f=>f.id===originId)?.sample);
-  dialog.showModal();return loadSample(originId,true);
+  const seed=openingSeed();
+  options(byId('acquisition-sample'),samples.map(s=>[s,s||'Unlabelled']),seed?.sample);
+  dialog.showModal();return loadSample(seed?.id||originId,true);
  };
  byId('acquisition-sample').onchange=()=>{
   const seed=config.files.find(f=>f.sample===byId('acquisition-sample').value);
@@ -466,7 +511,7 @@
  byId('acquisition-folder').onchange=()=>{selectedFolder=byId('acquisition-folder').value;byId('acquisition-scope').value='folder';treeSnapshot=null;treeMasterId=null;batchId='';byId('acquisition-reference').replaceChildren();update()};
  for(const id of ['acquisition-scope','acquisition-date'])byId(id).onchange=()=>{treeSnapshot=null;treeMasterId=null;batchId='';byId('acquisition-reference').replaceChildren();update()};
  byId('acquisition-batch').onchange=()=>{batchId=byId('acquisition-batch').value;treeSnapshot=null;treeMasterId=null;byId('acquisition-reference').replaceChildren();update();fit(true)};
- byId('acquisition-align-batch').onchange=syncBatchAlignment;
+ byId('acquisition-align-batch').onchange=()=>{syncBatchAlignment();rememberSelection()};
  byId('acquisition-place-batch').onclick=()=>{
   const anchor=batchReference(scopedBatches.find(b=>b.id===byId('acquisition-align-batch').value));
   if(!anchor||!reference)return;

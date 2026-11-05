@@ -491,3 +491,5 @@ Validation: 16 Mac installer tests and 38 updater tests completed successfully (
 5 November 2026 — Acquisition hover captions include each capture’s acquisition number and detector; parent crops centre vertically alongside stacked captures. Wheel and button zoom steps have half their previous logarithmic magnitude, preserving reciprocal zoom-in/out steps.
 
 5 November 2026 — Disabled text selection on acquisition-map canvas and its labels so placement/pan drags do not select text.
+
+5 November 2026 — **Acquisition-map selection memory and tree ordering:** Sample selection persists per data source; folder, scope, date, acquisition batch, alignment batch and reference persist per sample across reloads. Stale selections fall back to available entries. Leaves appear before branches among siblings (master tree remains first). Equal-size automatic reference candidates and equally sized eligible parents prefer the footprint covering more smaller images; an existing selected reference is retained. Equal-size overlapping images remain peers, avoiding hierarchy cycles.
