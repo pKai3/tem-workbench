@@ -1,7 +1,7 @@
 """Metadata-only acquisition locations; no registration or image analysis."""
 import math
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 LENGTH_NM = {'nm': 1., 'µm': 1000., 'μm': 1000., 'um': 1000., 'm': 1e9, 'A': .1, 'Å': .1}
 
@@ -42,12 +42,27 @@ def acquisition_number(row):
     return int(tagged.group(1)) if tagged else int(numbers[-1]) if numbers else None
 
 
-def acquisition_batches(rows):
-    """Consecutive numbers with exactly equal, known raw alpha AND beta only.
+def paired_detector_capture(rows):
+    """Recognize ADF/Hitachi exports of one acquisition, without merging copies."""
+    if len(rows) != 2:
+        return False
+    names = [re.match(r'^(.*_)(ADF|Hitachi)(_.+)$', row['name'], re.I) for row in rows]
+    if not all(names) or {m[2].lower() for m in names} != {'adf', 'hitachi'}:
+        return False
+    if (names[0][1], names[0][3]) != (names[1][1], names[1][3]):
+        return False
+    positions = [tuple(finite(row.get('stage_position', {}).get(k))
+                       for k in ('x', 'y', 'alpha', 'beta')) for row in rows]
+    return (all(v is not None for v in positions[0]) and positions[0] == positions[1]
+            and bool(rows[0].get('time')) and rows[0]['time'] == rows[1].get('time'))
 
-    Folder/date boundaries keep separate acquisition sessions apart. Duplicate
-    numbers and missing metadata are singleton batches, never bridges. Compute
-    before UI filtering so hiding an intervening image cannot merge batches.
+
+def acquisition_batches(rows):
+    """Consecutive acquisitions with exactly equal, known raw alpha AND beta.
+
+    ADF/Hitachi pairs with matching stage/time metadata are one acquisition.
+    Other duplicates and missing metadata remain isolated, never bridges.
+    Folder/date boundaries separate sessions. Compute before UI filtering.
     """
     sessions = defaultdict(list)
     for row in rows:
@@ -55,23 +70,29 @@ def acquisition_batches(rows):
         sessions[(row.get('folder', ''), row.get('date', ''))].append(row)
     batches = []
     for session in sorted(sessions):
-        files = sorted(sessions[session], key=lambda f: (f['acquisition_number'] is None,
-                       f['acquisition_number'] or 0, f['id']))
-        counts = Counter(f['acquisition_number'] for f in files)
-        previous, group, previous_valid = None, None, False
-        for row in files:
-            number = row['acquisition_number']
-            tilt = tuple(finite(row.get('stage_position', {}).get(k)) for k in ('alpha', 'beta'))
-            valid = number is not None and counts[number] == 1 and all(v is not None for v in tilt)
-            continues = (valid and previous_valid and number == previous['acquisition_number'] + 1
-                         and tilt == tuple(previous['stage_position'][k] for k in ('alpha', 'beta')))
-            if not continues:
-                group = {'id': row['id'], 'members': [], 'alpha': tilt[0], 'beta': tilt[1],
-                         'folder': session[0], 'date': session[1], 'automatic': valid}
-                batches.append(group)
-            row['acquisition_batch'] = group['id']
-            group['members'].append(row['id'])
-            previous, previous_valid = row, valid
+        acquisitions = defaultdict(list)
+        for row in sessions[session]:
+            acquisitions[row['acquisition_number']].append(row)
+        previous_number, previous_tilt, group = None, None, None
+        for number in sorted(acquisitions, key=lambda n: (n is None, n or 0)):
+            captures = sorted(acquisitions[number], key=lambda f: f['id'])
+            tilt = tuple(finite(captures[0].get('stage_position', {}).get(k))
+                         for k in ('alpha', 'beta'))
+            valid = (number is not None and all(v is not None for v in tilt)
+                     and (len(captures) == 1 or paired_detector_capture(captures)))
+            continues = (valid and previous_number is not None
+                         and number == previous_number + 1 and tilt == previous_tilt)
+            for row in captures:
+                if not continues:
+                    row_tilt = tuple(finite(row.get('stage_position', {}).get(k))
+                                     for k in ('alpha', 'beta'))
+                    group = {'id': row['id'], 'members': [], 'alpha': row_tilt[0], 'beta': row_tilt[1],
+                             'folder': session[0], 'date': session[1], 'automatic': valid}
+                    batches.append(group)
+                row['acquisition_batch'] = group['id']
+                group['members'].append(row['id'])
+                continues = valid
+            previous_number, previous_tilt = (number, tilt) if valid else (None, None)
     # Select the widest calibrated real-space view, with deterministic ties.
     by_id = {row['id']: row for row in rows}
     for group in batches:

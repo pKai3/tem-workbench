@@ -85,6 +85,36 @@ class AcquisitionBatches(unittest.TestCase):
               dict(self.row(5),name='overview'),dict(self.row(6),name='no number')]
         self.assertEqual(len(acquisition_batches(rows)),len(rows))
 
+    def pair(self, n, **kwargs):
+        result = []
+        for detector in ('ADF', 'Hitachi'):
+            row = self.row(n, **kwargs)
+            row.update(id=row['id'].replace('OneView', detector),
+                       name=row['name'].replace('OneView', detector), time='1:02:53 PM')
+            result.append(row)
+        return result
+
+    def test_detector_pair_preserves_sequence_and_each_calibration(self):
+        pair = self.pair(118, alpha=-10.8)
+        pair[1]['field_nm'] = [200, 300]  # Pairing does not choose or overwrite calibration.
+        rows = [self.row(117, alpha=-10.8), *pair, *self.pair(119, alpha=-10.8)]
+        groups = acquisition_batches(list(reversed(rows)))
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(len(groups[0]['members']), 5)
+        self.assertEqual((groups[0]['first'], groups[0]['last']), (117, 119))
+        self.assertEqual(pair[0]['field_nm'], [100, 100])
+        self.assertEqual(pair[1]['field_nm'], [200, 300])
+        self.assertEqual(groups[0]['reference_id'], pair[1]['id'])
+
+    def test_conflicting_detector_pairs_do_not_bridge(self):
+        for key, value in [('x', 3), ('alpha', 1), ('beta', None), ('time', '1:03:00 PM')]:
+            with self.subTest(key=key):
+                pair = self.pair(2)
+                target = pair[1] if key == 'time' else pair[1]['stage_position']
+                target[key] = value
+                groups = acquisition_batches([self.row(1), *pair, self.row(3)])
+                self.assertEqual([len(g['members']) for g in groups], [1, 1, 1, 1])
+
     def test_diffraction_sequence_is_retained_without_becoming_reference(self):
         rows=[self.row(1), self.row(2,width=None), self.row(3,width=500)]
         group=acquisition_batches(rows)[0]
