@@ -533,3 +533,6 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #acquisition-align-preview:not([hidden]){display:flex;align-items:center;gap:12px;font-size:12px;color:var(--muted)}
 #acquisition-align-image{width:100px;height:100px;object-fit:contain;background:#080d13;border:1px solid var(--line)}
 #acquisition-align-info{white-space:pre-line}
+
+/* Map labels should not be selected while panning or placing images. */
+#acquisition-canvas, #acquisition-canvas *{-webkit-user-select:none;user-select:none}

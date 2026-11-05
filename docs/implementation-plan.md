@@ -489,3 +489,5 @@ Validation: 16 Mac installer tests and 38 updater tests completed successfully (
 5 November 2026 — Acquisition map follow-up: reference number remains visible at its top-right corner, including shared captures. Calibrated footprints with more than 50% of their area outside the current reference display their preview image. Removed Image to move selector; hover/focus selects the placement target and dragging selects it directly. Movement scope and Reset placement remain available.
 
 5 November 2026 — Acquisition hover captions include each capture’s acquisition number and detector; parent crops centre vertically alongside stacked captures. Wheel and button zoom steps have half their previous logarithmic magnitude, preserving reciprocal zoom-in/out steps.
+
+5 November 2026 — Disabled text selection on acquisition-map canvas and its labels so placement/pan drags do not select text.
