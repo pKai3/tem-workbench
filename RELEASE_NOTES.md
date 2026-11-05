@@ -1,5 +1,5 @@
-# TEM Workbench 1.0.17
+# TEM Workbench 1.0.18
 
-- Show acquisition images as a reference-first tree with hover previews
+- Make acquisition hover previews standard without a toggle
 
 Use **Check for updates → Install update and restart**.
