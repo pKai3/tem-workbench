@@ -44,6 +44,7 @@ from workbench_project import Project
 
 ROOT = Path(__file__).resolve().parent
 LOG = logging.getLogger('tem_workbench')
+GRID_WAIT_LOG_SECONDS = 10
 
 # Longest marker cycle: 2.4 seconds at 30 fps, rendered at 2800 × 2728.
 SPECTRUM_MAX_FRAMES = 72
@@ -244,7 +245,7 @@ class Workbench:
         LOG.info("Grid %s started: %s; %s×%s; adaptive=%s; stop=%.3g nm; workers=%s", job["id"][:8], item["info"].get("name", "image"), count, count, adaptive, minimum, workers)
 
         def work():
-            started = progress_at = time.monotonic()
+            started = progress_at = waiting_at = time.monotonic()
             pool = None
             in_flight = deque()
             queue = deque(({'x': int(bounds[c]), 'y': int(bounds[r]), 'w': int(bounds[c+1]-bounds[c]), 'h': int(bounds[r+1]-bounds[r])}, 0, None, None) for r in range(count) for c in range(count))
@@ -282,12 +283,15 @@ class Workbench:
                         queue.append(({'x': roi['x']+dx, 'y': roi['y']+dy, 'w': ww, 'h': hh}, region['depth']+1, region['id'], probe_id))
 
             try:
+                LOG.info('Grid analysis settings: %s', settings)
                 pool = RegionPool(item, settings, engine.settings, engine.version, workers)
                 while (queue or in_flight) and not job['cancel']:
                     # Submit only a bounded window; commit in submission order.
                     # This preserves serial breadth-first IDs, tie order and splits.
                     while queue and len(in_flight) < workers and not job['cancel']:
                         task = queue.popleft()
+                        if not in_flight and not job['processed']:
+                            LOG.info('Grid: submitting first region %s', task[0])
                         in_flight.append((task, pool.submit(task[0])))
                     if job['cancel']:
                         break
@@ -298,7 +302,18 @@ class Workbench:
                     try:
                         result = future.result(timeout=.1)
                     except TimeoutError:
+                        states = pool.diagnostics() if hasattr(pool, 'diagnostics') else []
+                        with self.job_lock:
+                            job['execution']['worker_states'] = states
+                            job['execution']['status'] = ('Analyzing regions' if any(s['stage'] in {'analyzing','completed'} for s in states) else 'Starting workers')
+                        if time.monotonic()-waiting_at >= GRID_WAIT_LOG_SECONDS:
+                            logging.getLogger('tem_workbench.grid_diagnostics').warning(
+                                'Grid waiting: %.1f s elapsed; %s regions committed; %s later results ready; workers=%s',
+                                time.monotonic()-started, job['processed'], sum(f.done() for _, f in list(in_flight)[1:]), states or 'no worker initialization received')
+                            waiting_at = time.monotonic()
                         continue
+                    if hasattr(pool, "diagnostics"):
+                        pool.diagnostics()
                     in_flight.popleft()
                     if job['cancel']:
                         break
@@ -343,7 +358,7 @@ class Workbench:
             except Exception as exc:
                 with self.job_lock:
                     job['error'] = str(exc)
-                traceback.print_exc()
+                LOG.exception('Grid analysis failed')
             finally:
                 if pool is not None:
                     try:
@@ -364,6 +379,7 @@ class Workbench:
                         except Exception as exc:
                             job['error'] = str(exc)
                             LOG.exception('Overlap map aggregation failed')
+                    job['execution']['status'] = ''
                     job['execution']['elapsed_seconds'] = round(time.monotonic()-started, 2)
                     job['state'] = 'error' if job['error'] else 'cancelled' if job['cancel'] else 'complete'
                     LOG.info('Grid %s %s: %s analysed; %s map regions', job['id'][:8], job['state'], job['processed'], sum(r['leaf'] for r in job['regions']))

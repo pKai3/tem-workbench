@@ -1,7 +1,9 @@
 """Spawn integration and coordinator interruption checks without source DM4 files."""
-from concurrent.futures import CancelledError, ThreadPoolExecutor
+from concurrent.futures import CancelledError, ThreadPoolExecutor, Future
 from pathlib import Path
 import threading
+import queue
+import time
 import unittest
 from unittest.mock import patch
 import numpy as np
@@ -39,6 +41,22 @@ class SpawnChecks(unittest.TestCase):
             with self.assertRaises(CancelledError):pool.submit(roi).result(timeout=10)
         finally:pool.close()
         self.assertFalse(directory.exists())
+
+    def test_diagnostics_reports_stages_and_preserves_current_roi(self):
+        pool=RegionPool.__new__(RegionPool);pool.events=queue.Queue();pool.states={}
+        roi=dict(x=0,y=0,w=128,h=128)
+        for stage,detail in [('initializing',None),('ready',{'python':'3.14'}),('analyzing',roi)]:
+            pool.events.put((123,stage,detail))
+        with self.assertLogs('tem_workbench.grid_diagnostics',level='INFO') as logs:
+            state=pool.diagnostics()
+        self.assertEqual(state[0]['stage'],'analyzing')
+        self.assertEqual(state[0]['detail'],roi)
+        self.assertTrue(any('ready' in line for line in logs.output))
+        self.assertTrue(any('analyzing' in line for line in logs.output))
+        pool.events.put((123,'analysis failed','test traceback'))
+        with self.assertLogs('tem_workbench.grid_diagnostics',level='INFO') as logs:
+            pool.diagnostics()
+        self.assertIn('test traceback',logs.output[0])
 
     def test_worker_limit_validation(self):
         for value in [-1,17,True,2.5,'2']:
@@ -78,6 +96,24 @@ class CoordinatorChecks(unittest.TestCase):
         app.engine=Engine({});app.jobs={};app.grid_thread=None;app.closing=False
         app.lock=threading.RLock();app.job_lock=threading.RLock()
         return app
+
+    def test_wait_is_logged_before_any_region_completes(self):
+        app=self.app();item=image()
+        class StalledPool:
+            def __init__(self,*args):pass
+            def submit(self,roi):return Future()
+            def diagnostics(self):return []
+            def close(self):pass
+        with patch('server.RegionPool',StalledPool), patch('server.GRID_WAIT_LOG_SECONDS',.01):
+            with self.assertLogs('tem_workbench.grid_diagnostics',level='WARNING') as logs:
+                job_id=app.grid(item,{},2,False,1,workers=2)['id']
+                deadline=time.monotonic()+3
+                while not logs.output and time.monotonic()<deadline:time.sleep(.02)
+                app.cancel_grid(job_id);app.grid_thread.join(3)
+            self.assertTrue(any('no worker initialization received' in line for line in logs.output))
+        self.assertEqual(app.jobs[job_id]['processed'],0)
+        self.assertEqual(app.jobs[job_id]['state'],'cancelled')
+        app.close()
 
     def test_error_in_child_group_keeps_complete_parent_coverage(self):
         self.check_interruption(error=True)

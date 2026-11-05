@@ -1392,7 +1392,7 @@ function isGridRunning(){return Boolean(jobId&&(!grid||grid.state==='running'))}
 function gridStatus(){
  if(!grid)return;
  reportJobError('grid',grid.id,grid.error?'Grid stopped: '+grid.error:'');
- $('grid-status').textContent=`${grid.processed} regions analysed · ${grid.pending} pending · ${grid.cancelling?'stopping':grid.state}${grid.execution?` · ${grid.execution.workers} worker${grid.execution.workers===1?'':'s'} · ${grid.execution.elapsed_seconds.toFixed(1)} s`:''}${grid.error?' — '+grid.error:''}`+(grid.rescore?` · reweighted in ${(grid.rescore.elapsed_ms/1000).toFixed(2)} s using cached fits`:'');
+ $('grid-status').textContent=`${grid.processed} regions analysed · ${grid.pending} pending · ${grid.cancelling?'stopping':grid.state}${grid.execution?` · ${grid.execution.workers} worker${grid.execution.workers===1?'':'s'} · ${grid.execution.elapsed_seconds.toFixed(1)} s${grid.execution.status?' · '+grid.execution.status:''}`:''}${grid.error?' — '+grid.error:''}`+(grid.rescore?` · reweighted in ${(grid.rescore.elapsed_ms/1000).toFixed(2)} s using cached fits`:'');
 }
 async function poll(id){
  try{
