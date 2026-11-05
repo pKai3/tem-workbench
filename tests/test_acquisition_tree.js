@@ -103,3 +103,14 @@ console.log('Cross-batch anchor movement respects selected move scope.');
 context.test.set(files,groups,'i102');
 assert.equal(context.test.parents(files[4],'all').length,0,'point-only diffraction images must not request real-space parent crops');
 console.log('Diffraction hover omits unavailable real-space crops.');
+
+// Whole-batch translation includes members outside the anchor's spatial subtree.
+const remote=row('i304',500,12,'b');cross.push(remote);crossGroups[1].members.push(remote.id);
+context.test.clearMoves();context.test.set(cross,crossGroups,'i301');context.test.place(cross[1],cross[0],1,0);
+const before=cross.map(f=>Array.from(context.test.location(f)));
+move=context.test.startMove(cross[1],false,true);context.test.move(move,2,3);
+assert.deepEqual(Array.from(context.test.location(cross[0])),before[0],'master stays fixed');
+for(let i=1;i<cross.length;i++)assert.deepEqual(Array.from(context.test.location(cross[i])),[before[i][0]+2,before[i][1]+3]);
+context.test.finishMove(move,false);
+for(let i=0;i<cross.length;i++)assert.deepEqual(Array.from(context.test.location(cross[i])),before[i]);
+console.log('Whole-batch translation includes off-tree members and cancels cleanly.');

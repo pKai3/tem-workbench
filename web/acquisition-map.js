@@ -61,13 +61,23 @@
  function placementReference(f){return f.acquisition_batch===reference?.acquisition_batch||batchOf(f)?.reference_id===f.id?reference:batchReference(batchOf(f))}
  function syncBatchAlignment(){
   const all=batchId==='*';
-  byId('acquisition-align-label').hidden=!all;byId('acquisition-place-batch').hidden=!all;
   byId('acquisition-reference-label').textContent=all?'Master image':'Reference image';
   const candidates=scopedBatches.filter(b=>b.id!==reference?.acquisition_batch&&b.reference_id);
   options(byId('acquisition-align-batch'),candidates.map(b=>[b.id,batchLabel(b)]),byId('acquisition-align-batch').value);
   byId('acquisition-place-batch').disabled=!reference||!candidates.length;
   const anchor=batchReference(candidates.find(b=>b.id===byId('acquisition-align-batch').value));
-  byId('acquisition-place-batch').textContent=anchor&&placement(anchor)?'Adjust batch':'Place batch';
+  byId('acquisition-place-batch').textContent=anchor&&placement(anchor)?'Adjust batch on map':'Show batch for alignment';
+  showAlignmentPreview(reference?anchor:null);
+ }
+ let alignmentPreviewId='';
+ function showAlignmentPreview(anchor){
+  const panel=byId('acquisition-align-preview'),im=byId('acquisition-align-image');
+  panel.hidden=!anchor;
+  if(!anchor){alignmentPreviewId='';im.hidden=true;return}
+  byId('acquisition-align-info').textContent=`${anchor.name} · ${fmt(anchor.field_nm[0])} nm wide\n${placement(anchor)?'Placed relative to':'Will start at the centre of'} ${reference.name}. Drag to align; the whole batch moves together.`;
+  if(alignmentPreviewId===anchor.id)return;
+  alignmentPreviewId=anchor.id;im.hidden=true;
+  imageURL(`/api/acquisition-preview?id=${encodeURIComponent(anchor.id)}`).then(url=>{if(alignmentPreviewId===anchor.id){im.src=url;im.hidden=false}}).catch(()=>{if(alignmentPreviewId===anchor.id)byId('acquisition-align-info').textContent+=' Preview unavailable.'});
  }
  function syncAdjustment(){
   options(byId('acquisition-adjust-image'),adjustable().map(f=>[f.id,f.name]),adjustId);
@@ -78,6 +88,7 @@
   byId('acquisition-adjust-image').disabled=!adjust;
   byId('acquisition-placement-status').textContent=manual?`Manually placed · X ${fmt(manual.x)} µm, Y ${fmt(manual.y)} µm from reference centre (right/down). Saved on release.`:'Drag a footprint to place it; changes are remembered for this reference.';
   svg.classList.toggle('adjusting',adjust);
+  if(adjust&&f)preview(f.id);
  }
  function cropDetails(f,ref=reference){
   const pos=location(f),parentPos=location(ref);
@@ -150,13 +161,12 @@
   hideHover();const peers=footprintPeers(f);highlight(peers);if(f.id===reference?.id&&peers.length===1)return;
   hoverTimer=setTimeout(()=>showComparison(f,e),180);
  }
- function chooseImage(f){if(adjust){adjustId=batchId==='*'&&f.acquisition_batch!==reference?.acquisition_batch?batchOf(f)?.reference_id:f.id;hideHover();syncAdjustment();draw()}else selectReference(f)}
+ function chooseImage(f){if(adjust){adjustId=f.id;hideHover();syncAdjustment();draw()}else selectReference(f)}
  function bindHover(el,f){el.onmouseenter=e=>hover(f,e);el.onmouseleave=()=>{if(!drag?.image)hideHover()};el.onfocus=e=>hover(f,e);el.onblur=hideHover}
  function navigation(){
   const depth=Math.max(0,treePath(reference).length-1);
   byId('acquisition-back').disabled=!depth;
   byId('acquisition-level').textContent=reference?`${depth?'Level '+depth:'Overview'} · ${number(reference)}`:'No reference';
-  byId('acquisition-open-reference').disabled=!reference;
  }
  function selectReference(f){
   if(moved||f.id===reference?.id)return;
@@ -175,7 +185,7 @@
  async function preview(id){
   if(previews.has(id))return;
   previews.set(id,null);
-  try{const res=await fetch(`/api/acquisition-preview?id=${encodeURIComponent(id)}`);if(!res.ok)throw Error('Overview preview unavailable');const blob=await res.blob();const url=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob)});previews.set(id,url);if(previews.size>8)previews.delete(previews.keys().next().value);if(reference?.id===id)draw()}catch(e){previews.set(id,'');if(reference?.id===id)byId('acquisition-status').textContent+=' Overview preview unavailable.'}
+  try{const res=await fetch(`/api/acquisition-preview?id=${encodeURIComponent(id)}`);if(!res.ok)throw Error('Overview preview unavailable');const blob=await res.blob();const url=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob)});previews.set(id,url);if(previews.size>8)previews.delete(previews.keys().next().value);if(reference?.id===id||(adjust&&adjustId===id))draw()}catch(e){previews.set(id,'');if(reference?.id===id)byId('acquisition-status').textContent+=' Overview preview unavailable.'}
  }
  const positioned=f=>Number.isFinite(f.stage_position?.x)&&Number.isFinite(f.stage_position?.y);
  const field=f=>Array.isArray(f.field_nm)&&f.field_nm.every(x=>Number.isFinite(x)&&x>0);
@@ -278,7 +288,7 @@
   const scopedIds=new Set(scoped.map(f=>f.id));
   scopedBatches=batches().filter(b=>b.members.some(id=>scopedIds.has(id)));
   if(!scopedBatches.some(b=>b.id===batchId)&&batchId!=='*')batchId=scopedBatches.find(b=>b.members.includes(originId))?.id||scopedBatches[0]?.id||'';
-  options(byId('acquisition-batch'),[['*','All batches · align to master'],...scopedBatches.map(b=>[b.id,batchLabel(b)])],batchId);
+  options(byId('acquisition-batch'),[['*','All acquisition batches'],...scopedBatches.map(b=>[b.id,batchLabel(b)])],batchId);
   visible=scoped.filter(f=>batchId==='*'||f.acquisition_batch===batchId);
   const refs=visible.filter(f=>field(f)&&(batchId!=='*'||location(f)||scopedBatches.some(b=>b.reference_id===f.id)))
    .sort((a,b)=>b.field_nm[0]*b.field_nm[1]-a.field_nm[0]*a.field_nm[1]);
@@ -320,7 +330,7 @@
   return delta?[offset.x+delta[0],offset.y+delta[1]]:null;
  }
  // Apply the same level filter to fitting and drawing, before viewport clipping.
- function mappedImages(){return visible.filter(f=>location(f)&&!(treePath(reference).length>1&&field(f)&&field(reference)&&f.field_nm[0]*f.field_nm[1]>reference.field_nm[0]*reference.field_nm[1]*1.001))}
+ function mappedImages(){return visible.filter(f=>location(f)&&((adjust&&f.id===adjustId)||!(treePath(reference).length>1&&field(f)&&field(reference)&&f.field_nm[0]*f.field_nm[1]>reference.field_nm[0]*reference.field_nm[1]*1.001)))}
  function fittedView(overview=false){
   if(!reference)return null;
   let loX=Infinity,loY=Infinity,hiX=-Infinity,hiY=-Infinity;
@@ -357,6 +367,7 @@
    const g=node('g',{class:'location','data-image-id':f.id,'data-image-ids':JSON.stringify(group.files.map(x=>x.id)),tabindex:'0',role:'button','aria-label':`Use ${f.name} as reference`});
    if(placement(f))g.setAttribute('data-manual','true');
    if(adjust&&f.id===adjustId)g.setAttribute('data-selected','true');
+   if(adjust&&f.id===adjustId&&field(f)&&previews.get(f.id))g.append(node('image',{x:px-pw/2,y:py-ph/2,width:pw,height:ph,preserveAspectRatio:'none',opacity:'.5',href:previews.get(f.id),'pointer-events':'none'}));
    if(field(f))g.append(node('rect',{x:px-pw/2,y:py-ph/2,width:pw,height:ph,fill:colour,'fill-opacity':'.09',stroke:colour,'stroke-width':1}));
    const markerX=px+pw/2,markerY=py-ph/2;
    g.append(node('circle',{cx:markerX,cy:markerY,r:4,fill:colour,stroke:'#080d13','stroke-width':1}));
@@ -396,10 +407,11 @@
  byId('acquisition-crop-source').value=['closest','master','all'].includes(cropMode)?cropMode:'closest';
  byId('acquisition-crop-source').onchange=()=>{writePreference('tem-acquisition-crop-source',byId('acquisition-crop-source').value);hideHover()};
  // Snapshot descendants before dragging so the move scope cannot change mid-drag.
- function startPlacementMove(f,withChildren){
+ function startPlacementMove(f,withChildren,wholeBatch=false){
   const group=treePath(f).at(-1),ids=new Set([f.id]);
   function collect(g){for(const member of g.files)ids.add(member.id);if(withChildren)g.children.forEach(collect)}
   if(group)collect(group);
+  if(wholeBatch){ids.clear();for(const member of visible)if(member.acquisition_batch===f.acquisition_batch&&member.id!==reference.id)ids.add(member.id)}
   return {positions:visible.map(image=>({image,pos:location(image)})).filter(item=>item.pos),ids,changes:new Map()};
  }
  function applyPlacementMove(move,dx,dy){
@@ -435,7 +447,6 @@
  };
  byId('acquisition-map-close').onclick=()=>dialog.close();
  dialog.addEventListener('close',()=>{++request;busy=false;hideHover()});
- byId('acquisition-open-reference').onclick=()=>{if(reference){moved=false;openImage(reference)}};
  byId('acquisition-back').onclick=()=>{const parent=parentImage();if(parent){moved=false;selectReference(parent)}};
  byId('acquisition-folder').onchange=()=>{selectedFolder=byId('acquisition-folder').value;byId('acquisition-scope').value='folder';treeSnapshot=null;treeMasterId=null;batchId='';byId('acquisition-reference').replaceChildren();update()};
  for(const id of ['acquisition-scope','acquisition-date'])byId(id).onchange=()=>{treeSnapshot=null;treeMasterId=null;batchId='';byId('acquisition-reference').replaceChildren();update()};
@@ -445,8 +456,9 @@
   const anchor=batchReference(scopedBatches.find(b=>b.id===byId('acquisition-align-batch').value));
   if(!anchor||!reference)return;
   if(!placement(anchor)){const value={x:0,y:0};placements.set(placementKey(anchor),value);writePreference(placementKey(anchor),value)}
-  adjust=true;byId('acquisition-adjust').checked=true;adjustId=anchor.id;update(false);fit(false);
-  byId('acquisition-detail').textContent=`Drag ${anchor.name} to align its batch with the master. Choose whether to move this image alone or its descendants.`;
+  batchId='*';adjust=true;byId('acquisition-adjust').checked=true;byId('acquisition-move-scope').value='batch';adjustId=anchor.id;update(false);fit(false);
+  byId('acquisition-placement-controls').open=true;svg.scrollIntoView({block:'nearest'});
+  byId('acquisition-detail').textContent=`Drag the translucent ${anchor.name} image to align it with ${reference.name}. Its entire acquisition batch moves with it.`;
  };
  byId('acquisition-reference').onchange=()=>{treeSnapshot=null;treeMasterId=null;update(false);fit(true)};
  byId('acquisition-rotation').onchange=rememberRotation;
@@ -463,10 +475,9 @@
  svg.onpointerdown=e=>{
   if(!view||e.button!==0)return;hideHover();moved=false;const p=point(e);
   const id=e.target.closest('[data-image-id]')?.getAttribute('data-image-id');let f=visible.find(f=>f.id===id);
-  if(adjust&&batchId==='*'&&f&&f.acquisition_batch!==reference.acquisition_batch)f=batchReference(batchOf(f));
   if(adjust&&f&&f.id!==reference.id&&field(f)){
-   adjustId=f.id;const [x,y]=location(f);drag={x:p.x,y:p.y,view:{...view},image:f,start:{x,y},move:startPlacementMove(f,byId('acquisition-move-scope').value==='children')};
-   syncAdjustment();showComparison(f,e,true);
+   adjustId=f.id;const [x,y]=location(f);drag={x:p.x,y:p.y,view:{...view},image:f,start:{x,y},move:startPlacementMove(f,byId('acquisition-move-scope').value==='children',byId('acquisition-move-scope').value==='batch')};
+   syncAdjustment();if(byId('acquisition-move-scope').value!=='batch')showComparison(f,e,true);
   }else drag={x:p.x,y:p.y,view:{...view}};
   if(drag.image)svg.setPointerCapture(e.pointerId);
  };
@@ -474,7 +485,7 @@
   if(!drag)return;const p=point(e),dx=p.x-drag.x,dy=p.y-drag.y;
   if(Math.hypot(dx,dy)>4||moved){
    moved=true;
-   if(drag.image){applyPlacementMove(drag.move,dx/800*drag.view.w,dy/620*drag.view.h);draw();showComparison(drag.image,e,true)}
+   if(drag.image){applyPlacementMove(drag.move,dx/800*drag.view.w,dy/620*drag.view.h);draw();if(byId('acquisition-move-scope').value!=='batch')showComparison(drag.image,e,true)}
    else{view.x=drag.view.x-dx/800*drag.view.w;view.y=drag.view.y-dy/620*drag.view.h;draw()}
   }
  };

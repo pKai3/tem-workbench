@@ -523,3 +523,13 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #acquisition-hover-captures.stacked figure{display:flex;flex-direction:column;min-height:0}
 #acquisition-hover-captures.stacked figcaption{height:auto;flex:none}
 #acquisition-hover-captures.stacked figure>div{flex:1;min-height:0;aspect-ratio:auto}
+
+/* Keep map navigation on the map; tuck placement tools into one disclosure. */
+.acquisition-map-space{position:relative;min-width:0;align-self:start}
+.acquisition-map-tools{position:absolute;right:10px;top:10px;z-index:1;display:flex;gap:4px;padding:4px;border-radius:7px;background:#080d13de}
+.acquisition-map-tools button{padding:5px 9px;font-size:12px}
+#acquisition-placement-controls{border:1px solid var(--line);border-radius:7px;padding:9px 12px;margin:10px 0}
+#acquisition-placement-controls>summary{cursor:pointer}
+#acquisition-align-preview:not([hidden]){display:flex;align-items:center;gap:12px;font-size:12px;color:var(--muted)}
+#acquisition-align-image{width:100px;height:100px;object-fit:contain;background:#080d13;border:1px solid var(--line)}
+#acquisition-align-info{white-space:pre-line}
