@@ -108,7 +108,9 @@
   if(!adjustable().some(f=>f.id===adjustId))adjustId='';
   const f=visible.find(f=>f.id===adjustId),manual=f&&placement(f,placementReference(f));
   syncBatchAlignment();
-  byId('acquisition-reset-placement').disabled=!manual;
+  const reset=byId('acquisition-reset-placement');
+  reset.disabled=!manual;reset.textContent=f?`Reset ${number(f)}`:'Reset placement';
+  reset.title=manual?`Reset saved placement of ${f.name}`:f?`${f.name} has no saved movement in this view`:'Hover an image on the map or tree to select its placement';
   byId('acquisition-placement-status').textContent=manual?`Manually placed · X ${fmt(manual.x)} µm, Y ${fmt(manual.y)} µm from reference centre (right/down). Saved on release.`:'Drag a footprint to place it; changes are remembered for this reference.';
   svg.classList.toggle('adjusting',adjust);
   if(adjust&&f)preview(f.id);
@@ -183,10 +185,13 @@
   else render('crop',cropURL(ref,detail));
   positionCard(e);
  }
+ function selectPlacementTarget(f){
+  if(!drag&&f.id!==reference?.id&&field(f)&&location(f)&&adjustId!==f.id){adjustId=f.id;syncAdjustment()}
+ }
  function hover(f,e){
   byId('acquisition-detail').textContent=title(f).replaceAll('\n',' · ');
   if(drag)return;
-  if(adjust&&f.id!==reference?.id&&field(f)&&adjustId!==f.id){adjustId=f.id;syncAdjustment()}
+  selectPlacementTarget(f);
   hideHover();const peers=footprintPeers(f);highlight(peers);if(f.id===reference?.id&&peers.length===1)return;
   hoverTimer=setTimeout(()=>showComparison(f,e),180);
  }
@@ -207,7 +212,7 @@
    const key=`tem-acquisition-rotation:${JSON.stringify([config.data_root,f.id])}`;rotations.set(key,angle);writePreference(key,angle);
    options(byId('acquisition-reference'),[[f.id,f.name]],f.id);update(false,true);return;
   }
-  spatialTree(); // Freeze the hierarchy before changing the viewing reference.
+  spatialTree(); // Retain hierarchy only if the next view has equivalent placements.
   options(byId('acquisition-reference'),[[f.id,f.name]],f.id);update(false,true);fit(true);
  }
 
@@ -247,8 +252,16 @@
   const [x,y,w,h]=parent.rect,[cx,cy]=child.pos,[cw,ch]=child.rect?.slice(2)||[0,0];
   return cw&&ch?Math.abs(x-cx)<(w+cw)/2&&Math.abs(y-cy)<(h+ch)/2:Math.abs(x-cx)<=w/2&&Math.abs(y-cy)<=h/2;
  }
+ function placementFingerprint(){
+  // Ignore a common origin shift, but detect reference-specific saved movements.
+  const rows=visible.map(f=>({id:f.id,pos:location(f),size:field(f)?f.field_nm:null})).sort((a,b)=>a.id.localeCompare(b.id));
+  const origin=rows.find(r=>r.pos)?.pos||[0,0];
+  return JSON.stringify(rows.map(r=>[r.id,r.pos?.map((v,i)=>Math.round((v-origin[i])*1e9)),r.size]));
+ }
  function spatialTree(){
-  if(treeSnapshot)return treeSnapshot;
+  if(drag?.image&&treeSnapshot)return treeSnapshot;
+  const fingerprint=placementFingerprint();
+  if(treeSnapshot?.fingerprint===fingerprint)return treeSnapshot;
   const groups=footprintGroups(),root=groups.find(g=>g.files.some(f=>f.id===(treeMasterId||reference?.id)));
   const unplaced=groups.filter(g=>!g.pos),placed=groups.filter(g=>g.pos),roots=[];
   const area=g=>g.rect?g.rect[2]*g.rect[3]:0;
@@ -260,7 +273,7 @@
    if(parent)parent.children.push(g);else roots.push(g);
   }
   roots.sort((a,b)=>(a===root?-1:b===root?1:0)||area(b)-area(a));
-  return treeSnapshot={root,roots,unplaced};
+  return treeSnapshot={root,roots,unplaced,fingerprint};
  }
  function treePath(f){
   if(!f)return [];
@@ -299,8 +312,8 @@
    }
    const use=document.createElement('button');use.type='button';use.textContent=g.files.length>1?(f.id===reference?.id?'Current reference':'Use reference'):f.name;
    use.title=title(f);use.onclick=()=>{moved=false;chooseImage(f)};
-   row.onmouseenter=()=>highlight(g.files);row.onmouseleave=()=>{if(!drag?.image)hideHover()};
-   use.onfocus=()=>highlight(g.files);use.onblur=hideHover;box.append(use);
+   row.onmouseenter=()=>{highlight(g.files);selectPlacementTarget(f)};row.onmouseleave=()=>{if(!drag?.image)hideHover()};
+   use.onfocus=()=>{highlight(g.files);selectPlacementTarget(f)};use.onblur=hideHover;box.append(use);
    const sub=document.createElement('small');sub.textContent=[isRoot?'Reference image':'',!g.pos?'Not placed':g.rect?`${fmt(f.field_nm[0])} nm wide`:'Point only'].filter(Boolean).join(' · ');box.append(sub);
    const open=document.createElement('button');open.type='button';open.textContent='Open';open.title='Open selected image for analysis';open.onclick=()=>{moved=false;openImage(f)};
    open.onmouseenter=e=>hover(f,e);open.onmouseleave=hideHover;open.onfocus=e=>hover(f,e);open.onblur=hideHover;

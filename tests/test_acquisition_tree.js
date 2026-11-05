@@ -191,3 +191,17 @@ assert.equal(context.test.selection().folder,'test');assert.equal(context.test.s
 assert.equal(context.document.getElementById('acquisition-date').value,'*');
 assert.equal(context.test.reference(),'i402');
 console.log('Leaf ordering, most-covered ties, retained references, selection restoration and stale-state fallbacks passed.');
+
+// Reference-specific saved movements must not retain impossible parent links.
+const shifted=[row('i1189',8000),row('i1187',3123),row('i1188',1984),row('i1185',1526)];
+context.test.clearMoves();context.test.set(shifted,[{id:'a',reference_id:'i1189',members:shifted.map(f=>f.id)}],'i1189');
+const originalTree=context.test.tree();
+context.test.view('i1185');assert.equal(context.test.parent(),'i1188');
+assert.equal(context.test.tree(),originalTree,'changing origin alone preserves the tree');
+context.test.place(shifted[2],shifted[1],0,5);
+context.test.view('i1187');
+assert.notEqual(context.test.tree(),originalTree,'saved placement changes invalidate snapshot');
+assert.deepEqual(Array.from(context.test.parents(shifted[3],'all'),f=>f.id),['i1187','i1189']);
+context.test.view('i1188');
+assert.equal(context.test.tree().roots.length,1,'another view recalculates its own saved placements');
+console.log('Tree follows visible saved placements while preserving origin-only navigation.');
