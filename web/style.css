@@ -497,3 +497,17 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #acquisition-list .acquisition-entry>button:first-child{white-space:normal;line-height:1.35}
 #acquisition-list .acquisition-tree-reference>button:first-child{border-color:var(--cyan);background:#193139}
 #acquisition-list .acquisition-tree-label{font-size:12px;color:var(--muted)}
+
+#acquisition-list .acquisition-tree-image{flex:1;min-width:0}
+#acquisition-list .acquisition-tree-image>button,#acquisition-list .acquisition-tree-image>select{width:100%;text-align:left;white-space:normal;font-size:12px}
+#acquisition-list .acquisition-tree-image>strong{display:block;font-size:12px;margin-bottom:4px}
+#acquisition-list .acquisition-tree-reference{border-left:2px solid var(--cyan);padding-left:5px}
+#acquisition-canvas .location.is-hovered rect{stroke:#65fff0;stroke-width:3;fill-opacity:.23}
+#acquisition-canvas .location.is-hovered circle{r:6;fill:#65fff0}
+#acquisition-canvas .location.is-hovered text{fill:#65fff0;font-weight:bold}
+#acquisition-hover-extras{display:flex;gap:8px;margin-top:8px}
+#acquisition-hover-extras figure{margin:0;flex:1;min-width:0}
+#acquisition-hover-extras img{width:100%;max-height:180px;object-fit:contain}
+#acquisition-hover-extras figcaption{overflow-wrap:anywhere;color:var(--muted);margin-bottom:4px}
+
+#acquisition-canvas .reference-outline.is-hovered{stroke:#65fff0;stroke-width:3}

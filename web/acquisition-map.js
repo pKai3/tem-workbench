@@ -8,7 +8,7 @@
  const batches=()=>data?.batches||[];
  const batchOf=f=>batches().find(b=>b.id===f?.acquisition_batch);
  const batchReference=b=>data?.files.find(f=>f.id===b?.reference_id);
- const batchLabel=b=>`${b.first??"Unnumbered"}${b.last!==b.first?"–"+(b.last??"?"):""} · α ${coord(b.alpha)}, β ${coord(b.beta)} · ${b.members.length} images`;
+ const batchLabel=b=>`${b.first??"Unnumbered"}${b.last!==b.first?"–"+(b.last??"?"):""} · α ${tilt(b.alpha)}, β ${tilt(b.beta)} · ${b.members.length} images`;
  const rotationKey=()=>`tem-acquisition-rotation:${JSON.stringify([config.data_root,reference.id])}`;
  function restoreRotation(){
   if(!reference)return;
@@ -24,7 +24,12 @@
  }
  let history=[], hoverTimer=0, hoverTicket=0;
  const card=byId('acquisition-hover');
- function hideHover(){clearTimeout(hoverTimer);hoverTicket++;card.hidden=true}
+ let highlighted=[];
+ function highlight(files=[]){
+  highlighted=files.map(f=>f.id);
+  for(const el of svg.querySelectorAll('[data-image-ids]'))el.classList.toggle('is-hovered',JSON.parse(el.getAttribute('data-image-ids')).some(id=>highlighted.includes(id)));
+ }
+ function hideHover(){clearTimeout(hoverTimer);hoverTicket++;card.hidden=true;highlight()}
  function positionCard(e){
   const box=e.currentTarget?.getBoundingClientRect();
   const x=e.clientX??box?.right??20,y=e.clientY??box?.top??20;
@@ -93,12 +98,21 @@
  function showComparison(f,e,live=false){
   const ticket=++hoverTicket,ref=reference,detail=cropDetails(f);
   const wasHidden=card.hidden;card.hidden=false;
-  byId('acquisition-hover-title').textContent=f.name;
+  const peers=footprintPeers(f);
+  byId('acquisition-hover-title').textContent=peers.map(x=>x.name).join(' / ');
+  const extras=byId('acquisition-hover-extras');extras.replaceChildren();
+  for(const other of peers.filter(x=>x.id!==f.id)){
+   const figure=document.createElement('figure'),caption=document.createElement('figcaption'),im=document.createElement('img');
+   caption.textContent=other.name;im.alt=other.name;figure.append(caption,im);extras.append(figure);
+   imageURL(`/api/acquisition-preview?id=${encodeURIComponent(other.id)}`).then(url=>{if(ticket===hoverTicket)im.src=url}).catch(()=>{caption.textContent+=' · Preview unavailable'});
+  }
+  byId('acquisition-hover-crop').closest('figure').hidden=f.id===ref.id;
   byId('acquisition-hover-info').textContent=detail.info+(live?' Live preview; original-pixel crop loads on release.':'');
   const render=async(type,promise)=>{try{const url=await promise;if(ticket!==hoverTicket)return;const im=byId(`acquisition-hover-${type}`);im.src=url;im.hidden=false;byId(`acquisition-hover-${type}-status`).textContent=''}catch{if(ticket===hoverTicket)byId(`acquisition-hover-${type}-status`).textContent='Preview unavailable'}};
   if(wasHidden){for(const type of ['full','crop']){byId(`acquisition-hover-${type}`).hidden=true;byId(`acquisition-hover-${type}-status`).textContent='Loading…'}}
   render('full',imageURL(`/api/acquisition-preview?id=${encodeURIComponent(f.id)}`));
-  if(!detail.bounds){byId('acquisition-hover-crop').hidden=true;byId('acquisition-hover-crop-status').textContent=detail.status}
+  if(f.id===ref.id){/* Other captures are shown below; no reference self-crop. */}
+  else if(!detail.bounds){byId('acquisition-hover-crop').hidden=true;byId('acquisition-hover-crop-status').textContent=detail.status}
   else if(live){
    render('crop',decodedPreview(ref.id).then(im=>{
     const b=detail.bounds,canvas=document.createElement('canvas');canvas.width=320;canvas.height=Math.max(1,Math.round(320*f.field_nm[1]/f.field_nm[0]));
@@ -111,7 +125,7 @@
  function hover(f,e){
   byId('acquisition-detail').textContent=title(f).replaceAll('\n',' · ');
   if(drag)return;
-  hideHover();if(f.id===reference?.id)return;
+  hideHover();const peers=footprintPeers(f);highlight(peers);if(f.id===reference?.id&&peers.length===1)return;
   hoverTimer=setTimeout(()=>showComparison(f,e),180);
  }
  function chooseImage(f){if(adjust){adjustId=batchId==='*'&&f.acquisition_batch!==reference?.acquisition_batch?batchOf(f)?.reference_id:f.id;hideHover();syncAdjustment();draw()}else selectReference(f)}
@@ -124,6 +138,13 @@
  function selectReference(f){
   if(moved||f.id===reference?.id)return;
   if(!field(f)){byId('acquisition-detail').textContent='This image has no calibrated real-space footprint. Use Open to analyze it.';return}
+  if(f.acquisition_batch===reference?.acquisition_batch&&footprintPeers(reference).some(x=>x.id===f.id)){
+   // Alternate capture of the same footprint: change backdrop, not navigation level or coordinate frame.
+   const oldRef=reference,angle=Number(byId('acquisition-rotation').value)||0;
+   for(const image of visible){const manual=placement(image,oldRef);if(manual&&image.id!==f.id){const key=placementKey(image,f);placements.set(key,{...manual});writePreference(key,{...manual})}}
+   const key=`tem-acquisition-rotation:${JSON.stringify([config.data_root,f.id])}`;rotations.set(key,angle);writePreference(key,angle);
+   options(byId('acquisition-reference'),[[f.id,f.name]],f.id);update(false);return;
+  }
   history.push({id:reference?.id,view:view?{...view}:null,zoomOutLimit,folder:selectedFolder,scope:byId('acquisition-scope').value,batchId});
   batchId=f.acquisition_batch;
   options(byId('acquisition-reference'),[[f.id,f.name]],f.id);update(false);fit(true);
@@ -138,51 +159,81 @@
  const field=f=>Array.isArray(f.field_nm)&&f.field_nm.every(x=>Number.isFinite(x)&&x>0);
  const number=f=>{const n=acquisitionNumber(f);return Number.isFinite(n)?String(n):f.name};
  const coord=n=>Number.isFinite(n)?String(Number(n.toPrecision(9))):'unknown';
+ const tilt=n=>Number.isFinite(n)?(String(n).replace(/[-.e+]/g,'').replace(/^0+/,'').length<3?n.toPrecision(3):String(n)):'unknown';
  const fmt=n=>Number(n).toPrecision(4).replace(/\.0+$/, '');
  function options(select,rows,value){select.replaceChildren();for(const [id,label] of rows){const o=document.createElement('option');o.value=id;o.textContent=label;select.append(o)}if(rows.some(r=>r[0]===value))select.value=value}
  function openImage(f){if(moved)return;dialog.close();clearFileSearch();byId('file').value=f.id;openFile()}
- function title(f){const p=f.stage_position;return `${f.name}\n${f.folder}\n${f.date} ${f.time}\nStage X ${coord(p.x)}, Y ${coord(p.y)} (raw); α ${coord(p.alpha)}, β ${coord(p.beta)}\n${field(f)?f.field_nm.map(fmt).join(' × ')+' nm':'No real-space footprint'}`}
- const treeExpanded=new Map();
- function renderImageTree(){
-  const list=byId('acquisition-list');list.replaceChildren();
-  const sorted=files=>[...files].sort((a,b)=>acquisitionNumber(a)-acquisitionNumber(b)||a.name.localeCompare(b.name));
-  function imageEntry(f,label=''){
-   const entry=document.createElement('div');entry.className='acquisition-entry';
-   if(f.id===reference?.id)entry.classList.add('acquisition-tree-reference');
-   const b=document.createElement('button');b.type='button';b.textContent=f.name;
-   b.title=title(f);b.setAttribute('aria-current',String(f.id===reference?.id));
-   const sub=document.createElement('small');
-   sub.textContent=[label,!location(f)?'Not placed':field(f)?`${fmt(f.field_nm[0])} nm wide`:'Point only'].filter(Boolean).join(' · ');
-   b.append(sub);b.onclick=()=>{moved=false;chooseImage(f)};bindHover(b,f);
-   const open=document.createElement('button');open.type='button';open.textContent='Open';open.title='Open for analysis';open.setAttribute('aria-label',`Open ${f.name} for analysis`);open.onclick=()=>{moved=false;openImage(f)};
-   entry.append(b,open);return entry;
+ function title(f){const p=f.stage_position;return `${f.name}\n${f.folder}\n${f.date} ${f.time}\nStage X ${coord(p.x)}, Y ${coord(p.y)} (raw); α ${tilt(p.alpha)}, β ${tilt(p.beta)}\n${field(f)?f.field_nm.map(fmt).join(' × ')+' nm':'No real-space footprint'}`}
+ // Group only identical calibrated footprints. Point-only records remain independent.
+ function footprintGroups(files=visible){
+  const groups=[];
+  for(const f of files){
+   const pos=location(f),rect=pos&&field(f)?[...pos,...f.field_nm.map(v=>v/1000)]:null;
+   const same=rect&&groups.find(g=>g.rect&&g.rect.every((v,i)=>Math.abs(v-rect[i])<=1e-10));
+   if(same)same.files.push(f);else groups.push({files:[f],rect,pos,children:[]});
   }
-  const leaf=(f,label='')=>{const li=document.createElement('li');li.append(imageEntry(f,label));return li};
-  function children(parent,items,key,label){
+  return groups;
+ }
+ function footprintPeers(f){return footprintGroups().find(g=>g.files.some(x=>x.id===f.id))?.files||[f]}
+ const groupName=g=>[...new Set([...g.files].sort((a,b)=>acquisitionNumber(a)-acquisitionNumber(b)||a.name.localeCompare(b.name)).map(number))].join('/');
+ function overlaps(parent,child){
+  if(!parent.rect||!child.pos)return false;
+  const [x,y,w,h]=parent.rect,[cx,cy]=child.pos,[cw,ch]=child.rect?.slice(2)||[0,0];
+  return cw&&ch?Math.abs(x-cx)<(w+cw)/2&&Math.abs(y-cy)<(h+ch)/2:Math.abs(x-cx)<=w/2&&Math.abs(y-cy)<=h/2;
+ }
+ function spatialTree(){
+  const groups=footprintGroups(),root=groups.find(g=>g.files.some(f=>f.id===reference?.id));
+  const outside=[],unplaced=[],inside=[];
+  for(const g of groups){if(g===root)continue;if(!g.pos)unplaced.push(g);else if(root&&overlaps(root,g))inside.push(g);else outside.push(g)}
+  const area=g=>g.rect?g.rect[2]*g.rect[3]:0;
+  function nest(items,fallback){
+   const tops=[];
+   for(const g of items){
+    const parent=items.filter(p=>p!==g&&area(p)>area(g)&&overlaps(p,g)).sort((a,b)=>area(a)-area(b))[0]||fallback;
+    if(parent)parent.children.push(g);else tops.push(g);
+   }
+   return tops;
+  }
+  nest(inside,root);return {root,outside:nest(outside,null),unplaced};
+ }
+ const treeExpanded=new Map(),groupChoices=new Map(),groupSelectors=new Map();
+ function chooseGroup(g){
+  if(g.files.length===1){chooseImage(g.files[0]);return}
+  const select=groupSelectors.get(g.files[0].id);select?.focus();select?.scrollIntoView({block:'nearest'});
+  byId('acquisition-detail').textContent=`${groupName(g)} share this footprint. Choose an image in the tree, then Use reference.`;
+ }
+ function renderImageTree(){
+  const list=byId('acquisition-list');list.replaceChildren();groupSelectors.clear();
+  function branch(parent,items,key,label){
    if(!items.length)return;
-   const details=document.createElement('details');details.className='acquisition-tree-branch';
-   details.open=treeExpanded.get(key)??true;
+   const details=document.createElement('details');details.className='acquisition-tree-branch';details.open=treeExpanded.get(key)??true;
    details.addEventListener('toggle',()=>treeExpanded.set(key,details.open));
    const summary=document.createElement('summary');summary.textContent=label;
-   const ul=document.createElement('ul');ul.append(...items);details.append(summary,ul);parent.append(details);
+   const ul=document.createElement('ul');ul.append(...items.map(entry));details.append(summary,ul);parent.append(details);
   }
-  const root=document.createElement('ul');root.className='acquisition-tree';
-  const own=sorted(visible.filter(f=>f.id!==reference?.id&&f.acquisition_batch===reference?.acquisition_batch)).map(f=>leaf(f));
-  const branches=[];
-  for(const batch of scopedBatches){
-   if(batch.id===reference?.acquisition_batch)continue;
-   const members=sorted(visible.filter(f=>f.acquisition_batch===batch.id));if(!members.length)continue;
-   const anchor=batchReference(batch),shownAnchor=members.find(f=>f.id===anchor?.id);
-   const li=shownAnchor?leaf(shownAnchor,'Batch reference'):document.createElement('li');
-   if(!shownAnchor){const label=document.createElement('span');label.className='acquisition-tree-label';label.textContent='No calibrated batch reference';li.append(label)}
-   children(li,members.filter(f=>f.id!==shownAnchor?.id).map(f=>leaf(f)),`${reference?.id}:${batch.id}`,batchLabel(batch));
-   branches.push(li);
+  function entry(g){
+   const li=document.createElement('li'),row=document.createElement('div');row.className='acquisition-entry';
+   const isRoot=g.files.some(f=>f.id===reference?.id),key=g.files[0].id;
+   let f=g.files.find(f=>f.id===groupChoices.get(key))||(isRoot?reference:g.files[0]);
+   if(isRoot)row.classList.add('acquisition-tree-reference');
+   const box=document.createElement('div');box.className='acquisition-tree-image';
+   if(g.files.length>1){
+    const label=document.createElement('strong');label.textContent=groupName(g);box.append(label);
+    const select=document.createElement('select');select.setAttribute('aria-label',`Choose image at ${groupName(g)}`);
+    options(select,g.files.map(x=>[x.id,x.name]),f.id);for(const member of g.files)groupSelectors.set(member.id,select);
+    select.onchange=()=>{f=g.files.find(x=>x.id===select.value);groupChoices.set(key,f.id);use.title=title(f);use.textContent=f.id===reference?.id?'Current reference':'Use reference'};
+    box.append(select);
+   }
+   const use=document.createElement('button');use.type='button';use.textContent=g.files.length>1?(f.id===reference?.id?'Current reference':'Use reference'):f.name;
+   use.title=title(f);use.onclick=()=>{moved=false;chooseImage(f)};
+   box.onmouseenter=e=>hover(f,e);box.onmouseleave=()=>{if(!drag?.image)hideHover()};box.onfocusin=e=>hover(f,e);box.onfocusout=hideHover;box.append(use);
+   const sub=document.createElement('small');sub.textContent=[isRoot?'Reference image':'',!g.pos?'Not placed':g.rect?`${fmt(f.field_nm[0])} nm wide`:'Point only'].filter(Boolean).join(' · ');box.append(sub);
+   const open=document.createElement('button');open.type='button';open.textContent='Open';open.title='Open selected image for analysis';open.onclick=()=>{moved=false;openImage(f)};
+   row.append(box,open);li.append(row);
+   branch(li,g.children,`${reference?.id}:${key}`,'Within this image');return li;
   }
-  if(reference){
-   const top=leaf(reference,batchId==='*'?'Master image':'Reference image');
-   children(top,[...own,...branches],`${reference.id}:root:${batchId}`,batchId==='*'?'Images and batch references':'Images in this batch');root.append(top);
-  }else root.append(...branches);
-  list.append(root);
+  const tree=spatialTree(),ul=document.createElement('ul');ul.className='acquisition-tree';if(tree.root)ul.append(entry(tree.root));list.append(ul);
+  branch(list,tree.outside,`${reference?.id}:outside`,'Outside reference');branch(list,tree.unplaced,`${reference?.id}:unplaced`,'Not placed');
  }
  function update(reset=true){
   if(!data)return;hideHover();
@@ -197,7 +248,7 @@
   if(!scopedBatches.some(b=>b.id===batchId)&&batchId!=='*')batchId=scopedBatches.find(b=>b.members.includes(originId))?.id||scopedBatches[0]?.id||'';
   options(byId('acquisition-batch'),[['*','All batches · align to master'],...scopedBatches.map(b=>[b.id,batchLabel(b)])],batchId);
   visible=scoped.filter(f=>batchId==='*'||f.acquisition_batch===batchId);
-  const refs=(batchId==='*'?scopedBatches.map(batchReference).filter(Boolean):visible.filter(field))
+  const refs=visible.filter(f=>field(f)&&(batchId!=='*'||location(f)||scopedBatches.some(b=>b.reference_id===f.id)))
    .sort((a,b)=>b.field_nm[0]*b.field_nm[1]-a.field_nm[0]*a.field_nm[1]);
   const old=byId('acquisition-reference').value;
   const preferred=refs.some(f=>f.id===old)?old:batchReference(batchOf(visible[0]))?.id;
@@ -260,16 +311,17 @@
    const [w,h]=reference.field_nm.map(v=>v/1000);
    const im=node('image',{x:sx(-w/2),y:sy(-h/2),width:w*800/view.w,height:h*620/view.h,preserveAspectRatio:'none',opacity:'.65',href:previews.get(reference.id)||'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'});
    im.addEventListener('error',()=>{byId('acquisition-status').textContent+=' Overview preview unavailable.'},{once:true});svg.append(im);
-   svg.append(node('rect',{x:sx(-w/2),y:sy(-h/2),width:w*800/view.w,height:h*620/view.h,fill:'none',stroke:'#fff','stroke-dasharray':'5 5'}));
+   svg.append(node('rect',{x:sx(-w/2),y:sy(-h/2),width:w*800/view.w,height:h*620/view.h,class:'location reference-outline','data-image-ids':JSON.stringify([reference.id]),'pointer-events':'none',fill:'none',stroke:'#fff','stroke-dasharray':'5 5'}));
   }
   const placed=mappedImages().sort((a,b)=>adjust?(Number(a.id===adjustId)-Number(b.id===adjustId)||((b.field_nm?.[0]||0)-(a.field_nm?.[0]||0))):((b.field_nm?.[0]||0)-(a.field_nm?.[0]||0)));
   const usedLabels=new Set();
-  for(const f of placed){
-   if(f.id===reference.id)continue;
+  for(const group of footprintGroups(placed)){
+   const f=group.files.find(x=>x.id===adjustId&&adjust)||group.files.find(x=>x.id===reference.id)||group.files[0];
+   if(f.id===reference.id&&group.files.length===1)continue;
    const [x,y]=location(f), px=sx(x),py=sy(y);const colour=f.id===originId?'#ff8197':field(f)?'#7abaff':'#ffc36b';
    const [w,h]=field(f)?f.field_nm.map(v=>v/1000):[0,0],pw=w*800/view.w,ph=h*620/view.h;
    if(px+pw/2<0||px-pw/2>800||py+ph/2<0||py-ph/2>620)continue;
-   const g=node('g',{class:'location','data-image-id':f.id,tabindex:'0',role:'button','aria-label':`Use ${f.name} as reference`});
+   const g=node('g',{class:'location','data-image-id':f.id,'data-image-ids':JSON.stringify(group.files.map(x=>x.id)),tabindex:'0',role:'button','aria-label':`Use ${f.name} as reference`});
    if(placement(f))g.setAttribute('data-manual','true');
    if(adjust&&f.id===adjustId)g.setAttribute('data-selected','true');
    if(field(f))g.append(node('rect',{x:px-pw/2,y:py-ph/2,width:pw,height:ph,fill:colour,'fill-opacity':'.09',stroke:colour,'stroke-width':1}));
@@ -277,10 +329,11 @@
    g.append(node('circle',{cx:markerX,cy:markerY,r:4,fill:colour,stroke:'#080d13','stroke-width':1}));
    // Do not stack unreadable labels at identical / nearly identical recorded positions.
    const key=`${Math.round(markerX/50)},${Math.round(markerY/18)}`;
-   if(!usedLabels.has(key)){g.append(node('text',{x:markerX-7,y:markerY-6,'text-anchor':'end',fill:colour,'font-size':12,'paint-order':'stroke',stroke:'#080d13','stroke-width':3},number(f)+(placement(f)?' · manual':'')));usedLabels.add(key)}
-   g.onclick=()=>{if(!moved)chooseImage(f)};g.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();moved=false;chooseImage(f)}};
+   if(!usedLabels.has(key)){g.append(node('text',{x:markerX-7,y:markerY-6,'text-anchor':'end',fill:colour,'font-size':12,'paint-order':'stroke',stroke:'#080d13','stroke-width':3},groupName(group)+(placement(f)?' · manual':'')));usedLabels.add(key)}
+   g.onclick=()=>{if(!moved){if(adjust)chooseImage(f);else chooseGroup(group)}};g.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();moved=false;chooseGroup(group)}};
    bindHover(g,f);svg.append(g);
   }
+  highlight(visible.filter(f=>highlighted.includes(f.id)));
   const bar=view.w/5;
   svg.append(node('rect',{x:8,y:578,width:270,height:36,fill:'#080d13',opacity:.88}));
   svg.append(node('path',{d:'M 20 601 h 160',stroke:'#fff','stroke-width':2}));
@@ -351,7 +404,7 @@
   if(!view||e.button!==0)return;hideHover();moved=false;const p=point(e);
   const id=e.target.closest('[data-image-id]')?.getAttribute('data-image-id');let f=visible.find(f=>f.id===id);
   if(adjust&&batchId==='*'&&f&&f.acquisition_batch!==reference.acquisition_batch)f=batchReference(batchOf(f));
-  if(adjust&&f&&field(f)){
+  if(adjust&&f&&f.id!==reference.id&&field(f)){
    adjustId=f.id;const [x,y]=location(f);drag={x:p.x,y:p.y,view:{...view},image:f,start:{x,y},prior:placement(f),key:placementKey(f)};
    syncAdjustment();showComparison(f,e,true);
   }else drag={x:p.x,y:p.y,view:{...view}};
