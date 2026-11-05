@@ -109,7 +109,7 @@ class Workbench:
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
-                'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
+                'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
                 'peak_evidence': 'local-maxima-v3', 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -470,6 +470,22 @@ class Workbench:
             LOG.info('Grid %s reweighted: scale penalty %.3f; peak evidence %.3f', job_id[:8], strength, evidence_weight)
             return self.status(job_id)
 
+    def export_crop(self, body):
+        with self.lock:
+            item = self.engine.load(body['file_id'])
+            roi = {key: int(body['roi'][key]) for key in ('x', 'y', 'w', 'h')}
+            raw = self.engine.region_preview(item, roi, max_size=None)
+            name = safe_name(item['info']['name'])
+            output = Path(self.config['output_root']).expanduser().resolve()
+        stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
+        location = f"x{roi['x']}_y{roi['y']}_{roi['w']}x{roi['h']}"
+        output.mkdir(parents=True, exist_ok=True)
+        target = output / f'{stamp}_{name}_real_space_{location}_{uuid.uuid4().hex[:6]}.png'
+        with target.open('xb') as destination:
+            destination.write(raw)
+        LOG.info('Exported real-space crop: %s', target)
+        return {'path': str(target)}
+
     def export_spectrum(self, body):
         format_name = body.get('format')
         frames = body.get('frames')
@@ -769,6 +785,8 @@ def make_handler(app):
                     app.cancel_grid(body['job_id'])
                     LOG.info('Grid %s cancellation requested', body['job_id'][:8])
                     self.send({'ok':True})
+                elif self.path == '/api/export-crop':
+                    self.send(app.export_crop(body))
                 elif self.path == '/api/export-spectrum':
                     self.send(app.export_spectrum(body))
                 elif self.path == '/api/save':

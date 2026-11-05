@@ -2192,6 +2192,8 @@ let spectrumLoadingTimer=null, spectrumLoading=false, spectrumExportBusy=false;
 let hoverTimer=null, hoverKey=null, hoverVersion=0, hoverController=null, hoverPointer={x:0,y:0};
 const hoverCache=new Map();
 function syncSpectrumExportControls(){
+ $('export-crop').disabled=!config?.crop_exports||!result||isDiffraction()||busy||pending||$('export-crop').dataset.exportState==='busy';
+ $('export-crop').title=config?.crop_exports?'Save the selected crop at original pixel resolution':'Restart TEM Workbench to enable crop exports';
  syncMapExportControls();
  for(const id of ['export-png','export-gif']){$(id).disabled=spectrumExportBusy||mapExportBusy||busy||pending||!result||!fftRaw||!config?.spectrum_exports;$(id).title=config?.spectrum_exports?'Save the current view to the output folder':'Restart TEM Workbench to enable image exports'}
 }
@@ -2427,6 +2429,14 @@ async function exportSpectrum(format){
   exportNotice('Saving '+format.toUpperCase()+'…','Writing to the output folder');const saved=await api('export-spectrum',body);finishExport(buttonId,saved.path);
  }catch(error){finishExport(buttonId,null,'Image export failed: '+error.message)}finally{spectrumExportBusy=false;syncSpectrumExportControls()}
 }
+$('export-crop').onclick=async()=>{
+ if($('export-crop').disabled||!result)return;
+ const body={file_id:fileId,roi:{...result.roi}};
+ beginExport('export-crop','Exporting real-space crop…');
+ try{const saved=await api('export-crop',body);finishExport('export-crop',saved.path)}
+ catch(error){finishExport('export-crop',null,'Crop export failed: '+error.message)}
+ finally{syncSpectrumExportControls()}
+};
 $('export-png').onclick=()=>exportSpectrum('png');$('export-gif').onclick=()=>exportSpectrum('gif');
 
 function syncMapExportControls(){

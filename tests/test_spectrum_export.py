@@ -7,11 +7,36 @@ from threading import RLock
 from types import SimpleNamespace
 import unittest
 
+import numpy as np
+from engine import Engine
 from PIL import Image
 from server import Workbench, SPECTRUM_MAX_FRAMES, SPECTRUM_MAX_PIXELS
 
 
 class SpectrumExportTests(unittest.TestCase):
+    def test_native_real_space_crop(self):
+        pixels = np.arange(1000 * 1000, dtype=float).reshape(1000, 1000)
+        item = {'array': pixels, 'limits': (0, 999999),
+                'info': {'name': 'sample 1203', 'image_kind': 'real_space'}}
+        with TemporaryDirectory() as directory:
+            app = Workbench.__new__(Workbench)
+            app.lock = RLock()
+            app.config = {'output_root': directory}
+            app.engine = SimpleNamespace(load=lambda _: item,
+                region_preview=lambda item, roi, max_size: Engine.region_preview(None, item, roi, max_size))
+            body = {'file_id': 'sample', 'roi': {'x': 20, 'y': 30, 'w': 900, 'h': 850}}
+            saved = app.export_crop(body)
+            self.assertIn('real_space_x20_y30_900x850', saved['path'])
+            with Image.open(saved['path']) as image:
+                self.assertEqual(image.size, (900, 850))
+                expected = (pixels[30:880, 20:920] / 999999 * 255).astype(np.uint8)
+                np.testing.assert_array_equal(np.array(image), expected)
+            with self.assertRaises(ValueError):
+                app.export_crop({**body, 'roi': {**body['roi'], 'x': 999}})
+            item['info']['image_kind'] = 'diffraction'
+            with self.assertRaisesRegex(ValueError, 'real-space'):
+                app.export_crop(body)
+
     def test_full_rotation_cycle(self):
         frames = []
         for index in range(72):
