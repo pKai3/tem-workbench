@@ -22,7 +22,7 @@
   if(!Number.isFinite(value)){restoreRotation();return}
   rotations.set(rotationKey(),value);writePreference(rotationKey(),value);update(false);
  }
- let history=[], compare=true, hoverTimer=0, hoverTicket=0;
+ let history=[], hoverTimer=0, hoverTicket=0;
  const card=byId('acquisition-hover');
  function hideHover(){clearTimeout(hoverTimer);hoverTicket++;card.hidden=true}
  function positionCard(e){
@@ -111,7 +111,7 @@
  function hover(f,e){
   byId('acquisition-detail').textContent=title(f).replaceAll('\n',' · ');
   if(drag)return;
-  hideHover();if(!compare||f.id===reference?.id)return;
+  hideHover();if(f.id===reference?.id)return;
   hoverTimer=setTimeout(()=>showComparison(f,e),180);
  }
  function chooseImage(f){if(adjust){adjustId=batchId==='*'&&f.acquisition_batch!==reference?.acquisition_batch?batchOf(f)?.reference_id:f.id;hideHover();syncAdjustment();draw()}else selectReference(f)}
@@ -311,7 +311,6 @@
   originId=fileId;
   const samples=[...new Set(config.files.map(f=>f.sample))].sort((a,b)=>a.localeCompare(b));
   options(byId('acquisition-sample'),samples.map(s=>[s,s||'Unlabelled']),config.files.find(f=>f.id===originId)?.sample);
-  byId('acquisition-preview-on').disabled=!config.acquisition_comparison;byId('acquisition-preview-on').title=config.acquisition_comparison?'':'Restart TEM Workbench and reload to enable comparison previews';
   dialog.showModal();return loadSample(originId,true);
  };
  byId('acquisition-sample').onchange=()=>{
@@ -320,9 +319,6 @@
  };
  byId('acquisition-map-close').onclick=()=>dialog.close();
  dialog.addEventListener('close',()=>{++request;busy=false;hideHover()});
- for(const enabled of [false,true])byId(enabled?'acquisition-preview-on':'acquisition-preview-off').onclick=()=>{
-  compare=enabled;hideHover();byId('acquisition-preview-on').setAttribute('aria-pressed',String(compare));byId('acquisition-preview-off').setAttribute('aria-pressed',String(!compare));
- };
  byId('acquisition-open-reference').onclick=()=>{if(reference){moved=false;openImage(reference)}};
  byId('acquisition-back').onclick=()=>{
   const prior=history.pop();if(!prior)return;
