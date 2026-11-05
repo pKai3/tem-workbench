@@ -79,14 +79,24 @@
   byId('acquisition-placement-status').textContent=manual?`Manually placed · X ${fmt(manual.x)} µm, Y ${fmt(manual.y)} µm from reference centre (right/down). Saved on release.`:'Drag a footprint to place it; changes are remembered for this reference.';
   svg.classList.toggle('adjusting',adjust);
  }
- function cropDetails(f){
-  if(!reference||!field(reference)||!field(f)||!location(f))return {bounds:null,info:'No calibrated footprint or stage position for this comparison.',status:'Comparison unavailable'};
-  const [x,y]=location(f),[rw,rh]=reference.field_nm.map(v=>v/1000),[fw,fh]=f.field_nm.map(v=>v/1000);
+ function cropDetails(f,ref=reference){
+  const pos=location(f),parentPos=location(ref);
+  if(!ref||!field(ref)||!field(f)||!pos||!parentPos)return {bounds:null,info:'No calibrated footprint or stage position for this comparison.',status:'Comparison unavailable'};
+  const [x,y]=pos.map((v,i)=>v-parentPos[i]),[rw,rh]=ref.field_nm.map(v=>v/1000),[fw,fh]=f.field_nm.map(v=>v/1000);
   const bounds={x:(x-fw/2+rw/2)/rw,y:(y-fh/2+rh/2)/rh,w:fw/rw,h:fh/rh};
   const overlap=Math.max(0,Math.min(1,bounds.x+bounds.w)-Math.max(0,bounds.x))*Math.max(0,Math.min(1,bounds.y+bounds.h)-Math.max(0,bounds.y))/(bounds.w*bounds.h);
-  let info=`${f.field_nm.map(fmt).join(' × ')} nm · reference ${number(reference)} · about ${Math.round(bounds.w*reference.width)} × ${Math.round(bounds.h*reference.height)} reference pixels. ${placement(f)?'Manual placement.':f.acquisition_batch!==reference.acquisition_batch?'Within manually aligned batch.':'Approximate same-tilt stage placement.'}`;
-  if(overlap<.999)info+=` ${Math.round(overlap*100)}% inside reference; outside areas are black.`;
-  return {bounds:overlap?bounds:null,info,status:overlap?'Loading…':'Outside reference'};
+  let info=`${f.field_nm.map(fmt).join(' × ')} nm · crop from ${number(ref)} · about ${Math.round(bounds.w*ref.width)} × ${Math.round(bounds.h*ref.height)} source pixels. ${placement(f)||placement(ref)?'Manual placement.':'Approximate placement.'}`;
+  if(overlap<.999)info+=` ${Math.round(overlap*100)}% inside source; outside areas are black.`;
+  return {bounds:overlap?bounds:null,info,status:overlap?'Loading…':'Outside source'};
+ }
+ function comparisonParents(f,mode=byId('acquisition-crop-source').value){
+  const tree=spatialTree();
+  function path(g){if(g.files.some(x=>x.id===f.id))return [];for(const child of g.children){const below=path(child);if(below)return [g,...below]}return null}
+  const chain=tree.root?path(tree.root):null;
+  if(chain?.length===0)return []; // Reference and its alternate captures do not crop themselves.
+  if(mode==='master'||!chain)return reference?[reference]:[];
+  const parents=chain.map(g=>g===tree.root?reference:g.files.find(x=>x.id===groupChoices.get(g.files[0].id))||g.files[0]).reverse();
+  return mode==='all'?parents:parents.slice(0,1);
  }
  async function decodedPreview(id){
   if(!decoded.has(id)){
@@ -96,7 +106,7 @@
   return decoded.get(id);
  }
  function showComparison(f,e,live=false){
-  const ticket=++hoverTicket,ref=reference,detail=cropDetails(f);
+  const parents=comparisonParents(f),ticket=++hoverTicket,ref=parents[0]||reference,detail=cropDetails(f,ref);
   const wasHidden=card.hidden;card.hidden=false;
   const peers=footprintPeers(f);
   byId('acquisition-hover-title').textContent=peers.map(x=>x.name).join(' / ');
@@ -106,20 +116,29 @@
    caption.textContent=other.name;im.alt=other.name;figure.append(caption,im);extras.append(figure);
    imageURL(`/api/acquisition-preview?id=${encodeURIComponent(other.id)}`).then(url=>{if(ticket===hoverTicket)im.src=url}).catch(()=>{caption.textContent+=' · Preview unavailable'});
   }
-  byId('acquisition-hover-crop').closest('figure').hidden=f.id===ref.id;
-  byId('acquisition-hover-info').textContent=detail.info+(live?' Live preview; original-pixel crop loads on release.':'');
+  byId('acquisition-hover-crop').closest('figure').hidden=!parents.length;
+  byId('acquisition-hover-crop-label').textContent=`Crop · ${ref?.name||'Reference'}`;
+  function cropURL(parent,details){
+   if(!live)return imageURL(`/api/acquisition-crop?${new URLSearchParams({id:parent.id,...details.bounds})}`);
+   return decodedPreview(parent.id).then(im=>{
+    const b=details.bounds,canvas=document.createElement('canvas');canvas.width=320;canvas.height=Math.max(1,Math.round(320*f.field_nm[1]/f.field_nm[0]));
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(im,b.x*im.width,b.y*im.height,b.w*im.width,b.h*im.height,0,0,canvas.width,canvas.height);return canvas.toDataURL();
+   });
+  }
+  for(const parent of parents.slice(1)){
+   const figure=document.createElement('figure'),caption=document.createElement('figcaption'),im=document.createElement('img'),details=cropDetails(f,parent);
+   caption.textContent=`Crop · ${parent.name}`;caption.title=details.info;im.alt=`Crop of ${parent.name}`;figure.append(caption,im);extras.append(figure);
+   if(!details.bounds){caption.textContent+=` · ${details.status}`;continue}
+   cropURL(parent,details).then(url=>{if(ticket===hoverTicket)im.src=url}).catch(()=>{caption.textContent+=' · Preview unavailable'});
+  }
+  byId('acquisition-hover-info').textContent=(parents.length?detail.info:'Same footprint · alternate captures')+(live?' Live preview; original-pixel crop loads on release.':'');
   const render=async(type,promise)=>{try{const url=await promise;if(ticket!==hoverTicket)return;const im=byId(`acquisition-hover-${type}`);im.src=url;im.hidden=false;byId(`acquisition-hover-${type}-status`).textContent=''}catch{if(ticket===hoverTicket)byId(`acquisition-hover-${type}-status`).textContent='Preview unavailable'}};
   if(wasHidden){for(const type of ['full','crop']){byId(`acquisition-hover-${type}`).hidden=true;byId(`acquisition-hover-${type}-status`).textContent='Loading…'}}
   render('full',imageURL(`/api/acquisition-preview?id=${encodeURIComponent(f.id)}`));
-  if(f.id===ref.id){/* Other captures are shown below; no reference self-crop. */}
+  if(!parents.length){/* No reference self-crop. */}
   else if(!detail.bounds){byId('acquisition-hover-crop').hidden=true;byId('acquisition-hover-crop-status').textContent=detail.status}
-  else if(live){
-   render('crop',decodedPreview(ref.id).then(im=>{
-    const b=detail.bounds,canvas=document.createElement('canvas');canvas.width=320;canvas.height=Math.max(1,Math.round(320*f.field_nm[1]/f.field_nm[0]));
-    const ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(im,b.x*im.width,b.y*im.height,b.w*im.width,b.h*im.height,0,0,canvas.width,canvas.height);return canvas.toDataURL();
-   }));
-  }else render('crop',imageURL(`/api/acquisition-crop?${new URLSearchParams({id:ref.id,...detail.bounds})}`));
+  else render('crop',cropURL(ref,detail));
   if(wasHidden||!live)positionCard(e);
  }
  function hover(f,e){
@@ -359,6 +378,9 @@
   }catch(e){if(ticket===request){busy=false;byId('acquisition-status').textContent=e.message;draw()}}
   finally{if(ticket===request)busy=false}
  }
+ const cropMode=readPreference('tem-acquisition-crop-source','closest');
+ byId('acquisition-crop-source').value=['closest','master','all'].includes(cropMode)?cropMode:'closest';
+ byId('acquisition-crop-source').onchange=()=>{writePreference('tem-acquisition-crop-source',byId('acquisition-crop-source').value);hideHover()};
  byId('acquisition-map-open').onclick=()=>{
   if(!fileId)return;
   originId=fileId;

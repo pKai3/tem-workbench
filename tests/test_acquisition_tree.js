@@ -10,7 +10,7 @@ class Element{
 const controls=new Map();const context={document:{createElement:tag=>new Element(tag),getElementById:id=>{if(!controls.has(id))controls.set(id,new Element('div'));return controls.get(id)}},config:{data_root:'test'},readPreference:(k,d)=>d,acquisitionNumber:f=>Number(f.id.slice(1))};
 vm.createContext(context);let source=fs.readFileSync('web/acquisition-map.js','utf8');
 source=source.slice(0,source.indexOf(" byId('acquisition-map-open').onclick="))+`
- globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*'},render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers};})();`;
+ globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*'},render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,parents:comparisonParents,crop:cropDetails};})();`;
 vm.runInContext(source,context);
 controls.get('acquisition-list')||context.document.getElementById('acquisition-list');
 context.document.getElementById('acquisition-units').value=1000;
@@ -26,6 +26,15 @@ assert.equal(nested.children[0].children[0].files[0].id,'i100');
 assert.ok(tree.root.children.some(g=>g.files[0].id==='i105'));
 assert.ok(tree.root.children.some(g=>g.files[0].id==='i106'),'partial overlap belongs on tree');
 assert.equal(tree.outside[0].files[0].id,'i107');assert.equal(tree.unplaced[0].files[0].id,'i108');
+assert.deepEqual(Array.from(context.test.parents(files[3],'closest'),f=>f.id),['i104']);
+assert.deepEqual(Array.from(context.test.parents(files[3],'all'),f=>f.id),['i104','i102']);
+assert.deepEqual(Array.from(context.test.parents(files[3],'master'),f=>f.id),['i102']);
+assert.equal(context.test.parents(files[1],'all').length,0,'alternate reference does not crop itself');
+const crop=context.test.crop(files[3],files[2]);assert.equal(crop.bounds.w,.5);assert.equal(crop.bounds.x,.25);
+// Crop coordinates subtract the parent location, not just the master origin.
+files[2].stage_position.x=.4;files[3].stage_position.x=.6;
+assert.ok(Math.abs(context.test.crop(files[3],files[2]).bounds.x-.3)<1e-12);
+files[2].stage_position.x=0;files[3].stage_position.x=0;
 assert.equal(context.test.tilt(.9),'0.900');assert.equal(context.test.tilt(.90001234),'0.90001234');assert.equal(context.test.tilt(0),'0.00');
 context.test.render();
 const root=controls.get('acquisition-list').children[0],top=root.children[0];

@@ -511,3 +511,6 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #acquisition-hover-extras figcaption{overflow-wrap:anywhere;color:var(--muted);margin-bottom:4px}
 
 #acquisition-canvas .reference-outline.is-hovered{stroke:#65fff0;stroke-width:3}
+
+#acquisition-hover-extras{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+#acquisition-hover-crop-label{overflow-wrap:anywhere}
