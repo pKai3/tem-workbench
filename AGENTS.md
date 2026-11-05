@@ -11,3 +11,9 @@
 ## UI conventions
 
 - Keep settings labels and controls concise and visible. Put longer explanations in hover-to-reveal help, also available through keyboard focus or tapping an info button. Keep errors and active progress visible.
+
+## Releases
+
+- Push changes normally; GitHub checks run on every push. Do not automatically bump versions, tag or publish a release for each push.
+- Suggest a release when useful changes have accumulated, an important fix warrants distribution, or it has been a while. Wait for the user’s approval before publishing a release.
+- Publish approved releases through the manual Publish Workbench release workflow, retaining its full verification gates.

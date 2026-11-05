@@ -2,21 +2,6 @@ name: Desktop update checks
 
 on:
   push:
-    paths:
-      - 'workbench_updates.py'
-      - 'workbench_environment.py'
-      - 'tools/*.py'
-      - 'tools/*.sh'
-      - 'tools/*.bat'
-      - 'tools/build_release.py'
-      - 'tools/*app.py'
-      - 'macos/Launcher.swift'
-      - 'tests/test_updates.py'
-      - 'tests/test_release_preparation.py'
-      - 'tests/test_python*.py'
-      - 'tests/test_windows*.py'
-      - 'tests/test_macos_app.py'
-      - '.github/workflows/updates.yml'
   pull_request:
     paths:
       - 'workbench_updates.py'
