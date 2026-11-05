@@ -90,6 +90,7 @@
   return {bounds:overlap?bounds:null,info,status:overlap?'Loading…':'Outside source'};
  }
  function comparisonParents(f,mode=byId('acquisition-crop-source').value){
+  if(!field(f))return []; // Diffraction calibration does not define a specimen footprint.
   const chain=treePath(f).slice(0,-1);
   if(!chain?.length)return []; // Tree roots and their alternate captures do not crop themselves.
   const parents=chain.map(g=>g.files.find(x=>x.id===reference?.id)||g.files.find(x=>x.id===groupChoices.get(g.files[0].id))||g.files[0]).reverse();
@@ -130,11 +131,11 @@
   for(const parent of parents.slice(1)){
    const figure=document.createElement('figure'),caption=document.createElement('figcaption'),im=document.createElement('img'),details=cropDetails(f,parent);
    caption.textContent=`Crop · ${parent.name}`;caption.title=details.info;im.alt=`Crop of ${parent.name}`;figure.style.order='3';const frame=document.createElement('div');frame.append(im);figure.append(caption,frame);extras.append(figure);
-   if(!details.bounds){caption.textContent+=` · ${details.status}`;continue}
-   cropURL(parent,details).then(url=>{if(ticket===hoverTicket)im.src=url}).catch(()=>{caption.textContent+=' · Preview unavailable'});
+   if(!details.bounds){im.hidden=true;const status=document.createElement('span');status.textContent=details.status;frame.append(status);continue}
+   cropURL(parent,details).then(url=>{if(ticket===hoverTicket)im.src=url}).catch(()=>{if(ticket===hoverTicket){im.hidden=true;caption.textContent+=' · Preview unavailable'}});
   }
   card.style.width=`${Math.min(240*(1+parents.length)+20,innerWidth-28)}px`;
-  byId('acquisition-hover-info').textContent=(parents.length?detail.info:'Same footprint · alternate captures')+(live?' Live preview; original-pixel crop loads on release.':'');
+  byId('acquisition-hover-info').textContent=(!field(f)?'Specimen area unknown · stage location only; no real-space crop available.':parents.length?detail.info:peers.length>1?'Same footprint · alternate captures':'Full image')+(live?' Live preview; original-pixel crop loads on release.':'');
   const render=async(type,promise)=>{try{const url=await promise;if(ticket!==hoverTicket)return;const im=byId(`acquisition-hover-${type}`);im.src=url;im.hidden=false;byId(`acquisition-hover-${type}-status`).textContent=''}catch{if(ticket===hoverTicket)byId(`acquisition-hover-${type}-status`).textContent='Preview unavailable'}};
   if(wasHidden){for(const type of ['full','crop']){byId(`acquisition-hover-${type}`).hidden=true;byId(`acquisition-hover-${type}-status`).textContent='Loading…'}}
   render('full',imageURL(`/api/acquisition-preview?id=${encodeURIComponent(f.id)}`));

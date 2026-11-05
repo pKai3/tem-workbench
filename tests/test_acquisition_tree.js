@@ -99,3 +99,7 @@ assert.deepEqual(Array.from(context.test.location(cross[2])),[childStart[0]+1,ch
 context.test.finishMove(move,false);
 assert.deepEqual(Array.from(context.test.location(cross[2])),childStart);
 console.log('Cross-batch anchor movement respects selected move scope.');
+
+context.test.set(files,groups,'i102');
+assert.equal(context.test.parents(files[4],'all').length,0,'point-only diffraction images must not request real-space parent crops');
+console.log('Diffraction hover omits unavailable real-space crops.');
