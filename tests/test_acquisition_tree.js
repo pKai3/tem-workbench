@@ -62,6 +62,18 @@ assert.deepEqual(Array.from(context.test.parents(forestFiles[4],'closest'),f=>f.
 assert.equal(context.test.parents(forestFiles[2],'all').length,0);
 context.test.render();
 assert.equal(controls.get('acquisition-list').children[0].children.length,2);
+// The current-reference mode stops at the viewed ancestor, including alternate captures.
+context.test.view('i204');
+assert.deepEqual(Array.from(context.test.parents(forestFiles[4],'current'),f=>f.id),['i204']);
+assert.equal(context.test.parents(forestFiles[3],'current').length,0);
+context.test.view('i203');
+assert.deepEqual(Array.from(context.test.parents(forestFiles[4],'current'),f=>f.id),['i204','i203']);
+context.test.view('i201');
+assert.deepEqual(Array.from(context.test.parents(forestFiles[4],'current'),f=>f.id),['i204']);
+const treeRow=controls.get('acquisition-list').children[0].children[0].children[0];
+assert.equal(treeRow.children[0].onmouseenter,undefined);
+assert.equal(typeof treeRow.children[1].onmouseenter,'function');
+assert.equal(typeof treeRow.onmouseenter,'function');
 console.log('Independent acquisition trees and local parent previews passed.');
 
 const pair=[{...row('i123',1000),name:'1.2MX_ADF_TiFe_0123'},{...row('i124',1000),id:'i123',name:'1.2MX_Hitachi_TiFe_0123'}];

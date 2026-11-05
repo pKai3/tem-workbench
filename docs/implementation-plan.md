@@ -493,3 +493,10 @@ Validation: 16 Mac installer tests and 38 updater tests completed successfully (
 5 November 2026 — Disabled text selection on acquisition-map canvas and its labels so placement/pan drags do not select text.
 
 5 November 2026 — **Acquisition-map selection memory and tree ordering:** Sample selection persists per data source; folder, scope, date, acquisition batch, alignment batch and reference persist per sample across reloads. Stale selections fall back to available entries. Leaves appear before branches among siblings (master tree remains first). Equal-size automatic reference candidates and equally sized eligible parents prefer the footprint covering more smaller images; an existing selected reference is retained. Equal-size overlapping images remain peers, avoiding hierarchy cycles.
+
+
+5 November 2026 — **Compact placement controls:** Stage transforms, movement controls and batch alignment share a responsive horizontal row inside Placement & alignment, wrapping by group on smaller screens. Alignment thumbnails are compact; existing controls and placement behaviour are unchanged.
+
+**Proposed, not implemented — forbidden-reflection diagnostics:** Discuss observed peaks near nominally forbidden indices for each fitted structure, using the same fitted centre, rotation and cell. Distinguish lattice-centering absences from basis/symmetry absences; show the reflection index and applicable rule. Keep this separate from acceptance/scoring initially. Generic primitive orthorhombic has no absence rules. Dynamical scattering, overlapping crystals and defects require interpretation; forbidden-position hits alone do not establish a phase or defect.
+
+5 November 2026 — **Quieter tree hover and bounded parent comparisons:** Tree rows highlight their map footprint without opening a preview; Open buttons reveal previews on hover/focus. Map hover remains unchanged. “Up to current reference” shows successive ancestor crops through the viewed reference, with closest-parent fallback for unrelated branches and no self-crop.

@@ -128,6 +128,11 @@
   const chain=treePath(f).slice(0,-1);
   if(!chain?.length)return []; // Tree roots and their alternate captures do not crop themselves.
   const parents=chain.map(g=>g.files.find(x=>x.id===reference?.id)||g.files.find(x=>x.id===groupChoices.get(g.files[0].id))||g.files[0]).reverse();
+  if(mode==='current'){
+   if(footprintPeers(f).some(x=>x.id===reference?.id))return [];
+   const end=parents.findIndex(x=>x.id===reference?.id);
+   return end<0?parents.slice(0,1):parents.slice(0,end+1);
+  }
   if(mode==='master')return parents.slice(-1); // The root of this image's own tree.
   return mode==='all'?parents:parents.slice(0,1);
  }
@@ -294,9 +299,11 @@
    }
    const use=document.createElement('button');use.type='button';use.textContent=g.files.length>1?(f.id===reference?.id?'Current reference':'Use reference'):f.name;
    use.title=title(f);use.onclick=()=>{moved=false;chooseImage(f)};
-   box.onmouseenter=e=>hover(f,e);box.onmouseleave=()=>{if(!drag?.image)hideHover()};box.onfocusin=e=>hover(f,e);box.onfocusout=hideHover;box.append(use);
+   row.onmouseenter=()=>highlight(g.files);row.onmouseleave=()=>{if(!drag?.image)hideHover()};
+   use.onfocus=()=>highlight(g.files);use.onblur=hideHover;box.append(use);
    const sub=document.createElement('small');sub.textContent=[isRoot?'Reference image':'',!g.pos?'Not placed':g.rect?`${fmt(f.field_nm[0])} nm wide`:'Point only'].filter(Boolean).join(' · ');box.append(sub);
    const open=document.createElement('button');open.type='button';open.textContent='Open';open.title='Open selected image for analysis';open.onclick=()=>{moved=false;openImage(f)};
+   open.onmouseenter=e=>hover(f,e);open.onmouseleave=hideHover;open.onfocus=e=>hover(f,e);open.onblur=hideHover;
    row.append(box,open);li.append(row);
    branch(li,g.children,`${treeMasterId}:${key}`,'Within this image');return li;
   }
@@ -463,7 +470,7 @@
   finally{if(ticket===request)busy=false}
  }
  const cropMode=readPreference('tem-acquisition-crop-source','closest');
- byId('acquisition-crop-source').value=['closest','master','all'].includes(cropMode)?cropMode:'closest';
+ byId('acquisition-crop-source').value=['closest','master','all','current'].includes(cropMode)?cropMode:'closest';
  byId('acquisition-crop-source').onchange=()=>{writePreference('tem-acquisition-crop-source',byId('acquisition-crop-source').value);hideHover()};
  // Snapshot descendants before dragging so the move scope cannot change mid-drag.
  function startPlacementMove(f,withChildren,wholeBatch=false){

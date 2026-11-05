@@ -536,3 +536,19 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 
 /* Map labels should not be selected while panning or placing images. */
 #acquisition-canvas, #acquisition-canvas *{-webkit-user-select:none;user-select:none}
+
+/* Placement groups share the available width instead of occupying separate rows. */
+.placement-layout{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,350px),1fr));gap:12px 20px;margin-top:10px}
+.placement-group{min-width:0}
+.placement-layout .acquisition-controls{margin:0;gap:8px;align-items:end}
+.placement-stage label.check{align-self:end;padding-bottom:7px}
+.placement-stage select{width:85px}
+.placement-layout .placement-move{align-items:end}
+.placement-move label.check{padding-bottom:7px}
+.placement-move label:not(.check){flex:1}
+.placement-move select{width:100%}
+.placement-align .acquisition-reference{min-width:min(100%,180px)!important}
+.placement-align select{max-width:100%}
+.placement-layout #acquisition-align-preview:not([hidden]){margin-top:8px;gap:8px}
+.placement-layout #acquisition-align-image{width:56px;height:56px;flex:none}
+.placement-layout #acquisition-placement-status{margin:6px 0 0}
