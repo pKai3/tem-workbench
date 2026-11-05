@@ -1,5 +1,5 @@
-# TEM Workbench 1.0.16
+# TEM Workbench 1.0.17
 
-- Keep paired ADF and Hitachi captures in acquisition batches
+- Show acquisition images as a reference-first tree with hover previews
 
 Use **Check for updates → Install update and restart**.
