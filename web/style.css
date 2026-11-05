@@ -505,12 +505,14 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #acquisition-canvas .location.is-hovered rect{stroke:#65fff0;stroke-width:3;fill-opacity:.23}
 #acquisition-canvas .location.is-hovered circle{r:6;fill:#65fff0}
 #acquisition-canvas .location.is-hovered text{fill:#65fff0;font-weight:bold}
-#acquisition-hover-extras{display:flex;gap:8px;margin-top:8px}
-#acquisition-hover-extras figure{margin:0;flex:1;min-width:0}
-#acquisition-hover-extras img{width:100%;max-height:180px;object-fit:contain}
-#acquisition-hover-extras figcaption{overflow-wrap:anywhere;color:var(--muted);margin-bottom:4px}
-
-#acquisition-canvas .reference-outline.is-hovered{stroke:#65fff0;stroke-width:3}
-
-#acquisition-hover-extras{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
 #acquisition-hover-crop-label{overflow-wrap:anywhere}
+
+#acquisition-hover{box-sizing:border-box;max-width:calc(100vw - 28px)}
+#acquisition-hover .acquisition-hover-images{grid-auto-flow:column;grid-template-columns:none;grid-auto-columns:minmax(0,1fr);align-items:start}
+#acquisition-hover-extras{display:contents}
+#acquisition-hover .acquisition-hover-images>figure:nth-child(2){order:2}
+#acquisition-hover .acquisition-hover-images figure[hidden]{display:none}
+#acquisition-hover .acquisition-hover-images figure>div{max-height:max(40px,calc(100vh - 170px))}
+#acquisition-hover .acquisition-hover-images figcaption{height:2.7em;line-height:1.35;overflow:hidden;overflow-wrap:anywhere}
+#acquisition-hover-title,#acquisition-hover-info{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+#acquisition-canvas .reference-outline.is-hovered{stroke:#65fff0;stroke-width:3}

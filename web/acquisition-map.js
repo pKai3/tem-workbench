@@ -113,7 +113,7 @@
   const extras=byId('acquisition-hover-extras');extras.replaceChildren();
   for(const other of peers.filter(x=>x.id!==f.id)){
    const figure=document.createElement('figure'),caption=document.createElement('figcaption'),im=document.createElement('img');
-   caption.textContent=other.name;im.alt=other.name;figure.append(caption,im);extras.append(figure);
+   caption.textContent=other.name;caption.title=other.name;im.alt=other.name;figure.style.order='1';const frame=document.createElement('div');frame.append(im);figure.append(caption,frame);extras.append(figure);
    imageURL(`/api/acquisition-preview?id=${encodeURIComponent(other.id)}`).then(url=>{if(ticket===hoverTicket)im.src=url}).catch(()=>{caption.textContent+=' · Preview unavailable'});
   }
   byId('acquisition-hover-crop').closest('figure').hidden=!parents.length;
@@ -128,10 +128,11 @@
   }
   for(const parent of parents.slice(1)){
    const figure=document.createElement('figure'),caption=document.createElement('figcaption'),im=document.createElement('img'),details=cropDetails(f,parent);
-   caption.textContent=`Crop · ${parent.name}`;caption.title=details.info;im.alt=`Crop of ${parent.name}`;figure.append(caption,im);extras.append(figure);
+   caption.textContent=`Crop · ${parent.name}`;caption.title=details.info;im.alt=`Crop of ${parent.name}`;figure.style.order='3';const frame=document.createElement('div');frame.append(im);figure.append(caption,frame);extras.append(figure);
    if(!details.bounds){caption.textContent+=` · ${details.status}`;continue}
    cropURL(parent,details).then(url=>{if(ticket===hoverTicket)im.src=url}).catch(()=>{caption.textContent+=' · Preview unavailable'});
   }
+  card.style.width=`${Math.min(240*(peers.length+parents.length)+20,innerWidth-28)}px`;
   byId('acquisition-hover-info').textContent=(parents.length?detail.info:'Same footprint · alternate captures')+(live?' Live preview; original-pixel crop loads on release.':'');
   const render=async(type,promise)=>{try{const url=await promise;if(ticket!==hoverTicket)return;const im=byId(`acquisition-hover-${type}`);im.src=url;im.hidden=false;byId(`acquisition-hover-${type}-status`).textContent=''}catch{if(ticket===hoverTicket)byId(`acquisition-hover-${type}-status`).textContent='Preview unavailable'}};
   if(wasHidden){for(const type of ['full','crop']){byId(`acquisition-hover-${type}`).hidden=true;byId(`acquisition-hover-${type}-status`).textContent='Loading…'}}
@@ -139,7 +140,7 @@
   if(!parents.length){/* No reference self-crop. */}
   else if(!detail.bounds){byId('acquisition-hover-crop').hidden=true;byId('acquisition-hover-crop-status').textContent=detail.status}
   else render('crop',cropURL(ref,detail));
-  if(wasHidden||!live)positionCard(e);
+  positionCard(e);
  }
  function hover(f,e){
   byId('acquisition-detail').textContent=title(f).replaceAll('\n',' · ');
