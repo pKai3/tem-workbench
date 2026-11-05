@@ -553,10 +553,9 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .placement-layout #acquisition-align-image{width:56px;height:56px;flex:none}
 .placement-layout #acquisition-placement-status{margin:6px 0 0}
 
-/* Keep the FFT inputs, per-image limits and window switches on two rows. */
-#fft-entry-second{grid-template-columns:repeat(4,minmax(0,1fr)) max-content max-content}
+/* Keep the FFT inputs and per-image limits on two rows. */
+#fft-entry-second{grid-template-columns:repeat(4,minmax(0,1fr)) max-content}
 #fft-entry-second .fitting-override-actions{grid-column:auto}
-#fft-entry-second .fft-window-checks{order:1}
 @media(max-width:1000px){
  #fft-entry-second{grid-template-columns:repeat(3,minmax(0,1fr))}
  #fft-entry-second .fitting-override-actions{grid-column:span 2}
@@ -564,3 +563,27 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 @media(max-width:480px){#fft-entry-second{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .forbidden-fit{margin:8px 0}.forbidden-fit p{margin:4px 0;font-size:12px}
 .forbidden-fit ul{margin:4px 0;padding-left:20px;font-size:12px}
+
+/* Compact processing headings and keep the images close to their controls. */
+.processing-layout .fft-processing{gap:10px}
+.processing-layout .fft-processing-heading{height:auto;min-height:32px;flex-wrap:wrap;align-self:stretch}
+.processing-layout .fft-processing-heading strong,
+.processing-layout .diffraction-heading strong,
+.processing-layout .peak-edit-heading strong,
+.scale-settings .scale-heading{font-size:12px;font-weight:600;color:#dce6ef}
+.fft-processing-heading .fft-window-checks{flex-direction:row;flex-wrap:wrap;gap:6px 14px;align-self:center;margin-left:8px;order:0}
+.scale-settings .calibration-bar>label:first-child{display:flex;flex-direction:row;align-items:center;flex:1 1 280px;gap:10px}
+.scale-settings .calibration-bar>label:first-child>.scale-heading{flex:none;white-space:nowrap;height:32px}
+.scale-settings .calibration-bar>label:first-child>select{flex:1;width:0;min-width:0}
+.scale-settings .analysis-tools{margin-top:10px}
+.scale-settings .penalty-controls{row-gap:10px}
+#diffraction-controls .diffraction-heading,#diffraction-controls .peak-edit-heading{min-height:32px}
+#diffraction-controls .peak-edit-heading{margin-bottom:10px}
+#diffraction-controls .detector-tool-buttons{margin-top:0;margin-bottom:6px}
+#diffraction-controls .peak-edit-controls>.check{min-height:26px}
+#processing-controls{padding:8px 10px}
+#processing-controls[open]>summary{margin-bottom:8px}
+#message{padding:6px 0;min-height:30px}
+.workspace>.panel{padding-top:12px}
+.workspace>.panel>.panel-head{min-height:28px;margin-bottom:6px}
+.workspace .image-caption,.workspace .previews figcaption{margin-bottom:6px}
