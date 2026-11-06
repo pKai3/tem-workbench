@@ -27,7 +27,7 @@ def run(command, **kwargs):
 
 def require_build_tools():
     if sys.platform != 'darwin':
-        raise RuntimeError('This installer is for macOS. Use Install TEM Workbench App.cmd on Windows.')
+        raise RuntimeError('This installer is for macOS. Use Install TEM Workbench App - Windows.bat on Windows.')
     if int(platform.mac_ver()[0].split('.')[0]) < 13:
         raise RuntimeError('The Dock app requires macOS 13 or newer. See the console workflow in SETUP.md for older systems.')
     try:
@@ -37,7 +37,7 @@ def require_build_tools():
         raise RuntimeError(
             'The Dock app needs Apple Command Line Tools (or Xcode). In Terminal, run '
             'xcode-select --install and finish Apple’s installation, then double-click '
-            'Install TEM Workbench App.command. See SETUP.md for the console workflow.'
+            'Install TEM Workbench App - macOS.command. See SETUP.md for the console workflow.'
         ) from error
 
 
@@ -79,7 +79,7 @@ def reusable_assets(app, root, architecture, launch_root):
         metadata = plistlib.loads((contents / 'Info.plist').read_bytes())
         if (metadata.get('WorkbenchBuildRecipe', 1) != BUILD_RECIPE
                 or metadata.get('LSMinimumSystemVersion') != '13.0'
-                or metadata.get('WorkbenchLauncherPath') != str(Path(launch_root) / 'Launch TEM Workbench.command')):
+                or metadata.get('WorkbenchLauncherPath') != str(Path(launch_root) / 'Launch TEM Workbench - macOS.command')):
             return {}
         run(['/usr/bin/codesign', '--verify', '--strict', app], capture_output=True)
         assets = {}
@@ -108,7 +108,7 @@ def build_bundle(root, build_directory, environ=None, architecture=None, launch_
     if architecture not in ('arm64', 'x86_64'):
         raise RuntimeError(f'Unsupported Mac architecture: {architecture}')
     required = ('macos/Launcher.swift', 'macos/Info.plist', 'macos/Icon.swift',
-                'LICENSE', 'Launch TEM Workbench.command', 'tools/run_macos.sh',
+                'LICENSE', 'Launch TEM Workbench - macOS.command', 'tools/run_macos.sh',
                 'server.py', 'workbench_environment.py')
     for name in required:
         if not (root / name).is_file():
@@ -117,7 +117,7 @@ def build_bundle(root, build_directory, environ=None, architecture=None, launch_
     if (root / 'VERSION').is_file():
         metadata['CFBundleShortVersionString'] = (root / 'VERSION').read_text().strip()
         metadata['CFBundleVersion'] = metadata['CFBundleShortVersionString']
-    metadata['WorkbenchLauncherPath'] = str(Path(launch_root or root) / 'Launch TEM Workbench.command')
+    metadata['WorkbenchLauncherPath'] = str(Path(launch_root or root) / 'Launch TEM Workbench - macOS.command')
     # Finder does not inherit a Terminal's custom environment setting.
     sys.path.insert(0, str(root))
     try:

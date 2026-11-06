@@ -199,7 +199,7 @@ def main(argv=None, root=None):
     folder = environment_folder(root)
     validate_environment_location(folder, root)
     if action in ('install-app', 'desktop') and sys.platform != 'win32':
-        raise RuntimeError('Use Install TEM Workbench App.command for the Mac app.')
+        raise RuntimeError('Use Install TEM Workbench App - macOS.command for the Mac app.')
     if action in ('setup', 'install-app'):
         setup(folder, root)
         if action == 'install-app':
@@ -215,7 +215,7 @@ def main(argv=None, root=None):
         pythonw = folder / 'Scripts/pythonw.exe'
         launcher = root / 'tools/windows_app.py'
         if not pythonw.is_file() or not launcher.is_file():
-            raise RuntimeError('Run Install TEM Workbench App.cmd first.')
+            raise RuntimeError('Run Install TEM Workbench App - Windows.bat first.')
         # The control window performs preflight in its managed child and shows errors.
         subprocess.Popen([str(pythonw), str(launcher), '--environment', str(folder)],
                          cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

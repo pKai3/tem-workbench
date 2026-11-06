@@ -26,7 +26,7 @@ class MacAppTests(unittest.TestCase):
         self.root.mkdir()
         shutil.copytree(ROOT / 'macos', self.root / 'macos')
         (self.root / 'tools').mkdir()
-        for name in ('LICENSE', 'Launch TEM Workbench.command', 'workbench_environment.py',
+        for name in ('LICENSE', 'Launch TEM Workbench - macOS.command', 'workbench_environment.py',
                      'server.py', 'tools/run_macos.sh'):
             shutil.copyfile(ROOT / name, self.root / name)
         self.build_dir = self.base / 'build'
@@ -51,7 +51,7 @@ class MacAppTests(unittest.TestCase):
         before = (self.root / 'macos/Info.plist').read_bytes()
         app, calls = self.fake_build('x86_64')
         metadata = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
-        self.assertEqual(metadata['WorkbenchLauncherPath'], str(self.root / 'Launch TEM Workbench.command'))
+        self.assertEqual(metadata['WorkbenchLauncherPath'], str(self.root / 'Launch TEM Workbench - macOS.command'))
         self.assertTrue(Path(metadata['WorkbenchEnvironmentPath']).is_absolute())
         self.assertFalse(Path(metadata['WorkbenchEnvironmentPath']).is_relative_to(self.root))
         self.assertEqual((self.root / 'macos/Info.plist').read_bytes(), before)
@@ -120,7 +120,7 @@ class MacAppTests(unittest.TestCase):
                                          launch_root=self.base / 'stable install', architecture='arm64')
         metadata = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
         self.assertEqual(metadata['WorkbenchLauncherPath'],
-                         str(self.base / 'stable install/Launch TEM Workbench.command'))
+                         str(self.base / 'stable install/Launch TEM Workbench - macOS.command'))
 
     def test_invalid_custom_environment_does_not_compile(self):
         for location in ('./relative', str(self.root / '.venv'), str(self.base / 'OneDrive/venv')):
@@ -204,10 +204,10 @@ class MacAppTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Mac wrapper check')
     def test_installer_preflight_setup_and_app_flow(self):
-        for name in ('Install TEM Workbench App.command',
-                     'Launch TEM Workbench.command', 'tools/run_macos.sh'):
+        for name in ('Install TEM Workbench App - macOS.command',
+                     'Launch TEM Workbench - macOS.command', 'tools/run_macos.sh'):
             subprocess.run(['/bin/zsh', '-n', str(ROOT / name)], check=True)
-        for name in ('Install TEM Workbench App.command',):
+        for name in ('Install TEM Workbench App - macOS.command',):
             shutil.copyfile(ROOT / name, self.root / name)
         environment = self.base / 'venv'
         fake = environment / 'bin/python'
@@ -217,7 +217,7 @@ class MacAppTests(unittest.TestCase):
                         'case "$1" in *install_macos_app.py) [ "$2" = --check ] && exit 0; exit 9;; esac\nexit 0\n')
         fake.chmod(0o755)
         env = dict(os.environ, TEM_ENV_DIR=str(environment))
-        result = subprocess.run(['/bin/zsh', str(self.root / 'Install TEM Workbench App.command')],
+        result = subprocess.run(['/bin/zsh', str(self.root / 'Install TEM Workbench App - macOS.command')],
                                 env=env, input='\n', text=True, capture_output=True, cwd=self.base)
         self.assertEqual(result.returncode, 9, result.stderr)
         self.assertLess(result.stdout.index('--check'), result.stdout.index('workbench_environment.py'))
@@ -225,13 +225,13 @@ class MacAppTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Mac installer shell workflow')
     def test_failed_app_preflight_prevents_package_changes(self):
-        shutil.copyfile(ROOT / 'Install TEM Workbench App.command', self.root / 'Install TEM Workbench App.command')
+        shutil.copyfile(ROOT / 'Install TEM Workbench App - macOS.command', self.root / 'Install TEM Workbench App - macOS.command')
         environment = self.base / 'venv'
         fake = environment / 'bin/python'
         fake.parent.mkdir(parents=True)
         fake.write_text('#!/bin/sh\nif [ "$1" = "-c" ]; then exit 0; fi\nprintf "%s\\n" "$@"\nexit 8\n')
         fake.chmod(0o755)
-        result = subprocess.run(['/bin/zsh', str(self.root / 'Install TEM Workbench App.command')],
+        result = subprocess.run(['/bin/zsh', str(self.root / 'Install TEM Workbench App - macOS.command')],
                                 env=dict(os.environ, TEM_ENV_DIR=str(environment)),
                                 input='\n', text=True, capture_output=True, cwd=self.base)
         self.assertEqual(result.returncode, 8)
@@ -250,12 +250,12 @@ class MacAppTests(unittest.TestCase):
     def test_launch_refuses_an_app_installed_from_another_checkout(self):
         app = self.base / 'unrelated.app/Contents'
         app.mkdir(parents=True)
-        (app / 'Info.plist').write_bytes(plistlib.dumps({'WorkbenchLauncherPath': '/different/Launch TEM Workbench.command'}))
+        (app / 'Info.plist').write_bytes(plistlib.dumps({'WorkbenchLauncherPath': '/different/Launch TEM Workbench - macOS.command'}))
         script = 'source "$1"\nopen_installed_app "$2"\n'
         result = subprocess.run(['/bin/zsh', '-c', script, 'test', str(ROOT / 'tools/run_macos.sh'), str(app.parent)],
                                 text=True, capture_output=True)
         self.assertEqual(result.returncode, 1)
-        self.assertIn('Install TEM Workbench App.command', result.stderr)
+        self.assertIn('Install TEM Workbench App - macOS.command', result.stderr)
 
 
 if __name__ == '__main__':

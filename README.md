@@ -39,8 +39,10 @@ View each phase's passing frequency, disagreement between placement passes, samp
 
 Download **TEM-Workbench-<version>.zip** from [Releases](https://github.com/pKai3/tem-workbench/releases/latest), extract it into a writable folder, and keep that folder in place. The optional demo images download separately inside the app.
 
-- **macOS 13+:** double-click **Install TEM Workbench App.command**. Apple Command Line Tools are needed to build the Dock launcher. It installs into `~/Applications`.
-- **Windows 10/11 x86-64:** double-click **Install TEM Workbench App.cmd**. It creates Desktop and Start menu shortcuts using the same application icon as macOS.
+- **macOS 13+:** double-click **Install TEM Workbench App - macOS.command**. Apple Command Line Tools are needed to build the Dock launcher. It installs into `~/Applications`.
+- **Windows 10/11 x86-64:** double-click **Install TEM Workbench App - Windows.bat**. It creates Desktop and Start menu shortcuts using the same application icon as macOS.
+
+For subsequent starts from this folder, use **Launch TEM Workbench - macOS.command** or **Launch TEM Workbench - Windows.bat**, respectively. If updating an existing source checkout, rerun its platform installer to refresh the installed app’s launcher path.
 
 Desktop setup uses standard **64-bit Python 3.14**, including Tcl/Tk on Windows. If missing, setup offers to download the official checksummed Python installer; installation proceeds only after consent. Python 3.15 and free-threaded builds are not supported by desktop setup. Packages are installed in an environment outside the source folder and cloud storage. Existing source-folder `.venv` directories are left intact.
 
