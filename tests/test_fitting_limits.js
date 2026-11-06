@@ -165,7 +165,7 @@ Object.assign(context,{
  setupImageKind(){context.direct=context.meta.name.endsWith('direct');context.diffractionSettings={exclude_radius_nm_inv:1.1}},
  schedule(){context.submittedLimits=JSON.parse(JSON.stringify(run('currentFittingLimits()')))}
 });
-for(const name of ['updateFileNavigation','abandonAnalysis','scheduleOverlapPreview','syncMapLoading','finishSpectrumLoading','beginSpectrumLoading','hideRegionPreview','syncSpectrumExportControls','resetRegionEditor','renderSavedRegions','renderFavorites','drawGrid','restoreCalibration','updateGridSizeNote','updateBox'])context[name]=()=>{};
+for(const name of ['updateFileNavigation','abandonAnalysis','scheduleOverlapPreview','syncMapLoading','finishSpectrumLoading','clearSpectrumDisplay','beginSpectrumLoading','hideRegionPreview','syncSpectrumExportControls','resetRegionEditor','renderSavedRegions','renderFavorites','drawGrid','restoreCalibration','updateGridSizeNote','updateBox'])context[name]=()=>{};
 for(const id of ['overview','source-image'])$(id).setAttribute=()=>{};
 (async()=>{
  storage.set('tem-basic-settings',{'fft-g-min':1.1,'g-max':6});

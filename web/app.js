@@ -508,7 +508,7 @@ async function openFile(){
  fittingLimitDrag=null;fittingLimitsLocal=false;
  $('g-max').value=10;$('fft-g-min').value=2.5;
  const version=++sourceRequest;generation++;pending=false;meta=null;result=null;fftRaw=null;detectorRaw=null;opened=false;drag=null;maskDrag=null;displayedDiffraction=null;snapPointer=null;radiusDrag=null;peakUndo=[];document.body.classList.remove('editing-peaks');
- scheduleOverlapPreview();syncMapLoading();finishSpectrumLoading();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
+ scheduleOverlapPreview();syncMapLoading();finishSpectrumLoading();clearSpectrumDisplay();beginSpectrumLoading();hideRegionPreview();hoverCache.clear();syncSpectrumExportControls();resetRegionEditor();renderSavedRegions();renderFavorites();$('save-region').disabled=true;
  message('Opening source image…');
  try{
   if(isGridRunning())await api('cancel',{job_id:jobId});
@@ -710,7 +710,7 @@ function renderMeasuredPeaks(data){
  $('peak-measurement-note').textContent=`${radiusHelp} Shared prediction matching radius: ${matchRadius.toFixed(3)} nm⁻¹. ${intensityHelp} — means unavailable in this saved result; recalculate to populate it.`;
  $('peak-count').textContent=`(${s.peaks.length})`;
 }
-async function renderResult(data,version,body){renderAutoStrength(data);if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}renderMeasuredPeaks(data);renderFitChoices(data);const [raw,detector]=await Promise.all([decodeSpectrumImage(data.images),data.images.detector_signal16?decodeSpectrumImage({fft_log16:data.images.detector_signal16,fft_log_limits:data.images.detector_signal_limits}).then(raw=>({...raw,detector:true})):null]);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;if(data.image_kind==='diffraction')displayedDiffraction=data;fftRaw=raw;detectorRaw=detector;syncSignalToggle();if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');$('save-region').disabled=version!==generation}
+async function renderResult(data,version,body){renderAutoStrength(data);if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}renderMeasuredPeaks(data);renderFitChoices(data);const [raw,detector]=await Promise.all([decodeSpectrumImage(data.images),data.images.detector_signal16?decodeSpectrumImage({fft_log16:data.images.detector_signal16,fft_log_limits:data.images.detector_signal_limits}).then(raw=>({...raw,detector:true})):null]);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;if(data.image_kind==='diffraction')displayedDiffraction=data;fftRaw=raw;detectorRaw=detector;syncSignalToggle();if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');spectrumResultArrived();$('save-region').disabled=version!==generation}
 const MARKER_SHAPES=['circle','diamond','square','triangle','crosshair','open-crosshair','off'];
 // Fraction of one animation cycle; the same value drives live CSS and GIF frames.
 function markerMotionOffset(kind,phase){
@@ -2197,13 +2197,36 @@ function syncSpectrumExportControls(){
  syncMapExportControls();
  for(const id of ['export-png','export-gif']){$(id).disabled=spectrumExportBusy||mapExportBusy||busy||pending||!result||!fftRaw||!config?.spectrum_exports;$(id).title=config?.spectrum_exports?'Save the current view to the output folder':'Restart TEM Workbench to enable image exports'}
 }
-function setSpectrumSpinner(show){show=show&&!peakEditing();for(const id of ['fft-loading','fft-zoom-loading'])$(id).hidden=!show}
+function clearSpectrumDisplay(){
+ $('fft-image').removeAttribute('href');
+ $('crop').removeAttribute('src');
+ for(const id of ['fft-overlay','fft-axes','fft-zoom-view','fft-legend','fft-zoom-legend'])$(id).replaceChildren();
+ $('fft-legend').hidden=true;$('fft-zoom-legend').hidden=true;
+ $('fft-stage').classList.add('spectrum-empty');
+ $('timing').textContent='';$('phase-label').textContent='Loading…';
+}
+function setSpectrumSpinner(show){
+ show=show&&!peakEditing();
+ for(const id of ['fft-loading','fft-zoom-loading'])$(id).hidden=!show;
+ document.querySelector('.previews').classList.toggle('analysis-stalled',show&&!!fftRaw);
+}
 function beginSpectrumLoading(){
  hideSpectrumHover();
- if(spectrumLoading)return;spectrumLoading=true;$('fft-stage').setAttribute('aria-busy','true');
+ if(spectrumLoading)return;
+ spectrumLoading=true;$('fft-stage').setAttribute('aria-busy','true');
+ // With no current image there is nothing useful to leave visible during the delay.
+ if(!fftRaw){setSpectrumSpinner(true);return}
  spectrumLoadingTimer=setTimeout(()=>{spectrumLoadingTimer=null;if(spectrumLoading)setSpectrumSpinner(true)},1000);
 }
 function finishSpectrumLoading(){spectrumLoading=false;clearTimeout(spectrumLoadingTimer);spectrumLoadingTimer=null;setSpectrumSpinner(false);$('fft-stage').setAttribute('aria-busy','false')}
+function spectrumResultArrived(){
+ $('fft-stage').classList.remove('spectrum-empty');
+ finishSpectrumLoading();
+ // Continuous dragging can keep work queued indefinitely. Count silence since
+ // the last displayed result, rather than time since the first pointer event.
+ if(pending)beginSpectrumLoading();
+}
+
 function syncLargeSpectrumSize(){
  const {width,height}=$('overview').getBoundingClientRect();
  const size=Math.min(width,height);

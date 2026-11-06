@@ -1,8 +1,14 @@
 # TEM Workbench implementation plan
 
-Last updated: 4 November 2026
+Last updated: 6 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
+
+## Responsive spectrum loading — completed 6 November 2026
+
+FFT loading feedback now measures silence since the last displayed result. Continuous ROI dragging keeps fresh results visible; dimming and the delayed indicator start only after one second without a replacement. File switches clear the previous crop, spectrum, axes, overlays and legend immediately and show loading in the empty tray. Fresh results reset the watchdog; abandoned requests cannot clear the new image's loading state. Peak editing stays interactive. The spectrum indicator is an inline SVG rotating reciprocal-lattice motif with a central beam, with a static reduced-motion alternative. No fitting changes.
+
+Direct-diffraction performance remains a separate discussion: previous cold-cache measurements were ~12 s serial / ~9 s with two smoothing threads, including initial/refined-centre detection. Reprofile opening, detector preparation, matching and display serialization separately before selecting further optimizations.
 
 ## Diffraction controls and radius grips — 4 November 2026
 

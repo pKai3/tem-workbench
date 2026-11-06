@@ -72,7 +72,7 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 
 .image-caption,.previews figcaption{min-height:28px;margin-bottom:8px;font-size:12px;color:#c9d6e3;display:flex;align-items:center;justify-content:space-between}.spectrum-actions{display:flex;align-items:center;gap:6px}.spectrum-actions button{min-height:24px;padding:3px 7px;font-size:11px}
 
-.workspace>.panel>.panel-head{min-height:38px}.inspector #timing{font-size:11px}.inspector-layout{white-space:nowrap}.inspector-layout[hidden]{display:none}.fft-only #crop-figure{display:none}.fft-only .previews,.diffraction .previews{grid-template-columns:1fr;width:100%;max-width:var(--reference-preview-size,100%);margin-inline:auto}.fft-stage{position:relative}.previews.stale{opacity:1}.previews.stale #crop,.previews.stale #fft{opacity:.45}.fft-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;pointer-events:none;font-size:13px;color:#fff;text-shadow:0 1px 4px #000}.fft-loading[hidden]{display:none}.fft-spinner{width:24px;height:24px;border:3px solid #fff4;border-top-color:#69ffeb;border-radius:50%;animation:tem-loading .8s linear infinite}@keyframes tem-loading{to{transform:rotate(360deg)}}
+.workspace>.panel>.panel-head{min-height:38px}.inspector #timing{font-size:11px}.inspector-layout{white-space:nowrap}.inspector-layout[hidden]{display:none}.fft-only #crop-figure{display:none}.fft-only .previews,.diffraction .previews{grid-template-columns:1fr;width:100%;max-width:var(--reference-preview-size,100%);margin-inline:auto}.fft-stage{position:relative}.previews.stale{opacity:1}.previews.analysis-stalled #crop,.previews.analysis-stalled #fft{opacity:.45}.fft-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:8px;pointer-events:none;font-size:13px;color:#fff;text-shadow:0 1px 4px #000}.fft-loading[hidden]{display:none}.fft-spinner{width:24px;height:24px;border:3px solid #fff4;border-top-color:#69ffeb;border-radius:50%;animation:tem-loading .8s linear infinite}@keyframes tem-loading{to{transform:rotate(360deg)}}
 #region-hover{position:fixed;z-index:30;pointer-events:none;width:min(432px,calc(100vw - 16px));background:#0c121a;border:1px solid #59d4cb;border-radius:7px;overflow:hidden;box-shadow:0 4px 22px #0009}#region-hover[hidden]{display:none}#region-hover>div{font-size:11px;padding:7px 9px;line-height:1.35}#region-hover-title{color:#dce6ef}#region-hover-size{color:#94a5b8}#region-hover-view{display:block;width:100%;aspect-ratio:1;background:#000}#region-hover-image{image-rendering:pixelated}@media(prefers-reduced-motion:reduce){.fft-spinner{animation:none}}
 
 #region-hover-title{font-weight:600}
@@ -587,3 +587,12 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .workspace>.panel{padding-top:12px}
 .workspace>.panel>.panel-head{min-height:28px;margin-bottom:6px}
 .workspace .image-caption,.workspace .previews figcaption{margin-bottom:6px}
+
+/* Reciprocal-lattice loading motif; display feedback only. */
+#fft-loading,#fft-zoom-loading{flex-direction:column;gap:12px;background:#05090e55}
+.spectrum-empty + .intensity-key{visibility:hidden}
+.tem-diffraction-loader{width:104px;height:104px;overflow:visible;filter:drop-shadow(0 0 5px #59d4cb44)}
+.tem-diffraction-loader .reciprocal-lattice{transform-origin:60px 60px;animation:tem-loading 9s linear infinite}
+.tem-diffraction-loader .beam-halo{transform-origin:60px 60px;animation:tem-beam 2s ease-in-out infinite alternate}
+@keyframes tem-beam{from{opacity:.3;transform:scale(.8)}to{opacity:.7;transform:scale(1.15)}}
+@media(prefers-reduced-motion:reduce){.tem-diffraction-loader .reciprocal-lattice,.tem-diffraction-loader .beam-halo{animation:none}}
