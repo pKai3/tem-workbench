@@ -1,7 +1,6 @@
-# TEM Workbench 1.0.24
+# TEM Workbench 1.0.25
 
-- Keep Hann window and Remove mean beside the FFT processing heading.
-- Place the scale-fitting selector inline with its heading and use consistent compact processing headings.
-- Reduce excess spacing between processing settings and image panels while preserving responsive wrapping.
+- Label platform installers and launchers and use Windows bat entry points
+- Keep fresh FFT results visible and clear spectra on file switches
 
-Use **Check for updates → Install update and restart**. Saved data and placements are preserved.
+Use **Check for updates → Install update and restart**.
