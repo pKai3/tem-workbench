@@ -532,7 +532,7 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
                 "Workbench exited (code \(exitCode)). View the log for details."
             if quitting {
                 if updating { acknowledgeUpdate() }
-                NSApp.reply(toApplicationShouldTerminate: true)
+                NSApp.terminate(nil)
             }
         } else if rootExited && !stopping {
             requestStop()
@@ -655,9 +655,14 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
         updating = true
         quitting = true
         updateButton.isEnabled = false
-        if process == nil { acknowledgeUpdate() }
-        else { requestStop() }
-        NSApp.terminate(nil)
+        if process == nil {
+            acknowledgeUpdate()
+            NSApp.terminate(nil)
+        } else {
+            // Return to the event loop while the server shuts down. Terminating
+            // inside this timer with .terminateLater prevents it polling again.
+            requestStop()
+        }
     }
 
     private func acknowledgeUpdate() {
@@ -706,11 +711,12 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard process != nil else { return .terminateNow }
-        if quitting { return .terminateLater }
-        if !stopping && !confirmStop(quitting: true) { return .terminateCancel }
+        if !quitting && !stopping && !confirmStop(quitting: true) { return .terminateCancel }
         quitting = true
         requestStop()
-        return .terminateLater
+        // poll() completes the quit after the owned process group has exited.
+        // Keep the normal event loop available for timers and child callbacks.
+        return .terminateCancel
     }
 }
 
