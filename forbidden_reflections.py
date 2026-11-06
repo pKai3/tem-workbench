@@ -10,6 +10,7 @@ import numpy as np
 from crystal_templates import allowed
 
 RULES = {
+    'OMEGA': ('basis', 'Ideal ω basis: l even with h − k not divisible by 3 is absent'),
     'BCC': ('centering', 'BCC: h + k + l must be even'),
     'FCC': ('centering', 'FCC: h, k and l must be all even or all odd'),
     'HCP': ('basis', 'Ideal HCP basis: l odd with h − k divisible by 3 is absent'),

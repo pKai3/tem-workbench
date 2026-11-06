@@ -4,7 +4,7 @@ import numpy as np
 from scipy.optimize import least_squares
 from scipy.spatial import cKDTree
 import analysis_core as core
-from crystal_templates import reciprocal, allowed, TEMPLATE_BASE_A
+from crystal_templates import reciprocal, allowed, TEMPLATE_BASE_A, HEX_PHASES
 
 BOUNDS = (.85, 1.15)
 MODES = ('fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio')
@@ -63,17 +63,18 @@ def penalize(result, scale_a, scale_c, strength, ca_strength=DEFAULT_CA_PENALTY)
     return result
 
 
-def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, hcp_c=.468, g_min=3., bounds=BOUNDS, ort_a=.3, ort_b=.4, ort_c=.5):
+def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, hcp_c=.468, g_min=3., bounds=BOUNDS, ort_a=.3, ort_b=.4, ort_c=.5, omega_a=.4614, omega_c=.2832):
     """Expand allowed reflections for these zones and the complete scale range.
 
     The zone library stays finite; the reflection-index bound follows the chosen
     reciprocal range and reference dimensions rather than a fixed shell count.
-    HCP is rebuilt at the selected a/c. Cubic coordinates retain their template
+    HCP/omega are rebuilt at their selected a/c. Cubic coordinates retain their template
     baseline and are converted to the selected material reference in prediction_points.
     """
     prepared = []
     for original in templates:
         phase = original['phase']
+        hex_a, hex_c = (omega_a, omega_c) if phase == 'OMEGA' else (hcp_a, hcp_c)
         projection = original.get('projection')
         if phase == 'ORT':
             normal = np.asarray(original['zone_3index'])*[ort_a, ort_b, ort_c]
@@ -82,20 +83,20 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
             projection = np.column_stack((x, np.cross(normal, x)))*[1, original['mirror']]
         if projection is None:
             projection = np.linalg.lstsq(reciprocal(original['hkl'], phase), original['q'], rcond=None)[0]
-        if phase == 'HCP':
+        if phase in HEX_PHASES:
             # Changing a/c changes the zone's plane in Cartesian reciprocal space.
             # Re-orthonormalize that plane instead of stretching detector x/y axes.
             old_a = original.get('reference_a_nm', .295)
             old_c = original.get('reference_c_nm', .468)
-            scaled = projection * np.array([old_a/hcp_a, old_a/hcp_a, old_c/hcp_c])[:, None]
+            scaled = projection * np.array([old_a/hex_a, old_a/hex_a, old_c/hex_c])[:, None]
             eig, axes = np.linalg.eigh(scaled.T @ scaled)
             projection = scaled @ ((axes / np.sqrt(eig)) @ axes.T)
         reference = {'BCC': TEMPLATE_BASE_A['BCC']/bcc_a, 'FCC': TEMPLATE_BASE_A['FCC']/fcc_a}.get(phase, 1.)
         maximum = (g_max+.1)/(bounds[0]*reference)
-        a = hcp_a if phase == 'HCP' else ort_a if phase == 'ORT' else TEMPLATE_BASE_A[phase]
+        a = hex_a if phase in HEX_PHASES else ort_a if phase == 'ORT' else TEMPLATE_BASE_A[phase]
         a_bound = int(np.ceil(a*maximum))
         b_bound = int(np.ceil(ort_b*maximum)) if phase == 'ORT' else a_bound
-        c_bound = int(np.ceil((ort_c if phase == 'ORT' else hcp_c)*maximum)) if phase in ('HCP','ORT') else a_bound
+        c_bound = int(np.ceil((ort_c if phase == 'ORT' else hex_c)*maximum)) if phase in (*HEX_PHASES,'ORT') else a_bound
         if phase == 'ORT':
             # Enumerate the zone plane directly: wide generic cell bounds must
             # not allocate an entire three-dimensional cube of reflections.
@@ -114,7 +115,7 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
                                                  range(-b_bound, b_bound+1),
                                                  range(-c_bound, c_bound+1))))
         hs = hs[allowed(hs, phase) & (hs @ original['zone_3index'] == 0)]
-        vectors = reciprocal(hs, phase, a=a, b=ort_b, c=ort_c if phase=='ORT' else hcp_c)
+        vectors = reciprocal(hs, phase, a=a, b=ort_b, c=ort_c if phase=='ORT' else hex_c)
         radii = np.linalg.norm(vectors, axis=1)
         keep = (radii > 0) & (radii >= (g_min-.1)/(bounds[1]*reference)) & (radii <= maximum)
         hs, vectors = hs[keep], vectors[keep]
@@ -125,7 +126,7 @@ def prepare_templates(templates, g_max=10., bcc_a=.330, fcc_a=.417, hcp_a=.295, 
         prepared.append({**original, 'scale_bounds': tuple(bounds), 'hkl': hs[order], 'q': q[order],
                          'g': np.linalg.norm(q[order], axis=1),
                          'reference_a_nm': a, 'reference_b_nm': ort_b if phase == 'ORT' else None,
-                         'reference_c_nm': ort_c if phase == 'ORT' else hcp_c if phase == 'HCP' else None,
+                         'reference_c_nm': ort_c if phase == 'ORT' else hex_c if phase in HEX_PHASES else None,
                          'projection': projection, 'c_direction': projection[2].copy()})
     return prepared
 
@@ -258,13 +259,13 @@ def _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min):
         result, angle, sa, sc = proposed, float(aa), float(ss), float(cc)
         if improvement < 1e-7:
             break
-    c_visible = template['phase'] == 'HCP' and float(template['c_direction'] @ template['c_direction']) > 1e-10
-    nominal_a = {'BCC': bcc_a, 'FCC': fcc_a, 'HCP': template.get('reference_a_nm', .295), 'ORT': template.get('reference_a_nm', .3)}[template['phase']]
-    nominal_c = template.get('reference_c_nm', .468) if template['phase'] == 'HCP' else None
+    c_visible = template['phase'] in HEX_PHASES and float(template['c_direction'] @ template['c_direction']) > 1e-10
+    nominal_a = {'BCC': bcc_a, 'FCC': fcc_a, 'HCP': template.get('reference_a_nm', .295), 'OMEGA': template.get('reference_a_nm', .4614), 'ORT': template.get('reference_a_nm', .3)}[template['phase']]
+    nominal_c = template.get('reference_c_nm', .468) if template['phase'] in HEX_PHASES else None
     fitted_a = nominal_a/sa
-    fitted_c = nominal_c/sc if template['phase'] == 'HCP' else None
+    fitted_c = nominal_c/sc if template['phase'] in HEX_PHASES else None
     result.update({'shared_scale': None if double else sa, 'scale_a': sa,
-                   'scale_c': sc if template['phase'] == 'HCP' else None,
+                   'scale_c': sc if template['phase'] in HEX_PHASES else None,
                    'nominal_a_nm': nominal_a,
                    'nominal_c_nm': nominal_c,
                    'fitted_a_nm': fitted_a, 'fitted_c_nm': fitted_c,
@@ -303,7 +304,7 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
                 penalize(result, result['scale_a'], result['scale_c'], strength, ca_penalty_strength)
                 candidates.append(result)
             continue
-        double = (mode in ('auto_hcp_ac', 'auto_hcp_ratio') and template['phase'] == 'HCP' and
+        double = (mode in ('auto_hcp_ac', 'auto_hcp_ratio') and template['phase'] in HEX_PHASES and
                   float(template['c_direction'] @ template['c_direction']) > 1e-10)
         if len(template['q']) < 4:
             continue
@@ -314,7 +315,7 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
                 # Rank each positional fit before penalty-dependent retention.
                 result['scale_mode'] = mode
                 penalize(result, result['scale_a'], result['scale_c'] if double else None, strength, ca_penalty_strength)
-                if mode in ('auto_hcp_ac', 'auto_hcp_ratio') and template['phase'] == 'HCP' and not double:
+                if mode in ('auto_hcp_ac', 'auto_hcp_ratio') and template['phase'] in HEX_PHASES and not double:
                     result.update({'scale_c': None, 'fitted_c_nm': None,
                                    'scale_note': 'This zone does not constrain c; only a is fitted.'})
                 candidates.append(result)

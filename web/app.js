@@ -16,13 +16,13 @@ const SPECTRUM_PALETTES={
  cividis:paletteFromHex('00224d00234f00235000245200255400265500265700275900285b00285c00295e002a60002a62002b64002c66002c67002d69002e6b002f6d002f6f0030700030700031700031700432700833700b33700e347011356f14366f16366f18376f1a386f1c386e1d396e1f3a6e213b6e223b6e243c6e253d6d273d6d283e6d2a3f6d2b3f6d2c406d2e416c2f426c30426c31436c32446c34446c35456c36466c37466c38476c39486c3a486b3b496b3d4a6b3e4b6b3f4b6b404c6b414d6b424d6b434e6b444f6b454f6b46506b47516b48516b49526b4a536b4b546c4c546c4d556c4e566c4e566c4f576c50586c51586c52596c535a6c545a6c555b6d565c6d575d6d585d6d595e6d595f6d5a5f6d5b606e5c616e5d616e5e626e5f636e60646e61646f61656f62666f63666f64676f656870666970676970686a70686b71696b716a6c716b6d716c6d726d6e726e6f726e70736f70737071737172737273747373747474757475757575757676767777767878767978777979777a7a777b7b777c7b787d7c787e7d787f7d78807e78817f788280788380788481788582788583788683788784788885788986788a86788b87788c88788d89788e89788f8a77908b77918c77928c77938d77948e77958f77968f779790769891769992769a93769b93769c94769d95759e96759f9675a09775a19874a29974a39a74a49a74a59b73a69c73a79d73a89e73a99e72aa9f72aba072aca171ada271aea271afa370b0a470b1a570b2a66fb3a66fb4a76fb5a86eb6a96eb7aa6db8ab6db9ab6dbaac6cbbad6cbcae6bbdaf6bbeb06abfb06ac1b169c2b269c3b368c4b468c5b567c6b567c7b666c8b765c9b865cab964cbba64ccbb63cdbc62cebc62cfbd61d0be60d2bf60d3c05fd4c15ed5c25ed6c35dd7c35cd8c45bd9c55adac65adbc759dcc858dec957dfca56e0cb55e1cc54e2cc53e3cd52e4ce51e5cf50e6d04fe8d14ee9d24dead34cebd44becd54aedd648eed747efd846f1d944f2da43f3da42f4db40f5dc3ff6dd3df8de3bf9df3afae038fbe136fde234fde333fde534fde636fde737'),
  turbo:paletteFromHex('30123b31154232184a341b51351e5836215f37236538266c3929723a2c793b2f7f3c32853c358b3d37913e3a963f3d9c4040a14043a64145ab4148b0424bb5434eba4350be4353c24456c74458cb455bce455ed24560d64563d94666dd4668e0466be3466de64670e84673eb4675ed4678f0467af2467df4467ff64682f84584f94587fb4589fc448cfd438efd4291fe4193fe4096fe3f98fe3e9bfe3c9dfd3ba0fc39a2fc38a5fb36a8f934aaf833acf631aff52fb1f32db4f12bb6ef2ab9ed28bbeb26bde925c0e623c2e421c4e120c6df1ec9dc1dcbda1ccdd71bcfd41ad1d219d3cf18d5cc18d7ca17d9c717dac417dcc217debf18e0bd18e1ba19e3b81ae4b61be5b41de7b11ee8af20e9ac22eba924eca627eda329eea02cef9d2ff09a32f19735f39438f4913bf48d3ff58a42f68746f7834af8804df97c51f97955fa7659fb725dfb6f61fc6c65fc6869fd656dfd6271fd5f74fe5c78fe597cfe5680fe5384fe5087fe4d8bfe4b8efe4892fe4695fe4498fe429bfd409efd3ea1fc3da4fc3ba6fb3aa9fb39acfa37aef937b1f836b3f835b6f735b9f534bbf434bef334c0f233c3f133c5ef33c8ee33caed33cdeb34cfea34d1e834d4e735d6e535d8e335dae236dde036dfde36e1dc37e3da37e5d838e7d738e8d538ead339ecd139edcf39efcd39f0cb3af2c83af3c63af4c43af6c23af7c039f8be39f9bc39f9ba38fab737fbb537fbb336fcb035fcae34fdab33fda932fda631fda330fea12ffe9e2efe9b2dfe982cfd952bfd9229fd8f28fd8c27fc8926fc8624fb8323fb8022fa7d20fa7a1ff9771ef8741cf7711bf76e1af66b18f56817f46516f36315f26014f15d13ef5a11ee5810ed550fec520eea500de94d0de84b0ce6490be5460ae3440ae24209e04008de3e08dd3c07db3a07d93806d73606d63405d43205d23005d02f04ce2d04cb2b03c92903c72803c52602c32402c02302be2102bb1f01b91e01b61c01b41b01b11901ae1801ac1601a91501a61401a31201a011019d10019a0e01970d01940c01910b018e0a018b09018708018407018106027d05027a0402')
 };
-const PHASE_COLOR_OPTIONS={blue:['Blue','#79bafa'],gold:['Gold','#f4b75e'],mint:['Mint','#64e2b0'],green:['Vivid green','#39ff5a'],pink:['Pink','#ff8ac3'],white:['White','#f4f7fb']};
+const PHASE_COLOR_OPTIONS={blue:['Blue','#79bafa'],gold:['Gold','#f4b75e'],mint:['Mint','#64e2b0'],green:['Vivid green','#39ff5a'],purple:['Purple','#b49aff'],pink:['Pink','#ff8ac3'],white:['White','#f4f7fb']};
 const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
-const PHASES=['HCP','BCC','FCC','ORT'];
-const PHASE_DEFAULT_COLORS={HCP:'blue',BCC:'gold',FCC:'pink',ORT:'mint'};
+const PHASES=['HCP','BCC','FCC','ORT','OMEGA'];
+const PHASE_DEFAULT_COLORS={HCP:'blue',BCC:'gold',FCC:'pink',ORT:'mint',OMEGA:'purple'};
 const phaseColorChoices={...PHASE_DEFAULT_COLORS};
-let enabledPhases=['HCP','BCC'];
-function materialPhases(){return config?.material_presets?.[$('material').value]?.enabled_phases??({titanium:['HCP','BCC'],iron:['BCC','FCC'],custom:PHASES}[$('material').value]||PHASES)}
+let enabledPhases=['HCP','BCC','OMEGA'];
+function materialPhases(){return config?.material_presets?.[$('material').value]?.enabled_phases??({titanium:['HCP','BCC','OMEGA'],iron:['BCC','FCC'],custom:PHASES}[$('material').value]||PHASES)}
 function analysisPhases(value){return Array.isArray(value?.enabled_phases)?PHASES.filter(phase=>value.enabled_phases.includes(phase)):PHASES}
 function syncReferenceControls(){
  for(const input of document.querySelectorAll('.material-bar input')){
@@ -70,8 +70,8 @@ function finishPhaseChange(previous){
  if(previous.join(',')!==enabledPhases.join(','))invalidateAnalysisSettings();
 }
 const phaseMaps=()=>Object.fromEntries(PHASES.map(phase=>[phase,new Map()]));
-const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',fcc_compatible:'FCC compatible',ort_compatible:'Orthorhombic compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'Phase ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
-const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',fcc_compatible:'#ff8ac3',ort_compatible:'#64e2b0',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
+const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',fcc_compatible:'FCC compatible',ort_compatible:'Orthorhombic compatible',omega_compatible:'ω compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'Phase ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
+const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',fcc_compatible:'#ff8ac3',ort_compatible:'#64e2b0',omega_compatible:'#b49aff',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
 let mapExportBusy=false;
 let detectorRaw=null,showDetectorSignal=false;
 let demoPromptShown=false;
@@ -107,7 +107,7 @@ function readPreference(key,fallback){
 }
 function writePreference(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch{message('Browser storage is unavailable; these preferences will last until this page closes.',true)}}
 const FFT_DETECTOR_CONTROLS={'fft-smoothing':['fft_smoothing_sigma',.65,0,3],'fft-threshold-floor':['fft_threshold_floor',1.8,0,20],'fft-min-strength':['fft_minimum_enrichment',3,0,20],'fft-min-separation':['fft_minimum_separation',.5,0,3],'fft-max-peaks':['fft_max_peaks',70,4,200,true]};
-const BASIC_NUMBERS={"g-max":[4,30],"fft-g-min":[0,29.9],"hcp-a":[0.15,0.65],"hcp-c":[0.20,1.20],"bcc-a":[0.20,0.65],"fcc-a":[0.20,0.65],"ort-a":[.1,2],"ort-b":[.1,2],"ort-c":[.1,2],"threshold":[0.15,0.7],"grid-workers":[0,16,true],"grid-count":[2,24,true],"grid-min":[0,null],"batch-cutoff":[0,100000000]};
+const BASIC_NUMBERS={"g-max":[4,30],"fft-g-min":[0,29.9],"hcp-a":[0.15,0.65],"hcp-c":[0.20,1.20],"bcc-a":[0.20,0.65],"fcc-a":[0.20,0.65],"ort-a":[.1,2],"ort-b":[.1,2],"ort-c":[.1,2],"omega-a":[.15,1.2],"omega-c":[.15,1.2],"threshold":[0.15,0.7],"grid-workers":[0,16,true],"grid-count":[2,24,true],"grid-min":[0,null],"batch-cutoff":[0,100000000]};
 Object.assign(BASIC_NUMBERS,Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value,min,max,integer]])=>[id,[min,max,integer]])));
 Object.assign(BASIC_NUMBERS,{"map-window":[.1,1000],"map-spacing":[.1,1000],"map-window-percent":[.1,100],"map-spacing-percent":[1,100]});
 const BASIC_FLAGS=['adaptive','check-passing','show-grid','fft-hann','fft-mean'];
@@ -252,13 +252,13 @@ $('favorite-toggle').onclick=()=>{
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){clearFileSearch();$('file').value=id;openFile()}};
 function effectiveScalePenalty(){return $('material').value==='unknown'?0:scalePenalty}
-function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),ort_a:Number($('ort-a').value),ort_b:Number($('ort-b').value),ort_c:Number($('ort-c').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value!=='manual'),fft_auto_objective:$('fft-strength-mode').value==='geometry'?'geometry':'rank',...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?effectiveScalePenalty():0,ca_penalty_strength:caPenalty,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,peak_evidence_half_weight_nm_inv:config?.peak_evidence_falloff?peakFalloff:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:{...JSON.parse(JSON.stringify(diffractionSettings)),smoothing_workers:Number($('diff-workers').value)}}:{})}}
+function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),omega_a:Number($('omega-a').value),omega_c:Number($('omega-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),ort_a:Number($('ort-a').value),ort_b:Number($('ort-b').value),ort_c:Number($('ort-c').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value!=='manual'),fft_auto_objective:$('fft-strength-mode').value==='geometry'?'geometry':'rank',...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?effectiveScalePenalty():0,ca_penalty_strength:caPenalty,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,peak_evidence_half_weight_nm_inv:config?.peak_evidence_falloff?peakFalloff:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:{...JSON.parse(JSON.stringify(diffractionSettings)),smoothing_workers:Number($('diff-workers').value)}}:{})}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
  field.closest('.scale-input').style.display=automatic?'none':'';
  if(automatic){field.value='1.000';field.readOnly=true;
-  $('calibration-note').textContent=(v==='auto_hcp_ratio'?'Each candidate fits overall reciprocal scale; HCP also fits c/a, and orthorhombic fits independent cell dimensions where visible. Separate penalties rank the positional fits. No extra tight c/a limit.':v==='auto_uniform'?'Each structure fits one common prediction scale; reference cell proportions stay fixed.':'Each region fits one cubic prediction scale, HCP a/c, and orthorhombic a/b/c where visible.')+` Range ×${$('material').value==='unknown'?'0.5–2.0':'0.85–1.15'} relative to reference dimensions. Measured reciprocal axes stay unchanged. Candidate model dimensions are shown below.`;return}
+  $('calibration-note').textContent=(v==='auto_hcp_ratio'?'Each candidate fits overall reciprocal scale; HCP/ω also fits c/a, and orthorhombic fits independent cell dimensions where visible. Separate penalties rank the positional fits. No extra tight c/a limit.':v==='auto_uniform'?'Each structure fits one common prediction scale; reference cell proportions stay fixed.':'Each region fits one cubic prediction scale, HCP/ω a/c, and orthorhombic a/b/c where visible.')+` Range ×${$('material').value==='unknown'?'0.5–2.0':'0.85–1.15'} relative to reference dimensions. Measured reciprocal axes stay unchanged. Candidate model dimensions are shown below.`;return}
 
  if(v!=='custom')field.value='1.000';
  field.readOnly=v!=='custom';
@@ -280,7 +280,7 @@ function el(tag,attrs,text){const e=document.createElementNS(NS,tag);for(const [
 function indexGcd(a,b){while(b){[a,b]=[b,a%b]}return Math.abs(a)}
 function zoneIndices(model,notation=$('hcp-notation').value){
  const [u,v,w]=model.zone_3index;
- if(model.phase!=='HCP'||notation==='3')return [u,v,w];
+ if(!['HCP','OMEGA'].includes(model.phase)||notation==='3')return [u,v,w];
  const indices=[2*u-v,2*v-u,-u-v,3*w];
  const divisor=indices.reduce((g,n)=>indexGcd(g,Math.abs(n)),0)||1;
  return indices.map(n=>n/divisor);
@@ -288,7 +288,7 @@ function zoneIndices(model,notation=$('hcp-notation').value){
 function planeIndices(model,hkl,sign=1){
  const [h,k,l]=hkl.map(n=>n*sign);
  // Preserve reflection order: plane indices must not be reduced by their GCD.
- return model.phase==='HCP'&&$('hcp-notation').value!=='3'?[h,k,-h-k,l]:[h,k,l];
+ return ['HCP','OMEGA'].includes(model.phase)&&$('hcp-notation').value!=='3'?[h,k,-h-k,l]:[h,k,l];
 }
 function indexLabel(indices,brackets='[]'){
  // Combining overlines also work in plain-text SVG tooltips.
@@ -558,24 +558,24 @@ function patternExplanation(data){
  if(data.classification.ambiguity_reason==='shared_peaks_model_tradeoff')return 'Both structures explain the same detected peaks. The leading fit also uses extra flexibility or more unsupported predictions; the phase remains ambiguous.';
  if(label==='ambiguous')return 'Different structures compete to explain the same or overlapping peaks; the phase assignment remains ambiguous.';
  if(data.periodicity.status==='multiple_periodic_patterns')return 'Additional periodicity is supported, but a second phase assignment remains unresolved.';
- if(data.periodicity.status==='predominantly_one_periodic_pattern')return ['hcp_compatible','bcc_compatible','fcc_compatible','ort_compatible'].includes(label)?'One periodic pattern predominates in the geometry check.':'A periodic pattern is supported, but its phase remains unresolved.';
+ if(data.periodicity.status==='predominantly_one_periodic_pattern')return ['hcp_compatible','bcc_compatible','fcc_compatible','ort_compatible','omega_compatible'].includes(label)?'One periodic pattern predominates in the geometry check.':'A periodic pattern is supported, but its phase remains unresolved.';
  return 'The geometry check could not resolve the number of periodic patterns.';
 }
 function scaleSummary(settings){
- const label=settings.scale_mode==='auto_hcp_ratio'?'automatic overall scale + HCP c/a':settings.scale_mode==='auto_uniform'?'automatic single scale per candidate and region':settings.scale_mode==='auto_hcp_ac'?'automatic cubic single / HCP a+c / ORT a+b+c per region':`fixed prediction scale ×${settings.scale.toFixed(3)}`;
+ const label=settings.scale_mode==='auto_hcp_ratio'?'automatic overall scale + HCP/ω c/a':settings.scale_mode==='auto_uniform'?'automatic single scale per candidate and region':settings.scale_mode==='auto_hcp_ac'?'automatic cubic single / HCP/ω a+c / ORT a+b+c per region':`fixed prediction scale ×${settings.scale.toFixed(3)}`;
  return label+(settings.scale_mode==='auto_hcp_ratio'?` · c/a penalty ${(settings.ca_penalty_strength??.10).toFixed(3)} per 5%`:'')+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'')+` · peak evidence ${(settings.peak_evidence_weight??0).toFixed(2)} · missing falloff ${settings.peak_evidence_half_weight_nm_inv?settings.peak_evidence_half_weight_nm_inv+' nm⁻¹ half-weight':'off'} · ${config?.material_presets?.[settings.material]?.label??'Custom'} references · fitting band ${settings.g_min??settings.diffraction?.exclude_radius_nm_inv??3}–${settings.g_max??10} nm⁻¹`;
 }
 function fittedDimensions(model){
  if(model.phase==='ORT')return [...'abc'].map(axis=>{const v=model['fitted_'+axis+'_nm'];return Number.isFinite(v)?v.toFixed(4):'unconstrained'}).join(' / ');
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
  const c=model.fitted_c_nm??(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)?null:model.nominal_c_nm/model.shared_scale);
- return a.toFixed(4)+(model.phase==='HCP'?' / '+(c===null?'unconstrained':c.toFixed(4)):'');
+ return a.toFixed(4)+(['HCP','OMEGA'].includes(model.phase)?' / '+(c===null?'unconstrained':c.toFixed(4)):'');
 }
 function scaleDetails(model){
  if(model.phase==='ORT')return 'Orthorhombic a*/b*/c*: '+[...'abc'].map((axis,i)=>model.axis_observable?.[i]===false?'unconstrained':`×${(model['scale_'+axis]??model.shared_scale).toFixed(4)}`).join(' / ');
  const a=model.scale_a??model.shared_scale,c=model.scale_c;
- if(model.scale_mode==='auto_hcp_ratio')return `overall prediction ×${model.overall_prediction_scale.toFixed(4)}`+(model.phase==='HCP'?` · c/a ${model.ca_ratio_multiplier==null?'unconstrained':'×'+model.ca_ratio_multiplier.toFixed(4)} · `:' · ')+`overall cost ${(model.overall_scale_penalty??0).toFixed(3)} + c/a cost ${(model.ca_ratio_penalty??0).toFixed(3)}`;
- if(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)&&model.phase==='HCP')return `prediction scale a* ×${a.toFixed(4)}, c* ${c==null?'unconstrained':'×'+c.toFixed(4)}`;
+ if(model.scale_mode==='auto_hcp_ratio')return `overall prediction ×${model.overall_prediction_scale.toFixed(4)}`+(['HCP','OMEGA'].includes(model.phase)?` · c/a ${model.ca_ratio_multiplier==null?'unconstrained':'×'+model.ca_ratio_multiplier.toFixed(4)} · `:' · ')+`overall cost ${(model.overall_scale_penalty??0).toFixed(3)} + c/a cost ${(model.ca_ratio_penalty??0).toFixed(3)}`;
+ if(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)&&['HCP','OMEGA'].includes(model.phase))return `prediction scale a* ×${a.toFixed(4)}, c* ${c==null?'unconstrained':'×'+c.toFixed(4)}`;
  return `prediction scale ×${a.toFixed(4)}`;
 }
 function scalePercentages(model){
@@ -584,7 +584,7 @@ function scalePercentages(model){
  const cellPercent=scale=>percent(Number.isFinite(scale)&&scale>0?1/scale:null);
  const a=model.scale_a??model.shared_scale;
  if(model.phase==='ORT')return [...'abc'].map((axis,i)=>axis+' '+cellPercent(model.axis_observable?.[i]===false?null:model['scale_'+axis]??model.shared_scale)).join(' / ');
- if(model.phase!=='HCP')return `a ${cellPercent(a)}`;
+ if(!['HCP','OMEGA'].includes(model.phase))return `a ${cellPercent(a)}`;
  const c=model.scale_c??(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)?null:a);
  return `a ${cellPercent(a)} / c ${cellPercent(c)}`+(model.scale_mode==='auto_hcp_ratio'?` / c/a ${percent(model.ca_ratio_multiplier)}`:'');
 }
@@ -651,7 +651,7 @@ function geometryDescription(data){
  return 'Geometry check: pattern count remains unresolved.';
 }
 // Shared column definitions keep both candidate tables aligned.
-const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP uses the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Cell Δ\n%","Real-space cell change from reference: positive means larger, negative means smaller. Each axis uses 100 × (1 / reciprocal scale − 1). HCP overall + c/a mode also shows the real c/a ratio change, with its sign unchanged. Unconstrained axes are not measurements."]];
+const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP/ω use the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP/ω a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Cell Δ\n%","Real-space cell change from reference: positive means larger, negative means smaller. Each axis uses 100 × (1 / reciprocal scale − 1). HCP/ω overall + c/a mode also shows the real c/a ratio change, with its sign unchanged. Unconstrained axes are not measurements."]];
 function renderFitHeader(head, showToggle=false){
  const row=document.createElement('tr');
  const columns=showToggle?[['show','Show','Toggle this overlay'],...FIT_COLUMNS]:FIT_COLUMNS;
@@ -750,12 +750,12 @@ function weakMarker(x,y,id){
 }
 function rememberMarkerStyles(){
  const value={motion:$('marker-motion').value};
- for(const id of ['hcp-marker','bcc-marker','fcc-marker','ort-marker','primary-geometry-marker','secondary-geometry-marker','weak-marker'])value[id]=$(id).value;
+ for(const id of ['hcp-marker','bcc-marker','fcc-marker','ort-marker','omega-marker','primary-geometry-marker','secondary-geometry-marker','weak-marker'])value[id]=$(id).value;
  writePreference('tem-marker-styles',value);
 }
 function applyMarkerAnimation(){const mode=$('marker-motion').value;document.body.classList.toggle('marker-pulse',mode==='pulse');document.body.classList.toggle('marker-bounce',mode==='bounce');document.body.classList.toggle('marker-wobble',mode==='wobble');document.body.classList.toggle('marker-rotate',mode==='rotate')}
 function applyPhaseColors(redraw=true){
- for(const [phase,id,key,fallback]of [['HCP','hcp-color','hcp_compatible','blue'],['BCC','bcc-color','bcc_compatible','gold'],['FCC','fcc-color','fcc_compatible','pink'],['ORT','ort-color','ort_compatible','mint']]){
+ for(const [phase,id,key,fallback]of [['HCP','hcp-color','hcp_compatible','blue'],['BCC','bcc-color','bcc_compatible','gold'],['FCC','fcc-color','fcc_compatible','pink'],['ORT','ort-color','ort_compatible','mint'],['OMEGA','omega-color','omega_compatible','purple']]){
   const choice=phaseColorChoices[phase]||fallback;
   const color=PHASE_COLOR_OPTIONS[choice][1];$(id).style.color=$(id).value==='disabled'?'var(--muted)':color;
   phaseColors[phase]=color;colors[key]=color;document.documentElement.style.setProperty('--'+id,color);
@@ -1012,7 +1012,7 @@ $('reset-phase-colors').onclick=()=>{
 $('show-forbidden').checked=readPreference('tem-show-forbidden',true)!==false;
 $('show-forbidden').onchange=()=>{writePreference('tem-show-forbidden',$('show-forbidden').checked);drawFFT()};
 const savedMarkerStyles=readPreference('tem-marker-styles',{});
-for(const [id,fallback]of Object.entries({'hcp-marker':'diamond','bcc-marker':'diamond','fcc-marker':'diamond','ort-marker':'diamond','primary-geometry-marker':'square','secondary-geometry-marker':'square','weak-marker':'dot'})){
+for(const [id,fallback]of Object.entries({'hcp-marker':'diamond','bcc-marker':'diamond','fcc-marker':'diamond','ort-marker':'diamond','omega-marker':'diamond','primary-geometry-marker':'square','secondary-geometry-marker':'square','weak-marker':'dot'})){
  const choices=id==='weak-marker'?[...MARKER_SHAPES,'follow','dot']:MARKER_SHAPES;
  $(id).value=choices.includes(savedMarkerStyles?.[id])?savedMarkerStyles[id]:fallback;
  $(id).onchange=()=>{rememberMarkerStyles();drawFFT()};
@@ -1521,7 +1521,7 @@ function updatePenaltyControls(){
  const unknown=$('material').value==='unknown';
  if(unknown||document.activeElement!==$('scale-penalty'))$('scale-penalty').value=effectiveScalePenalty().toFixed(2);$('scale-penalty-slider').value=effectiveScalePenalty();
  $('scale-penalty').disabled=disabled||unknown;$('scale-penalty-slider').disabled=disabled||unknown;
- if(unknown)$('scale-penalty').title='Disabled for Unknown material; HCP c/a penalty remains separate.';
+ if(unknown)$('scale-penalty').title='Disabled for Unknown material; HCP/ω c/a penalty remains separate.';
  $('peak-falloff').disabled=!config?.peak_evidence_falloff||running;$('peak-falloff-slider').disabled=$('peak-falloff').disabled;
  $('peak-evidence-weight').disabled=!config?.peak_evidence||!config?.grid_rescore||running;$('peak-evidence-slider').disabled=$('peak-evidence-weight').disabled;
  const mismatch=Boolean(grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||(config?.peak_evidence&&peakEvidenceWeight!==grid.settings.peak_evidence_weight||(config?.peak_evidence_falloff&&peakFalloff!==(grid.settings.peak_evidence_half_weight_nm_inv??0)))));
@@ -1531,7 +1531,7 @@ function updatePenaltyControls(){
  $('save-grid').disabled=!grid||running||updating||mismatch||$('save-grid').dataset.exportState==='busy';syncMapExportControls();
  $('clear-grid').disabled=!grid&&!jobId;
  const note=$('penalty-note');
- note.textContent=unknown?'Unknown material: overall scale penalty is off. HCP c/a and peak-evidence penalties still apply.':!config?.peak_evidence?'Restart TEM Workbench and reload to enable prediction-site evidence.':running?'Finish or cancel this grid to adjust ranking weights.':updating?'Updating the map from cached fits…':mismatch?'This map still shows its previous weights; adjust a control again to retry.':grid?'Updates labels, symbols and totals from cached fits. Existing cell boundaries stay fixed.':automatic?'Zero disables a weight. Scale cost favours smaller adjustments; peak evidence checks weak and missing spots.':'Fixed scale has no scale penalty. Peak-evidence weight adjusts weak and missing spot contributions; zero disables it.';
+ note.textContent=unknown?'Unknown material: overall scale penalty is off. HCP/ω c/a and peak-evidence penalties still apply.':!config?.peak_evidence?'Restart TEM Workbench and reload to enable prediction-site evidence.':running?'Finish or cancel this grid to adjust ranking weights.':updating?'Updating the map from cached fits…':mismatch?'This map still shows its previous weights; adjust a control again to retry.':grid?'Updates labels, symbols and totals from cached fits. Existing cell boundaries stay fixed.':automatic?'Zero disables a weight. Scale cost favours smaller adjustments; peak evidence checks weak and missing spots.':'Fixed scale has no scale penalty. Peak-evidence weight adjusts weak and missing spot contributions; zero disables it.';
 }
 function penaltyChanged(input){
  if(!input.value)return;
@@ -1578,7 +1578,7 @@ $('peak-evidence-weight').value=peakEvidenceWeight;$('peak-evidence-slider').val
 $('peak-evidence-weight').onblur=()=>{$('peak-evidence-weight').value=peakEvidenceWeight};
 for(const id of ['scale-penalty','scale-penalty-slider','ca-penalty','ca-penalty-slider','peak-evidence-weight','peak-evidence-slider','peak-falloff','peak-falloff-slider'])$(id).oninput=()=>penaltyChanged($(id));
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=effectiveScalePenalty().toFixed(2)};
-const REFERENCE_CONTROLS={'hcp-a':'hcp_a','hcp-c':'hcp_c','bcc-a':'bcc_a','fcc-a':'fcc_a','ort-a':'ort_a','ort-b':'ort_b','ort-c':'ort_c'};
+const REFERENCE_CONTROLS={'hcp-a':'hcp_a','hcp-c':'hcp_c','bcc-a':'bcc_a','fcc-a':'fcc_a','ort-a':'ort_a','ort-b':'ort_b','ort-c':'ort_c','omega-a':'omega_a','omega-c':'omega_c'};
 let materialDefaultPreset=readPreference('tem-reference-preset','titanium');
 function materialView(){
  syncReferenceControls();
@@ -1589,7 +1589,7 @@ function materialView(){
  $('reset-material').title='Restore '+(resetPreset?.name||materialDefaultPreset)+' lattice constants';
  if(selected!=='unknown'&&preset&&Object.entries(REFERENCE_CONTROLS).some(([id,key])=>Math.abs(Number($(id).value)-preset.references[key])>1e-9))$('material').value='custom';
  const note=config?.material_presets?.[$('material').value]?.note??'Custom reference cells. Changing the material or a reference recalculates this region; rerun any grid.';
- $('material-note').textContent=note+'\nCubic: a = b = c; HCP: a = b, γ = 120°. Dimensions in nm.';
+ $('material-note').textContent=note+'\nCubic: a = b = c; HCP/ω: a = b, γ = 120°. Dimensions in nm.';
 }
 function invalidateAnalysisSettings(){
  if(!meta)return;
@@ -1672,7 +1672,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('ORT')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=projectFiles().find(f=>f.id===lastImage)||projectFiles().find(f=>f.id===config.default_file)||projectFiles()[0];if(initial)$('file').value=initial.id;if(initial)await openFile();else message('Choose a data folder or download the optional demo images above.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('OMEGA')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=projectFiles().find(f=>f.id===lastImage)||projectFiles().find(f=>f.id===config.default_file)||projectFiles()[0];if(initial)$('file').value=initial.id;if(initial)await openFile();else message('Choose a data folder or download the optional demo images above.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 // Reuse the displayed spectrum and overlays; hovering never requests analysis.
@@ -1995,7 +1995,7 @@ async function loadSavedRegions(){
  catch(e){$('saved-region-note').textContent=e.message;$('store-region').disabled=true;$('copy-region').disabled=true}
 }
 function applyRegionSettings(saved){
- const defaults={hcp_a:.295,hcp_c:.468,bcc_a:.330,fcc_a:.417,ort_a:.3,ort_b:.4,ort_c:.5};
+ const defaults={hcp_a:.295,hcp_c:.468,bcc_a:.330,fcc_a:.417,ort_a:.3,ort_b:.4,ort_c:.5,omega_a:.4614,omega_c:.2832};
  for(const [id,key]of Object.entries(REFERENCE_CONTROLS))$(id).value=saved[key]??defaults[key];
  $('material').value=saved.material??'titanium';setPhaseSelection(analysisPhases(saved));materialView();
  if(!isDiffraction())$('fft-g-min').value=saved.g_min??3;
@@ -2591,7 +2591,7 @@ function reflectionCellDimensions(model,hkl,g){
  const [h,k,l]=hkl,d=1/g,dimension=(name,value)=>`${name} ${value.toFixed(4)} nm`;
  // Use the vector's own distance: measured planes or fitted planes/A/B/C.
  if(model.phase==='BCC'||model.phase==='FCC')return dimension('a',d*Math.hypot(h,k,l));
- if(model.phase==='HCP'){
+ if(['HCP','OMEGA'].includes(model.phase)){
   if(l===0&&(h!==0||k!==0))return dimension('a',d*Math.sqrt(4*(h*h+h*k+k*k)/3));
   if(h===0&&k===0&&l!==0)return dimension('c',d*Math.abs(l));
   const ratio=model.fitted_c_nm/model.fitted_a_nm;
@@ -2615,7 +2615,7 @@ function measuredHcpCell(vectors){
  return {a:1/Math.sqrt(aa),c:1/Math.sqrt(cc)};
 }
 function vectorCellRatio(model,vectors=null){
- if(model.phase!=='HCP')return '';
+ if(!['HCP','OMEGA'].includes(model.phase))return '';
  if(vectors){const cell=measuredHcpCell(vectors);return cell?` · c/a ${(cell.c/cell.a).toFixed(4)}`:' · c/a unavailable'}
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
  const c=model.fitted_c_nm??(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)?null:model.nominal_c_nm/model.shared_scale);
@@ -2726,8 +2726,8 @@ function drawReflectionVectors(qp){
  // Keep full measurements together below the zone/angle summary. Equal-length
  // fitted vectors share a letter and therefore a single measurement row.
  const panels=groups.map(({phase,model,vectors})=>{
-  const measuredCell=!fitted&&phase==='HCP'?measuredHcpCell(vectors):null;
-  const dimensionModel=!fitted&&phase==='HCP'?{...model,fitted_a_nm:measuredCell?.a,fitted_c_nm:measuredCell?.c}:model;
+  const measuredCell=!fitted&&['HCP','OMEGA'].includes(phase)?measuredHcpCell(vectors):null;
+  const dimensionModel=!fitted&&['HCP','OMEGA'].includes(phase)?{...model,fitted_a_nm:measuredCell?.a,fitted_c_nm:measuredCell?.c}:model;
   const lines=[[phase+' '+zoneLabel(model)+vectorCellRatio(model,fitted?null:vectors),10,12,phaseColors[phase]]];
   let baseline=26;
   if(abc){lines.push([fittedVectorSummary(vectors),9,baseline,'#dce6ef']);baseline+=13}
@@ -2739,7 +2739,7 @@ function drawReflectionVectors(qp){
    lines.push([`${prefix} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm${dimensions?' · '+dimensions:''}`,9,baseline,'#edf5fc']);baseline+=13;
   }
   const panel=addVectorLabel($('fft-overlay'),{'data-vector-key':phase},lines,baseline-7,.92);
-  panel.group.append(el('title',{},(fitted?'Distances and cell dimensions from the fitted grid.':'Distances measured at detected spots. HCP a, c and c/a are solved from the two displayed indexed reflections; unavailable means that pair cannot independently determine both dimensions.')+(fitted?' Mixed HCP reflections derive a using the fitted c/a ratio.':'')+' Coupled orthorhombic reflections cannot determine each listed cell dimension independently.'));
+  panel.group.append(el('title',{},(fitted?'Distances and cell dimensions from the fitted grid.':'Distances measured at detected spots. HCP/ω a, c and c/a are solved from the two displayed indexed reflections; unavailable means that pair cannot independently determine both dimensions.')+(fitted?' Mixed hexagonal reflections derive a using the fitted c/a ratio.':'')+' Coupled orthorhombic reflections cannot determine each listed cell dimension independently.'));
   return panel;
  });
  let top=415-panels.reduce((sum,p)=>sum+p.h,0)-Math.max(0,panels.length-1)*4;
@@ -2770,7 +2770,7 @@ function drawReflectionVectors(qp){
  }
 }
 
-const VECTOR_MODES=['off',...['winner','winner_any',...PHASES,'both','all'].map(choice=>'planes_'+choice),'fitted_winner','fitted_winner_any','fitted_HCP','fitted_BCC','fitted_FCC','fitted_ORT','fitted_both','fitted_all','winner','winner_any',...PHASES,'both','all'];
+const VECTOR_MODES=['off',...['winner','winner_any',...PHASES,'both','all'].map(choice=>'planes_'+choice),'fitted_winner','fitted_winner_any','fitted_HCP','fitted_BCC','fitted_FCC','fitted_ORT','fitted_OMEGA','fitted_both','fitted_all','winner','winner_any',...PHASES,'both','all'];
 const savedVectors=readPreference('tem-reflection-vectors','fitted_winner');
 syncOverlayMenus($('overlay').value,VECTOR_MODES.includes(savedVectors)?savedVectors:'fitted_winner');
 $('reflection-vectors').onchange=()=>{writePreference('tem-reflection-vectors',$('reflection-vectors').value);drawFFT()};

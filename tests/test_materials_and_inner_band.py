@@ -43,7 +43,7 @@ class MaterialReferences(unittest.TestCase):
     def test_unknown_wider_search_and_all_phases(self):
         engine = Engine({})
         settings = dict(g_min=3., g_max=10., **reference_settings({'material': 'unknown'}))
-        self.assertEqual(settings['enabled_phases'], ['HCP', 'BCC', 'FCC', 'ORT'])
+        self.assertEqual(settings['enabled_phases'], ['HCP', 'BCC', 'FCC', 'ORT', 'OMEGA'])
         self.assertEqual(reference_settings({'material':'unknown','hcp_a':.31})['material'], 'unknown')
         templates = engine.templates_for(settings)
         self.assertTrue(all(t['scale_bounds'] == (.5, 2.) for t in templates))
@@ -71,8 +71,8 @@ class MaterialReferences(unittest.TestCase):
             self.assertEqual(model['ca_penalty_strength'],.2)
 
     def test_phase_defaults_overrides_and_template_cache(self):
-        self.assertEqual(reference_settings({})['enabled_phases'], ['HCP', 'BCC'])
-        self.assertEqual(reference_settings({'material': 'custom'})['enabled_phases'], ['HCP', 'BCC', 'FCC', 'ORT'])
+        self.assertEqual(reference_settings({})['enabled_phases'], ['HCP', 'BCC', 'OMEGA'])
+        self.assertEqual(reference_settings({'material': 'custom'})['enabled_phases'], ['HCP', 'BCC', 'FCC', 'ORT', 'OMEGA'])
         self.assertEqual(reference_settings({'material': 'iron', 'enabled_phases': ['HCP']})['enabled_phases'], ['HCP'])
         self.assertEqual(reference_settings({'enabled_phases': []})['enabled_phases'], [])
         self.assertEqual(reference_settings({'enabled_phases': ['FCC', 'HCP', 'FCC']})['enabled_phases'], ['HCP', 'FCC'])
@@ -84,7 +84,7 @@ class MaterialReferences(unittest.TestCase):
             settings = dict(g_min=3., g_max=10., **reference_settings({'enabled_phases': enabled}))
             self.assertEqual({t['phase'] for t in engine.templates_for(settings)}, set(enabled))
         self.assertEqual(len(engine._template_cache), 1)
-        self.assertEqual({t['phase'] for t in engine.templates}, {'HCP', 'BCC', 'FCC', 'ORT'})
+        self.assertEqual({t['phase'] for t in engine.templates}, {'HCP', 'BCC', 'FCC', 'ORT', 'OMEGA'})
 
     def test_disabled_phases_never_enter_search_or_cached_rescore(self):
         array, info, _ = pattern()

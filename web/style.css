@@ -106,7 +106,7 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 .material-settings{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch;margin-top:12px}
 .material-settings .material-bar{flex:1 1 660px;min-width:0;margin-top:0;gap:8px 12px}
 .material-settings .material-bar .hint{flex-basis:100%}
-.material-settings .phase-color-controls{flex:0 1 440px;min-width:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-content:center;align-items:end;gap:8px 10px}
+.material-settings .phase-color-controls{flex:0 1 440px;min-width:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-content:center;align-items:end;gap:8px 10px}
 .phase-colors-heading{display:flex;align-items:center;justify-content:space-between;flex-basis:100%}
 #reset-phase-colors,#reset-fft{min-height:26px;width:28px;padding:0;font-size:19px;line-height:1}
 .phase-color-controls label{flex:1 1 90px;min-width:0}
@@ -360,12 +360,12 @@ body.diffraction .scale-settings{grid-column:1/-1;width:100%;max-width:1000px;ju
 .scale-settings .settings-help-popup{left:50%;right:auto;transform:translateX(-50%)}
 
 /* Shared material row and compact diffraction groups. */
-.material-settings{display:grid;grid-template-columns:440px minmax(0,1fr);align-items:stretch}
+.material-settings{display:grid;grid-template-columns:500px minmax(0,1fr);align-items:stretch}
 .material-settings .phase-color-controls{align-content:start;padding:12px;gap:12px 10px}
 .phase-colors-heading,.material-heading,.diffraction-heading,.peak-edit-heading{position:relative;display:flex;align-items:center;gap:6px;min-height:28px}
 .settings-heading-label{display:flex;align-items:center;gap:6px}
 .phase-colors-heading .settings-help,.material-heading .settings-help,.diffraction-heading .settings-help,.peak-edit-heading .settings-help{position:static}
-.material-settings .material-bar{display:grid;grid-template-columns:minmax(170px,1.5fr) repeat(7,minmax(76px,1fr));align-content:start;align-items:end;gap:12px 10px;padding:12px}
+.material-settings .material-bar{display:grid;grid-template-columns:minmax(170px,1.5fr) repeat(9,minmax(70px,1fr));align-content:start;align-items:end;gap:12px 10px;padding:12px}
 .material-heading{grid-column:1/-1;font-size:12px;color:var(--muted)}
 .material-settings label{min-width:0;gap:6px}
 .material-settings input,.material-settings select{height:32px;min-height:32px;box-sizing:border-box;font-size:12px}
@@ -393,7 +393,7 @@ body.diffraction .scale-settings{grid-column:1/-1;width:100%;max-width:1000px;ju
 body.diffraction .scale-settings{max-width:none}
 body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:1600px){
- .material-settings{grid-template-columns:360px minmax(0,1fr)}
+ .material-settings{grid-template-columns:500px minmax(0,1fr)}
  .material-settings .material-bar{grid-template-columns:repeat(4,minmax(0,1fr))}
  #diffraction-controls .diffraction-calibration{grid-template-columns:repeat(3,minmax(0,1fr))}
  #diffraction-controls .fitting-limits{grid-template-columns:repeat(3,minmax(0,1fr))}
@@ -601,3 +601,5 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .source-row{display:grid;grid-template-columns:minmax(100px,.6fr) minmax(200px,1.5fr) minmax(200px,1.5fr) auto;gap:10px;align-items:end;margin:10px 0}.source-row label{min-width:0}.source-row input{width:100%;min-width:0}.source-row button,.source-row input{min-height:32px;padding:6px 9px;font-size:12px}#message{display:none}#export-notice-detail{white-space:pre-line;max-height:35vh;overflow:auto}@media(max-width:850px){.source-row{grid-template-columns:1fr 1fr}}
 
 .folder-settings > label[hidden]{display:none}
+
+.omega{color:var(--omega-color,#b49aff)}

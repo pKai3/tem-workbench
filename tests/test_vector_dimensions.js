@@ -48,3 +48,12 @@ assert.ok(Math.abs(mixedCell.a-.31)<1e-12);assert.ok(Math.abs(mixedCell.c-.49)<1
 assert.equal(context.vectorCellRatio(hcp,[{hkl:[1,0,0],g:4},{hkl:[0,1,0],g:4}]),' · c/a unavailable');
 assert.equal(context.measuredHcpCell([{hkl:[1,0,0],g:10},{hkl:[1,0,1],g:1}]),null);
 console.log('Measured HCP ratios use independent displayed observations, including mixed pairs.');
+
+const omega={phase:'OMEGA',fitted_a_nm:.4614,fitted_c_nm:.2832};
+assert.equal(derive('OMEGA',[1,1,0],2/.4614),'a 0.4614 nm');
+assert.equal(derive('OMEGA',[0,0,1],1/.2832),'c 0.2832 nm');
+assert.equal(context.vectorCellRatio(omega),' · c/a 0.6138');
+assert.equal(context.vectorCellRatio({...omega,c_axis_visible:false}),' · c/a unconstrained');
+const omegaMeasured=[{hkl:[1,1,0],g:2/.46},{hkl:[0,0,1],g:1/.28}];
+assert.equal(context.vectorCellRatio(omega,omegaMeasured),' · c/a 0.6087');
+console.log('Omega indexed vectors recover a/c and distinguish measured/fitted ratios.');

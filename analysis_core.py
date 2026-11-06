@@ -114,7 +114,7 @@ def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a
      rr=score_hypothesis(peaks,T,qs,scale,ang+delta,tol,g_max,g_min)
      if rr and rr['score']>=r['score']:r=rr;ang+=delta
      else:break
-    r['nominal_a_nm']={'BCC':bcc_a,'FCC':fcc_a,'HCP':T.get('reference_a_nm',.295),'ORT':T.get('reference_a_nm',.3)}[T['phase']];r['nominal_c_nm']=T.get('reference_c_nm',.468) if T['phase'] in ('HCP','ORT') else None;r['nominal_b_nm']=T.get('reference_b_nm');candidates.append(r)
+    r['nominal_a_nm']={'BCC':bcc_a,'FCC':fcc_a,'HCP':T.get('reference_a_nm',.295),'OMEGA':T.get('reference_a_nm',.4614),'ORT':T.get('reference_a_nm',.3)}[T['phase']];r['nominal_c_nm']=T.get('reference_c_nm',.468) if T['phase'] in ('HCP','OMEGA','ORT') else None;r['nominal_b_nm']=T.get('reference_b_nm');candidates.append(r)
  if candidate_sink is not None:candidate_sink.extend(candidates)
  return retain(candidates,topn)
 
