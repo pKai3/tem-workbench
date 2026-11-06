@@ -4,6 +4,14 @@ Last updated: 6 November 2026
 
 This is the maintained implementation status and roadmap. The original three analysis priorities remain in their agreed order below, with delivered first passes separated from unfinished work. Parallel execution, geometry-first automatic strength, manual diffraction peak editing, batch grids and subsequent fixes are included in the 2 November 2026 integration of `perf/parallel-analysis` into `main`. Listing an open item here does not authorize starting it.
 
+## Content tracking and project sources — completed 6 November 2026
+
+Added persistent full-file SHA-256 identities, cached hashes and DM metadata, location history, rename/missing/return notices, and migration of existing raster calibrations to content keys. Stable IDs preserve saved regions and browser preferences across subsequent moves or renames of unchanged files. Exact duplicate files share an identity; modified/re-encoded files are distinct. Keep the ignored image registry with project state. First indexing may be slow for cloud placeholders; progress is logged and later scans use cached hashes/metadata.
+
+Data Sources and Outputs supports multiple named, non-overlapping project source folders and optional per-source output folders, falling back to the main output. Immediate subfolders identify samples; batch summaries preserve source grouping and the existing nested-folder flatten option. Per-image batch results go to the corresponding output; combined summaries remain in the main output. A 15-second polling watcher refreshes idle catalogues; active grids/batches/window probes defer scans. Explicit refresh remains available. Path changes and missing images generate bottom-right notices. Removed the blue status strip/gap above images. Lists identify image type; acquisition maps fall back to names without sequence numbers.
+
+Validation covers rename/restart/return/replacement, duplicate identity, corrupt-registry protection, cached hashes, multi-source grouping/output routing and raster calibration after rename; browser startup/source controls also checked. No architecture refresh requested.
+
 ## Responsive spectrum loading — completed 6 November 2026
 
 FFT loading feedback now measures silence since the last displayed result. Continuous ROI dragging keeps fresh results visible; dimming and the delayed indicator start only after one second without a replacement. File switches clear the previous crop, spectrum, axes, overlays and legend immediately and show loading in the empty tray. Fresh results reset the watchdog; abandoned requests cannot clear the new image's loading state. Peak editing stays interactive. The spectrum indicator is an inline SVG rotating reciprocal-lattice motif with a central beam, with a static reduced-motion alternative. No fitting changes.

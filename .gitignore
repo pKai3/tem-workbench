@@ -29,3 +29,5 @@ outputs/
 /.tem-update.lock
 /workbench-release.json
 /dist/
+
+/.tem-image-registry.json

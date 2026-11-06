@@ -90,6 +90,7 @@ let analysisController=null;
 function message(text,error=false){
  $('message').textContent=text;$('message').classList.toggle('error',error);
  if(error)exportNotice('Action failed',text,'error');
+ else if(text&&!/^(Opening source|Direct diffraction:|Saved:|Drag the box)/.test(text))exportNotice('Workbench',text,'saved');
 }
 // Polling must not reopen an already dismissed error on every refresh.
 const jobErrorNotices={};
@@ -151,8 +152,8 @@ function rememberRegionSize(){
  const width=roi.w*meta.pixel_x_nm;
  if(width!==preferredRegionNm){preferredRegionNm=width;writePreference('tem-region-width-nm',width)}
 }
-function lastImageKey(){return 'tem-last-image:'+config.data_root}
-function favoriteKey(){return 'tem-favorites:'+config.data_root}
+function lastImageKey(){return 'tem-last-image:'+(config.state_namespace||config.data_root)}
+function favoriteKey(){return 'tem-favorites:'+(config.state_namespace||config.data_root)}
 let fileSort=readPreference('tem-file-sort','name');
 if(!['name','acquisition'].includes(fileSort))fileSort='name';
 function acquisitionNumber(file){
@@ -172,23 +173,32 @@ function sortedFiles(files){
   return a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'})||a.id.localeCompare(b.id);
  });
 }
+function imageTypeLabel(file){return ({real_space:'Real space',diffraction:'Diffraction',uncalibrated:'Uncalibrated',other:'Other'})[file.image_kind]||'Other'}
 function fileDisplayName(file){
  const extension=file.extension||file.id.match(/\.[^/.]+$/)?.[0]||'';
  const name=file.name.endsWith(' · demo')?file.name.slice(0,-7)+extension+' · demo':file.name+extension;
- return name+((file.raster||extension.toLowerCase()==='.npz')?` (${file.calibrated?'Calibrated':'Uncalibrated'})`:'');
+ return imageTypeLabel(file)+' · '+name+((file.raster||extension.toLowerCase()==='.npz')?` (${file.calibrated?'Calibrated':'Uncalibrated'})`:'');
 }
 function updateRasterStatus(id,calibrated){
- const file=config.files.find(f=>f.id===id);if(!file)return;file.calibrated=calibrated;
+ const file=config.files.find(f=>f.id===id);if(!file)return;file.calibrated=calibrated;if(meta?.id===id)file.image_kind=meta.image_kind;
  renderFileList();renderFavorites();if($('image-browser').open)renderImageBrowser();
 }
+function projectFiles(){const id=$('source-filter').value;return config.files.filter(f=>!id||(f.source_id||'demo')===id)}
+function renderProjectFilter(){
+ const select=$('source-filter'),saved=readPreference('tem-source-filter:'+config.state_namespace,'');
+ select.replaceChildren(new Option('All projects',''),...(config.sources||[]).map(s=>new Option(s.name,s.id)));
+ if(config.files.some(f=>!f.source_id))select.append(new Option('Demo','demo'));
+ select.value=[...select.options].some(o=>o.value===saved)?saved:'';
+}
+$('source-filter').onchange=()=>{writePreference('tem-source-filter:'+config.state_namespace,$('source-filter').value);renderFileList()};
 function matchingFiles(){
  const terms=$('file-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
- return config.files.filter(f=>terms.every(term=>`${f.name} ${f.sample} ${f.id}`.toLocaleLowerCase().includes(term)));
+ return projectFiles().filter(f=>terms.every(term=>`${f.name} ${f.sample} ${f.source_name||''} ${f.folder||''} ${f.id}`.toLocaleLowerCase().includes(term)));
 }
 function renderFileList(){
  const select=$('file'),selected=select.value||fileId,files=matchingFiles(),searching=Boolean($('file-search').value.trim());
  select.replaceChildren();
- if(searching)select.append(new Option(files.length?'Choose a matching image…':'No matching images',''));
+ if(searching||!files.some(f=>f.id===selected))select.append(new Option(files.length?'Choose a matching image…':'No matching images',''));
  for(const sample of new Set(files.map(f=>f.sample))){
   const group=document.createElement('optgroup');group.label=sample;
   for(const f of sortedFiles(files.filter(f=>f.sample===sample)))group.append(new Option((favorites.has(f.id)?'★ ':'')+fileDisplayName(f),f.id));
@@ -212,7 +222,7 @@ $('previous-file').onclick=()=>jumpFile(-1);
 $('next-file').onclick=()=>jumpFile(1);
 $('processing-controls').open=readPreference('tem-processing-open',true)!==false;
 $('processing-controls').ontoggle=()=>writePreference('tem-processing-open',$('processing-controls').open);
-function clearFileSearch(){if($('file-search').value){$('file-search').value='';if(config)renderFileList()}}
+function clearFileSearch(){if($('source-filter').value){$('source-filter').value='';if(config)renderFileList()}if($('file-search').value){$('file-search').value='';if(config)renderFileList()}}
 $('file-search').oninput=()=>{if(config)renderFileList()};
 $('file-search').onkeydown=event=>{
  if(event.key==='Escape'){clearFileSearch();return}
@@ -1662,7 +1672,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('ORT')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=config.files.find(f=>f.id===lastImage)||config.files.find(f=>f.id===config.default_file)||config.files[0];if(initial)$('file').value=initial.id;if(config.files.length)await openFile();else message('Choose a data folder or download the optional demo images above.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('ORT')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=projectFiles().find(f=>f.id===lastImage)||projectFiles().find(f=>f.id===config.default_file)||projectFiles()[0];if(initial)$('file').value=initial.id;if(initial)await openFile();else message('Choose a data folder or download the optional demo images above.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 // Reuse the displayed spectrum and overlays; hovering never requests analysis.
@@ -1758,6 +1768,59 @@ $('fft-zoom').addEventListener('click',e=>{
 });
 $('fft-zoom').addEventListener('close',()=>{if($('fft-zoom').open)return;hideSpectrumHover();$('fft-zoom-view').replaceChildren();$('fft').focus({preventScroll:true})});
 
+let sourceDraft=[], catalogueRevision=null, cataloguePolling=false;
+const seenFileEvents=new Set();
+function renderSources(){
+ sourceDraft=(config.sources||[{id:'primary',name:'Images',path:config.data_root,output:''}]).map(s=>({...s}));
+ drawSources();
+}
+function drawSources(){
+ const host=$('source-list');host.replaceChildren();
+ sourceDraft.forEach((source,index)=>{
+  const row=document.createElement('div');row.className='source-row';
+  for(const [key,title] of [['name','Project'],['path','Source folder'],['output','Output folder (blank = main)']]){
+   const label=document.createElement('label');label.textContent=title;
+   const wrap=document.createElement('span');wrap.className='folder-input';
+   const input=document.createElement('input');input.type='text';input.value=source[key]||'';input.id=`source-${index}-${key}`;
+   input.oninput=()=>{source[key]=input.value};wrap.append(input);
+   if(key!=='name'){
+    const browse=document.createElement('button');browse.type='button';browse.textContent='Browse…';
+    browse.onclick=()=>chooseFolder(input.id);wrap.append(browse);
+    input.addEventListener('change',()=>{source[key]=input.value});
+   }
+   label.append(wrap);row.append(label);
+  }
+  const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';remove.disabled=sourceDraft.length===1;
+  remove.onclick=()=>{sourceDraft.splice(index,1);drawSources()};row.append(remove);host.append(row);
+ });
+}
+$('add-source').onclick=()=>{sourceDraft.push({name:'',path:'',output:''});drawSources()};
+function showFileEvents(events){
+ const fresh=events.filter(event=>{const key=JSON.stringify(event);if(seenFileEvents.has(key))return false;seenFileEvents.add(key);return true});
+ if(!fresh.length)return;
+ const moved=fresh.filter(e=>e.paths.length),missing=fresh.filter(e=>!e.paths.length);
+ exportNotice('Image locations changed',[
+  ...moved.map(e=>`${e.old[0]||e.id} → ${e.paths[0]}`),
+  ...missing.map(e=>`Unavailable: ${e.old[0]}. Saved work retained.`)
+ ].join('\n'),'saved');
+}
+function applyCatalogue(data){
+ showFileEvents(data.events||[]);
+ if(catalogueRevision===data.revision&&JSON.stringify(config.files)===JSON.stringify(data.files))return;
+ const selected=$('file').value;
+ config.files=data.files;catalogueRevision=data.revision;
+ populateBatchFolders(config.files);renderFileList();renderFavorites();
+ if(matchingFiles().some(f=>f.id===selected))$('file').value=selected;
+ else if(selected){$('file').value='';exportNotice('Image unavailable','The open result is retained. Reconnect its source folder or choose another image.','saved')}
+ if($('image-browser').open)renderImageBrowser();
+ if(meta){const row=config.files.find(f=>f.id===meta.id);if(row)meta.name=row.name}
+}
+setInterval(async()=>{
+ if(!config?.file_tracking||document.hidden||cataloguePolling)return;
+ cataloguePolling=true;
+ try{applyCatalogue(await api('catalogue'))}catch{/* reconnect on next poll */}finally{cataloguePolling=false}
+},5000);
+
 function setupFolderControls(){
  $('download-demo-pack').disabled=!config.demo_download;
  const savedDemoLink=readPreference('tem-demo-pack-url','');
@@ -1765,7 +1828,7 @@ function setupFolderControls(){
  if(config.demo_download){renderDemoDownload(config.demo_job);if(config.demo_job?.state==='running')pollDemoDownload()}
  if(!config.files.length){$('folders-panel').open=true;offerDemoDownload()}
  for(const id of ['browse-data','browse-output','apply-folders','refresh-files'])$(id).disabled=!config.folder_picker;
- $('folder-data').value=config.data_root;$('folder-output').value=config.output_root;
+ $('folder-data').value=config.data_root;$('folder-output').value=config.output_root;renderSources();renderProjectFilter();catalogueRevision=config.catalogue_revision;showFileEvents(config.file_events||[]);
  if(!config.folder_picker)$('folders-note').textContent='Restart TEM Workbench to enable folder selection.';
  $('browse-images').disabled=false;
  $('acquisition-map-open').disabled=!config.acquisition_map||!config.files.length;
@@ -1808,10 +1871,11 @@ $('generate-previews').onclick=generatePreviews;$('browser-previews').onclick=ge
 $('cancel-previews').onclick=async()=>{try{await api('previews/cancel',{});pollPreviewGeneration()}catch(error){message(error.message,true)}};
 let imageBrowserFolderRoot=null;
 function imageBrowserFolder(file){
+ if(file.folder!==undefined)return file.folder;
  const path=file.id.replaceAll('\\','/');return path.includes('/')?path.slice(0,path.lastIndexOf('/')):'.';
 }
 function syncImageBrowserFolders(){
- const select=$('image-browser-folder'),root=config.data_root||'',key='tem-image-browser-folder:'+root;
+ const select=$('image-browser-folder'),root=config.state_namespace||config.data_root||'',key='tem-image-browser-folder:'+root;
  const previous=imageBrowserFolderRoot===root?select.value:readPreference(key,'');imageBrowserFolderRoot=root;
  const counts=new Map();
  for(const file of config.files){
@@ -1827,7 +1891,7 @@ function renderImageBrowser(){
  syncImageBrowserFolders();
  const terms=$('image-browser-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
  const folder=$('image-browser-folder').value;
- const files=config.files.filter(f=>(!folder||imageBrowserFolder(f)===folder||(folder!=='.'&&imageBrowserFolder(f).startsWith(folder+'/')))&&terms.every(term=>`${f.name} ${f.sample} ${f.id}`.toLocaleLowerCase().includes(term)));
+ const files=config.files.filter(f=>(!folder||imageBrowserFolder(f)===folder||(folder!=='.'&&imageBrowserFolder(f).startsWith(folder+'/')))&&terms.every(term=>`${f.name} ${f.sample} ${f.source_name||''} ${f.folder||''} ${f.id}`.toLocaleLowerCase().includes(term)));
  const list=$('image-browser-list');list.replaceChildren();
  $('image-browser-count').textContent=`${files.length} image${files.length===1?'':'s'}`;
  for(const sample of new Set(files.map(f=>f.sample)))for(const file of sortedFiles(files.filter(f=>f.sample===sample))){
@@ -1854,7 +1918,7 @@ $('browse-images').onclick=()=>{
 };
 $('image-browser-close').onclick=()=>$('image-browser').close();
 $('image-browser-search').oninput=renderImageBrowser;
-$('image-browser-folder').onchange=()=>{writePreference('tem-image-browser-folder:'+(config.data_root||''),$('image-browser-folder').value);renderImageBrowser()};
+$('image-browser-folder').onchange=()=>{writePreference('tem-image-browser-folder:'+(config.state_namespace||config.data_root||''),$('image-browser-folder').value);renderImageBrowser()};
 $('image-browser-sort').onchange=()=>{$('file-sort').value=$('image-browser-sort').value;$('file-sort').onchange();renderImageBrowser()};
 async function browseFolder(path){
  const version=++folderBrowseVersion;$('folder-use').disabled=true;$('folder-status').textContent='Loading folders…';
@@ -1872,7 +1936,7 @@ async function browseFolder(path){
 }
 function chooseFolder(target){
  if(!config?.folder_picker)return;
- folderTarget=target;$('folder-picker-title').textContent=target==='folder-data'?'Choose data folder':'Choose output folder';
+ folderTarget=target;$('folder-picker-title').textContent=(target==='folder-data'||target.endsWith('-path'))?'Choose source folder':'Choose output folder';
  $('folder-picker').showModal();browseFolder($(target).value);
 }
 $('browse-data').onclick=()=>chooseFolder('folder-data');$('browse-output').onclick=()=>chooseFolder('folder-output');
@@ -1881,16 +1945,16 @@ $('folder-up').onclick=()=>browseFolder(folderListing?.parent);
 $('folder-home').onclick=()=>browseFolder(folderListing?.home);
 $('folder-go').onclick=()=>browseFolder($('folder-path').value);
 $('folder-path').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();browseFolder($('folder-path').value)}};
-$('folder-use').onclick=()=>{if(folderListing&&folderTarget){$(folderTarget).value=folderListing.path;$('folder-picker').close();folderBrowseVersion++}};
+$('folder-use').onclick=()=>{if(folderListing&&folderTarget){$(folderTarget).value=folderListing.path;$(folderTarget).dispatchEvent(new Event('change'));$('folder-picker').close();folderBrowseVersion++}};
 $('apply-folders').onclick=async()=>{
  $('apply-folders').disabled=true;
  try{
-  await api('folders',{data_root:$('folder-data').value,output_root:$('folder-output').value});
+  await api('sources',{sources:sourceDraft,output_root:$('folder-output').value});
   await start();message('Folders linked and image collection refreshed.');
  }catch(e){message(e.message,true)}
  finally{$('apply-folders').disabled=!config?.folder_picker}
 };
-$('refresh-files').onclick=async()=>{if(isGridRunning()){message('Finish or cancel the grid before refreshing images.',true);return}await start()};
+$('refresh-files').onclick=async()=>{try{applyCatalogue(await api('refresh-files',{}));exportNotice('Images refreshed','Saved work and the current grid have been kept.','saved')}catch(e){message(e.message,true)}};
 
 function resetRegionEditor(){
  selectedRegionId=null;$('region-name').value='';$('region-tags').value='';$('region-notes').value='';
@@ -2745,7 +2809,7 @@ function offerDemoDownload(){
 }
 $('demo-prompt-later').onclick=()=>$('demo-download-prompt').close();
 $('demo-prompt-folder').onclick=()=>{
- $('demo-download-prompt').close();$('folders-panel').open=true;chooseFolder('folder-data');
+ $('demo-download-prompt').close();$('folders-panel').open=true;chooseFolder('source-0-path');
 };
 $('demo-prompt-download').onclick=()=>{
  $('demo-download-prompt').close();$('folders-panel').open=true;$('download-demo-pack').click();
@@ -2976,7 +3040,7 @@ function showBatchHover(row,x,y){
   host.hidden=false;positionBatchHover(x,y);
  },180);
 }
-function batchFolder(row){return row.id.includes('/')?row.id.slice(0,row.id.lastIndexOf('/')):'.'}
+function batchFolder(row){if(row.folder!==undefined)return row.folder;return row.id.includes('/')?row.id.slice(0,row.id.lastIndexOf('/')):'.'}
 function populateBatchFolders(rows=batchFiles){
  const folders=new Set();
  for(const row of rows){const path=batchFolder(row);folders.add(path);if(path!=='.'){const parts=path.split('/');for(let i=1;i<parts.length;i++)folders.add(parts.slice(0,i).join('/'))}}

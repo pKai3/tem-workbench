@@ -56,11 +56,13 @@ Without `.tem-paths.json`, the application uses `./data` and `./output`, plus in
 
 ## Opening images
 
-Expand **Data Sources and Outputs** at the top of the page. Browse to a data folder and an output folder, then select **Apply folders**. The picker browses the local filesystem; it does not upload or copy images. **Refresh images** rescans after new files arrive.
+Expand **Data Sources and Outputs** at the top of the page. Add one or more named project source folders, choose a **Main output folder**, then **Apply sources**. Each source can optionally have its own output folder. The picker reads local files without uploading or copying them. Source folders must not overlap. Changing sources clears the in-memory grid; export results and finish or cancel active jobs first.
 
-The app maintains `./data` and `./output` directory links to those locations (symlinks on macOS/Linux, directory junctions on Windows). Existing nonempty real directories are never replaced. Relative paths resolve from the application directory. The choices are saved in the ignored `.tem-paths.json`, preserving other configuration fields. Changing folders clears the in-memory grid; finish or cancel any running grid and export results first.
+Immediate subfolders identify samples, with project names distinguishing samples across sources. Batch review can flatten nested subfolders for summaries. Per-image exports use that source's output override, when set; combined batch summaries use the main output folder. Choices are saved in the ignored `.tem-paths.json`. Existing single-folder configuration remains supported.
 
-The catalog finds DM4, JPEG, standalone PNG and single-frame TIFF files recursively beneath the selected data folder, including files at its root. `STA` and `ST` folders retain their sample grouping; other folders also work. The selected output directory is skipped during scanning. Output may be outside the data directory.
+The catalogue finds DM4, JPEG, standalone PNG and single-frame TIFF files recursively, excluding configured outputs and preview sidecars. A background check runs every 15 seconds while no grid, batch or window-size job is active; **Refresh images** also rescans explicitly. Path changes and missing files appear as bottom-right notices.
+
+Image identities are stored in `.tem-image-registry.json` using SHA-256 of complete file contents. Once indexed, renaming or moving an unchanged image within configured sources retains its identity, saved regions and associated preferences. Add the destination source when moving outside existing sources. Exact byte-for-byte copies share an identity; edited or re-encoded files are new identities. Preserve the registry with your project state. The first scan reads image contents (and may download cloud placeholders); later scans reuse hashes for unchanged files. Filenames remain display labels, with filename fallbacks where no acquisition number exists. Image lists include real-space, diffraction or uncalibrated type labels.
 
 **Generate PNG previews** under Data Sources and Outputs creates missing same-name sidecars (`image.dm4` → `image.png`) throughout the linked collection. Previews are greyscale, contrast-adjusted, and up to 1400 pixels along the longest side; direct diffraction uses log intensity. This does not run a fit or estimate a beam centre. Existing PNGs are skipped, source files are unchanged, and the progress display reports saved, skipped and failed files. Cancellation stops after the current file. Demo downloads generate missing PNG previews locally during installation and reuse existing previews.
 
@@ -72,7 +74,7 @@ Place ordinary images in the linked data folder, then refresh the image list. On
 
 Drawing is horizontal by default. **Free Y** permits angled bars. A cursor magnifier shows original-resolution pixels while hovering or dragging; drag an existing endpoint to refine it, or enter coordinates directly. Calibration uses the endpoint distance and assumes equal x/y pixel scales. Previously calibrated angled bars reopen with Free Y enabled.
 
-Calibration is remembered locally in `.tem-image-calibrations.json`, tied to the source path and decoded pixel content. **Calibrate scale bar** can revise it later. Exports include the manual calibration in image metadata; original files are unchanged. Colour inputs are converted to greyscale; single-channel TIFF precision is preserved. Prefer original greyscale data when available—JPEG compression and rendered colour images can alter weak features. Keep printed bars/text outside FFT crops or mask them in diffraction mode. Multi-frame TIFFs are not supported.
+Calibration is remembered locally in `.tem-image-calibrations.json`, keyed by tracked file content and checked against decoded pixels; existing path-based entries migrate when their image is opened. **Calibrate scale bar** can revise it later. Exports include the manual calibration in image metadata; original files are unchanged. Colour inputs are converted to greyscale; single-channel TIFF precision is preserved. Prefer original greyscale data when available—JPEG compression and rendered colour images can alter weak features. Keep printed bars/text outside FFT crops or mask them in diffraction mode. Multi-frame TIFFs are not supported.
 
 Same-name PNG previews beside DM4/JPEG/TIFF sources remain sidecars rather than separate analysis inputs. Standalone PNGs are selectable; give an independent PNG a distinct basename if another source shares its name.
 
@@ -88,7 +90,8 @@ For manual configuration, copy [tem-paths.example.json](tem-paths.example.json) 
 
 | Field | Purpose |
 | --- | --- |
-| `data_root` | Data directory, normally `./data`; absolute paths also work. |
+| `data_root` | Legacy single data directory, normally `./data`. |
+| `sources` | Project source entries with `id`, `name`, `path`, and optional `output`; normally managed through the UI. |
 | `output_root` | Export directory, normally `./output`. |
 | `dm_reader` | Optional path to a compatible `ncempy.io.dm` module; otherwise uses installed ncempy. |
 | `default_file` | Optional image path relative to `data_root`, or `demo/st1221` / `demo/st1144`. |
@@ -97,9 +100,9 @@ For manual configuration, copy [tem-paths.example.json](tem-paths.example.json) 
 
 Expand **Saved regions** below the image controls. Give a box a name, optional comma-separated tags, and notes, then **Save region**. Saved regions on the current image have red outlines; click an outline or choose a saved entry to reopen its source image, box and analysis settings. Outline interiors remain available for grid selection and dragging. Reopening a region on the same image keeps an existing grid when its analysis settings are unchanged. **All images** exposes entries for other photos. **Update region** changes that definition; **Save as new** keeps the original. **Delete region** removes the selected saved entry after confirmation, including its red outline. Source images and exported files are kept.
 
-Definitions live in the ignored `tem_workbench.project.json` beside the app. Each entry records the relative image path, pixel checksum, dimensions, calibration, coordinates, settings and annotations. Reopening checks the image identity and calibration before applying coordinates. The file is replaced atomically and remains available after restarting; stale concurrent edits are rejected until refreshed. There is no automatic backup history.
+Definitions live in the ignored `tem_workbench.project.json` beside the app. Each entry records the stable image identifier, source metadata, pixel checksum, dimensions, calibration, coordinates, settings and annotations. Reopening checks the image identity and calibration before applying coordinates. The file is replaced atomically and remains available after restarting; stale concurrent edits are rejected until refreshed. There is no automatic backup history.
 
-**Export result** and **Export grid results** write numerical JSON files to `./output`, independently of the region definitions. Browser preferences, project definitions, folder settings and numerical exports serve separate purposes. Only app source belongs in Git; downloaded demo pixels and previews are ignored.
+**Export result** and **Export grid results** write numerical JSON files to the configured main or per-source output folder, independently of the region definitions. Browser preferences, project definitions, folder settings and numerical exports serve separate purposes. Only app source belongs in Git; downloaded demo pixels and previews are ignored.
 
 ### Activity log
 

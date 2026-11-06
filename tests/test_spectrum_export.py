@@ -22,7 +22,7 @@ class SpectrumExportTests(unittest.TestCase):
             app = Workbench.__new__(Workbench)
             app.lock = RLock()
             app.config = {'output_root': directory}
-            app.engine = SimpleNamespace(load=lambda _: item,
+            app.engine = SimpleNamespace(output_for=lambda _: Path(directory), load=lambda _: item,
                 region_preview=lambda item, roi, max_size: Engine.region_preview(None, item, roi, max_size))
             body = {'file_id': 'sample', 'roi': {'x': 20, 'y': 30, 'w': 900, 'h': 850}}
             saved = app.export_crop(body)
@@ -50,7 +50,7 @@ class SpectrumExportTests(unittest.TestCase):
             app = Workbench.__new__(Workbench)
             app.lock = RLock()
             app.config = {'output_root': directory}
-            app.engine = SimpleNamespace(files={'test': Path('test.dm4')})
+            app.engine = SimpleNamespace(output_for=lambda _: Path(directory), files={'test': Path('test.dm4')})
             body = dict(file_id='test', format='gif', frames=frames, duration_ms=durations)
             saved = app.export_spectrum(body)
             with Image.open(saved['path']) as gif:

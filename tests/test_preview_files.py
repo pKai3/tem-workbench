@@ -18,7 +18,7 @@ class PreviewChecks(unittest.TestCase):
             sample = data/'ST';sample.mkdir()
             output = data/'results';output.mkdir()
             for path in (data/'one.dm4', sample/'two.dm4', output/'ignored.dm4'):
-                path.write_bytes(b'original source')
+                path.write_bytes(b'original source' if path.name=='one.dm4' else path.name.encode())
             existing = (sample/'two.PNG');existing.write_bytes(b'existing preview')
             engine = Engine(dict(data_root=str(data), output_root=str(output)))
             rows = engine.catalog()

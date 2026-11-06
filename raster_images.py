@@ -57,11 +57,11 @@ def validate(array, request):
                 width=w, height=h, method='manual_scale_bar', isotropic=True)
 
 
-def stored(store, source, array):
+def stored(store, source, array, key=None):
     if not Path(store).exists():
         return None
     data = json.loads(Path(store).read_text())
-    entry = data.get(str(Path(source).resolve()))
+    entry = data.get(key) or data.get(str(Path(source).resolve()))
     if entry and entry.get('sha256_pixels') == identity(array):
         return validate(array, entry)
     return None
@@ -81,13 +81,13 @@ def catalog_calibrated(source, calibrations):
         return False
 
 
-def save(store, source, array, request):
+def save(store, source, array, request, key=None):
     entry = validate(array, request)
     stat = Path(source).stat()
     entry['source_stat'] = [stat.st_size, stat.st_mtime_ns]
     store = Path(store)
     data = json.loads(store.read_text()) if store.exists() else {}
-    data[str(Path(source).resolve())] = entry
+    data[key or str(Path(source).resolve())] = entry
     store.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix='.calibration-', suffix='.tmp', dir=store.parent)
     try:

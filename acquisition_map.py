@@ -1,4 +1,5 @@
 """Metadata-only acquisition locations; no registration or image analysis."""
+from diffraction import reciprocal_factor
 import math
 import re
 from collections import defaultdict
@@ -32,7 +33,7 @@ def describe(meta, width, height):
             'time': str(meta.get('DataBar Acquisition Time', '')),
             'width': width, 'height': height,
             'magnification': finite(meta.get('Microscope Info Indicated Magnification')),
-            'image_kind': 'real_space' if all(u in LENGTH_NM for u in units) else 'diffraction_or_uncalibrated'}
+            'image_kind': 'real_space' if all(u in LENGTH_NM for u in units) else ('diffraction' if all(reciprocal_factor(u) is not None for u in units) else 'other')}
 
 
 def acquisition_number(row):

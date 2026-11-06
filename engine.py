@@ -11,7 +11,9 @@ import importlib.util
 import json
 import time
 import os
+import logging
 import folder_paths
+from image_catalog import ImageCatalog
 from acquisition_map import acquisition_batches, MetadataIndex, stage_position, reference_crop, LENGTH_NM
 from preview_files import sidecar_path
 import zlib
@@ -29,6 +31,8 @@ from materials import scale_bounds, PHASES, reference_settings
 from crystal_templates import fcc_templates, orthorhombic_templates
 
 ROOT = Path(__file__).resolve().parent
+LOG = logging.getLogger("tem_workbench")
+METADATA_VERSION = hashlib.sha256((ROOT/"acquisition_map.py").read_bytes()).hexdigest()
 
 
 def png(array, limits=None, max_size=None):
@@ -49,6 +53,9 @@ class Engine:
     def __init__(self, settings):
         self.settings = settings
         self.data_root = folder_paths.resolve_folder(settings.get('data_root', './data'), ROOT)
+        self.sources = settings.get('sources') or [dict(id='primary', name=self.data_root.name, path=str(self.data_root), output='')]
+        self.catalogue = ImageCatalog(settings.get('image_registry', self.data_root/'.tem-image-registry.json'), str(self.data_root))
+        self.file_rows = {}
         self.raster_store = Path(settings.get('raster_calibrations', ROOT/'.tem-image-calibrations.json'))
         self.reader = None  # Load the optional DM4 reader only for external DM4 files.
         self.templates = json.loads((ROOT/'templates.json').read_text())
@@ -77,34 +84,103 @@ class Engine:
 
     def catalog(self):
         rows = demo_data.catalog_entries()
+        for row in rows:
+            source = demo_data.DEMOS[row['id']].get('source')
+            try:
+                row['image_kind'] = self.acquisition_index.read(source, self.dm_reader())['image_kind'] if source else 'other'
+            except Exception:
+                row['image_kind'] = 'other'
+        self.demo_rows = rows
         self.files = {}
         if self.settings.get('demo_only'):
             return rows
         calibrations = json.loads(self.raster_store.read_text()) if self.raster_store.exists() else {}
-        output = folder_paths.resolve_folder(self.settings.get('output_root', './output'), ROOT)
-        for directory, folders, names in os.walk(self.data_root, followlinks=False):
-            folders[:] = sorted(name for name in folders if not name.startswith('.') and (Path(directory)/name).resolve() != output)
-            originals = {Path(n).stem.casefold() for n in names if Path(n).suffix.lower() in {'.dm4', '.jpg', '.jpeg', '.tif', '.tiff'}}
-            for name in sorted(names):
-                path = Path(directory)/name
-                if path.suffix.lower() not in {'.dm4', *raster_images.EXTENSIONS} or not path.resolve().is_relative_to(self.data_root):
-                    continue
-                if path.suffix.lower() == '.png' and path.stem.casefold() in originals:
-                    continue  # Preview sidecar, not another acquired image.
-                relative = path.relative_to(self.data_root)
-                file_id = relative.as_posix()
-                sample = next((part for part in relative.parts[:-1] if part in ('STA', 'ST')),
-                              relative.parts[0] if len(relative.parts) > 1 else 'Images')
-                self.files[file_id] = path
-                rows.append({'id': file_id, 'name': path.stem, 'sample': sample, 'extension': path.suffix,
-                             'calibrated': raster_images.catalog_calibrated(path, calibrations) if path.suffix.lower() in raster_images.EXTENSIONS else True,
-                             'raster': path.suffix.lower() in raster_images.EXTENSIONS,
-                             'has_preview': path.suffix.lower() in raster_images.EXTENSIONS or sidecar_path(path).is_file()})
-        return rows
+        outputs = {folder_paths.resolve_folder(self.settings.get('output_root', './output'), ROOT)}
+        outputs.update(Path(s['output']).resolve() for s in self.sources if s.get('output'))
+        candidates, seen = [], set()
+        for source in self.sources:
+            root = Path(source['path']).resolve()
+            for directory, folders, names in os.walk(root, followlinks=False):
+                folders[:] = sorted(n for n in folders if not n.startswith('.') and (Path(directory)/n).resolve() not in outputs)
+                originals = {Path(n).stem.casefold() for n in names if Path(n).suffix.lower() in {'.dm4', '.jpg', '.jpeg', '.tif', '.tiff'}}
+                for name in sorted(names):
+                    path = Path(directory)/name
+                    if path.suffix.lower() not in {'.dm4', *raster_images.EXTENSIONS} or not path.resolve().is_relative_to(root) or path.resolve() in seen:
+                        continue
+                    if path.suffix.lower() == '.png' and path.stem.casefold() in originals:
+                        continue
+                    seen.add(path.resolve())
+                    relative = path.relative_to(root)
+                    sample = relative.parts[0] if len(relative.parts)>1 else source['name']
+                    sample_name = sample
+                    if len(self.sources)>1:
+                        sample = source['name'] + ' / ' + sample
+                    folder = relative.parent.as_posix()
+                    if len(self.sources)>1:
+                        folder = source['name'] + ('/'+folder if folder!='.' else '')
+                    candidates.append((path, dict(id=relative.as_posix(), name=path.stem, sample=sample, sample_name=sample_name,
+                        extension=path.suffix, source_id=source['id'], source_name=source['name'], folder=folder,
+                        raster=path.suffix.lower() in raster_images.EXTENSIONS,
+                        has_preview=path.suffix.lower() in raster_images.EXTENSIONS or sidecar_path(path).is_file())))
+        tracked = self.catalogue.scan(candidates)
+        history_records = json.loads(self.catalogue.path.read_text())['records'] if self.catalogue.path.exists() else {}
+        metadata_updates = {}
+        metadata_started = time.monotonic()
+        for index, row in enumerate(tracked):
+            path = Path(row['path'])
+            self.files[row['id']] = path
+            # Source hash key survives moves; old path records migrate on discovery.
+            key = 'sha256:' + row['content_sha256']
+            if row['raster'] and key not in calibrations:
+                history = history_records[row['content_sha256']]['history']
+                entry = next((calibrations[p] for p in reversed(history) if p in calibrations), None)
+                if entry and entry.get('sha256_pixels') == raster_images.identity(raster_images.read(path)):
+                    calibrations[key] = entry
+                    folder_paths.atomic_json(self.raster_store, calibrations)
+            row['calibrated'] = bool(calibrations.get(key)) if row['raster'] else True
+            if row['raster'] and not row['calibrated']:
+                row['calibrated'] = raster_images.catalog_calibrated(path, calibrations)
+            if row['raster']:
+                row['image_kind'] = (calibrations.get(key) or calibrations.get(str(path.resolve())) or {}).get('image_kind', 'uncalibrated') if row['calibrated'] else 'uncalibrated'
+            else:
+                try:
+                    cached = history_records[row['content_sha256']].get('metadata', {})
+                    if cached.get('version') == METADATA_VERSION:
+                        stat = path.stat()
+                        self.acquisition_index.cache[(str(path.resolve()), stat.st_size, stat.st_mtime_ns)] = cached['value']
+                        metadata = cached['value']
+                    else:
+                        metadata = self.acquisition_index.read(path, self.dm_reader())
+                        metadata_updates[row['content_sha256']] = metadata
+                    row['image_kind'] = metadata['image_kind']
+                    if time.monotonic() - metadata_started > 2:
+                        LOG.info('Reading image metadata: %d/%d.', index + 1, len(tracked))
+                        metadata_started = time.monotonic()
+                except Exception:
+                    row['image_kind'] = 'other'
+            old = self.file_rows.get(row['id'])
+            if old and any(old.get(k) != row.get(k) for k in ('path','name','source_id','source_name','folder')):
+                self.loaded.pop(row['id'], None)
+        self.catalogue.save_metadata(metadata_updates, METADATA_VERSION)
+        self.file_rows = {row['id']: row for row in tracked}
+        self.loaded = {k:v for k,v in self.loaded.items() if k in self.files or k in demo_data.DEMOS}
+        return rows + tracked
+
+    def allowed_path(self, path):
+        return any(Path(path).resolve().is_relative_to(Path(s['path']).resolve()) for s in self.sources)
+
+    def output_for(self, file_id):
+        source_id = self.file_rows.get(file_id, {}).get('source_id')
+        source = next((s for s in self.sources if s['id'] == source_id), {})
+        return Path(source.get('output') or self.settings.get('output_root', './output')).expanduser().resolve()
+
+    def calibration_key(self, file_id):
+        digest = self.file_rows.get(file_id, {}).get('content_sha256')
+        return 'sha256:' + digest if digest else None
 
     def raster_source(self, file_id):
         path = self.files.get(file_id)
-        if not path or path.suffix.lower() not in raster_images.EXTENSIONS or not path.resolve().is_relative_to(self.data_root):
+        if not path or path.suffix.lower() not in raster_images.EXTENSIONS or not self.allowed_path(path):
             raise ValueError('Choose a JPEG, PNG or TIFF from the data folder.')
         return path, raster_images.read(path)
 
@@ -115,11 +191,11 @@ class Engine:
     def raster_info(self, file_id):
         path, array = self.raster_source(file_id)
         return dict(width=array.shape[1], height=array.shape[0],
-                    calibration=raster_images.stored(self.raster_store, path, array))
+                    calibration=raster_images.stored(self.raster_store, path, array, self.calibration_key(file_id)))
 
     def calibrate_raster(self, file_id, values):
         path, array = self.raster_source(file_id)
-        result = raster_images.save(self.raster_store, path, array, values)
+        result = raster_images.save(self.raster_store, path, array, values, self.calibration_key(file_id))
         self.loaded.pop(file_id, None)
         return result
 
@@ -162,7 +238,7 @@ class Engine:
                 continue  # No stage metadata in ordinary images.
             try:
                 info = self.acquisition_index.read(path, self.dm_reader())
-                rows.append({**entry, **info, 'folder': str(Path(entry['id']).parent)})
+                rows.append({**entry, **info, 'folder': entry.get('folder', str(Path(entry['id']).parent))})
             except Exception as exc:
                 errors.append({'name': entry['name'], 'error': str(exc)})
         return {'sample': current['sample'], 'files': rows, 'batches': acquisition_batches(rows), 'errors': errors,
@@ -173,7 +249,7 @@ class Engine:
             array, metadata = demo_data.load(file_id, reader=self.read_dm4)
         else:
             path = self.files.get(file_id)
-            if not path or not path.resolve().is_relative_to(self.data_root):
+            if not path or not self.allowed_path(path):
                 raise ValueError('Choose a reference from the configured data folder.')
             array, metadata = self.read_dm4(path)
         if any(str(metadata.get(f'Calibrations Dimension {d} Units', '')).strip() not in LENGTH_NM for d in (1, 2)):
@@ -182,7 +258,7 @@ class Engine:
 
     def file_preview(self, file_id):
         path = self.files.get(file_id)
-        if not path or not path.resolve().is_relative_to(self.data_root):
+        if not path or not self.allowed_path(path):
             raise ValueError('Choose an image from the configured data folder.')
         if path.suffix.lower() in raster_images.EXTENSIONS:
             return png(raster_images.read(path), max_size=1400)
@@ -204,11 +280,11 @@ class Engine:
             name = demo_data.DEMOS[file_id]['name']
         else:
             path = self.files.get(file_id)
-            if not path or not path.resolve().is_relative_to(self.data_root):
+            if not path or not self.allowed_path(path):
                 raise ValueError('Choose an installed demo or an image from the configured TEM folder.')
             if path.suffix.lower() in raster_images.EXTENSIONS:
                 array = raster_images.read(path)
-                manual_calibration = raster_images.stored(self.raster_store, path, array)
+                manual_calibration = raster_images.stored(self.raster_store, path, array, self.calibration_key(file_id))
                 if manual_calibration is None:
                     raise ValueError('Calibrate this image from its scale bar before analysis.')
                 units = 'nm' if manual_calibration['image_kind'] == 'real_space' else '1/nm'
@@ -244,6 +320,8 @@ class Engine:
                 'time': str(meta.get('DataBar Acquisition Time', '')),
                 'device': str(meta.get('Acquisition Device Name', '')),
                 'stage_position': stage_position(meta)}
+        if not is_demo:
+            info.update({k:self.file_rows[file_id][k] for k in ('content_sha256','path','source_id','source_name','folder') if k in self.file_rows.get(file_id,{})})
         if manual_calibration is not None:
             info['manual_calibration'] = manual_calibration
         limits = np.percentile(array, [.3, 99.7])

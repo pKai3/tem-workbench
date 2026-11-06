@@ -18,7 +18,14 @@ def resolve_folder(value, root):
 
 
 def resolve_config(config, root):
-    return {**config, **{k: str(resolve_folder(config.get(k, v), root)) for k, v in DEFAULTS.items()}}
+    result = {**config, **{k: str(resolve_folder(config.get(k, v), root)) for k, v in DEFAULTS.items()}}
+    result['image_registry'] = str(Path(root)/'.tem-image-registry.json')
+    result.setdefault('raster_calibrations', str(Path(root)/'.tem-image-calibrations.json'))
+    if config.get('sources'):
+        result['sources'] = [{**s, 'path': str(resolve_folder(s['path'], root)),
+                              'output': str(resolve_folder(s['output'], root)) if s.get('output') else ''} for s in config['sources']]
+        result['data_root'] = result['sources'][0]['path']
+    return result
 
 
 def atomic_json(path, data):
@@ -121,7 +128,7 @@ def save_locations(config_path, root, config, data, output):
                 remove_link(alias)
             applied.append((alias, old))
             os.replace(temporary, alias)
-        saved = {**{k: v for k, v in config.items() if k != 'demo_only'}, **DEFAULTS}
+        saved = {**{k: v for k, v in config.items() if k not in ('demo_only', 'sources')}, **DEFAULTS}
         atomic_json(config_path, saved)
     except Exception:
         for alias, old in reversed(applied):
@@ -136,4 +143,42 @@ def save_locations(config_path, root, config, data, output):
         for _, temporary, _ in prepared:
             if is_link(temporary):
                 remove_link(temporary)
+    return saved
+
+
+def save_sources(config_path, root, config, sources, output):
+    if not isinstance(sources, list) or not sources:
+        raise ValueError('Add at least one source folder.')
+    output = resolve_folder(output, root)
+    cleaned, paths, ids, names = [], set(), set(), set()
+    for source in sources:
+        path = resolve_folder(source['path'], root)
+        if not path.is_dir():
+            raise ValueError(f'Source folder is unavailable: {path}')
+        if any(path == p or path.is_relative_to(p) or p.is_relative_to(path) for p in paths):
+            raise ValueError('Source folders must be separate, without overlapping parent folders.')
+        paths.add(path)
+        name = str(source.get('name') or path.name).strip()
+        if name in ('', '.', '..') or '/' in name or '\\' in name or name in names:
+            raise ValueError('Give each source a unique name without slashes.')
+        names.add(name)
+        identity = str(source.get('id') or uuid.uuid4().hex)
+        if identity in ids:
+            raise ValueError('Duplicate source identity.')
+        ids.add(identity)
+        target = resolve_folder(source['output'], root) if source.get('output') else output
+        if target == path or path.is_relative_to(target):
+            raise ValueError('Output must not be the source folder or an ancestor of it.')
+        cleaned.append(dict(id=identity,name=name,path=str(path),output=str(target) if source.get('output') else ''))
+    targets = {output, *(Path(s['output']) for s in cleaned if s['output'])}
+    for target in targets:
+        if any(path == target or path.is_relative_to(target) for path in paths):
+            raise ValueError('An output folder must not contain a source folder.')
+    for target in targets:
+        target.mkdir(parents=True, exist_ok=True)
+        if not os.access(target, os.W_OK | os.X_OK):
+            raise ValueError(f'Output folder is not writable: {target}')
+    saved = {k:v for k,v in config.items() if k not in ('demo_only',)}
+    saved.update(sources=cleaned,data_root=cleaned[0]['path'],output_root=str(output))
+    atomic_json(config_path, saved)
     return saved

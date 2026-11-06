@@ -34,7 +34,7 @@ class AcquisitionMetadata(unittest.TestCase):
         row = describe(m, 4096, 4096)
         self.assertIsNone(row['field_nm'])
         self.assertIsNone(row['stage_position']['x'])
-        self.assertEqual(row['image_kind'], 'diffraction_or_uncalibrated')
+        self.assertEqual(row['image_kind'], 'diffraction')
 
     def test_metadata_cache_never_reads_pixels_and_invalidates(self):
         calls = []

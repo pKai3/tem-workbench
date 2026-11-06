@@ -30,7 +30,7 @@ POINTER = '.tem-environment.json'
 LOCK = '.tem-update.lock'
 MAX_DOWNLOAD = 128 * 1024 * 1024
 MAX_CONTENTS = 512 * 1024 * 1024
-PERSONAL = ('tem_workbench.project.json', '.tem-paths.json', POINTER, '.tem-image-calibrations.json')
+PERSONAL = ('tem_workbench.project.json', '.tem-paths.json', POINTER, '.tem-image-calibrations.json', '.tem-image-registry.json')
 
 
 class UpdateError(RuntimeError):

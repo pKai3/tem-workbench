@@ -6,7 +6,7 @@
  const moveHistory=[];
  const previews=new Map(), hoverCache=new Map(), rotations=new Map(), placements=new Map(), decoded=new Map();
  let adjust=false,adjustId="",zoomOutLimit=Infinity, batchId="", scopedBatches=[];
- const selectionKey=(sample=null)=>`tem-acquisition-selection:${JSON.stringify([config.data_root,sample])}`;
+ const selectionKey=(sample=null)=>`tem-acquisition-selection:${JSON.stringify([(config.state_namespace||config.data_root),sample])}`;
  function rememberSelection(){
   if(!data||busy)return;
   writePreference(selectionKey(),data.sample);
@@ -34,8 +34,8 @@
  const batches=()=>data?.batches||[];
  const batchOf=f=>batches().find(b=>b.id===f?.acquisition_batch);
  const batchReference=b=>data?.files.find(f=>f.id===b?.reference_id);
- const batchLabel=b=>`${b.first??"Unnumbered"}${b.last!==b.first?"–"+(b.last??"?"):""} · α ${tilt(b.alpha)}, β ${tilt(b.beta)} · ${b.members.length} images`;
- const rotationKey=()=>`tem-acquisition-rotation:${JSON.stringify([config.data_root,reference.id])}`;
+ const batchLabel=b=>`${b.first??batchReference(b)?.name??"Unnumbered"}${b.last!==b.first?"–"+(b.last??"?"):""} · α ${tilt(b.alpha)}, β ${tilt(b.beta)} · ${b.members.length} images`;
+ const rotationKey=()=>`tem-acquisition-rotation:${JSON.stringify([(config.state_namespace||config.data_root),reference.id])}`;
  function restoreRotation(){
   if(!reference)return;
   const key=rotationKey(), saved=rotations.has(key)?rotations.get(key):readPreference(key,0);
@@ -76,7 +76,7 @@
   }
   return hoverCache.get(url);
  }
- const placementKey=(f,ref=reference)=>`tem-acquisition-placement:${JSON.stringify([config.data_root,ref.id,f.id])}`;
+ const placementKey=(f,ref=reference)=>`tem-acquisition-placement:${JSON.stringify([(config.state_namespace||config.data_root),ref.id,f.id])}`;
  function placement(f,ref=reference){
   if(!ref||f.id===ref.id)return null;
   const key=placementKey(f,ref);
@@ -212,7 +212,7 @@
    // Alternate capture of the same footprint: change backdrop, not navigation level or coordinate frame.
    const oldRef=reference,angle=Number(byId('acquisition-rotation').value)||0;
    for(const image of visible){const manual=placement(image,oldRef);if(manual&&image.id!==f.id){const key=placementKey(image,f);placements.set(key,{...manual});writePreference(key,{...manual})}}
-   const key=`tem-acquisition-rotation:${JSON.stringify([config.data_root,f.id])}`;rotations.set(key,angle);writePreference(key,angle);
+   const key=`tem-acquisition-rotation:${JSON.stringify([(config.state_namespace||config.data_root),f.id])}`;rotations.set(key,angle);writePreference(key,angle);
    options(byId('acquisition-reference'),[[f.id,f.name]],f.id);update(false,true);return;
   }
   spatialTree(); // Retain hierarchy only if the next view has equivalent placements.
@@ -226,7 +226,7 @@
  }
  const positioned=f=>Number.isFinite(f.stage_position?.x)&&Number.isFinite(f.stage_position?.y);
  const field=f=>Array.isArray(f.field_nm)&&f.field_nm.every(x=>Number.isFinite(x)&&x>0);
- const number=f=>{const n=acquisitionNumber(f);return Number.isFinite(n)?String(n):f.name};
+ const number=f=>{const n=acquisitionNumber(f);return Number.isFinite(n)?String(n):(f.name.length>30?f.name.slice(0,27)+"…":f.name)};
  const coord=n=>Number.isFinite(n)?String(Number(n.toPrecision(9))):'unknown';
  const tilt=n=>Number.isFinite(n)?(String(n).replace(/[-.e+]/g,'').replace(/^0+/,'').length<3?n.toPrecision(3):String(n)):'unknown';
  const fmt=n=>Number(n).toPrecision(4).replace(/\.0+$/, '');
@@ -327,7 +327,7 @@
   branch(list,tree.unplaced,`${treeMasterId}:unplaced`,'Not placed');
  }
  function referenceChildCount(candidate,files){
-  const key=`tem-acquisition-rotation:${JSON.stringify([config.data_root,candidate.id])}`;
+  const key=`tem-acquisition-rotation:${JSON.stringify([(config.state_namespace||config.data_root),candidate.id])}`;
   const rotation=rotations.has(key)?rotations.get(key):readPreference(key,0);
   const parent={rect:[0,0,...candidate.field_nm.map(v=>v/1000)]};
   // Coincident alternate captures count as one footprint, not extra children.
@@ -391,7 +391,7 @@
   // Across tilt/sequence boundaries, ONLY a manually positioned batch anchor connects coordinates.
   const anchor=batchReference(batchOf(f)),offset=anchor&&placement(anchor);
   if(!offset)return null;
-  const key=`tem-acquisition-rotation:${JSON.stringify([config.data_root,anchor.id])}`;
+  const key=`tem-acquisition-rotation:${JSON.stringify([(config.state_namespace||config.data_root),anchor.id])}`;
   const rotation=rotations.has(key)?rotations.get(key):readPreference(key,0);
   const local=placement(f,anchor);
   const delta=local?[local.x,local.y]:stageOffset(f,anchor,Number(rotation)||0);

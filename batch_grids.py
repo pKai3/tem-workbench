@@ -9,6 +9,7 @@ import re
 import threading
 import uuid
 import math
+import os
 from PIL import Image, ImageDraw, ImageFont
 from engine import Engine
 import batch_stability
@@ -225,7 +226,7 @@ class BatchGrids:
             json.dumps(options,allow_nan=False)
             if count not in range(2,25) or not 0<minimum<100000:raise ValueError('Invalid grid size or stopping limit.')
             engine=Engine(copy.deepcopy(app.config));engine.catalog()
-            folder=Path(app.config['output_root'])/('batch_'+datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:6])
+            folder=Path(app.config['output_root']).resolve()/('batch_'+datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:6])
             folder.mkdir(parents=True)
             self.cancel.clear();self.live=None;self.live_preview=None
             self.data=dict(state='running',total=len(chosen),finished=0,images=[],failures=[],current=None,job_id=None,
@@ -268,10 +269,15 @@ class BatchGrids:
                             job['limits']=json.loads((Path(__file__).parent/'engine_provenance.json').read_text())['limits']
                             stem=safe_name(row['sample'])+'_'+safe_name(info['name'])+'_'+uuid.uuid4().hex[:6]
                             kind='overlap_map' if job.get('grid',{}).get('mode')=='overlap' else 'grid'
-                            target=folder/(stem+'_'+kind+'.json');target.write_text(json.dumps(job,indent=2,allow_nan=False))
-                            summary=summarize(job,row['sample']);summary['data_file']=target.name
-                            summary['source_folder']=summary_folder(key,[],False)
-                            summary['summary_folder']=summary_folder(key,roots,bool(options.get('flatten_folders',False)))
+                            image_folder=engine.output_for(key)/folder.name if engine.output_for(key)!=Path(app.config['output_root']).resolve() else folder
+                            image_folder.mkdir(parents=True, exist_ok=True)
+                            target=image_folder/(stem+'_'+kind+'.json');target.write_text(json.dumps(job,indent=2,allow_nan=False))
+                            summary=summarize(job,row['sample']);summary['data_file']=os.path.relpath(target,folder) if target.drive==folder.drive else str(target)
+                            folder_key=row.get('folder','.')+'/image'
+                            summary['source_folder']=summary_folder(folder_key,[],False)
+                            summary['source_project']=row.get('source_name','')
+                            summary_roots=roots or ([row['source_name']+'/'+row.get('sample_name',row['sample'])] if len(engine.sources)>1 else [])
+                            summary['summary_folder']=summary_folder(folder_key,summary_roots,bool(options.get('flatten_folders',False)))
                             with self.lock:self.data['images'].append(summary)
                             if options.get('export_png') and job['state']=='complete':
                                 products=png_exports(options,settings['enabled_phases'])
@@ -280,11 +286,11 @@ class BatchGrids:
                                     try:
                                         # Preserve the legacy filename for the single default product.
                                         extra='' if len(products)==1 and suffix in ('classification','support_all') else '_'+suffix
-                                        png_target=folder/(stem+'_'+kind+extra+'.png')
+                                        png_target=image_folder/(stem+'_'+kind+extra+'.png')
                                         map_png(item,job,png_target,options.get('colors'),float(options.get('opacity',.2)),view,phase)
                                         with self.lock:
-                                            summary.setdefault('png_files',{})[suffix]=png_target.name
-                                            summary.setdefault('png_file',png_target.name)
+                                            summary.setdefault('png_files',{})[suffix]=os.path.relpath(png_target,folder) if png_target.drive==folder.drive else str(png_target)
+                                            summary.setdefault('png_file',summary['png_files'][suffix])
                                     except Exception as error:
                                         with self.lock:self.data['failures'].append(dict(file_id=key,stage='PNG export',view=suffix,error=str(error)))
                             if job.get('error'):

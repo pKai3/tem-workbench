@@ -74,10 +74,48 @@ class Workbench:
         self.grid_thread = None
         self.closing = False
         self.job_lock = threading.RLock()
+        LOG.info('Scanning image source folders…')
         self.engine.catalog()
+        LOG.info('Image catalogue ready: %d images.', len(self.engine.files))
         self.batch = BatchGrids(self)
         self.window_probe = WindowSizeProbe()
+        self.watch_stop = threading.Event()
+        self.watch_thread = None
 
+
+    def catalogue_status(self):
+        return dict(files=self.engine.demo_rows + list(self.engine.file_rows.values()),
+                    revision=self.engine.catalogue.revision, events=self.engine.catalogue.events,
+                    namespace=self.engine.catalogue.namespace)
+
+    def watch_sources(self):
+        if self.watch_thread:
+            return
+        def watch():
+            while not self.watch_stop.wait(15):
+                try:
+                    # Never mutate an active grid's source or interrupt a batch.
+                    if self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running():
+                        continue
+                    with self.lock:
+                        self.engine.catalog()
+                except Exception:
+                    LOG.exception('Source folder refresh failed')
+        self.watch_thread = threading.Thread(target=watch, name='image-folder-watch', daemon=True)
+        self.watch_thread.start()
+
+    def set_sources(self, sources, output):
+        with self.lock, self.job_lock:
+            if self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running():
+                raise ValueError('Finish or cancel the current analysis job before changing sources.')
+            if self.preview_batch and self.preview_status()['state']=='running':
+                raise ValueError('Finish PNG preview generation before changing sources.')
+            saved = folder_paths.save_sources(self.config_path, self.root, self.config, sources, output)
+            self.config = folder_paths.resolve_config(saved, self.root)
+            self.engine = Engine(self.config)
+            self.engine.catalog()
+            self.jobs.clear()
+            return self.config_info()
 
     def analyze_interactive(self, body):
         # Snapshot mutable caches while retaining immutable source arrays. Matching
@@ -101,11 +139,12 @@ class Workbench:
         return item, result
 
     def config_info(self):
-        return {'app_version': APP_VERSION, 'window_size_probe': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        files = self.engine.catalog()
+        return {'sources': self.engine.sources, 'file_tracking': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
-                'files': self.engine.catalog(), 'default_file': self.config.get('default_file'),
+                'files': files, 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
@@ -163,12 +202,12 @@ class Workbench:
             if file_id in demo_data.DEMOS:
                 return demo_data.preview_path(file_id).read_bytes()
             path = self.engine.files.get(file_id)
-            if not path or not path.resolve().is_relative_to(self.engine.data_root):
+            if not path or not self.engine.allowed_path(path):
                 raise ValueError('That image has no sidecar preview.')
             if path.suffix.lower() != '.dm4':
                 return self.engine.file_preview(file_id)
             preview = sidecar_path(path)
-            if not preview.resolve().is_relative_to(self.engine.data_root):
+            if not self.engine.allowed_path(preview):
                 raise ValueError('Preview must be inside the data folder.')
             return preview.read_bytes()
 
@@ -187,7 +226,7 @@ class Workbench:
                 raise ValueError('This image or its calibration differs from the saved region. The saved coordinates have not been applied.')
             self.engine.validate(item, region['roi'], region['settings'])
         LOG.info('Reopened saved region %s on %s', region['name'], source['name'])
-        return region
+        return {**region, 'source': {**source, **current}}
 
     def store_region(self, body):
         with self.lock:
@@ -397,6 +436,8 @@ class Workbench:
             self.jobs[job_id]['cancel'] = True
 
     def close(self):
+        if getattr(self, 'watch_stop', None):
+            self.watch_stop.set()
         if getattr(self, 'window_probe', None):
             self.window_probe.cancel.set()
         if getattr(self, 'batch', None):
@@ -476,7 +517,7 @@ class Workbench:
             roi = {key: int(body['roi'][key]) for key in ('x', 'y', 'w', 'h')}
             raw = self.engine.region_preview(item, roi, max_size=None)
             name = safe_name(item['info']['name'])
-            output = Path(self.config['output_root']).expanduser().resolve()
+            output = self.engine.output_for(body['file_id'])
         stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
         location = f"x{roi['x']}_y{roi['y']}_{roi['w']}x{roi['h']}"
         output.mkdir(parents=True, exist_ok=True)
@@ -510,7 +551,7 @@ class Workbench:
                 name = self.engine.files[file_id].stem
             else:
                 raise ValueError('The exported image is no longer in the current collection.')
-            output = Path(self.config['output_root']).expanduser().resolve()
+            output = self.engine.output_for(body['file_id'])
         images = []
         gif_palette = None
         previous_pixels = None
@@ -576,7 +617,7 @@ class Workbench:
                 item = self.engine.load(body['file_id'])
                 result = {'source': item['info'], 'result': self.engine.analyze(item, body['roi'], body.get('settings', {}), images=False)}
             kind = 'diffraction' if item['info'].get('image_kind') == 'diffraction' else 'region'
-        output = Path(self.config['output_root']).expanduser().resolve()
+        output = self.engine.output_for(result['source']['id'])
         output.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
         target = output/f"{stamp}_{safe_name(result['source']['name'])}_{kind}_{uuid.uuid4().hex[:6]}.json"
@@ -624,6 +665,9 @@ def make_handler(app):
                 if url.path == '/api/config':
                     with app.lock:
                         self.send(app.config_info())
+                elif url.path == '/api/catalogue':
+                    with app.lock:
+                        self.send(app.catalogue_status())
                 elif url.path == '/api/raster-preview':
                     with app.lock:
                         preview = app.engine.raster_preview(query['id'][0])
@@ -696,6 +740,14 @@ def make_handler(app):
                 body=json.loads(self.rfile.read(size))
                 if self.path == '/api/browse-folders':
                     self.send(folder_paths.browse(body.get('path'), app.root))
+                elif self.path == '/api/sources':
+                    self.send(app.set_sources(body['sources'], body['output_root']))
+                elif self.path == '/api/refresh-files':
+                    with app.lock:
+                        if app.batch.running() or (app.grid_thread and app.grid_thread.is_alive()) or app.window_probe.running():
+                            raise ValueError('Finish or cancel analysis before refreshing sources.')
+                        app.engine.catalog()
+                        self.send(app.catalogue_status())
                 elif self.path == '/api/folders':
                     self.send(app.set_folders(body['data_root'], body['output_root']))
                 elif self.path == '/api/demo-pack':
@@ -875,6 +927,7 @@ def main(argv=None, desktop_ready=None):
         write_json(Path(os.environ['TEM_DESKTOP_READY_FILE']),
                    {'nonce': os.environ['TEM_DESKTOP_NONCE'], 'url': url, 'pid': os.getpid()})
     LOG.info('Ready: %s (startup %.2f s)', url, time.perf_counter() - started)
+    app.watch_sources()
     if args.open:
         webbrowser.open(url)
     try:

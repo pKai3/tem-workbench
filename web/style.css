@@ -596,3 +596,8 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .tem-diffraction-loader .beam-halo{transform-origin:60px 60px;animation:tem-beam 2s ease-in-out infinite alternate}
 @keyframes tem-beam{from{opacity:.3;transform:scale(.8)}to{opacity:.7;transform:scale(1.15)}}
 @media(prefers-reduced-motion:reduce){.tem-diffraction-loader .reciprocal-lattice,.tem-diffraction-loader .beam-halo{animation:none}}
+
+/* Source folders are project-level; keep controls compact. */
+.source-row{display:grid;grid-template-columns:minmax(100px,.6fr) minmax(200px,1.5fr) minmax(200px,1.5fr) auto;gap:10px;align-items:end;margin:10px 0}.source-row label{min-width:0}.source-row input{width:100%;min-width:0}.source-row button,.source-row input{min-height:32px;padding:6px 9px;font-size:12px}#message{display:none}#export-notice-detail{white-space:pre-line;max-height:35vh;overflow:auto}@media(max-width:850px){.source-row{grid-template-columns:1fr 1fr}}
+
+.folder-settings > label[hidden]{display:none}

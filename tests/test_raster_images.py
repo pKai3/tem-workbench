@@ -54,7 +54,7 @@ class RasterTests(unittest.TestCase):
         self.assertEqual(Image.open(BytesIO(self.engine.raster_preview('test.tiff'))).size,(128,128))
         with self.assertRaises(ValueError):self.engine.raster_source('../elsewhere.png')
     def test_catalog_calibration_status_tracks_source(self):
-        def entry():return next(row for row in self.engine.catalog() if row['id']=='test.tiff')
+        def entry():return next(row for row in self.engine.catalog() if row['name']=='test')
         self.assertEqual(entry()['extension'],'.tiff')
         self.assertFalse(entry()['calibrated'])
         self.engine.calibrate_raster('test.tiff',self.calibration())
