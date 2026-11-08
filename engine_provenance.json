@@ -15,7 +15,7 @@
     "spectrum"
   ],
   "limits": [
-    "Bounded low-index HCP/BCC library; other structures are not tested.",
+    "Finite HCP/BCC/FCC/ORT/OMEGA template library and bounded parent-linked beta/omega search; untested structures and orientations can affect the result.",
     "Compatibility scores are not phase probabilities.",
     "No independent absolute calibration standard.",
     "Fourier support is not phase fraction.",
@@ -26,9 +26,11 @@
     "Scale penalty is an adjustable quadratic preference relative to reference dimensions, not a measured strain limit; calibration offsets can affect ranking.",
     "Weak/missing prediction checks and rotated controls are heuristic, not statistical significance or a physical contrast-transfer/intensity model.",
     "Passing-parent child checks use a limited candidate search and heuristic margin; smaller windows may lose information, and hidden finer structures can remain undetected.",
-    "Direct diffraction is an experimental spot-pattern mode, not ring indexing. Beam centre, reciprocal calibration, masks and detection thresholds need inspection. Opposite-pair centre estimation can select a lattice-equivalent inversion centre; local contrast and estimated widths are heuristic."
+    "Direct diffraction is an experimental spot-pattern mode, not ring indexing. Beam centre, reciprocal calibration, masks and detection thresholds need inspection. Opposite-pair centre estimation can select a lattice-equivalent inversion centre; local contrast and estimated widths are heuristic.",
+    "Parent-linked beta/omega uses relative geometry and an ideal orientation relationship. Shared reflections are ambiguous; geometry/compactness scores are heuristic. It does not infer absolute cell size, phase fraction, incomplete-collapse structure or dynamical diffraction. Nominal omega absence coincidences are geometric diagnostics, not explained intensities or extra allowed-reflection evidence."
   ],
   "extensions": {
+    "beta_omega.py": "beta-omega-relative-v2: optional direct-diffraction search alongside independent phase fits. BCC parent hypotheses are fitted and retained on their own subsets before testing all subsets of four ideal symmetry-related omega variants with a shared relative scale and orientation. Cubic zone families through index 3; optional indexed beta anchors. Two nonparallel beta profiles need independent variant support; beta-only candidates require three. One-to-one union-node assignment retains shared and unexplained profiles. Nominal omega absence coincidences are diagnostics only, excluded from allowed coverage and model ranking. Combined geometry/compactness ranking and variant complexity cost are heuristic; near-tied beta-only alternatives remain ambiguous. No explicit brighter-beta prior, absolute cell size, intensity or phase fraction is inferred; incomplete collapse and dynamical diffraction are outside the model.",
     "scale_fitting.py": "Automatic uniform HCP/BCC or independent HCP basal/c reciprocal scales. Same bounded zones, wider reflection band, scale bounds 0.85\u20131.15. Each fitted hypothesis receives an optional mean squared scale-deviation penalty before ranking and zone selection. Default strength 0.10 per 5% adjustment, zero disables; fitted positions are unchanged by the ranking cost. Distinct zone hypotheses can be retained for the same observed profile set.",
     "phase_comparison.py": "shared-evidence-v1: reports matched/unsupported prediction counts and adds an exact-shared-profile ambiguity guard. Operates on the rank score supplied by fitting; does not adjust positional scores, simulate intensities, assume allowed reflections must be present, or automatically prefer the sparser model.",
     "peak_evidence.py": "local-maxima-v1: phase-independent weak-maxima pool, one-to-one prediction matching within the selected window peak-width radius, local-background contrast and rotated controls. Default weight 0.10 adds weak support and a bounded unsupported-prediction cost. Does not promote weak maxima to strong profiles, change original peak positions or supply separate-pattern evidence.",

@@ -104,6 +104,18 @@ class DiffractionChecks(unittest.TestCase):
         self.assertTrue(found['beamstop_prior'])
         self.assertLess(np.linalg.norm(np.array([found['x'], found['y']])-centre), .5)
 
+    def test_broad_edge_spots_use_partial_background_without_inventing_edge_peaks(self):
+        yy,xx=np.indices((256,256));array=np.full(xx.shape,100.,np.float32)
+        positions=[(100.,40.),(150.,215.)]
+        for x,y in positions:array+=250*np.exp(-((xx-x)**2+(yy-y)**2)/(2*12**2))
+        valid=np.ones(array.shape,dtype=bool)
+        spots=diffraction._deduplicate_spots(diffraction._spot_candidates(array,valid,valid,[2.,4.,8.,16.,32.]),2.)
+        self.assertEqual(len(spots),2)
+        measured=np.array([[p['x_px'],p['y_px']] for p in spots])
+        self.assertLess(np.linalg.norm(np.array(positions)[:,None]-measured[None],axis=2).min(axis=1).max(),.3)
+        flat=np.full(array.shape,100.,np.float32)
+        self.assertEqual(diffraction._spot_candidates(flat,valid,valid,[2.,4.,8.,16.,32.]),[])
+
     def test_opposite_spots_near_horizontal_axis_stay_one_profile(self):
         spots=[{'q':[4.,.01],'local_contrast':10.},
                {'q':[-4.,.01],'local_contrast':9.}]

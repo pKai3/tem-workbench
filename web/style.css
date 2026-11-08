@@ -607,6 +607,23 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 
 .omega{color:var(--omega-color,#b49aff)}
 
+/* Parent-linked indexing has its own relative metric and component colours. */
+.scale-settings .beta-anchor-controls{min-width:0;margin-top:var(--panel-gap);padding-top:10px}
+.beta-anchor-controls>summary{position:relative;width:fit-content}
+.beta-anchor-controls>summary .settings-help{position:static;margin-left:4px}
+.scale-settings .beta-anchor-controls .settings-help-popup{left:0;right:auto;transform:none}
+.beta-anchor-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;margin-top:10px}
+.beta-anchor-fields label{min-width:0}
+.beta-anchor-fields input{width:100%;min-width:0}
+.beta-anchor-fields input,.beta-anchor-fields button{min-height:32px;padding:6px 9px;font-size:12px}
+#beta-omega-results th,#beta-omega-results td{padding:.45rem;text-align:left}
+#beta-omega-results{margin-top:.8rem}
+#beta-omega-results>.scroll{max-height:none}
+
+.beta-omega-search-control{display:flex;align-items:center;gap:6px;margin-left:auto}
+.phase-color-controls .beta-omega-search{flex:none;min-height:26px;white-space:nowrap}
+.material-settings .beta-omega-search input{height:auto;min-height:0}
+
 /* Keep the applied centre visible without replacing the user's search anchor. */
 #diffraction-controls .diffraction-heading{flex-wrap:wrap}
 #diff-centre-result{margin-left:auto;min-width:0;font-size:11px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums}

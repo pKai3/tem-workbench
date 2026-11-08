@@ -18,7 +18,7 @@ function hover(extra={}){context.hoverSpectrum({currentTarget:$('fft'),clientX:2
 for(const mode of ['view','add','remove']){
  context.mode=mode;context.result=snapshot;context.busy=context.pending=context.spectrumLoading=false;
  hover();assert.equal($('spectrum-hover').hidden,false,mode+' retains hover');
- assert.match($('spectrum-hover-coords').textContent,/nm⁻¹/);
+ assert.match($('spectrum-hover-coords').textContent,/rel\./);
  context.hideSpectrumHover();
 }
 hover({clientX:350,clientY:400});

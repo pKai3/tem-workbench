@@ -35,6 +35,12 @@ def identity(array):
 
 
 def validate(array, request):
+    if request.get('method') == 'relative_diffraction':
+        h, w = array.shape
+        # Numerical coordinates for detector controls only, never a calibration.
+        return dict(image_kind='diffraction', method='relative_diffraction', scale=20/min(h, w),
+                    units='relative', sha256_pixels=identity(array), width=w, height=h,
+                    isotropic=True)
     units = request.get('units')
     if units not in UNITS:
         raise ValueError('Choose nm, µm, Å, nm^-1 or Å^-1.')

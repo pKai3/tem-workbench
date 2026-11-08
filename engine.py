@@ -26,6 +26,7 @@ import demo_data
 import peak_evidence
 import forbidden_reflections
 import diffraction
+import beta_omega
 import raster_images
 from materials import scale_bounds, PHASES, reference_settings
 from crystal_templates import fcc_templates, orthorhombic_templates, omega_templates, HEX_PHASES
@@ -67,7 +68,7 @@ class Engine:
         self.auto_templates = self.templates
         self._template_cache = {(10., 3., .295, .468, .330, .417, .3, .4, .5, .4614, .2832, .85, 1.15): self.templates}
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'forbidden_reflections.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'orthorhombic.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'beta_omega.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'forbidden_reflections.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'orthorhombic.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
         self.acquisition_index = MetadataIndex()
@@ -142,6 +143,7 @@ class Engine:
                 row['calibrated'] = raster_images.catalog_calibrated(path, calibrations)
             if row['raster']:
                 row['image_kind'] = (calibrations.get(key) or calibrations.get(str(path.resolve())) or {}).get('image_kind', 'uncalibrated') if row['calibrated'] else 'uncalibrated'
+                row['relative_diffraction'] = (calibrations.get(key) or calibrations.get(str(path.resolve())) or {}).get('method') == 'relative_diffraction'
             else:
                 try:
                     cached = history_records[row['content_sha256']].get('metadata', {})
@@ -290,7 +292,8 @@ class Engine:
                 units = 'nm' if manual_calibration['image_kind'] == 'real_space' else '1/nm'
                 meta = {f'Calibrations Dimension {d} {key}': value for d in (1,2)
                         for key, value in [('Units', units), ('Scale', manual_calibration['scale'])]}
-                meta['Acquisition Device Name'] = 'Imported image · manual calibration'
+                meta['Acquisition Device Name'] = ('Imported diffraction · uncalibrated' if manual_calibration['method'] == 'relative_diffraction'
+                                                   else 'Imported image · manual calibration')
             else:
                 array, meta = self.read_dm4(path)
             name = path.stem
@@ -324,6 +327,7 @@ class Engine:
             info.update({k:self.file_rows[file_id][k] for k in ('content_sha256','path','source_id','source_name','folder') if k in self.file_rows.get(file_id,{})})
         if manual_calibration is not None:
             info['manual_calibration'] = manual_calibration
+        info['reciprocal_calibrated'] = not (manual_calibration and manual_calibration['method'] == 'relative_diffraction')
         limits = np.percentile(array, [.3, 99.7])
         if is_diffraction:
             info.update(pixel_x_nm_inv=sx, pixel_y_nm_inv=sy, field_nm_inv=[w*sx, h*sy],
@@ -401,6 +405,15 @@ class Engine:
         if objective not in ('rank', 'geometry'):
             raise ValueError('Choose rank or geometry for automatic peak strength.')
         values.update(fft_window=window, remove_mean=remove_mean, fft_auto_strength=auto_strength, fft_auto_objective=objective)
+        # Migrate the former exclusive mode into an independent search switch.
+        search_joint = settings.get('search_beta_omega', settings.get('diffraction_model') == 'beta_omega')
+        if not isinstance(search_joint, bool):
+            raise ValueError('Beta + Omega search must be enabled or disabled.')
+        values['search_beta_omega'] = search_joint if direct else False
+        anchors = settings.get('beta_parent_anchors', [])
+        if not isinstance(anchors, list) or len(anchors) not in (0, 2):
+            raise ValueError('Provide zero or two beta parent anchors.')
+        values['beta_parent_anchors'] = anchors
         if direct:
             values['diffraction'] = diffraction.validate(item['info'], settings.get('diffraction', {}))
             values['g_min'] = values['diffraction']['exclude_radius_nm_inv']
@@ -460,10 +473,32 @@ class Engine:
                               smoothing_sigma=settings['fft_smoothing_sigma'], threshold_floor=settings['fft_threshold_floor'],
                               minimum_enrichment=0. if auto_strength else settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
                               max_peaks=settings['fft_max_peaks'])
-        templates = self.templates_for(settings)
-        selected_geometry = None
+        joint = None
+        relative = direct and not info.get('reciprocal_calibrated', True)
+        templates = [] if relative else self.templates_for(settings)
         if direct:
-            models, candidates = self._fit_spectrum(s, settings, templates, can_index, context)
+            s['coordinate_units'] = 'relative' if relative else 'nm^-1'
+        selected_geometry = None
+        if direct and settings['search_beta_omega']:
+            anchors = []
+            for anchor in settings['beta_parent_anchors']:
+                if not isinstance(anchor, dict):
+                    raise ValueError('Beta anchors must contain a profile and three-index reflection.')
+                current = dict(anchor)
+                if 'detector_position' in anchor:
+                    point = np.asarray(anchor['detector_position'], dtype=float)
+                    if point.shape != (2,) or not np.isfinite(point).all():
+                        raise ValueError('Beta anchor detector positions must contain two finite coordinates.')
+                    q = (point-s['beam_center_px'])*np.array(s['reciprocal_pixel_size'])*[1, -1]
+                    nearest = sorted((min(np.linalg.norm(q-[p['qx'], p['qy']]), np.linalg.norm(q+[p['qx'], p['qy']])), p['profile_id']) for p in s['peaks'])
+                    if not nearest or nearest[0][0] > max(.10, core.peak_width(s)):
+                        raise ValueError('A beta anchor is no longer detected. Restore its detection or clear the anchors.')
+                    current['profile_id'] = nearest[0][1]
+                anchors.append(current)
+            joint = beta_omega.fit(s['peaks'], max(.10, core.peak_width(s)), settings['g_min'], settings['g_max'], context['visible'], anchors)
+            models, candidates = ([], []) if relative else self._fit_spectrum(s, settings, templates, can_index, context)
+        elif direct:
+            models, candidates = ([], []) if relative else self._fit_spectrum(s, settings, templates, can_index, context)
         else:
             # Minimum strength only filters the existing connected components.
             # Reuse one FFT and test every distinct admitted profile set, including
@@ -529,7 +564,14 @@ class Engine:
         tol = max(.10, core.peak_width(s))
         forbidden_reflections.annotate(models, s, tol, settings['g_min'], settings['g_max'])
         classification = self.classify(s, models, settings, width_nm, height_nm, can_index)
-        periodicity = selected_geometry if selected_geometry is not None else (core.purity(s['peaks'], tol, g_max=settings['g_max'], g_min=settings['g_min']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False})
+        if joint is not None:
+            classification = dict(label=joint['status'], primary_model=None, secondary_model=None,
+                                  flags=[joint['interpretation'], 'Mask printed annotations before fitting; they are not diffraction evidence.'])
+            periodicity = dict(status='parent_linked_model', substantial_second_pattern=False)
+        else:
+            periodicity = selected_geometry if selected_geometry is not None else (core.purity(s['peaks'], tol, g_max=settings['g_max'], g_min=settings['g_min']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False})
+        if relative:
+            classification['flags'].append('Uncalibrated image: independent reference-cell searches are inactive. Peak and geometry checks remain available; Beta + Omega is an optional relative-geometry search.')
         log = s.pop('log')
         detector_signal = s.pop('detector_signal', None)
         # Return an encoded log-power field; display contrast is adjusted in the browser only.
@@ -570,6 +612,8 @@ class Engine:
                 'periodicity': periodicity, 'images': encoded,
                 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                 'engine_sha256': self.version}
+        if joint is not None:
+            result['beta_omega'] = joint
         if cache_candidates:
             # Internal, compressed pool: never serialize it into API/saved output.
             result['_fit_cache'] = zlib.compress(json.dumps(candidates, separators=(',', ':'), allow_nan=False).encode(), 1)
@@ -577,9 +621,10 @@ class Engine:
 
     def classify(self, s, models, settings, width_nm, height_nm, can_index=True):
         classification = phase_comparison.classify(s['peaks'], models, s['df'])
-        if 'ORT' in settings.get('enabled_phases', []):
+        relative = s.get('coordinate_units') == 'relative'
+        if not relative and 'ORT' in settings.get('enabled_phases', []):
             classification['flags'].append('ORT is generic primitive orthorhombic geometry, not a chemical phase assignment. No systematic absences or intensities are modelled. Free cell proportions increase flexibility; unconstrained axes are not measured.')
-        if settings['scale_mode'] != 'fixed':
+        if not relative and settings['scale_mode'] != 'fixed':
             classification['flags'].append(f'Prediction scales are fitted independently in this region ({scale_bounds(settings)[0]:g}–{scale_bounds(settings)[1]:g}). Fitted lattice dimensions depend on the image calibration used.')
             if settings['scale_mode'] in ('auto_hcp_ac', 'auto_hcp_ratio') and any(p in settings.get('enabled_phases', PHASES) for p in HEX_PHASES):
                 classification['flags'].append('HCP/ω has an extra fitting parameter where c is visible. Scale penalties discourage large adjustments; the separate shared-evidence check retains unresolved model tradeoffs.')
@@ -599,11 +644,11 @@ class Engine:
                 classification['flags'].append('The leading fit reaches an automatic scale limit.')
             if primary and primary.get('scale_note'):
                 classification['flags'].append(primary['scale_note'])
-        if can_index and len(s['peaks']) == 3:
+        if not relative and can_index and len(s['peaks']) == 3:
             classification['flags'].append('Only three independent profiles were detected; the current crystal screen requires four. Some high-symmetry projections have only three first-order profiles. Higher-order reflections or a larger fitting band may supply additional evidence; three profiles alone do not identify a phase.')
-        if settings.get('peak_evidence_weight', 0):
+        if not relative and settings.get('peak_evidence_weight', 0):
             classification['flags'].append('Prediction-site evidence is an exploratory ranking adjustment. Weak maxima are checked against local background and rotated controls; they do not count toward the initial fit screen or separate-pattern criteria. Missing spots are not proof of an absent reflection.')
-        if settings.get('peak_evidence_half_weight_nm_inv', 0):
+        if not relative and settings.get('peak_evidence_half_weight_nm_inv', 0):
             classification['flags'].append(f"Missing-prediction costs fall smoothly with reciprocal radius: half weight at {settings['peak_evidence_half_weight_nm_inv']:g} nm⁻¹. Detected-peak agreement and weak bonuses are unchanged. This is a heuristic, not a CTF correction.")
         if not can_index:
             classification['label'] = 'insufficient'
@@ -613,8 +658,10 @@ class Engine:
         if s.get('kind') == 'diffraction':
             classification['flags'] = [f.replace('HRTEM contrast transfer can suppress spots',
                 'diffraction intensities depend on excitation and thickness') for f in classification['flags']]
-            classification['flags'].append(f"Direct detector spots, without an FFT. Verify the beam centre and reciprocal calibration; fitting uses the {settings.get('g_min', 3.):g}–{settings['g_max']:g} nm⁻¹ band.")
-            classification['flags'].append(f"Matching radius {max(.10, core.peak_width(s)):.3f} nm⁻¹ uses the estimated spot width with a 0.10 nm⁻¹ floor. Opposite spots are grouped once; only observed spots are marked.")
+            units = 'rel.' if relative else 'nm⁻¹'
+            calibration = 'relative coordinates' if relative else 'reciprocal calibration'
+            classification['flags'].append(f"Direct detector spots, without an FFT. Verify the beam centre and {calibration}; fitting uses the {settings.get('g_min', 3.):g}–{settings['g_max']:g} {units} band.")
+            classification['flags'].append(f"Matching radius {max(.10, core.peak_width(s)):.3f} {units} uses the estimated spot width with a 0.10 {units} floor. Opposite spots are grouped once; only observed spots are marked.")
             translation = s.get('center_refinement', {})
             if translation.get('enabled') and not translation.get('applied'):
                 classification['flags'].append('Translation refinement: '+translation['reason'])
@@ -660,6 +707,8 @@ class Engine:
 
     def rescore(self, result, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None):
         """Only ranking/classification changes; all measured evidence is reused."""
+        if result.get('beta_omega') and not result['models']:
+            return result  # Shared relative geometry has no standalone scale/weak-peak penalties.
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= .5:
             raise ValueError('Scale penalty must be between 0 and 0.5.')
@@ -678,4 +727,6 @@ class Engine:
         forbidden_reflections.annotate(models, result['spectrum'], max(.10, core.peak_width(result['spectrum'])), settings['g_min'], settings['g_max'])
         classification = self.classify(result['spectrum'], models, settings,
                                        result['width_nm'], result['height_nm'])
+        if result.get('beta_omega'):
+            classification = result['classification']
         return {**result, 'settings': settings, 'models': models, 'classification': classification}

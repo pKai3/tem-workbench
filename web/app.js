@@ -38,7 +38,7 @@ function setPhaseSelection(phases){
  syncReferenceControls();
  syncPhaseMarkerControls();
  applyPhaseColors(false);
- $('phase-search-note').textContent=enabledPhases.length?'Searching '+enabledPhases.join(' + ')+'. Disabled skips matching.':'Phase search disabled. Peak and geometry checks remain available.';
+ $('phase-search-note').textContent=meta?.reciprocal_calibrated===false?'Uncalibrated: peak and geometry checks remain available. Independent reference-cell searches need calibration. Beta + Omega is optional.':enabledPhases.length?'Searching '+enabledPhases.join(' + ')+'. Disabled skips matching.':'Phase search disabled. Peak and geometry checks remain available.';
 }
 function syncOverlayMenus(patternValue=$('overlay').value,vectorValue=$('reflection-vectors').value){
  const winners=[['winner','Winning Fit (Passing)'],['winner_any','Winning Fit (Any)']];
@@ -49,7 +49,7 @@ function syncOverlayMenus(patternValue=$('overlay').value,vectorValue=$('reflect
  const append=(parent,choices,prefix='',label='')=>{for(const [value,name] of choices)parent.append(new Option(label+name,prefix+value))};
  pattern.replaceChildren(new Option('None','none'));
  if(enabledPhases.length)append(pattern,[...winners,...phaseChoices]);
- append(pattern,[['geometry','Primary + Secondary Geometry'],['custom','Choose individual fits']]);
+ append(pattern,[['beta_omega','β + ω variants'],['geometry','Primary + Secondary Geometry'],['custom','Choose individual fits']]);
  vectors.replaceChildren(new Option('Off','off'));
  if(enabledPhases.length)for(const [label,prefix,caption] of [['Fitted A/B/C','fitted_','A/B/C · '],['Fitted planes','planes_','Fitted planes · '],['Measured planes','','Measured planes · ']]){
   const group=document.createElement('optgroup');group.label=label;
@@ -71,7 +71,7 @@ function finishPhaseChange(previous){
  if(previous.join(',')!==enabledPhases.join(','))invalidateAnalysisSettings();
 }
 const phaseMaps=()=>Object.fromEntries(PHASES.map(phase=>[phase,new Map()]));
-const labels={hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',fcc_compatible:'FCC compatible',ort_compatible:'Orthorhombic compatible',omega_compatible:'ω compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'Phase ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
+const labels={beta_omega_ambiguous:'β + ω · parent ambiguous',beta_omega_candidate:'β + ω variants candidate',beta_only:'Beta candidate · no ω support in band',insufficient_parent:'Beta parent unresolved',hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',fcc_compatible:'FCC compatible',ort_compatible:'Orthorhombic compatible',omega_compatible:'ω compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'Phase ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',fcc_compatible:'#ff8ac3',ort_compatible:'#64e2b0',omega_compatible:'#b49aff',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
 let mapExportBusy=false;
 let detectorRaw=null,showDetectorSignal=false;
@@ -112,7 +112,7 @@ const BASIC_NUMBERS={"g-max":[4,30],"fft-g-min":[0,29.9],"hcp-a":[0.15,0.65],"hc
 Object.assign(BASIC_NUMBERS,Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value,min,max,integer]])=>[id,[min,max,integer]])));
 Object.assign(BASIC_NUMBERS,{"map-window":[.1,1000],"map-spacing":[.1,1000],"map-window-percent":[.1,100],"map-spacing-percent":[1,100]});
 const BASIC_FLAGS=['adaptive','check-passing','show-grid','fft-hann','fft-mean'];
-const OVERLAY_MODES=['none','winner','winner_any',...PHASES,'both','all','geometry','custom'];
+const OVERLAY_MODES=['beta_omega','none','winner','winner_any',...PHASES,'both','all','geometry','custom'];
 let preferredRegionNm=readPreference('tem-region-width-nm',20);
 if(typeof preferredRegionNm!=='number'||!Number.isFinite(preferredRegionNm)||preferredRegionNm<=0)preferredRegionNm=20;
 function validControlNumber(id,value){
@@ -178,7 +178,7 @@ function imageTypeLabel(file){return ({real_space:'Real space',diffraction:'Diff
 function fileDisplayName(file){
  const extension=file.extension||file.id.match(/\.[^/.]+$/)?.[0]||'';
  const name=file.name.endsWith(' · demo')?file.name.slice(0,-7)+extension+' · demo':file.name+extension;
- return imageTypeLabel(file)+' · '+name+((file.raster||extension.toLowerCase()==='.npz')?` (${file.calibrated?'Calibrated':'Uncalibrated'})`:'');
+ return imageTypeLabel(file)+' · '+name+((file.raster||extension.toLowerCase()==='.npz')?` (${file.relative_diffraction?'Relative only':file.calibrated?'Calibrated':'Uncalibrated'})`:'');
 }
 function updateRasterStatus(id,calibrated){
  const file=config.files.find(f=>f.id===id);if(!file)return;file.calibrated=calibrated;if(meta?.id===id)file.image_kind=meta.image_kind;
@@ -253,7 +253,7 @@ $('favorite-toggle').onclick=()=>{
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){clearFileSearch();$('file').value=id;openFile()}};
 function effectiveScalePenalty(){return $('material').value==='unknown'?0:scalePenalty}
-function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),omega_a:Number($('omega-a').value),omega_c:Number($('omega-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),ort_a:Number($('ort-a').value),ort_b:Number($('ort-b').value),ort_c:Number($('ort-c').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value!=='manual'),fft_auto_objective:$('fft-strength-mode').value==='geometry'?'geometry':'rank',...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?effectiveScalePenalty():0,ca_penalty_strength:caPenalty,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,peak_evidence_half_weight_nm_inv:config?.peak_evidence_falloff?peakFalloff:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{diffraction:{...JSON.parse(JSON.stringify(diffractionSettings)),smoothing_workers:Number($('diff-workers').value)}}:{})}}
+function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),omega_a:Number($('omega-a').value),omega_c:Number($('omega-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),ort_a:Number($('ort-a').value),ort_b:Number($('ort-b').value),ort_c:Number($('ort-c').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value!=='manual'),fft_auto_objective:$('fft-strength-mode').value==='geometry'?'geometry':'rank',...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?effectiveScalePenalty():0,ca_penalty_strength:caPenalty,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,peak_evidence_half_weight_nm_inv:config?.peak_evidence_falloff?peakFalloff:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{search_beta_omega:$('search-beta-omega').checked,beta_parent_anchors:diffractionSettings.beta_parent_anchors||[],diffraction:{...JSON.parse(JSON.stringify(diffractionSettings)),smoothing_workers:Number($('diff-workers').value)}}:{})}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
@@ -347,7 +347,7 @@ function fittingLimitValue(kind,value,limits){
 }
 function fittingLimitHandle(group,kind,x,y,size=8,angle=0){
  const handle=el('g',{'data-fitting-handle':kind,role:'slider',tabindex:0,'aria-label':kind==='inner'?'Central exclusion radius':'Outer fitting radius','aria-valuenow':currentFittingLimits()[kind],'pointer-events':'all',style:'cursor:ew-resize;touch-action:none'});
- handle.append(el('title',{},`Drag to adjust in 0.1 nm⁻¹ steps; arrow keys also adjust. Analysis updates on release.`));
+ handle.append(el('title',{},`Drag to adjust in 0.1 ${reciprocalUnit()} steps; arrow keys also adjust. Analysis updates on release.`));
  // The transparent target is 30% wider/taller than the visible grip.
  handle.append(el('rect',{x:x-size*1.04,y:y-size*1.04,width:size*2.08,height:size*2.08,fill:'transparent'}));
  const grip=el('g',{transform:`rotate(${angle} ${x} ${y})`,'pointer-events':'none'});
@@ -461,7 +461,7 @@ function rasterMeasure(){
 }
 async function calibrateRaster(id,info){
  rasterContext={id,...info};rasterDrag=false;
- const c=info.calibration;$('raster-kind').value=c?.image_kind||'real_space';$('raster-value').value=c?.value||5;$('raster-units').value=c?.units||'nm';
+ const c=info.calibration?.method==='relative_diffraction'?null:info.calibration;$('raster-kind').value=c?.image_kind||'real_space';$('raster-value').value=c?.value||5;$('raster-units').value=c?.units||'nm';
  rasterFields.forEach((key,i)=>$(key).value=c?c.points.flat()[i]:'');
  $('raster-canvas').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);
  $('raster-free-y').checked=!!c&&Math.abs(c.points[0][1]-c.points[1][1])>.001;
@@ -529,7 +529,7 @@ async function openFile(){
    if(!raster.calibration){finishSpectrumLoading();if(!await calibrateRaster(id,raster)){message('Image calibration cancelled. Select an image or use Calibrate scale bar.');return;}if(version!==sourceRequest)return;beginSpectrumLoading();}
   }
   const info=await api('open',{file_id:id});if(version!==sourceRequest)return;
-  meta=info;fileId=id;opened=true;writePreference(lastImageKey(),id);grid=null;jobId=null;
+  meta=info;fileId=id;opened=true;const openedFile=config.files.find(f=>f.id===id);if(openedFile){openedFile.image_kind=info.image_kind;openedFile.relative_diffraction=info.reciprocal_calibrated===false;}renderFileList();writePreference(lastImageKey(),id);grid=null;jobId=null;
   const band=savedFittingLimits();if(band)$('g-max').value=band.outer;
   setupImageKind();restoreFittingLimits();drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=isDiffraction();
   $('grid-status').textContent='Adaptive subdivides unresolved or ambiguous regions, two candidate structures, and substantial second patterns.';
@@ -537,7 +537,7 @@ async function openFile(){
   $('overview').setAttribute('viewBox',`0 0 ${info.width} ${info.height}`);
   $('source-image').setAttribute('width',info.width);$('source-image').setAttribute('height',info.height);
   $('source-image').setAttribute('href','/api/preview?id='+encodeURIComponent(id));
-  const calibration=isDiffraction()?`${info.pixel_x_nm_inv.toPrecision(5)} × ${info.pixel_y_nm_inv.toPrecision(5)} nm⁻¹/px`:`${info.pixel_x_nm.toFixed(5)} nm/px`;
+  const calibration=isDiffraction()?`${info.pixel_x_nm_inv.toPrecision(5)} × ${info.pixel_y_nm_inv.toPrecision(5)} ${reciprocalUnit()}/px`:`${info.pixel_x_nm.toFixed(5)} nm/px`;
   $('metadata').textContent=`${info.width} × ${info.height} · ${calibration} · ${info.device}${info.is_demo?' · bundled demo':''}`;
   if(isDiffraction())roi={x:0,y:0,w:info.width,h:info.height};
   else{const size=Math.min(info.width,info.height,Math.max(32,Math.round(preferredRegionNm/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size}}
@@ -554,6 +554,7 @@ $('overview').addEventListener('keydown',e=>{if(overlapPlanning())return;const s
 for(const [id,key]of [['roi-x','x'],['roi-y','y'],['roi-nm','w']])$(id).addEventListener('change',()=>{if(!meta)return;const n=Number($(id).value);if(!Number.isFinite(n))return;roi[key]=key==='w'?n/meta.pixel_x_nm:n;updateBox();schedule(0)});
 $('centre').onclick=()=>{if(!meta)return;roi.x=(meta.width-roi.w)/2;roi.y=(meta.height-roi.h)/2;updateBox();schedule(0)};
 function patternExplanation(data){
+ if(data.beta_omega)return betaOmegaSummary(data);
  const label=data.classification.label;
  if(label==='coexisting_candidates')return 'Separate peak sets support passing fits of different structures. Both may contribute; their proportions are unknown.';
  if(label==='multiple_orientations')return 'Separate peak sets support multiple orientations of the same candidate structure.';
@@ -646,6 +647,7 @@ function geometryFits(data){
  });
 }
 function geometryDescription(data){
+ if(data.beta_omega)return betaOmegaSummary(data);
  const p=data.periodicity||{};
  if(p.status==='multiple_periodic_patterns')return 'Geometry check: a substantial second periodic pattern is supported.';
  if(p.status==='predominantly_one_periodic_pattern')return 'Geometry check: one periodic pattern predominates.'+
@@ -714,15 +716,15 @@ function renderMeasuredPeaks(data){
   const radius=p.radius_nm_inv??(Number.isFinite(p.equivalent_profile_diameter_nm_inv)?p.equivalent_profile_diameter_nm_inv/2:null);
   const intensity=Number.isFinite(p.intensity)?p.intensity.toExponential(3):'—';
   const tr=document.createElement('tr');
-  const values=[p.profile_id,p.g_nm_inv.toFixed(3),(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3),Number.isFinite(radius)?radius.toFixed(3):'—',intensity];
+  const values=[p.profile_id,p.g_nm_inv.toFixed(3),s.coordinate_units==='relative'?'—':(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3),Number.isFinite(radius)?radius.toFixed(3):'—',intensity];
   for(const [i,v] of values.entries()){const td=document.createElement('td');td.textContent=v;if(i===5)td.title=radiusHelp+(p.radius_estimated_from_smoothing?' This value is estimated from smoothing.':'');if(i===6)td.title=intensityHelp;tr.append(td)}
   $('peaks').append(tr);
  }
  const matchRadius=Math.max(.10,s.peak_width_nm_inv??s.hann_power_fwhm_nm_inv??1.44*s.df);
- $('peak-measurement-note').textContent=`${radiusHelp} Shared prediction matching radius: ${matchRadius.toFixed(3)} nm⁻¹. ${intensityHelp} — means unavailable in this saved result; recalculate to populate it.`;
+ $('peak-measurement-note').textContent=`${radiusHelp} Shared prediction matching radius: ${matchRadius.toFixed(3)} ${reciprocalUnit()}. ${intensityHelp} — means unavailable in this saved result; recalculate to populate it.`;
  $('peak-count').textContent=`(${s.peaks.length})`;
 }
-async function renderResult(data,version,body){renderAutoStrength(data);if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} nm⁻¹/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}renderMeasuredPeaks(data);renderFitChoices(data);const [raw,detector]=await Promise.all([decodeSpectrumImage(data.images),data.images.detector_signal16?decodeSpectrumImage({fft_log16:data.images.detector_signal16,fft_log_limits:data.images.detector_signal_limits}).then(raw=>({...raw,detector:true})):null]);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;if(data.image_kind==='diffraction')displayedDiffraction=data;fftRaw=raw;detectorRaw=detector;syncSignalToggle();if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');spectrumResultArrived();$('save-region').disabled=version!==generation}
+async function renderResult(data,version,body){renderAutoStrength(data);if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} ${reciprocalUnit()}/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}renderMeasuredPeaks(data);renderFitChoices(data);renderBetaOmega(data);const [raw,detector]=await Promise.all([decodeSpectrumImage(data.images),data.images.detector_signal16?decodeSpectrumImage({fft_log16:data.images.detector_signal16,fft_log_limits:data.images.detector_signal_limits}).then(raw=>({...raw,detector:true})):null]);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;if(data.image_kind==='diffraction')displayedDiffraction=data;fftRaw=raw;detectorRaw=detector;syncSignalToggle();if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');spectrumResultArrived();$('save-region').disabled=version!==generation}
 const MARKER_SHAPES=['circle','diamond','square','triangle','crosshair','open-crosshair','off'];
 // Fraction of one animation cycle; the same value drives live CSS and GIF frames.
 function markerMotionOffset(kind,phase){
@@ -748,7 +750,8 @@ function peakNumberLabel(x,y,id,scale=1,attrs={}){
  return el('text',{x:x+5*scale,y:y-5*scale,fill:'#ffffff','font-size':7*scale,stroke:'#05090e','stroke-width':1.8*scale,'paint-order':'stroke','data-profile-number':id,...attrs},String(id));
 }
 function syncPhaseMarkerControls(){
- for(const phase of PHASES)$(phase.toLowerCase()+'-marker').closest('label').hidden=!enabledPhases.includes(phase);
+ const linked=isDiffraction()&&$('search-beta-omega').checked;
+ for(const phase of PHASES)$(phase.toLowerCase()+'-marker').closest('label').hidden=!(enabledPhases.includes(phase)||(linked&&['BCC','OMEGA'].includes(phase)));
 }
 function weakMarker(x,y,id){
  const choice=$('weak-marker').value,mode=choice==='follow'?$('peak-marker').value:choice;
@@ -771,6 +774,7 @@ function applyPhaseColors(redraw=true){
  }
  if(redraw){
   if(result)$('phase-label').style.color=colors[result.classification.label]||'#ddd';
+  if(result?.beta_omega)renderBetaOmega(result);
   drawGrid();drawFFT();
  }
 }
@@ -821,9 +825,9 @@ function drawFittingBand(qp){
  for(const [r,xr,yr,description]of [[outer,rx,ry,'Outer fitting limit'],[inner,ix,iy,'Central exclusion']]){
   // Keep a handle available even when central exclusion is zero.
   const boundary=el('ellipse',{cx,cy,rx:xr,ry:yr,fill:'none',stroke:'#b3c2d0','stroke-width':.7,'stroke-dasharray':'3 3',opacity:.8});
-  boundary.append(el('title',{},`${description}: ${r} nm⁻¹. Shaded areas are excluded from fitting.`));group.append(boundary);
+  boundary.append(el('title',{},`${description}: ${r} ${reciprocalUnit()}. Shaded areas are excluded from fitting.`));group.append(boundary);
   const x=r===outer?cx+xr*.70:cx,y=r===outer?cy-yr*.70-10:cy-yr-10;
-  group.append(el('text',{x:clamp(x,38,382),y:clamp(y,10,410),fill:'#c2cfda','font-size':8,'text-anchor':'middle',stroke:'#05090e','stroke-width':2.5,'paint-order':'stroke'},`${r.toFixed(1)} nm⁻¹`));
+  group.append(el('text',{x:clamp(x,38,382),y:clamp(y,10,410),fill:'#c2cfda','font-size':8,'text-anchor':'middle',stroke:'#05090e','stroke-width':2.5,'paint-order':'stroke'},`${r.toFixed(1)} ${reciprocalUnit()}`));
   const outerHandle=r===outer,hx=cx+(outerHandle?Math.SQRT1_2*xr:0),hy=cy-(outerHandle?Math.SQRT1_2*yr:yr);
   fittingLimitHandle(group,outerHandle?'outer':'inner',hx,hy,6,Math.atan2(hy-cy,hx-cx)*180/Math.PI);
  }
@@ -864,7 +868,7 @@ function drawFFT(){
  if(!peakEditing())hideSpectrumHover();
  if(!result||!fftRaw)return;
  $('fft-image').setAttribute('href',colourSpectrum(showDetectorSignal&&detectorRaw?detectorRaw:fftRaw,result.image_kind));$('contrast-value').textContent=$('contrast').value+'%';
- const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();drawFittingBand(qp);if(showDetectorSignal&&detectorRaw)$('fft-axes').append(el('text',{x:0,y:-3,fill:'#aab9c8','font-size':7.5},processedSignalCaption(result)));for(const q of spectrumTicks(ex)){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off')for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const manual=(p.manual_observed_spots||[]).some(m=>Math.hypot(m[0]-q[0],m[1]-q[1])<1e-8);const attrs={stroke:manual?'#ff8ac3':'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id,'data-manual-peak':manual?'true':'false'};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`${manual?'Manual observation · ':''}Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} nm⁻¹`));$('fft-overlay').append(shape);const label=peakNumberLabel(x,y,p.profile_id);if(label)$('fft-overlay').append(label)}}const fits=[];
+ const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();drawFittingBand(qp);if(showDetectorSignal&&detectorRaw)$('fft-axes').append(el('text',{x:0,y:-3,fill:'#aab9c8','font-size':7.5},processedSignalCaption(result)));for(const q of spectrumTicks(ex)){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off'&&!(result.beta_omega&&overlay==='beta_omega'))for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const manual=(p.manual_observed_spots||[]).some(m=>Math.hypot(m[0]-q[0],m[1]-q[1])<1e-8);const attrs={stroke:manual?'#ff8ac3':'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id,'data-manual-peak':manual?'true':'false'};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`${manual?'Manual observation · ':''}Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} ${reciprocalUnit()}`));$('fft-overlay').append(shape);const label=peakNumberLabel(x,y,p.profile_id);if(label)$('fft-overlay').append(label)}}const fits=[];
 for(const model of overlayModels(result,overlay))fits.push({model,color:phaseColors[model.phase],geometry:false});
 if(overlay==='geometry')fits.push(...geometryFits(result));
 if(overlay==='custom'){
@@ -896,6 +900,7 @@ for(const f of fits){
   }
  }
 }
+ drawBetaOmega(result,qp);
  drawForbiddenReflections(fits,qp);
  drawReflectionVectors(qp);
  if(result.image_kind==='diffraction')drawDetectorExclusions(qp);
@@ -915,9 +920,11 @@ function renderSpectrumLegend(){
    const label=node.getAttribute('data-legend-label');
    add(identities,label,label,shape,{stroke});
    const geometry=node.getAttribute('data-marker-phase')==='geometry';
-   const labelStyle=dash==='5 3'?'Weak match':dash==='2 2'?'Below screen':dash==='1 3'?'No assigned peak':geometry?'Passing geometry':'Strong match · passing fit';
+   const labelStyle=node.getAttribute('data-parent-linked')==='true'?(dash?'No assigned peak':'Assigned profile'):dash==='5 3'?'Weak match':dash==='2 2'?'Below screen':dash==='1 3'?'No assigned peak':geometry?'Passing geometry':'Strong match · passing fit';
    add(styles,labelStyle,labelStyle,'line',{'stroke-dasharray':dash||''},dash==='5 3'?'A weak maximum is assigned. Long dashes take precedence whether the candidate passes or fails the screen.':dash==='1 3'?'Passing candidate, but no strong or qualifying weak peak is assigned at this position.':geometry?'Geometry-only fit; no crystal phase is assigned.':'');
    if(node.getAttribute('opacity')==='.35'||Number(node.getAttribute('opacity'))===.35)add(styles,'unchecked','Not assessable','line',{opacity:.35},'Faint predictions cannot be checked reliably; they are not evidence of a missing reflection.');
+  }else if(kind==='assignment'){
+   const label=node.getAttribute('data-legend-label');add(identities,label,label,shape,{stroke,fill:node.getAttribute('fill'),'stroke-dasharray':dash||''},'Numbers identify measured profiles in the assignment table. Shared observations do not identify a unique component.');
   }else if(kind==='forbidden'){
    add(identities,'forbidden','Near forbidden position','triangle',{stroke},'Measured profile near a nominal absence of a displayed fit. Diagnostic only; not used in rank or phase acceptance.');
   }else{
@@ -992,7 +999,7 @@ function syncSignalToggle(){
  $('show-detector-signal').setAttribute('aria-pressed',String(active));
  $('show-detector-signal').disabled=!detectorRaw;
  $('spectrum-title').textContent=active?'Processed':direct?'Diffraction space':'FFT space';
- $('fft-zoom-title').textContent=(direct?(active?'Processed diffraction':'Diffraction space'):active?'Processed FFT detector signal':'FFT space')+' · nm⁻¹';
+ $('fft-zoom-title').textContent=(direct?(active?'Processed diffraction':'Diffraction space'):active?'Processed FFT detector signal':'FFT space')+' · '+reciprocalUnit();
  $('fft-curve').disabled=active||!config?.fft_log16;
  $('fft-curve').querySelector('option[value="log"]').textContent=active?(direct?'Processed intensity':'Detector response'):direct?'Log intensity':'Log power';
  $('fft-curve').querySelector('option[value="linear"]').textContent=active?(direct?'Processed intensity':'Detector response'):direct?'Linear intensity':'Linear amplitude';
@@ -1729,7 +1736,7 @@ function positionSpectrumHover(){
  const arm=10*span/size,gap=3*span/size;
  $('spectrum-hover-cross').setAttribute('d',`M${point.x-arm} ${point.y}h${arm-gap}M${point.x+gap} ${point.y}h${arm-gap}M${point.x} ${point.y-arm}v${arm-gap}M${point.x} ${point.y+gap}v${arm-gap}`);
  const snapshot=peakEditing()?editSnapshot():result,ex=snapshot.spectrum.extent,gx=ex[0]+point.x/420*(ex[1]-ex[0]),gy=ex[3]-point.y/420*(ex[3]-ex[2]);
- $('spectrum-hover-coords').textContent=`gₓ ${gx.toFixed(2)} · gᵧ ${gy.toFixed(2)} nm⁻¹`;
+ $('spectrum-hover-coords').textContent=`gₓ ${gx.toFixed(2)} · gᵧ ${gy.toFixed(2)} ${reciprocalUnit()}`;
  const box=card.getBoundingClientRect(),margin=8,offset=18;
  // The right image's preview stays upper-left; viewport edges only clamp it.
  card.style.left=clamp(x-offset-box.width,margin,Math.max(margin,innerWidth-box.width-margin))+'px';
@@ -2040,12 +2047,15 @@ async function loadSavedRegions(){
  catch(e){$('saved-region-note').textContent=e.message;$('store-region').disabled=true;$('copy-region').disabled=true}
 }
 function applyRegionSettings(saved){
+ $('search-beta-omega').checked=saved.search_beta_omega??(saved.diffraction_model==='beta_omega');
+ betaOmegaHidden.clear();
+ if(isDiffraction())$('overlay').value=$('search-beta-omega').checked?'beta_omega':'winner';
  const defaults={hcp_a:.295,hcp_c:.468,bcc_a:.330,fcc_a:.417,ort_a:.3,ort_b:.4,ort_c:.5,omega_a:.4614,omega_c:.2832};
  for(const [id,key]of Object.entries(REFERENCE_CONTROLS))$(id).value=saved[key]??defaults[key];
  $('material').value=saved.material??'titanium';setPhaseSelection(analysisPhases(saved));materialView();
  if(!isDiffraction())$('fft-g-min').value=saved.g_min??3;
  $('g-max').value=saved.g_max??10;
- if(isDiffraction()&&saved.diffraction){diffractionSettings=withTranslationDefaults(JSON.parse(JSON.stringify(saved.diffraction)));syncDetectorControls();rememberDiffraction();}
+ if(isDiffraction()&&saved.diffraction){diffractionSettings=withTranslationDefaults(JSON.parse(JSON.stringify(saved.diffraction)));diffractionSettings.beta_parent_anchors=saved.beta_parent_anchors||[];syncBetaAnchorInputs();syncDetectorControls();rememberDiffraction();}
  $('scenario').value=saved.scale_mode==='fixed'?(saved.scale===1?'1':'custom'):saved.scale_mode;
  $('model-scale').value=saved.scale??1;$('threshold').value=saved.threshold??.35;
  for(const [id,[key,defaultValue]]of Object.entries(FFT_DETECTOR_CONTROLS))$(id).value=saved[key]??defaultValue;
@@ -2055,7 +2065,7 @@ function applyRegionSettings(saved){
  peakFalloff=saved.peak_evidence_half_weight_nm_inv??0;$('peak-falloff').value=peakFalloff;$('peak-falloff-slider').value=peakFalloff;writePreference('tem-peak-falloff',peakFalloff);
  scalePenalty=saved.scale_penalty_strength??.1;peakEvidenceWeight=saved.peak_evidence_weight??.1;
  $('scale-penalty').value=scalePenalty;$('scale-penalty-slider').value=scalePenalty;$('peak-evidence-weight').value=peakEvidenceWeight;$('peak-evidence-slider').value=peakEvidenceWeight;
- calibrationView();rememberCalibration();rememberBasicControls();
+ calibrationView();rememberCalibration();rememberBasicControls();syncBetaOmegaControls();
  writePreference('tem-scale-penalty',scalePenalty);writePreference('tem-peak-evidence-weight',peakEvidenceWeight);
 }
 $('saved-region-all').onchange=renderSavedRegions;
@@ -2138,8 +2148,9 @@ function setupImageKind(){
   const saved=withTranslationDefaults(readPreference(diffractionKey(),{}));if(validDiffraction(saved))diffractionSettings=saved;
   syncDetectorControls();
  }
+ setupBetaOmegaSearch();
 }
-function rememberDiffraction(){if(isDiffraction()&&validDiffraction(diffractionSettings)){const saved={...diffractionSettings};if(fittingLimitsLocal)saved.exclude_radius_nm_inv=readPreference(diffractionKey(),{}).exclude_radius_nm_inv??2.5;writePreference(diffractionKey(),saved)}}
+function rememberDiffraction(){if(isDiffraction()&&validDiffraction(diffractionSettings)){const saved={...diffractionSettings,search_beta_omega:$('search-beta-omega').checked};if(fittingLimitsLocal)saved.exclude_radius_nm_inv=readPreference(diffractionKey(),{}).exclude_radius_nm_inv??2.5;writePreference(diffractionKey(),saved)}}
 function syncDetectorControls(){
  if(!isDiffraction()||!diffractionSettings)return;
  for(const [id,key]of Object.entries(DETECTOR_FIELDS)){
@@ -2147,7 +2158,7 @@ function syncDetectorControls(){
   const centre=id==='diff-cx'||id==='diff-cy';
   $(id).value=calibration?diffractionSettings[key].toPrecision(5):centre?diffractionSettings[key].toFixed(1):Number(diffractionSettings[key].toPrecision(9));
   if(centre)$(id).title=`Full starting centre: ${diffractionSettings[key]} px. Display rounded to one decimal place.`;
-  if(calibration)$(id).title=`Full calibration: ${diffractionSettings[key]} nm⁻¹/px. Display rounded to five significant figures.`;
+  if(calibration)$(id).title=`Full coordinate scale: ${diffractionSettings[key]} ${reciprocalUnit()}/px. Display rounded to five significant figures.`;
  }
  $('diff-snr-slider').value=diffractionSettings.spot_snr;
  $('diff-radius').max=Number($('g-max').value)-.1;
@@ -2156,7 +2167,7 @@ function syncDetectorControls(){
  $('diff-shift-limit').disabled=!config.diffraction_translation||!diffractionSettings.refine_center;
  $('diff-cx').max=meta.width-1;$('diff-cy').max=meta.height-1;
  const c=meta.beam_center;
- $('diffraction-note').textContent=(c.pairs?`Initial centre estimate: ${c.pairs} opposite-spot pairs; pair residual ${c.residual_px.toFixed(1)} px${c.beamstop_prior?'; beam-stop shadow used to choose the centre':''}. Verify visually. `:'No reliable opposite-spot centre found: set the beam centre manually. ')+`${diffractionSettings.masks.length} exclusion rectangle(s). Calibration and centre are remembered for this image. Save a named entry to keep a reusable analysis. Fitting band: ${diffractionSettings.exclude_radius_nm_inv}–${Number($('g-max').value)} nm⁻¹.`;
+ $('diffraction-note').textContent=(c.pairs?`Initial centre estimate: ${c.pairs} opposite-spot pairs; pair residual ${c.residual_px.toFixed(1)} px${c.beamstop_prior?'; beam-stop shadow used to choose the centre':''}. Verify visually. `:'No reliable opposite-spot centre found: set the beam centre manually. ')+`${diffractionSettings.masks.length} exclusion rectangle(s). Calibration and centre are remembered for this image. Save a named entry to keep a reusable analysis. Fitting band: ${diffractionSettings.exclude_radius_nm_inv}–${Number($('g-max').value)} ${reciprocalUnit()}.`;
  $('diff-undo-mask').disabled=$('diff-clear-masks').disabled=!diffractionSettings.masks.length;drawDetector();renderTranslation();
 }
 function currentTranslation(){
@@ -2197,10 +2208,10 @@ function drawDetector(){
  group.append(el('ellipse',{cx:d.center_x,cy:d.center_y,rx:d.exclude_radius_nm_inv/d.pixel_x_nm_inv,ry:d.exclude_radius_nm_inv/d.pixel_y_nm_inv,class:'detector-centre','stroke-dasharray':'5 4'}));
  const outer=Number($('g-max').value);
  const outerCircle=el('ellipse',{cx:d.center_x,cy:d.center_y,rx:outer/d.pixel_x_nm_inv,ry:outer/d.pixel_y_nm_inv,class:'detector-centre','data-boundary':'outer','stroke-dasharray':'9 5'});
- outerCircle.append(el('title',{},`Outer fitting limit: ${outer} nm⁻¹`));group.append(outerCircle);
+ outerCircle.append(el('title',{},`Outer fitting limit: ${outer} ${reciprocalUnit()}`));group.append(outerCircle);
  for(const [kind,r]of [['inner',d.exclude_radius_nm_inv],['outer',outer]]){
   const size=meta.width/70,x=clamp(d.center_x+(kind==='outer'?.7:0)*r/d.pixel_x_nm_inv,size*4,meta.width-size*6),y=clamp(d.center_y-(kind==='outer'?.7:1)*r/d.pixel_y_nm_inv-size*1.5,2*size,meta.height-size);
-  group.append(el('text',{x,y,fill:'#b7d8ed','font-size':size,'text-anchor':'middle',stroke:'#05090e','stroke-width':size*.25,'paint-order':'stroke'},`${r.toFixed(1)} nm⁻¹`));
+  group.append(el('text',{x,y,fill:'#b7d8ed','font-size':size,'text-anchor':'middle',stroke:'#05090e','stroke-width':size*.25,'paint-order':'stroke'},`${r.toFixed(1)} ${reciprocalUnit()}`));
   const hx=d.center_x+(kind==='outer'?Math.SQRT1_2:0)*r/d.pixel_x_nm_inv,hy=d.center_y-(kind==='outer'?Math.SQRT1_2:1)*r/d.pixel_y_nm_inv;
   fittingLimitHandle(group,kind,hx,hy,size*.75,Math.atan2(hy-d.center_y,hx-d.center_x)*180/Math.PI);
  }
@@ -2366,6 +2377,7 @@ function syncSpectrumExportControls(){
 }
 function clearSpectrumDisplay(){
  hideSpectrumHover();hideCentreLoupe();
+ $('beta-omega-results').hidden=true;
  $('fft-image').removeAttribute('href');
  $('crop').removeAttribute('src');
  for(const id of ['fft-overlay','fft-axes','fft-zoom-view','fft-legend','fft-zoom-legend'])$(id).replaceChildren();
@@ -3057,7 +3069,7 @@ function drawSnapOverlays(){
     group.append(el('rect',{x:cx+rx-handleSize,y:cy-handleSize,width:handleSize*2,height:handleSize*2,fill:colour,stroke:'#101925','stroke-width':1,'vector-effect':'non-scaling-stroke','pointer-events':'all','data-snap-index':index,class:'snap-radius-handle'}));
    }
    const boundary=el('ellipse',{...attrs,'stroke-dasharray':index===null?'3 3':'5 3',...(removal?{'data-removal-index':index}:{})});
-   boundary.append(el('title',{},removal?`Peak removal radius ${r.toFixed(3)} nm⁻¹${diffractionSettings.peak_edits?.[index]?.single?' (legacy single spot; resize to remove all within radius)':''}`:'Peak snap search'));
+   boundary.append(el('title',{},removal?`Peak removal radius ${r.toFixed(3)} ${reciprocalUnit()}${diffractionSettings.peak_edits?.[index]?.single?' (legacy single spot; resize to remove all within radius)':''}`:'Peak snap search'));
    group.append(boundary);
    if(index!==null){
     const half=source?Math.max(5,meta.width/180):4,bx=cx+rx*.55,by=cy-ry*.55;
@@ -3067,7 +3079,7 @@ function drawSnapOverlays(){
     button.append(el('path',{d:`M${bx-half*.6},${by-half*.6}l${half*1.2},${half*1.2}M${bx+half*.6},${by-half*.6}l${-half*1.2},${half*1.2}`,stroke:colour,'stroke-width':1.5,'vector-effect':'non-scaling-stroke'}));
     group.append(button);
    }
-   if(index===null||radiusDrag?.index===index)group.append(el('text',{x:cx+rx+(source?12:4),y:cy,fill:colour,'font-size':source?Math.max(28,meta.width/85):8,stroke:'#0a1119','stroke-width':source?6:1,'paint-order':'stroke'},`${r.toFixed(3)} nm⁻¹`));
+   if(index===null||radiusDrag?.index===index)group.append(el('text',{x:cx+rx+(source?12:4),y:cy,fill:colour,'font-size':source?Math.max(28,meta.width/85):8,stroke:'#0a1119','stroke-width':source?6:1,'paint-order':'stroke'},`${r.toFixed(3)} ${reciprocalUnit()}`));
   };
   (diffractionSettings.peak_edits||[]).forEach((edit,index)=>{
    const dragging=radiusDrag?.index===index;
@@ -3359,3 +3371,14 @@ $('batch-start').onclick=async()=>{
 $('batch-cancel').onclick=async()=>{try{renderBatch(await api('batch/cancel',{}))}catch(e){message(e.message,true)}};
 renderBatchFiles();
 pollBatch();
+
+$('search-beta-omega').onchange=()=>{if(!isDiffraction())return;diffractionSettings.search_beta_omega=$('search-beta-omega').checked;writePreference('tem-search-beta-omega',$('search-beta-omega').checked);rememberDiffraction();$('overlay').value=$('search-beta-omega').checked?'beta_omega':'winner';betaOmegaHidden.clear();syncBetaOmegaControls();schedule(0)};
+$('raster-relative').onclick=async()=>{
+ const context=rasterContext;if(!context)return;$('raster-relative').disabled=true;
+ try{await api('raster-calibration',{file_id:context.id,method:'relative_diffraction'});
+  if(rasterContext!==context)return;updateRasterStatus(context.id,true);const resolve=rasterResolve;rasterResolve=null;$('raster-dialog').close();resolve?.(true);
+ }catch(e){$('raster-status').textContent=e.message}finally{$('raster-relative').disabled=false}
+};
+
+$('beta-anchors-apply').onclick=()=>{try{applyBetaAnchorInputs()}catch(e){message(e.message,true)}};
+$('beta-anchors-clear').onclick=()=>{if(!diffractionSettings)return;diffractionSettings.beta_parent_anchors=[];syncBetaAnchorInputs();rememberDiffraction();schedule(0)};

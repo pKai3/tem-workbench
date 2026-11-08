@@ -353,11 +353,17 @@ def _spot_candidates(raw, valid, band, scales, workers=0):
         core_mask = distance <= 3*scale
         for i in order:
             y, x = int(ys[i]), int(xs[i])
-            if min(x, y, raw.shape[1]-1-x, raw.shape[0]-1-y) < outer:
+            # The spot core must be on the detector, but its background annulus
+            # need not be complete. Requiring an 8-sigma margin silently lost
+            # broad parent reflections near the frame edge.
+            if min(x, y, raw.shape[1]-1-x, raw.shape[0]-1-y) < 2*scale:
                 continue
-            sl = np.s_[y-outer:y+outer+1, x-outer:x+outer+1]
-            ring = annulus_mask & valid[sl]
-            if ring.sum() < 24 or not valid[y-max(1,int(scale)):y+max(1,int(scale))+1,
+            left, right = max(0, x-outer), min(raw.shape[1], x+outer+1)
+            top, bottom = max(0, y-outer), min(raw.shape[0], y+outer+1)
+            sl = np.s_[top:bottom, left:right]
+            local = np.s_[top-y+outer:bottom-y+outer, left-x+outer:right-x+outer]
+            ring = annulus_mask[local] & valid[sl]
+            if ring.sum() < max(24, .5*annulus_mask.sum()) or not valid[y-max(1,int(scale)):y+max(1,int(scale))+1,
                                                      x-max(1,int(scale)):x+max(1,int(scale))+1].all():
                 continue
             background = float(np.median(field[sl][ring]))
@@ -375,13 +381,13 @@ def _spot_candidates(raw, valid, band, scales, workers=0):
             contrast = min(contrast, float((smooth[y, x]-bg)/native_spread))
             if contrast < 2.:
                 continue
-            weights = np.maximum(patch-(bg+.2*max(0., float(smooth[y, x])-bg)), 0)*valid[sl]*core_mask
+            weights = np.maximum(patch-(bg+.2*max(0., float(smooth[y, x])-bg)), 0)*valid[sl]*core_mask[local]
             total = float(weights.sum())
             if not total:
                 continue
-            dx, dy = float((weights*gx).sum()/total), float((weights*gy).sum()/total)
-            vx = float((weights*(gx-dx)**2).sum()/total)
-            vy = float((weights*(gy-dy)**2).sum()/total)
+            dx, dy = float((weights*gx[local]).sum()/total), float((weights*gy[local]).sum()/total)
+            vx = float((weights*(gx[local]-dx)**2).sum()/total)
+            vy = float((weights*(gy[local]-dy)**2).sum()/total)
             spots.append({'x_px': x+dx, 'y_px': y+dy, 'local_contrast': contrast,
                           'response': float(field[y, x]), 'width_px': 2.355*np.sqrt((vx+vy)/2),
                           'variance_x': vx, 'variance_y': vy, 'detection_sigma_px': scale})
