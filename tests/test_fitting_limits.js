@@ -6,7 +6,7 @@ function $(id){if(!controls.has(id))controls.set(id,{value:id==='g-max'?'10':'3'
 const context={assert,$,meta:{sha256_pixels:'image-a',name:'A'},fileId:'a',result:{spectrum:{extent:[-10,10,-10,10]}},direct:false,diffractionSettings:{exclude_radius_nm_inv:2.5},invalidations:0,repaints:0,
  readPreference:(k,d)=>storage.get(k)??d,writePreference:(k,v)=>storage.set(k,v),
  clamp:(v,a,b)=>Math.min(b,Math.max(a,v)),isDiffraction:()=>context.direct,
- hideSpectrumHover(){},hideCentreLoupe(){},rememberDiffraction(){},syncDetectorControls(){},message(){},setTimeout:fn=>fn(),
+ hideSpectrumHover(){},hideCentreLoupe(){},rememberDiffraction(){},syncDetectorControls(){},message(){},setTimeout:fn=>fn(),reciprocalUnit:()=> 'nm⁻¹',
  DOMPoint:class{constructor(x,y){this.x=x;this.y=y}matrixTransform(){return this}},
  invalidateAnalysisSettings(){context.invalidations++}};
 vm.createContext(context);
@@ -108,6 +108,7 @@ $('fft-zoom-view').querySelector=()=>null;
 context.el=()=>({append(){}});
 context.editSnapshot=()=>({settings:{diffraction:{pixel_x_nm_inv:.01,pixel_y_nm_inv:.01}},spectrum:{extent:[-10,10,-10,10],beam_center_px:[200,200]}});
 context.peakEditing=()=>false;
+context.syncSpectrumHoverRadii=()=>{};context.syncCentreLoupeOverlays=()=>{};
 context.diffractionSettings={pixel_x_nm_inv:.01,pixel_y_nm_inv:.01,peak_edits:[]};
 vm.runInContext(source.slice(source.indexOf('function drawSnapOverlays(){'),source.indexOf('async function finishRadiusDrag')),context);
 for(const direct of [false,true]){
@@ -160,7 +161,7 @@ Object.assign(context,{
  config:{files:[{id:'override-fft'},{id:'plain-fft'},{id:'override-direct'},{id:'plain-direct'}]},
  sourceRequest:0,generation:0,rescoreRevision:0,rescoreTimer:null,jobId:null,preferredRegionNm:7,
  hoverCache:new Map(),clearTimeout(){},document:{body:{classList:{remove(){}}}},
- lastImageKey:()=> 'last-image',isGridRunning:()=>false,
+ lastImageKey:()=> 'last-image',isGridRunning:()=>false,reciprocalUnit:()=> 'nm⁻¹',renderFileList(){},
  api:async(path,{file_id:id})=>({sha256_pixels:id,name:id,width:100,height:100,pixel_x_nm:.1,pixel_x_nm_inv:.01,pixel_y_nm_inv:.01,device:'test'}),
  setupImageKind(){context.direct=context.meta.name.endsWith('direct');context.diffractionSettings={exclude_radius_nm_inv:1.1}},
  schedule(){context.submittedLimits=JSON.parse(JSON.stringify(run('currentFittingLimits()')))}

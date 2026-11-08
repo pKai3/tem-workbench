@@ -181,6 +181,7 @@ class OverlapTests(unittest.TestCase):
         settings=dict(scale_mode='auto_hcp_ratio',enabled_phases=['HCP','BCC'])
         with TemporaryDirectory() as directory:
             app.config={'output_root':directory}
+            app.engine.settings['output_root']=directory
             id=app.grid(item,settings,2,False,1,workers=2,
                         overlap=dict(window_nm=4,spacing_nm=2,passes=3))['id']
             app.grid_thread.join(30)

@@ -12,7 +12,8 @@ function node(id){
  return elements.get(id);
 }
 function advance(ms){now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn()}}
-const context=vm.createContext({assert,$:node,document:{querySelector:()=>node('previews')},hideSpectrumHover(){},
+let hoverHides=0,detectorHides=0;
+const context=vm.createContext({assert,$:node,document:{querySelector:()=>node('previews')},hideSpectrumHover(){hoverHides++},hideCentreLoupe(){detectorHides++},
  setTimeout(fn,ms){const id=++next;timers.set(id,{fn,at:now+ms});return id},clearTimeout:id=>timers.delete(id)});
 vm.runInContext(`let spectrumLoadingTimer=null,spectrumLoading=false,fftRaw={},pending=true,editing=false;const peakEditing=()=>editing;`+
  source.slice(source.indexOf('function clearSpectrumDisplay(){'),source.indexOf('\nfunction syncLargeSpectrumSize()')),context);
@@ -35,5 +36,8 @@ assert.equal(node('fft-legend').hidden,true);
 assert.equal(node('fft-stage').classList.contains('spectrum-empty'),true);
 run('fftRaw={};spectrumResultArrived()');assert.equal(visible(),false);
 assert.equal(node('fft-stage').classList.contains('spectrum-empty'),false);
+const hidesBefore=hoverHides;
 run('editing=true;pending=true;beginSpectrumLoading()');advance(1100);assert.equal(visible(),false,'Peak editing remains unblocked');
+assert.equal(hoverHides,hidesBefore,'Background fitting retains the editing hover');
+assert.equal(detectorHides,1,'Changing file clears the old detector preview');
 console.log('Spectrum freshness, stalled feedback, source clearing and peak editing passed');

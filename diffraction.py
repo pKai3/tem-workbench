@@ -388,6 +388,27 @@ def _spot_candidates(raw, valid, band, scales, workers=0):
     return spots
 
 
+def processed_display(log, valid, smoothing_sigma=.65):
+    """Flatten the radial log-intensity background for display only.
+
+    Match the FFT view's radial-mean subtraction and light smoothing, on the
+    resampled display grid. Exclusions and off-detector padding must neither
+    bias the radial mean nor create bright edges during smoothing. Native spot
+    detection, intensities and fitting never consume this field.
+    """
+    if not valid.any():
+        return np.zeros_like(log)
+    yy, xx = np.indices(log.shape)
+    rings = np.floor(np.hypot(xx-(log.shape[1]-1)/2, yy-(log.shape[0]-1)/2)).astype(int)
+    count = np.bincount(rings[valid], minlength=int(rings.max())+1)
+    total = np.bincount(rings[valid], weights=log[valid], minlength=len(count))
+    residual = np.where(valid, log-(total/np.maximum(count, 1))[rings], 0.)
+    support = gaussian_filter(valid.astype(np.float32), smoothing_sigma)
+    signal = gaussian_filter(residual, smoothing_sigma)/np.maximum(support, 1e-6)
+    signal[~valid] = min(0., float(signal[valid].min()))
+    return signal
+
+
 def _prepare_detector(array, settings):
     h, w = array.shape
     sx, sy = settings['pixel_x_nm_inv'], settings['pixel_y_nm_inv']
@@ -423,7 +444,9 @@ def _prepare_detector(array, settings):
     ax, ay = np.meshgrid(axis, axis[::-1])
     image = map_coordinates(array, [cy-ay/sy, cx+ax/sx], order=1, mode='constant', cval=0., prefilter=False)
     log = np.log1p(np.maximum(image, 0))
-    return {'spots': spots, 'log': log, 'scales': scales, 'can_index': bool(band.any()),
+    display_valid = visible(np.c_[ax.ravel(), ay.ravel()], settings, array.shape).reshape(log.shape)
+    return {'spots': spots, 'log': log, 'detector_signal': processed_display(log, display_valid),
+            'scales': scales, 'can_index': bool(band.any()),
             'duplicate_count': len(candidates)-len(deduplicated)}
 
 
@@ -591,7 +614,9 @@ def spectrum(array, settings, cache=None, g_max=10.):
                'y_limit': max(cy, h-1-cy)*sy,
                'visible': lambda q: visible(q, settings, array.shape, radius) | visible(-q, settings, array.shape, radius)}
     complete_band = min(cx*sx, (w-1-cx)*sx, cy*sy, (h-1-cy)*sy) >= g_max
-    result = {'kind': 'diffraction', 'log': prepared['log'], 'extent': [-g_max*1.05, g_max*1.05, -g_max*1.05, g_max*1.05], 'g_min': g_min, 'g_max': g_max,
+    result = {'kind': 'diffraction', 'log': prepared['log'], 'detector_signal': prepared['detector_signal'],
+              'display_processing': {'method': 'radial_log_background', 'smoothing_sigma_display_px': .65, 'display_only': True},
+              'extent': [-g_max*1.05, g_max*1.05, -g_max*1.05, g_max*1.05], 'g_min': g_min, 'g_max': g_max,
               'peak_edit_count': len(settings.get('peak_edits', [])), 'peaks': peaks, 'df': max(sx, sy), 'peak_width_nm_inv': width,
               'weak_maxima': maxima, 'profile_threshold': settings['spot_snr'],
               'observed_spot_count': sum(len(p['observed_spots']) for p in peaks),

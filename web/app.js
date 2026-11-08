@@ -36,6 +36,7 @@ function setPhaseSelection(phases){
  for(const phase of PHASES)$(phase.toLowerCase()+'-color').value=enabledPhases.includes(phase)?phaseColorChoices[phase]:'disabled';
  syncOverlayMenus();
  syncReferenceControls();
+ syncPhaseMarkerControls();
  applyPhaseColors(false);
  $('phase-search-note').textContent=enabledPhases.length?'Searching '+enabledPhases.join(' + ')+'. Disabled skips matching.':'Phase search disabled. Peak and geometry checks remain available.';
 }
@@ -346,7 +347,7 @@ function fittingLimitValue(kind,value,limits){
 }
 function fittingLimitHandle(group,kind,x,y,size=8,angle=0){
  const handle=el('g',{'data-fitting-handle':kind,role:'slider',tabindex:0,'aria-label':kind==='inner'?'Central exclusion radius':'Outer fitting radius','aria-valuenow':currentFittingLimits()[kind],'pointer-events':'all',style:'cursor:ew-resize;touch-action:none'});
- handle.append(el('title',{},'Drag to adjust in 0.1 nm⁻¹ steps; arrow keys also adjust. Analysis updates on release.'));
+ handle.append(el('title',{},`Drag to adjust in 0.1 nm⁻¹ steps; arrow keys also adjust. Analysis updates on release.`));
  // The transparent target is 30% wider/taller than the visible grip.
  handle.append(el('rect',{x:x-size*1.04,y:y-size*1.04,width:size*2.08,height:size*2.08,fill:'transparent'}));
  const grip=el('g',{transform:`rotate(${angle} ${x} ${y})`,'pointer-events':'none'});
@@ -442,6 +443,7 @@ async function analyze(){
   // An abandoned request must not clear the new image's busy state or spinner.
   if(controller===analysisController){
    analysisController=null;busy=false;syncPeakEditControls();
+   if(isDiffraction())renderTranslation();
    if(version===generation&&!pending)finishSpectrumLoading();
    syncSpectrumExportControls();
    if(pending&&!timer)timer=setTimeout(()=>{timer=null;analyze()},20);
@@ -741,6 +743,13 @@ function markerShape(x,y,mode,attrs={},r=7){
 function peakMarker(x,y,mode,attrs={}){
  return markerShape(x,y,mode,{'data-marker-kind':'measured',...attrs},mode==='open-crosshair'?8:mode==='circle'?3:4);
 }
+function peakNumberLabel(x,y,id,scale=1,attrs={}){
+ if(!$('show-peak-numbers').checked||id==null)return null;
+ return el('text',{x:x+5*scale,y:y-5*scale,fill:'#ffffff','font-size':7*scale,stroke:'#05090e','stroke-width':1.8*scale,'paint-order':'stroke','data-profile-number':id,...attrs},String(id));
+}
+function syncPhaseMarkerControls(){
+ for(const phase of PHASES)$(phase.toLowerCase()+'-marker').closest('label').hidden=!enabledPhases.includes(phase);
+}
 function weakMarker(x,y,id){
  const choice=$('weak-marker').value,mode=choice==='follow'?$('peak-marker').value:choice;
  const attrs={stroke:'#ffffff','stroke-width':1,opacity:.9,'data-marker-kind':'weak','data-weak-profile':id};
@@ -852,10 +861,10 @@ function drawForbiddenReflections(fits,qp){
  }
 }
 function drawFFT(){
- hideSpectrumHover();
+ if(!peakEditing())hideSpectrumHover();
  if(!result||!fftRaw)return;
  $('fft-image').setAttribute('href',colourSpectrum(showDetectorSignal&&detectorRaw?detectorRaw:fftRaw,result.image_kind));$('contrast-value').textContent=$('contrast').value+'%';
- const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();drawFittingBand(qp);if(showDetectorSignal&&detectorRaw)$('fft-axes').append(el('text',{x:0,y:-3,fill:'#aab9c8','font-size':7.5},`Processed detector signal · cutoff ${result.spectrum.profile_threshold.toFixed(3)} · minimum strength ${result.spectrum.minimum_peak_enrichment.toFixed(3)}`));for(const q of spectrumTicks(ex)){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off')for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const manual=(p.manual_observed_spots||[]).some(m=>Math.hypot(m[0]-q[0],m[1]-q[1])<1e-8);const attrs={stroke:manual?'#ff8ac3':'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id,'data-manual-peak':manual?'true':'false'};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`${manual?'Manual observation · ':''}Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} nm⁻¹`));$('fft-overlay').append(shape)}}const fits=[];
+ const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();drawFittingBand(qp);if(showDetectorSignal&&detectorRaw)$('fft-axes').append(el('text',{x:0,y:-3,fill:'#aab9c8','font-size':7.5},processedSignalCaption(result)));for(const q of spectrumTicks(ex)){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off')for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const manual=(p.manual_observed_spots||[]).some(m=>Math.hypot(m[0]-q[0],m[1]-q[1])<1e-8);const attrs={stroke:manual?'#ff8ac3':'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id,'data-manual-peak':manual?'true':'false'};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`${manual?'Manual observation · ':''}Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} nm⁻¹`));$('fft-overlay').append(shape);const label=peakNumberLabel(x,y,p.profile_id);if(label)$('fft-overlay').append(label)}}const fits=[];
 for(const model of overlayModels(result,overlay))fits.push({model,color:phaseColors[model.phase],geometry:false});
 if(overlay==='geometry')fits.push(...geometryFits(result));
 if(overlay==='custom'){
@@ -891,6 +900,7 @@ for(const f of fits){
  drawReflectionVectors(qp);
  if(result.image_kind==='diffraction')drawDetectorExclusions(qp);
  renderSpectrumLegend();syncFFTZoom();drawSnapOverlays();
+ if(!$('spectrum-hover').hidden)showSpectrumHover();
 }
 // Read the rendered overlays so hidden marker types and unused evidence styles
 // never acquire legend entries. Swatches stay still for easy comparison.
@@ -967,17 +977,25 @@ function renderFitChoices(data){
  if(!body.children.length&&!geometryEntries.length)$('fit-list').textContent='No retained candidate fits in this region.';
 }
 
+function processedSignalCaption(data){
+ return data.image_kind==='diffraction'?'Processed diffraction · radial background removed · display only':
+  `Processed detector signal · cutoff ${data.spectrum.profile_threshold.toFixed(3)} · minimum strength ${data.spectrum.minimum_peak_enrichment.toFixed(3)}`;
+}
 function syncSignalToggle(){
- const direct=isDiffraction(),active=showDetectorSignal&&!direct&&Boolean(detectorRaw);
- $('fft-signal-toggle').hidden=direct;
+ const direct=isDiffraction(),active=showDetectorSignal&&Boolean(detectorRaw);
+ $('fft-signal-toggle').hidden=false;
+ $('fft-signal-toggle').setAttribute('aria-label',direct?'Diffraction image signal':'FFT image signal');
+ $('show-original-fft').textContent=direct?'Raw':'Raw FFT';
+ $('show-original-fft').title=direct?'Show the recorded detector intensity with the chosen brightness and colour settings':'Show the original FFT power with the chosen brightness and colour settings';
+ $('show-detector-signal').title=direct?(config?.diffraction_processed_view?'Show smoothed log intensity with the radial background removed. Display only; native peak detection and fitting are unchanged.':'Restart TEM Workbench to enable the processed diffraction view.'):'Show the background-subtracted, smoothed signal used to detect strong profiles; display only';
  $('show-original-fft').setAttribute('aria-pressed',String(!active));
  $('show-detector-signal').setAttribute('aria-pressed',String(active));
  $('show-detector-signal').disabled=!detectorRaw;
- $('spectrum-title').textContent=direct?'Diffraction space':active?'Processed':'FFT space';
- $('fft-zoom-title').textContent=(direct?'Diffraction space':active?'Processed FFT detector signal':'FFT space')+' · nm⁻¹';
+ $('spectrum-title').textContent=active?'Processed':direct?'Diffraction space':'FFT space';
+ $('fft-zoom-title').textContent=(direct?(active?'Processed diffraction':'Diffraction space'):active?'Processed FFT detector signal':'FFT space')+' · nm⁻¹';
  $('fft-curve').disabled=active||!config?.fft_log16;
- $('fft-curve').querySelector('option[value="log"]').textContent=active?'Detector response':direct?'Log intensity':'Log power';
- $('fft-curve').querySelector('option[value="linear"]').textContent=active?'Detector response':direct?'Linear intensity':'Linear amplitude';
+ $('fft-curve').querySelector('option[value="log"]').textContent=active?(direct?'Processed intensity':'Detector response'):direct?'Log intensity':'Log power';
+ $('fft-curve').querySelector('option[value="linear"]').textContent=active?(direct?'Processed intensity':'Detector response'):direct?'Linear intensity':'Linear amplitude';
 }
 for(const [id,active]of [['show-original-fft',false],['show-detector-signal',true]])$(id).onclick=()=>{
  showDetectorSignal=active;syncSignalToggle();drawFFT();
@@ -1009,6 +1027,8 @@ $('reset-phase-colors').onclick=()=>{
  const previous=[...enabledPhases];Object.assign(phaseColorChoices,PHASE_DEFAULT_COLORS);
  setPhaseSelection(config?.phase_selection?materialPhases():PHASES);finishPhaseChange(previous);
 };
+$('show-peak-numbers').checked=readPreference('tem-peak-numbers',false)===true;
+$('show-peak-numbers').onchange=()=>{writePreference('tem-peak-numbers',$('show-peak-numbers').checked);drawFFT();if(isDiffraction())drawDetector()};
 $('show-forbidden').checked=readPreference('tem-show-forbidden',true)!==false;
 $('show-forbidden').onchange=()=>{writePreference('tem-show-forbidden',$('show-forbidden').checked);drawFFT()};
 const savedMarkerStyles=readPreference('tem-marker-styles',{});
@@ -1471,7 +1491,15 @@ $('clear-grid').onclick=()=>{
  if(id&&running)api('cancel',{job_id:id}).catch(e=>message(e.message,true));
 };
 const exportButtonTimers=new Map();
+let exportNoticeTimer=null;
+function hideExportNotice(){
+ clearTimeout(exportNoticeTimer);exportNoticeTimer=null;
+ const notice=$('export-notice');
+ if(notice.hidePopover&&notice.matches(':popover-open'))notice.hidePopover();
+ notice.hidden=true;
+}
 function exportNotice(title,detail='',state='busy'){
+ clearTimeout(exportNoticeTimer);exportNoticeTimer=null;
  const notice=$('export-notice');notice.dataset.state=state;
  // A modal makes elements outside it inert, including top-layer popovers.
  const host=[...document.querySelectorAll('dialog:modal')].at(-1)||document.body;
@@ -1481,12 +1509,13 @@ function exportNotice(title,detail='',state='busy'){
  $('export-notice-title').textContent=title;$('export-notice-detail').textContent=detail;notice.hidden=false;
  // Manual popovers stay visible above open dialogs without moving keyboard focus.
  if(notice.showPopover&&!notice.matches(':popover-open'))notice.showPopover();
+ if(state==='saved')exportNoticeTimer=setTimeout(hideExportNotice,5000);
 }
 document.addEventListener('close',event=>{
  const notice=$('export-notice');
  if(event.target.contains?.(notice)&&!notice.hidden)exportNotice($('export-notice-title').textContent,$('export-notice-detail').textContent,notice.dataset.state);
 },true);
-$('export-notice-close').onclick=()=>{const notice=$('export-notice');if(notice.hidePopover&&notice.matches(':popover-open'))notice.hidePopover();notice.hidden=true};
+$('export-notice-close').onclick=hideExportNotice;
 function beginExport(id,title){
  const button=$(id);clearTimeout(exportButtonTimers.get(id));
  button.dataset.exportLabel??=button.textContent;button.dataset.exportState='busy';button.setAttribute('aria-busy','true');button.disabled=true;button.textContent='Exporting…';
@@ -1680,11 +1709,11 @@ let spectrumHoverTimer=null,spectrumHoverFrame=null,spectrumHoverPointer=null;
 function hideSpectrumHover(){
  clearTimeout(spectrumHoverTimer);spectrumHoverTimer=null;
  cancelAnimationFrame(spectrumHoverFrame);spectrumHoverFrame=null;spectrumHoverPointer=null;
- $('spectrum-hover').hidden=true;$('spectrum-hover-content').replaceChildren();
+ $('spectrum-hover').hidden=true;$('spectrum-hover-content').replaceChildren();$('spectrum-hover-edits').replaceChildren();
 }
 function spectrumHoverPoint(){
- const pointer=spectrumHoverPointer;
- if(!pointer?.source?.isConnected||!result||!fftRaw||busy||pending||spectrumLoading)return null;
+ const pointer=spectrumHoverPointer,snapshot=peakEditing()?editSnapshot():result;
+ if(!pointer?.source?.isConnected||!snapshot||!fftRaw||(!peakEditing()&&(busy||pending||spectrumLoading)))return null;
  const matrix=pointer.source.getScreenCTM();if(!matrix)return null;
  const point=new DOMPoint(pointer.x,pointer.y).matrixTransform(matrix.inverse());
  if(point.x<0||point.x>420||point.y<0||point.y>420)return null;
@@ -1699,11 +1728,12 @@ function positionSpectrumHover(){
  // A small open crosshair identifies the cursor without hiding its centre pixel.
  const arm=10*span/size,gap=3*span/size;
  $('spectrum-hover-cross').setAttribute('d',`M${point.x-arm} ${point.y}h${arm-gap}M${point.x+gap} ${point.y}h${arm-gap}M${point.x} ${point.y-arm}v${arm-gap}M${point.x} ${point.y+gap}v${arm-gap}`);
- const ex=result.spectrum.extent,gx=ex[0]+point.x/420*(ex[1]-ex[0]),gy=ex[3]-point.y/420*(ex[3]-ex[2]);
+ const snapshot=peakEditing()?editSnapshot():result,ex=snapshot.spectrum.extent,gx=ex[0]+point.x/420*(ex[1]-ex[0]),gy=ex[3]-point.y/420*(ex[3]-ex[2]);
  $('spectrum-hover-coords').textContent=`gₓ ${gx.toFixed(2)} · gᵧ ${gy.toFixed(2)} nm⁻¹`;
  const box=card.getBoundingClientRect(),margin=8,offset=18;
- card.style.left=clamp(x+offset+box.width>innerWidth-margin?x-offset-box.width:x+offset,margin,Math.max(margin,innerWidth-box.width-margin))+'px';
- card.style.top=clamp(y+offset+box.height>innerHeight-margin?y-offset-box.height:y+offset,margin,Math.max(margin,innerHeight-box.height-margin))+'px';
+ // The right image's preview stays upper-left; viewport edges only clamp it.
+ card.style.left=clamp(x-offset-box.width,margin,Math.max(margin,innerWidth-box.width-margin))+'px';
+ card.style.top=clamp(y-offset-box.height,margin,Math.max(margin,innerHeight-box.height-margin))+'px';
 }
 function showSpectrumHover(){
  spectrumHoverTimer=null;
@@ -1716,6 +1746,7 @@ function showSpectrumHover(){
  for(const node of content.querySelectorAll('title'))node.remove();
  $('spectrum-hover-title').textContent=isDiffraction()?'Diffraction':'FFT';
  card.hidden=false;positionSpectrumHover();
+ syncSpectrumHoverRadii();
  // Keep enlarged markers in the same animation phase as the source view.
  const originals=$('fft-overlay').querySelectorAll('.spectrum-marker');
  content.querySelectorAll('.spectrum-marker').forEach((marker,index)=>{
@@ -1724,8 +1755,7 @@ function showSpectrumHover(){
  });
 }
 function hoverSpectrum(event){
- if(peakEditing()){hideSpectrumHover();return}
- if(event.pointerType==='touch'||event.buttons){hideSpectrumHover();return}
+ if(event.pointerType==='touch'||(event.buttons&&!peakEditing())){hideSpectrumHover();return}
  const source=event.currentTarget===$('fft')?$('fft'):$('fft-zoom-view').querySelector('svg');
  if(spectrumHoverPointer?.source!==source)hideSpectrumHover();
  spectrumHoverPointer={source,x:event.clientX,y:event.clientY};
@@ -1733,9 +1763,20 @@ function hoverSpectrum(event){
  if($('spectrum-hover').hidden){if(spectrumHoverTimer===null)spectrumHoverTimer=setTimeout(showSpectrumHover,180)}
  else if(spectrumHoverFrame===null)spectrumHoverFrame=requestAnimationFrame(positionSpectrumHover);
 }
+function pressSpectrumPreview(event){
+ if(event.pointerType==='touch')hideSpectrumHover();
+ else if(peakEditing())hoverSpectrum(event);
+}
+function syncSpectrumHoverRadii(){
+ const host=$('spectrum-hover-edits');host.replaceChildren();
+ if($('spectrum-hover').hidden||!peakEditing())return;
+ const rings=spectrumHoverPointer?.source?.querySelector('.manual-snap-overlay');
+ if(rings)host.append(clonePreviewOverlay(rings,spectrumHoverPointer.source,$('spectrum-hover-view')));
+}
 for(const id of ['fft','fft-zoom-view']){
  $(id).addEventListener('pointermove',hoverSpectrum);
- for(const event of ['pointerleave','pointerdown','pointercancel'])$(id).addEventListener(event,hideSpectrumHover);
+ $(id).addEventListener('pointerdown',pressSpectrumPreview);
+ for(const event of ['pointerleave','pointercancel'])$(id).addEventListener(event,hideSpectrumHover);
 }
 document.addEventListener('scroll',hideSpectrumHover,true);
 window.addEventListener('resize',hideSpectrumHover);
@@ -1744,12 +1785,16 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape')hideSpectrum
 
 function syncFFTZoom(){
  if(!$('fft-zoom').open||radiusDrag)return;
- hideSpectrumHover();
+ const previous=$('fft-zoom-view').querySelector('svg');
+ if(!peakEditing())hideSpectrumHover();
  const copy=$('fft').cloneNode(true);
  for(const attribute of ['id','tabindex','aria-haspopup','aria-controls'])copy.removeAttribute(attribute);
  copy.setAttribute('role','img');copy.setAttribute('aria-label',isDiffraction()?'Enlarged diffraction pattern with current spots and crystal overlays':'Enlarged FFT with current peaks and crystal overlays');
  for(const child of copy.querySelectorAll('[id]'))child.removeAttribute('id');
- copy.classList.add('fft-enlarged');$('fft-zoom-view').replaceChildren(copy);syncSpectrumLegendZoom();drawSnapOverlays();
+ copy.classList.add('fft-enlarged');$('fft-zoom-view').replaceChildren(copy);
+ if(spectrumHoverPointer?.source===previous)spectrumHoverPointer.source=copy;
+ if(snapPointer?.svg===previous)snapPointer.svg=copy;
+ syncSpectrumLegendZoom();drawSnapOverlays();
 }
 function openFFTZoom(){
  if(!(result||displayedDiffraction)||!fftRaw||!$('fft-image').getAttribute('href'))return;
@@ -2117,19 +2162,27 @@ function syncDetectorControls(){
 function currentTranslation(){
  if(!isDiffraction()||!diffractionSettings||result?.image_kind!=='diffraction')return null;
  const d=result.settings.diffraction;
- if(!d||!Object.values(DETECTOR_FIELDS).every(k=>d[k]===diffractionSettings[k])||d.refine_center!==diffractionSettings.refine_center||JSON.stringify(d.masks)!==JSON.stringify(diffractionSettings.masks)||JSON.stringify(d.peak_edits||[])!==JSON.stringify(diffractionSettings.peak_edits||[]))return null;
+ // Validation rebuilds edit/mask objects; key order is not a settings change.
+ const sameRecords=(a=[],b=[])=>a.length===b.length&&a.every((record,i)=>Object.keys(record).length===Object.keys(b[i]).length&&Object.keys(record).every(key=>record[key]===b[i][key]));
+ if(!d||!Object.values(DETECTOR_FIELDS).every(k=>d[k]===diffractionSettings[k])||d.refine_center!==diffractionSettings.refine_center||!sameRecords(d.masks,diffractionSettings.masks)||!sameRecords(d.peak_edits,diffractionSettings.peak_edits))return null;
  return result.spectrum.center_refinement;
 }
 function renderTranslation(){
- if(!isDiffraction()){$('diff-translation-note').textContent='';return}
- const note=$('diff-translation-note');
- if(!config.diffraction_translation){note.textContent='Restart TEM Workbench to enable translation refinement.';return}
- if(!diffractionSettings.refine_center){note.textContent='Fixed at the starting centre.';return}
+ const note=$('diff-translation-note'),status=$('diff-centre-result');
+ const show=(text,state='fixed')=>{status.textContent=text;status.dataset.state=state;status.title=note.textContent};
+ if(!isDiffraction()||!diffractionSettings){note.textContent='';show('');return}
+ if(!config.diffraction_translation){note.textContent='Restart TEM Workbench to enable translation refinement.';show('Refinement unavailable','unavailable');return}
+ if(!diffractionSettings.refine_center){note.textContent='Fixed at the starting centre.';show(`Fixed centre: X ${diffractionSettings.center_x.toFixed(2)} · Y ${diffractionSettings.center_y.toFixed(2)} px`);return}
  const r=currentTranslation();
- if(!r){note.textContent='Fitting a shared centre within '+diffractionSettings.max_center_shift_px+' px of the starting position…';return}
- if(!r.applied){note.textContent=r.reason;return}
+ if(!r){
+  const running=busy||pending;
+  note.textContent=running?'Fitting a shared centre within '+diffractionSettings.max_center_shift_px+' px of the starting position…':'No completed centre refinement is available for these settings. Check any reported analysis error.';
+  show(running?'Refining centre…':'Centre refinement unavailable',running?'busy':'unavailable');return;
+ }
+ if(!r.applied){note.textContent=r.reason;show('Centre unchanged · '+({insufficient_pairs:'too few opposite pairs',ambiguous:'ambiguous pairs',outside_limit:'outside shift limit',disabled:'refinement off'}[r.status]||'no accepted refinement'),'unavailable');return}
  const sign=n=>(n>=0?'+':'')+n.toFixed(2),[x,y]=r.fitted_center_px,[dx,dy]=r.shift_px;
  note.textContent=`Fitted centre ${x.toFixed(2)}, ${y.toFixed(2)} px · shift X ${sign(dx)}, Y ${sign(dy)} px (Y down) · ${r.pair_count} opposite pairs · pair RMS ${r.rms_before_px.toFixed(2)} → ${r.rms_after_px.toFixed(2)} px.`+(r.near_limit?' Near the shift limit.':'')+' Shared by all structures; diffraction coordinates use this centre.';
+ show(`Fitted centre: X ${x.toFixed(2)} · Y ${y.toFixed(2)} px`,'refined');
 }
 function drawDetector(){
  syncPeakEditControls();
@@ -2138,7 +2191,7 @@ function drawDetector(){
  const d={...diffractionSettings,center_x:cx,center_y:cy},cross=Math.max(meta.width,meta.height)*.014;
  if(translation?.applied&&Math.hypot(...translation.shift_px)>.25){
   const [x,y]=translation.starting_center_px,half=cross/2;
-  const mark=el('path',{d:`M${x-half},${y}h${2*half}M${x},${y-half}v${2*half}M${x},${y}L${cx},${cy}`,fill:'none',stroke:'#94a5b8','stroke-width':1,'vector-effect':'non-scaling-stroke'});
+  const mark=el('path',{d:`M${x-half},${y}h${2*half}M${x},${y-half}v${2*half}M${x},${y}L${cx},${cy}`,fill:'none',stroke:'#94a5b8','stroke-width':1,'vector-effect':'non-scaling-stroke','data-centre-translation':'true'});
   mark.append(el('title',{},'Starting centre → fitted centre'));group.append(mark);
  }
  group.append(el('ellipse',{cx:d.center_x,cy:d.center_y,rx:d.exclude_radius_nm_inv/d.pixel_x_nm_inv,ry:d.exclude_radius_nm_inv/d.pixel_y_nm_inv,class:'detector-centre','stroke-dasharray':'5 4'}));
@@ -2151,15 +2204,16 @@ function drawDetector(){
   const hx=d.center_x+(kind==='outer'?Math.SQRT1_2:0)*r/d.pixel_x_nm_inv,hy=d.center_y-(kind==='outer'?Math.SQRT1_2:1)*r/d.pixel_y_nm_inv;
   fittingLimitHandle(group,kind,hx,hy,size*.75,Math.atan2(hy-d.center_y,hx-d.center_x)*180/Math.PI);
  }
- group.append(el('path',{d:`M${d.center_x-cross},${d.center_y}h${2*cross}M${d.center_x},${d.center_y-cross}v${2*cross}`,class:'detector-centre'}));
- if(peakEditing()){
-  for(const peak of editableObservations()){
+ group.append(el('path',{d:`M${d.center_x-cross},${d.center_y}h${2*cross}M${d.center_x},${d.center_y-cross}v${2*cross}`,class:'detector-centre','data-centre-marker':translation?.applied?'fitted':'starting'}));
+ for(const peak of editableObservations()){
    const shape=markerShape(peak.x,peak.y,$('peak-marker').value,{class:'detector-observation',fill:'none',stroke:'#c58aff','stroke-width':1.5,'vector-effect':'non-scaling-stroke'},Math.max(8,meta.width/180));
-   if(shape){shape.append(el('title',{},peak.manual?'Manually added observation':'Detected observation'));group.append(shape)}
-  }
+   if(shape){
+    shape.append(el('title',{},peak.manual?'Manually added observation':'Detected observation'));group.append(shape);
+    const label=peakNumberLabel(peak.x,peak.y,peak.profile_id,Math.max(1,meta.width/420),{class:'detector-peak-number'});if(label)group.append(label);
+   }
  }
- drawSnapOverlays();
  for(const rect of [...d.masks,...(maskDrag?.rect?[maskDrag.rect]:[])])group.append(el('rect',{x:rect.x,y:rect.y,width:rect.w,height:rect.h,class:'detector-mask'}));
+ drawSnapOverlays();
 }
 function drawDetectorExclusions(qp){
  const starting=result.settings.diffraction;if(!starting)return;
@@ -2201,13 +2255,46 @@ $('diff-calibration-reset').onclick=()=>{if(!isDiffraction())return;diffractionS
 $('diff-undo-mask').onclick=()=>{if(isDiffraction()){diffractionSettings.masks.pop();commitDetector()}};
 $('diff-clear-masks').onclick=()=>{if(isDiffraction()){diffractionSettings.masks=[];commitDetector()}};
 function hideCentreLoupe(){$('centre-loupe').hidden=true}
+function clonePreviewOverlay(node,source=null,preview=null){
+ const copy=node.cloneNode(true);copy.removeAttribute('id');
+ for(const child of copy.querySelectorAll('[id]'))child.removeAttribute('id');
+ for(const child of copy.querySelectorAll('title,.snap-radius-handle,[data-fitting-handle]'))child.remove();
+ // Preview controls are visual copies; all hit testing stays in the source SVG.
+ for(const child of copy.querySelectorAll('[pointer-events],[tabindex],[role]')){
+  child.removeAttribute('pointer-events');child.removeAttribute('tabindex');child.removeAttribute('role');
+ }
+ const from=source?.getScreenCTM(),to=preview?.getScreenCTM();
+ const scale=from&&to?Math.hypot(from.a,from.b)/Math.hypot(to.a,to.b):1;
+ // Magnify delete buttons with the image so their outlines match source hitboxes.
+ // Only informational labels keep a fixed screen size.
+ if(Number.isFinite(scale)&&scale>0)for(const control of copy.querySelectorAll('text')){
+  const x=Number(control.getAttribute('x')),y=Number(control.getAttribute('y'));
+  control.setAttribute('transform',`translate(${x} ${y}) scale(${scale}) translate(${-x} ${-y})`);
+ }
+ copy.setAttribute('pointer-events','none');return copy;
+}
+function syncCentreLoupeOverlays(){
+ const host=$('centre-loupe-overlay');host.replaceChildren();
+ if($('centre-loupe').hidden||!isDiffraction())return;
+ for(const node of $('detector-overlay').querySelectorAll('.detector-observation,.detector-peak-number,[data-centre-translation],[data-centre-marker]'))host.append(clonePreviewOverlay(node));
+ const rings=$('overview').querySelector('.manual-snap-overlay');if(rings)host.append(clonePreviewOverlay(rings,$('overview'),$('centre-loupe-view')));
+}
 function prepareCentreLoupe(){
  if(!isDiffraction())return;
  const img=$('centre-loupe-image');img.setAttribute('width',meta.width);img.setAttribute('height',meta.height);
  img.setAttribute('href','/api/preview?id='+encodeURIComponent(fileId)+'&native=1');
 }
+function centreLoupeSpan(){
+ const tool=$('diff-tool').value;
+ if(!['add','remove'].includes(tool)||!diffractionSettings)return 128;
+ const snapping=tool==='add'&&$('diff-snap').checked;
+ const radius=Number($(snapping?'diff-snap-radius':'diff-dedupe-radius').value);
+ if(!Number.isFinite(radius)||radius<.001||radius>5)return 128;
+ // Keep the true footprint visible instead of clipping a large circle entirely.
+ return Math.max(128,2.4*radius/Math.min(diffractionSettings.pixel_x_nm_inv,diffractionSettings.pixel_y_nm_inv));
+}
 function moveCentreLoupe(p,event){
- if(!isDiffraction()||!['view','center'].includes($('diff-tool').value)){hideCentreLoupe();return}
+ if(!isDiffraction()||!['view','center','add','remove'].includes($('diff-tool').value)){hideCentreLoupe();return}
  if(p.x<0||p.y<0||p.x>=meta.width||p.y>=meta.height){hideCentreLoupe();return}
  const x=p.x,y=p.y,loupe=$('centre-loupe');
  // Escape the image panel's containment so fixed coordinates follow the viewport.
@@ -2216,22 +2303,38 @@ function moveCentreLoupe(p,event){
  $('centre-loupe-hint').hidden=$('diff-tool').value!=='center';
  if(!$('centre-loupe-image').getAttribute('href'))prepareCentreLoupe();
  loupe.hidden=false;
- $('centre-loupe-view').setAttribute('viewBox',`${x-64} ${y-64} 128 128`);
- $('centre-loupe-cross').setAttribute('d',`M${x-56},${y}h53M${x+3},${y}h53M${x},${y-56}v53M${x},${y+3}v53`);
+ const span=centreLoupeSpan(),arm=span*56/128,gap=span*3/128;
+ $('centre-loupe-view').setAttribute('viewBox',`${x-span/2} ${y-span/2} ${span} ${span}`);
+ $('centre-loupe-cross').setAttribute('d',`M${x-arm},${y}h${arm-gap}M${x+gap},${y}h${arm-gap}M${x},${y-arm}v${arm-gap}M${x},${y+gap}v${arm-gap}`);
  $('centre-loupe-coords').textContent=`${x.toFixed(1)}, ${y.toFixed(1)} px`;
+ syncCentreLoupeOverlays();
  const box=loupe.getBoundingClientRect(),margin=8,offset=18;
- loupe.style.left=clamp(event.clientX+offset+box.width>innerWidth-margin?event.clientX-offset-box.width:event.clientX+offset,margin,Math.max(margin,innerWidth-box.width-margin))+'px';
- loupe.style.top=clamp(event.clientY+offset+box.height>innerHeight-margin?event.clientY-offset-box.height:event.clientY+offset,margin,Math.max(margin,innerHeight-box.height-margin))+'px';
+ // The left image's preview stays upper-right, without collision-driven flips.
+ loupe.style.left=clamp(event.clientX+offset,margin,Math.max(margin,innerWidth-box.width-margin))+'px';
+ loupe.style.top=clamp(event.clientY-offset-box.height,margin,Math.max(margin,innerHeight-box.height-margin))+'px';
 }
-$('diff-tool').onchange=()=>{maskDrag=null;snapPointer=null;hideCentreLoupe();syncPeakTool();drawDetector();drawSnapOverlays();if($('diff-tool').value==='center')prepareCentreLoupe()};
+function setDetectorTool(tool){
+ $('diff-tool').value=tool;maskDrag=null;radiusDrag=null;snapPointer=null;
+ hideCentreLoupe();hideSpectrumHover();syncPeakTool();drawDetector();drawSnapOverlays();
+ if(tool==='center')prepareCentreLoupe();
+}
+$('diff-tool').onchange=()=>setDetectorTool($('diff-tool').value);
 $('overview').addEventListener('pointerleave',hideCentreLoupe);
 document.addEventListener('scroll',hideCentreLoupe,true);
 window.addEventListener('resize',hideCentreLoupe);
-$('overview').addEventListener('keydown',e=>{if(e.key==='Escape'&&isDiffraction()){$('diff-tool').value='view';maskDrag=null;hideCentreLoupe();syncPeakTool();drawDetector();drawSnapOverlays()}});
+function escapeDetectorTool(event){
+ if(event.key!=='Escape'||!isDiffraction()||($('diff-tool').value==='view'&&!maskDrag&&!radiusDrag&&!fittingLimitDrag))return;
+ finishFittingLimitDrag(true);setDetectorTool('view');
+ // In the enlarged pattern, exit editing first; a second Escape closes it.
+ // Other dialogs retain their normal Escape-to-close behaviour.
+ const dialog=event.target.closest?.('dialog');
+ if(!dialog||dialog.id==='fft-zoom')event.preventDefault();
+}
+document.addEventListener('keydown',escapeDetectorTool);
 function detectorPointerDown(e){
  const tool=$('diff-tool').value;if(tool==='view')return;e.preventDefault();
  const p=point(e),x=clamp(p.x,0,meta.width-1),y=clamp(p.y,0,meta.height-1);
- if(tool==='add'||tool==='remove'){editDetectorPeak(x,y);return}
+ if(tool==='add'||tool==='remove'){moveCentreLoupe(p,e);editDetectorPeak(x,y);return}
  if(tool==='center'){setDetectorCentre(x,y);return}
  if(diffractionSettings.masks.length>=20){message('Use up to 20 exclusions. Undo or clear an existing one first.',true);return}
  maskDrag={x,y,rect:null};$('overview').setPointerCapture(e.pointerId);
@@ -2262,6 +2365,7 @@ function syncSpectrumExportControls(){
  for(const id of ['export-png','export-gif']){$(id).disabled=spectrumExportBusy||mapExportBusy||busy||pending||!result||!fftRaw||!config?.spectrum_exports;$(id).title=config?.spectrum_exports?'Save the current view to the output folder':'Restart TEM Workbench to enable image exports'}
 }
 function clearSpectrumDisplay(){
+ hideSpectrumHover();hideCentreLoupe();
  $('fft-image').removeAttribute('href');
  $('crop').removeAttribute('src');
  for(const id of ['fft-overlay','fft-axes','fft-zoom-view','fft-legend','fft-zoom-legend'])$(id).replaceChildren();
@@ -2275,7 +2379,7 @@ function setSpectrumSpinner(show){
  document.querySelector('.previews').classList.toggle('analysis-stalled',show&&!!fftRaw);
 }
 function beginSpectrumLoading(){
- hideSpectrumHover();
+ if(!peakEditing()||!fftRaw)hideSpectrumHover();
  if(spectrumLoading)return;
  spectrumLoading=true;$('fft-stage').setAttribute('aria-busy','true');
  // With no current image there is nothing useful to leave visible during the delay.
@@ -2370,8 +2474,8 @@ function renderRegionPreviewDetails(region){
 }
 function positionRegionPreview(x,y){
  const box=$('region-hover'),bounds=box.getBoundingClientRect(),gap=18;
- let left=x+gap,top=y+gap;if(left+bounds.width>window.innerWidth-8)left=x-bounds.width-gap;if(top+bounds.height>window.innerHeight-8)top=y-bounds.height-gap;
- box.style.left=Math.max(8,left)+'px';box.style.top=Math.max(8,top)+'px';
+ box.style.left=clamp(x+gap,8,Math.max(8,innerWidth-bounds.width-8))+'px';
+ box.style.top=clamp(y-gap-bounds.height,8,Math.max(8,innerHeight-bounds.height-8))+'px';
 }
 function setRegionPreviewImage(region,src,cropped){
  const r=region.roi,img=$('region-hover-image');
@@ -2823,7 +2927,9 @@ function syncPeakTool(){
  for(const button of document.querySelectorAll('[data-detector-tool]'))button.setAttribute('aria-pressed',String(button.dataset.detectorTool===$('diff-tool').value));
  setSpectrumSpinner(spectrumLoading&&spectrumLoadingTimer===null);
 }
-for(const button of document.querySelectorAll('[data-detector-tool]'))button.onclick=()=>{$('diff-tool').value=button.dataset.detectorTool;$('diff-tool').onchange()};
+for(const button of document.querySelectorAll('[data-detector-tool]'))button.onclick=()=>{
+ if(button.dataset.detectorTool==='center')openCentreDialog();else setDetectorTool(button.dataset.detectorTool);
+};
 for(const id of ['diff-snap-radius','diff-dedupe-radius']){
  const fallback=id==='diff-snap-radius'?.5:.1,saved=readPreference('tem-'+id+'-nm-inv',fallback);$(id).value=Number.isFinite(saved)&&saved>=.001&&saved<=5?saved:fallback;
  $(id).onchange=()=>{const value=Number($(id).value);if(Number.isFinite(value)&&value>=.001&&value<=5)writePreference('tem-'+id+'-nm-inv',value);drawSnapOverlays()};
@@ -2833,7 +2939,7 @@ function syncPeakEditControls(){
  const edits=diffractionSettings?.peak_edits||[];
  $('diff-undo-peak').disabled=(!edits.length&&!peakUndo.length)||peakEditBusy;
  $('diff-reset-peaks').disabled=!edits.length||peakEditBusy;
- if(isDiffraction())$('diff-peak-note').textContent=`${edits.length} peak edit(s). Click either image. Drag an add ring to re-snap, or a removal ring to resize the cleared area. All edit circles stay visible; × deletes an addition or removal area. Manual additions count as measured evidence. ${busy||pending?'Updating fits in the background…':''}`;
+ if(isDiffraction())$('diff-peak-note').textContent=`${edits.length} peak edit(s). Click either image. Drag an add ring to re-snap, or a removal ring to resize the cleared area. Edit circles stay visible on the detector and appear on the pattern while adding/removing peaks; × deletes an edit. Manual additions count as measured evidence. ${busy||pending?'Updating fits in the background…':''}`;
 }
 function editSnapshot(){return result?.image_kind==='diffraction'?result:displayedDiffraction}
 function effectiveDetector(){
@@ -2849,13 +2955,31 @@ function setDetectorCentre(x,y){
  if(!isDiffraction()||!Number.isFinite(x)||!Number.isFinite(y)||x<0||y<0||x>=meta.width||y>=meta.height)return;
  diffractionSettings.center_x=x;diffractionSettings.center_y=y;commitDetector();
 }
+function openCentreDialog(){
+ if(!isDiffraction()||!diffractionSettings)return;
+ setDetectorTool('view');
+ for(const [axis,size] of [['x',meta.width],['y',meta.height]]){
+  const field=$('diff-centre-'+axis);field.max=size-1;field.value=diffractionSettings['center_'+axis];
+ }
+ $('diff-centre-dialog').showModal();
+}
+$('diff-centre-form').onsubmit=event=>{
+ event.preventDefault();if(!$('diff-centre-form').reportValidity())return;
+ setDetectorCentre(Number($('diff-centre-x').value),Number($('diff-centre-y').value));
+ $('diff-centre-dialog').close();
+};
+$('diff-centre-cancel').onclick=()=>$('diff-centre-dialog').close();
+$('diff-centre-pick').onclick=()=>{
+ $('diff-centre-dialog').close();setDetectorTool('center');
+ message('Click either image to set the starting centre. Press Escape to return to View.');
+};
 function editableObservations(includeWeak=false){
  const snapshot=editSnapshot(),edits=diffractionSettings?.peak_edits||[],applied=snapshot?.settings.diffraction?.peak_edits||[];let points=[],common=0;
  const sameEdit=(a,b)=>Object.keys(a).length===Object.keys(b).length&&Object.keys(a).every(key=>a[key]===b[key]);
  while(common<edits.length&&common<applied.length&&sameEdit(edits[common],applied[common]))common++;
  if(snapshot){const [cx,cy]=snapshot.spectrum.beam_center_px,d=snapshot.settings.diffraction;
   points=[...(snapshot.spectrum.peaks||[]),...(includeWeak?snapshot.spectrum.weak_maxima||[]:[])].flatMap(p=>(p.observed_spots||[]).map(q=>{
-   const point={x:cx+q[0]/d.pixel_x_nm_inv,y:cy-q[1]/d.pixel_y_nm_inv};
+   const point={x:cx+q[0]/d.pixel_x_nm_inv,y:cy-q[1]/d.pixel_y_nm_inv,profile_id:p.profile_id};
    const index=edits.findLastIndex(edit=>edit.action==='add'&&Math.hypot(point.x-edit.x,point.y-edit.y)<.01);
    return index>=0?{...point,...edits[index],index,manual:true}:point;
   }));
@@ -2918,7 +3042,7 @@ function drawSnapOverlays(){
   // Refresh peak-edit rings without removing the independent fitting-limit controls.
   svg.querySelectorAll('.manual-snap-overlay').forEach(n=>n.remove());
   if(!isDiffraction()||!diffractionSettings)continue;
-  const source=svg===$('overview'),snapshot=editSnapshot();if(!source&&!snapshot)continue;
+  const source=svg===$('overview'),snapshot=editSnapshot();if(!source&&(!snapshot||!peakEditing()))continue;
   const d=source?diffractionSettings:snapshot.settings.diffraction,e=snapshot?.spectrum.extent,c=snapshot?.spectrum.beam_center_px;
   const sx=source?1/d.pixel_x_nm_inv:420/(e[1]-e[0]),sy=source?1/d.pixel_y_nm_inv:420/(e[3]-e[2]);
   const project=(x,y)=>source?[x,y]:[((x-c[0])*d.pixel_x_nm_inv-e[0])/(e[1]-e[0])*420,(e[3]-(c[1]-y)*d.pixel_y_nm_inv)/(e[3]-e[2])*420];
@@ -2956,6 +3080,7 @@ function drawSnapOverlays(){
    if(r>=.001&&r<=5)ring(snapPointer.x,snapPointer.y,r,null,$('diff-tool').value==='remove');
   }
  }
+ syncSpectrumHoverRadii();syncCentreLoupeOverlays();
 }
 async function finishRadiusDrag(cancel=false){
  if(!config.reciprocal_peak_edit_radii){radiusDrag=null;drawSnapOverlays();message('Restart TEM Workbench to change peak radii in nm⁻¹.',true);return}
@@ -2979,7 +3104,8 @@ for(const id of ['overview','fft','fft-zoom-view']){
   if(!peakEditing()||event.target.closest('[data-delete-peak-edit]'))return;
   const p=detectorPoint(event,svg());if(!p){snapPointer=null;drawSnapOverlays();return}
   if(radiusDrag?.host===host){radiusDrag.radius=Math.round(clamp(reciprocalDistance(p,radiusDrag),.001,5)*1000)/1000;event.preventDefault();event.stopImmediatePropagation()}
-  else snapPointer={...p,svg:svg()};
+  // Native DOMPoint coordinates are prototype accessors, not spreadable fields.
+  else snapPointer={x:p.x,y:p.y,svg:svg()};
   drawSnapOverlays();
  },true);
  host.addEventListener('pointerdown',event=>{

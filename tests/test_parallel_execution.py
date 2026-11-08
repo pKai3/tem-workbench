@@ -87,6 +87,7 @@ class SpawnChecks(unittest.TestCase):
         a=diffraction._prepare_detector(array,{**settings,'smoothing_workers':1})
         b=diffraction._prepare_detector(array,{**settings,'smoothing_workers':2})
         np.testing.assert_array_equal(a.pop('log'),b.pop('log'))
+        np.testing.assert_array_equal(a.pop('detector_signal'),b.pop('detector_signal'))
         self.assertEqual(a,b)
 
 

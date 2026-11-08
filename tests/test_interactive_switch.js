@@ -12,6 +12,7 @@ async function scenario(failure){
  const api=(path,body,signal)=>new Promise((resolve,reject)=>calls.push({resolve,reject,signal}));
  const renderResult=async data=>renders.push(data);
  const syncPeakEditControls=()=>{},syncSpectrumExportControls=()=>{};
+ const isDiffraction=()=>false;
  const finishSpectrumLoading=()=>spinnerStops++;
  const message=text=>errors.push(text),$=()=>({});
  `+source.slice(start,end),context);
