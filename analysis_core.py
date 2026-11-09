@@ -147,13 +147,18 @@ def score_hypothesis(peaks,T,q,scale,ang,tol,g_max=10.,g_min=3.):
 def additional_orientation_seeds(angles, scores, support, initial, limit=2):
  """Supplement existing seeds with distinct orientations AND measured support.
 
- Preserve all existing scale/angle starts. A >2 degree rotation (modulo pi)
- and <=80% support overlap avoids spending extra slots on symmetry copies.
+ Preserve all existing scale/angle starts. Prioritize positional support gained
+ over those starts, so high-scoring subsets cannot crowd out a weaker pattern.
+ Better agreement with already covered observations still counts as a gain.
+ A >2 degree rotation (modulo pi) and <=80% support overlap avoids symmetry copies.
  This is a bounded search heuristic, not an orientation-resolution claim.
  """
  chosen=list(initial);extra=[];ids=[set(np.flatnonzero(row>0)) for row in support]
- for i in np.argsort(scores)[::-1]:
-  if scores[i]<.2:break
+ values=np.asarray(support)
+ covered=np.max(values[chosen],axis=0) if chosen else np.zeros(values.shape[1])
+ gain=np.maximum(values-covered,0).sum(axis=1)/np.maximum(values.sum(axis=1),1e-12)
+ for i in np.lexsort((scores,scores*gain))[::-1]:
+  if scores[i]<.2 or gain[i]<=1e-12:continue
   if i in chosen:continue
   if any(abs(np.sin(angles[i]-angles[j]))<=np.sin(np.radians(2)) or
          len(ids[i]&ids[j])/max(len(ids[i]|ids[j]),1)>.8 for j in chosen):continue

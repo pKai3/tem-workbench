@@ -16,11 +16,15 @@ class ReviewFixes(unittest.TestCase):
         cls.template = next(t for t in cls.engine.templates
                             if t['phase'] == 'HCP' and t['zone_3index'] == [0, 1, 0])
 
-    def mixture(self, weight=.6):
+    def mixture(self, weight=.6, swap_tied_reflections=False):
         q = fitting.prediction_points(self.template, 1., 1.)
         g = np.linalg.norm(q, axis=1)
         q = q[(g >= 3) & (g <= 10)]
         q = q[np.argsort(np.linalg.norm(q, axis=1))][:6]
+        if swap_tied_reflections:
+            # Equal-radius ordering differs across numeric platforms. Exercise
+            # both noise assignments rather than assuming one argsort tie order.
+            q[[2, 3]] = q[[3, 2]]
         rng = np.random.default_rng(42)
         peaks = []
         for angle, amplitude in ((.31, 4.), (.55, 4.*weight)):
@@ -34,17 +38,18 @@ class ReviewFixes(unittest.TestCase):
         # Require exploration, not acceptance: 35% weight may fail the screen.
         for weight in (.6, .35):
             for mode in ('fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'):
-                with self.subTest(weight=weight, mode=mode):
-                    peaks = self.mixture(weight)
-                    candidates = []
-                    if mode == 'fixed':
-                        core.search(peaks, [self.template], 1., .18, candidate_sink=candidates)
-                    else:
-                        fitting.search(peaks, [self.template], .18, mode, candidate_sink=candidates)
-                    for expected in (set(range(1, 7)), set(range(7, 13))):
-                        self.assertTrue(any(expected <= {m['profile_id'] for m in c['matches']}
-                                            for c in candidates))
-                    self.assertLessEqual(len(candidates), 6)
+                for swapped in (False, True):
+                    with self.subTest(weight=weight, mode=mode, swapped=swapped):
+                        peaks = self.mixture(weight, swapped)
+                        candidates = []
+                        if mode == 'fixed':
+                            core.search(peaks, [self.template], 1., .18, candidate_sink=candidates)
+                        else:
+                            fitting.search(peaks, [self.template], .18, mode, candidate_sink=candidates)
+                        for expected in (set(range(1, 7)), set(range(7, 13))):
+                            self.assertTrue(any(expected <= {m['profile_id'] for m in c['matches']}
+                                                for c in candidates), f'Missing support {sorted(expected)}')
+                        self.assertLessEqual(len(candidates), 6)
 
     def test_single_orientation_does_not_become_a_second_pattern(self):
         peaks = self.mixture()[:6]
@@ -62,6 +67,20 @@ class ReviewFixes(unittest.TestCase):
         support = [[1,1,1,0,0,0], [1,1,1,0,0,0], [1,1,1,0,0,0],
                    [0,0,0,1,1,1], [0,0,0,1,1,1]]
         self.assertEqual(core.additional_orientation_seeds(angles, np.array(scores), np.array(support), [0,1]), [3])
+
+    def test_extra_seeds_do_not_spend_slots_on_subsets_of_existing_support(self):
+        angles=np.radians([10,100,70,32])
+        scores=np.array([.72,.42,.27,.25])
+        support=np.array([[1,1,1,1,1,1,0,0,0,0], [1,1,0,0,1,1,0,0,0,0],
+                          [0,1,1,1,0,0,0,0,0,0], [0,0,0,0,0,0,1,1,1,1]])
+        self.assertEqual(core.additional_orientation_seeds(angles,scores,support,[0]),[3])
+
+    def test_extra_seeds_prioritize_new_support_but_keep_improved_partial_fits(self):
+        angles=np.radians([10,100,32])
+        scores=np.array([.7,.5,.3])
+        support=np.array([[.8,.8,.8,.8,.8,.8,0,0,0,0], [1,1,0,0,1,1,0,0,0,0],
+                          [0,0,0,0,0,0,1,1,1,1]])
+        self.assertEqual(core.additional_orientation_seeds(angles,scores,support,[0]),[2,1])
 
     def test_retention_preserves_zone_alternatives_without_duplicate_orientation(self):
         def candidate(zone, ids, score):

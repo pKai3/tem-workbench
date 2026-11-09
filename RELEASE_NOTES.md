@@ -4,6 +4,7 @@
 - Search for omega and parent-related BCC + omega variants through the ordinary phase controls. Compare independent and linked candidates using common scoring, with one addition cost for a constrained omega family.
 - Improve displaced-peak matching in direct diffraction while retaining penalties for unsupported predictions. A detected peak assigned to a prediction is no longer also counted as missing.
 - Integrate peak brightness, add adjustable soft brightness grouping in diffraction and FFT, and number measured profiles from brightest to faintest.
+- Preserve search opportunities for weaker orientations instead of spending supplementary starts on subsets of an already explored pattern.
 - Identify possible double-diffraction pathways for selected phases, with an adjustable score contribution and inspectable supporting reflections. These are geometric candidates, not confirmation of dynamical scattering.
 - Unify linked-fit tables and overlays, show related variant counts, support all passing fits, and offer phase/variant colours with editable legends and concentric shared-spot markers.
 - Add a master analysis-overlay switch, compact fitted-vector display, responsive result tables and clearer material-dependent phase labels.
