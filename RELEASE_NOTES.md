@@ -1,4 +1,4 @@
-# TEM Workbench — next release
+# TEM Workbench 1.0.27
 
 - Reconnect running grids and overlapping maps after page refresh, with the original source, settings, progress and cancellation controls. Completed and partial results remain available while the backend stays running.
 - Search for omega and parent-related BCC + omega variants through the ordinary phase controls. Compare independent and linked candidates using common scoring, with one addition cost for a constrained omega family.
