@@ -49,7 +49,15 @@ $('diff-tool').value='add';$('diff-snap').checked=true;$('diff-snap-radius').val
 move(500,300);assert.equal($('centre-loupe-view').attributes.viewBox,'1700 1700 600 600','Large add radius fits within the preview');
 $('diff-tool').value='remove';$('diff-dedupe-radius').value=4;
 move(500,300);assert.equal($('centre-loupe-view').attributes.viewBox,'1760 1760 480 480','Remove radius also fits at anisotropic sampling');
-$('diff-snap').checked=false;$('diff-tool').value='add';assert.equal(context.centreLoupeSpan(),480,'Unsnapped additions use the edit radius');
+$('diff-snap').checked=false;$('diff-tool').value='add';assert.equal(context.centreLoupeSpan(),128,'Unsnapped additions keep the normal close-up, without an action radius');
+move(500,300);assert.equal($('centre-loupe-title').textContent,'Add peak · snap off');
+for(const tool of ['add','remove','mask','center','view']){
+ $('diff-tool').value=tool;context.syncDetectorToolIndicators();
+ for(const id of ['detector-tool-indicator','spectrum-tool-indicator','zoom-tool-indicator']){
+  assert.equal($(id).hidden,tool==='view');
+  assert.equal($(id).textContent,{add:'Add peak · snap off',remove:'Remove peak',mask:'Mask area',center:'Set centre',view:''}[tool]);
+ }
+}
 $('diff-tool').value='mask';assert.equal(move(500,300).hidden,true);
 $('diff-tool').value='view';assert.equal(move(500,300,-1,30).hidden,true);
 context.innerWidth=280;context.innerHeight=330;card=move(150,160);assert.equal(card.style.left,'8px');assert.equal(card.style.top,'8px');

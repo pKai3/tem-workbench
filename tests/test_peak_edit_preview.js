@@ -12,11 +12,13 @@ const context={$,result:snapshot,displayed:snapshot,fftRaw:{},busy:false,pending
  clamp:(v,a,b)=>Math.min(b,Math.max(a,v)),setTimeout(fn){timers.set(++next,fn);return next},clearTimeout:id=>timers.delete(id),
  requestAnimationFrame(fn){timers.set(++next,fn);return next},cancelAnimationFrame:id=>timers.delete(id)};
 vm.createContext(context);
+vm.runInContext(source.slice(source.indexOf('function spectrumOverlaysVisible('),source.indexOf('function syncSpectrumOverlays(')),context);
+vm.runInContext(source.slice(source.indexOf('function detectorToolLabel('),source.indexOf('function clonePreviewOverlay(')),context);
 vm.runInContext(source.slice(source.indexOf('function clonePreviewOverlay('),source.indexOf('function prepareCentreLoupe(')),context);
 vm.runInContext(source.slice(source.indexOf('let spectrumHoverTimer='),source.indexOf("for(const id of ['fft','fft-zoom-view']){\n $(id).addEventListener('pointermove',hoverSpectrum)")),context);
 function hover(extra={}){context.hoverSpectrum({currentTarget:$('fft'),clientX:200,clientY:100,pointerType:'mouse',buttons:0,...extra});for(const [id,fn] of [...timers]){timers.delete(id);fn()}}
 for(const mode of ['view','add','remove']){
- context.mode=mode;context.result=snapshot;context.busy=context.pending=context.spectrumLoading=false;
+ context.mode=mode;$('diff-tool').value=mode;context.result=snapshot;context.busy=context.pending=context.spectrumLoading=false;
  hover();assert.equal($('spectrum-hover').hidden,false,mode+' retains hover');
  assert.match($('spectrum-hover-coords').textContent,/rel\./);
  context.hideSpectrumHover();
@@ -43,7 +45,7 @@ context.el=element;
 vm.runInContext(source.slice(source.indexOf('function drawSnapOverlays(){'),source.indexOf('async function finishRadiusDrag')),context);
 for(const root of [$('overview'),$('fft'),zoom])root.append(element('fitting-handle',{'data-fitting-handle':'outer'}));
 for(const mode of ['view','add','remove','center','mask','view']){
- context.mode=mode;context.drawSnapOverlays();
+ context.mode=mode;$('diff-tool').value=mode;context.drawSnapOverlays();
  assert.equal($('overview').querySelectorAll('.manual-snap-overlay').length,1,'Detector always retains edit areas');
  for(const root of [$('fft'),zoom]){
   assert.equal(root.querySelectorAll('.manual-snap-overlay').length,['add','remove'].includes(mode)?1:0,mode+' pattern visibility');
@@ -65,8 +67,20 @@ for(const original of $('fft').querySelectorAll('[data-delete-peak-edit]')){
 assert.equal($('fft').querySelectorAll('.snap-radius-handle').length,4,'Cloning does not alter live handles');
 context.snapPointer.x=240;context.drawSnapOverlays();
 assert.notEqual($('spectrum-hover-edits').querySelectorAll('ellipse')[2].attrs.cx,radii[2].attrs.cx,'Moving the cursor updates the preview ring');
+$('diff-snap').checked=false;context.drawSnapOverlays();
+assert.equal($('spectrum-hover-title').textContent,'Add peak · snap off');
+assert.equal($('spectrum-hover-edits').querySelectorAll('ellipse').length,2,'Turning snapping off keeps saved edit rings but removes the cursor radius');
+for(const root of [$('overview'),$('fft'),zoom]){
+ context.snapPointer.svg=root;context.drawSnapOverlays();
+ assert.equal(root.querySelectorAll('[data-hover-peak-radius]').length,0,'No unsnapped cursor ring on either image or enlarged view');
+ assert.equal(root.querySelectorAll('[data-delete-peak-edit]').length,2,'Saved edit controls are preserved');
+}
+context.snapPointer.svg=$('fft');$('diff-snap').checked=true;context.drawSnapOverlays();
+assert.equal($('spectrum-hover-edits').querySelectorAll('[data-hover-peak-radius]').length,1,'Re-enabling snapping restores the live preview ring');
+$('diff-snap').checked=false;
 context.mode='remove';$('diff-tool').value='remove';$('diff-dedupe-radius').value=.4;context.drawSnapOverlays();
 assert.equal($('spectrum-hover-edits').querySelectorAll('ellipse')[2].attrs.rx,8.4);
+assert.equal($('spectrum-hover-title').textContent,'Remove peak');
 // A result redraw replaces the enlarged SVG; the active hover must follow it.
 $('fft-zoom').open=true;context.radiusDrag=null;context.syncSpectrumLegendZoom=()=>{};
 vm.runInContext(source.slice(source.indexOf('function syncFFTZoom(){'),source.indexOf('function openFFTZoom(){')),context);
@@ -83,7 +97,7 @@ hover({buttons:1});assert.equal($('spectrum-hover').hidden,true,'Nonediting drag
 for(const id of ['overview','fft','fft-zoom-view']){
  const host=$(id);host.events={};host.addEventListener=(name,fn)=>{host.events[name]=fn};
 }
-context.detectorPoint=()=>Object.create({x:230,y:180});context.mode='add';$('diff-tool').value='add';context.radiusDrag=null;
+context.detectorPoint=()=>Object.create({x:230,y:180});context.mode='add';$('diff-tool').value='add';$('diff-snap').checked=true;context.radiusDrag=null;
 const pointerStart=source.indexOf("for(const id of ['overview','fft','fft-zoom-view']){",source.indexOf('async function finishRadiusDrag'));
 vm.runInContext(source.slice(pointerStart,source.indexOf("$('diff-undo-peak').onclick",pointerStart)),context);
 $('overview').events.pointermove({target:{closest:()=>null}});

@@ -19,39 +19,78 @@ const SPECTRUM_PALETTES={
 const PHASE_COLOR_OPTIONS={blue:['Blue','#79bafa'],gold:['Gold','#f4b75e'],mint:['Mint','#64e2b0'],green:['Vivid green','#39ff5a'],purple:['Purple','#b49aff'],pink:['Pink','#ff8ac3'],white:['White','#f4f7fb']};
 const $=id=>document.getElementById(id), NS='http://www.w3.org/2000/svg';
 const PHASES=['HCP','BCC','FCC','ORT','OMEGA'];
+function materialPhaseSymbol(phase,material){return ({titanium:{HCP:'α',BCC:'β'},iron:{BCC:'α',FCC:'γ'}})[material]?.[phase]}
+function phaseLabel(phase,material=$('material').value){
+ return phase.split('+').map(name=>{
+  const symbol=materialPhaseSymbol(name,material);
+  return symbol?`${symbol} (${name})`:name==='OMEGA'?'ω':name;
+ }).join(' + ');
+}
+function phaseControlLabel(phase,material){
+ return phase==='OMEGA'?'ω (hexagonal)':phase==='ORT'?'ORT (orthorhombic)':phaseLabel(phase,material);
+}
+function materialAvailablePhases(material=$('material').value){
+ return config?.material_presets?.[material]?.available_phases??({titanium:['HCP','BCC','OMEGA'],iron:['BCC','FCC']}[material]||PHASES);
+}
+function syncPhaseControlLabels(){
+ const available=materialAvailablePhases();
+ document.querySelector('.material-settings').dataset.material=$('material').value;
+ for(const phase of PHASES){
+  const label=$(phase.toLowerCase()+'-phase-label');
+  if(label){label.textContent=phaseControlLabel(phase,$('material').value);label.closest('label').hidden=!available.includes(phase)}
+ }
+}
+function fitRotationLabel(rotation){return Number.isFinite(rotation)?`${rotation.toFixed(1)}°`:''}
 const PHASE_DEFAULT_COLORS={HCP:'blue',BCC:'gold',FCC:'pink',ORT:'mint',OMEGA:'purple'};
 const phaseColorChoices={...PHASE_DEFAULT_COLORS};
+const isHexColor=value=>typeof value==='string'&&/^#[\da-f]{6}$/i.test(value);
+const isPhaseColor=value=>Object.hasOwn(PHASE_COLOR_OPTIONS,value)||isHexColor(value);
+const phaseColorValue=value=>PHASE_COLOR_OPTIONS[value]?.[1]||value;
+function syncCustomPhaseColor(phase){
+ const field=$(phase.toLowerCase()+'-color'),choice=phaseColorChoices[phase];
+ field.querySelectorAll('[data-custom-color]').forEach(option=>option.remove());
+ if(isHexColor(choice)){const option=new Option('Custom',choice);option.dataset.customColor='true';field.append(option)}
+}
 let enabledPhases=['HCP','BCC','OMEGA'];
 function materialPhases(){return config?.material_presets?.[$('material').value]?.enabled_phases??({titanium:['HCP','BCC','OMEGA'],iron:['BCC','FCC'],custom:PHASES}[$('material').value]||PHASES)}
 function analysisPhases(value){return Array.isArray(value?.enabled_phases)?PHASES.filter(phase=>value.enabled_phases.includes(phase)):PHASES}
 function syncReferenceControls(){
+ const available=materialAvailablePhases();
  for(const input of document.querySelectorAll('.material-bar input')){
-  const enabled=enabledPhases.includes(input.id.split('-')[0].toUpperCase());
+  const phase=input.id.split('-')[0].toUpperCase(),enabled=enabledPhases.includes(phase);
   input.disabled=!enabled||Boolean(config&&!config.material_presets);
+  input.closest('label').hidden=!available.includes(phase);
   input.closest('label').classList.toggle('phase-disabled',!enabled);
  }
 }
 function setPhaseSelection(phases){
  enabledPhases=PHASES.filter(phase=>phases.includes(phase));
- for(const phase of PHASES)$(phase.toLowerCase()+'-color').value=enabledPhases.includes(phase)?phaseColorChoices[phase]:'disabled';
+ for(const phase of PHASES){syncCustomPhaseColor(phase);$(phase.toLowerCase()+'-color').value=enabledPhases.includes(phase)?phaseColorChoices[phase]:'disabled'}
  syncOverlayMenus();
  syncReferenceControls();
  syncPhaseMarkerControls();
  applyPhaseColors(false);
- $('phase-search-note').textContent=meta?.reciprocal_calibrated===false?'Uncalibrated: peak and geometry checks remain available. Independent reference-cell searches need calibration. Beta + Omega is optional.':enabledPhases.length?'Searching '+enabledPhases.join(' + ')+'. Disabled skips matching.':'Phase search disabled. Peak and geometry checks remain available.';
+ $('phase-search-note').textContent=phaseSearchDescription();
+}
+function fittedVectorMode(value){
+ // Old measured-plane preferences now select the same fitted candidate.
+ if(['winner','winner_any','passing',...PHASES,'both','all','related'].includes(value))return 'planes_'+value;
+ return value;
 }
 function syncOverlayMenus(patternValue=$('overlay').value,vectorValue=$('reflection-vectors').value){
- const winners=[['winner','Winning Fit (Passing)'],['winner_any','Winning Fit (Any)']];
- const phaseChoices=enabledPhases.map(phase=>[phase,'Best '+phase]);
- if(enabledPhases.length>1)phaseChoices.push(['all','Best '+enabledPhases.join(' + ')]);
- if(enabledPhases.length>2&&enabledPhases.includes('HCP')&&enabledPhases.includes('BCC'))phaseChoices.push(['both','Best HCP + BCC']);
+ vectorValue=fittedVectorMode(vectorValue);
+ const winners=[['winner','Winning Fit (Passing)'],['winner_any','Winning Fit (Any)'],['passing','All passing fits']];
+ const phaseChoices=enabledPhases.map(phase=>[phase,'Best '+phaseLabel(phase)]);
+ if(relatedPhasesSelected())phaseChoices.push(['related',`Best ${phaseLabel('BCC')} + related ω`]);
+ if(enabledPhases.length>1)phaseChoices.push(['all','Best '+enabledPhases.map(phase=>phaseLabel(phase)).join(' + ')]);
+ if(enabledPhases.length>2&&enabledPhases.includes('HCP')&&enabledPhases.includes('BCC'))phaseChoices.push(['both','Best '+phaseLabel('HCP+BCC')]);
  const pattern=$('overlay'),vectors=$('reflection-vectors');
  const append=(parent,choices,prefix='',label='')=>{for(const [value,name] of choices)parent.append(new Option(label+name,prefix+value))};
  pattern.replaceChildren(new Option('None','none'));
  if(enabledPhases.length)append(pattern,[...winners,...phaseChoices]);
- append(pattern,[['beta_omega','β + ω variants'],['geometry','Primary + Secondary Geometry'],['custom','Choose individual fits']]);
+ append(pattern,[['geometry','Primary + Secondary Geometry'],['custom','Choose individual fits']]);
  vectors.replaceChildren(new Option('Off','off'));
- if(enabledPhases.length)for(const [label,prefix,caption] of [['Fitted A/B/C','fitted_','A/B/C · '],['Fitted planes','planes_','Fitted planes · '],['Measured planes','','Measured planes · ']]){
+ if(enabledPhases.length)for(const [label,prefix,caption] of [['Fitted A/B/C','fitted_','A/B/C · '],['Fitted planes','planes_','Fitted planes · ']]){
   const group=document.createElement('optgroup');group.label=label;
   append(group,[...winners,...phaseChoices],prefix,caption);vectors.append(group);
  }
@@ -63,9 +102,10 @@ function syncOverlayMenus(patternValue=$('overlay').value,vectorValue=$('reflect
   select.value=values.includes(value)?value:fallback;
  };
  restore(pattern,patternValue,enabledPhases.length?'winner':'none');
- restore(vectors,vectorValue,enabledPhases.length?(vectorValue.startsWith('fitted_')?'fitted_winner':vectorValue.startsWith('planes_')?'planes_winner':'winner'):'off');
+ restore(vectors,vectorValue,enabledPhases.length?(vectorValue.startsWith('planes_')?'planes_winner':'fitted_winner'):'off');
 }
 function finishPhaseChange(previous){
+ syncBetaOmegaControls();
  writePreference('tem-phase-colors',phaseColorChoices);rememberBasicControls();
  applyPhaseColors();
  if(previous.join(',')!==enabledPhases.join(','))invalidateAnalysisSettings();
@@ -82,7 +122,7 @@ function isDiffraction(){return meta?.image_kind==='diffraction'}
 let chosenFits=new Set(), favorites=new Set();
 let regionProject={revision:0,regions:[]},selectedRegionId=null,regionRequest=0;
 let folderTarget=null,folderListing=null,folderBrowseVersion=0;
-let rescoreTimer=null, rescoreBusy=false, rescoreJobId=null, rescorePending=false, rescoreRevision=0, scalePenalty=.10, caPenalty=.10, peakEvidenceWeight=.10, peakFalloff=8;
+let rescoreTimer=null, rescoreBusy=false, rescoreJobId=null, rescorePending=false, rescoreRevision=0, scalePenalty=.10, caPenalty=.10, peakEvidenceWeight=.10, missingPeakWeight=.10, brightnessGroupingWeight=.10, ddWeight=0, peakFalloff=8;
 let zoneJob=null, zoneSymbols=phaseMaps();
 const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢','◀','▶','✦','✳','◉','⊞','⊠','✧'];
 const phaseColors=Object.fromEntries(PHASES.map(phase=>[phase,colors[phase.toLowerCase()+'_compatible']]));
@@ -99,7 +139,7 @@ function reportJobError(kind,key,text){
  const identity=JSON.stringify([key,text]);
  if(text&&jobErrorNotices[kind]!==identity){jobErrorNotices[kind]=identity;message(text,true)}
 }
-async function api(path,body,signal){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,{...options,signal});const data=await r.json();if(!r.ok)throw new Error(data.error||r.statusText);return data}
+async function api(path,body,signal){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,{...options,signal});const data=await r.json();if(!r.ok){const error=new Error(data.error||r.statusText);error.status=r.status;throw error}return data}
 function readPreference(key,fallback){
  try{
   const text=localStorage.getItem(key);if(text===null)return fallback;
@@ -112,7 +152,7 @@ const BASIC_NUMBERS={"g-max":[4,30],"fft-g-min":[0,29.9],"hcp-a":[0.15,0.65],"hc
 Object.assign(BASIC_NUMBERS,Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value,min,max,integer]])=>[id,[min,max,integer]])));
 Object.assign(BASIC_NUMBERS,{"map-window":[.1,1000],"map-spacing":[.1,1000],"map-window-percent":[.1,100],"map-spacing-percent":[1,100]});
 const BASIC_FLAGS=['adaptive','check-passing','show-grid','fft-hann','fft-mean'];
-const OVERLAY_MODES=['beta_omega','none','winner','winner_any',...PHASES,'both','all','geometry','custom'];
+const OVERLAY_MODES=['none','winner','winner_any','passing',...PHASES,'both','all','related','geometry','custom'];
 let preferredRegionNm=readPreference('tem-region-width-nm',20);
 if(typeof preferredRegionNm!=='number'||!Number.isFinite(preferredRegionNm)||preferredRegionNm<=0)preferredRegionNm=20;
 function validControlNumber(id,value){
@@ -253,11 +293,12 @@ $('favorite-toggle').onclick=()=>{
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){clearFileSearch();$('file').value=id;openFile()}};
 function effectiveScalePenalty(){return $('material').value==='unknown'?0:scalePenalty}
-function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),omega_a:Number($('omega-a').value),omega_c:Number($('omega-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),ort_a:Number($('ort-a').value),ort_b:Number($('ort-b').value),ort_c:Number($('ort-c').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value!=='manual'),fft_auto_objective:$('fft-strength-mode').value==='geometry'?'geometry':'rank',...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?effectiveScalePenalty():0,ca_penalty_strength:caPenalty,peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,peak_evidence_half_weight_nm_inv:config?.peak_evidence_falloff?peakFalloff:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{search_beta_omega:$('search-beta-omega').checked,beta_parent_anchors:diffractionSettings.beta_parent_anchors||[],diffraction:{...JSON.parse(JSON.stringify(diffractionSettings)),smoothing_workers:Number($('diff-workers').value)}}:{})}}
+function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),omega_a:Number($('omega-a').value),omega_c:Number($('omega-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),ort_a:Number($('ort-a').value),ort_b:Number($('ort-b').value),ort_c:Number($('ort-c').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value!=='manual'),fft_auto_objective:$('fft-strength-mode').value==='geometry'?'geometry':'rank',...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?effectiveScalePenalty():0,ca_penalty_strength:caPenalty,...((isDiffraction()?config?.brightness_grouping:config?.fft_brightness_grouping)?{brightness_grouping_weight:brightnessGroupingWeight}:{}),...(config?.double_diffraction_scoring?{double_diffraction_weight:ddWeight}:{}),peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,...(config?.separate_peak_penalties?{missing_peak_weight:missingPeakWeight}:{}),peak_evidence_half_weight_nm_inv:config?.peak_evidence_falloff?peakFalloff:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{phase_search_version:2,beta_parent_anchors:diffractionSettings.beta_parent_anchors||[],diffraction:{...JSON.parse(JSON.stringify(diffractionSettings)),smoothing_workers:Number($('diff-workers').value)}}:{})}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
  field.closest('.scale-input').style.display=automatic?'none':'';
+ if(isDiffraction()&&(meta?.reciprocal_calibrated===false||$('material').value==='unknown')){$('calibration-note').textContent='Direct diffraction uses relative geometry for an uncalibrated image or Unknown material. Absolute scale carries no cost. Independent HCP/ω cell ratios follow the selected fitting option; beta-related variants share their parent metric. Prediction-evidence penalties apply to every candidate.';if(automatic){field.value='1.000';field.readOnly=true}return}
  if(automatic){field.value='1.000';field.readOnly=true;
   $('calibration-note').textContent=(v==='auto_hcp_ratio'?'Each candidate fits overall reciprocal scale; HCP/ω also fits c/a, and orthorhombic fits independent cell dimensions where visible. Separate penalties rank the positional fits. No extra tight c/a limit.':v==='auto_uniform'?'Each structure fits one common prediction scale; reference cell proportions stay fixed.':'Each region fits one cubic prediction scale, HCP/ω a/c, and orthorhombic a/b/c where visible.')+` Range ×${$('material').value==='unknown'?'0.5–2.0':'0.85–1.15'} relative to reference dimensions. Measured reciprocal axes stay unchanged. Candidate model dimensions are shown below.`;return}
 
@@ -529,7 +570,7 @@ async function openFile(){
    if(!raster.calibration){finishSpectrumLoading();if(!await calibrateRaster(id,raster)){message('Image calibration cancelled. Select an image or use Calibrate scale bar.');return;}if(version!==sourceRequest)return;beginSpectrumLoading();}
   }
   const info=await api('open',{file_id:id});if(version!==sourceRequest)return;
-  meta=info;fileId=id;opened=true;const openedFile=config.files.find(f=>f.id===id);if(openedFile){openedFile.image_kind=info.image_kind;openedFile.relative_diffraction=info.reciprocal_calibrated===false;}renderFileList();writePreference(lastImageKey(),id);grid=null;jobId=null;
+  meta=info;fileId=id;opened=true;const openedFile=config.files.find(f=>f.id===id);if(openedFile){openedFile.image_kind=info.image_kind;openedFile.relative_diffraction=info.reciprocal_calibrated===false;}renderFileList();writePreference(lastImageKey(),id);grid=null;jobId=null;rememberGrid(null);
   const band=savedFittingLimits();if(band)$('g-max').value=band.outer;
   setupImageKind();restoreFittingLimits();drawGrid();$('save-grid').disabled=true;$('cancel-grid').disabled=true;$('run-grid').disabled=isDiffraction();
   $('grid-status').textContent='Adaptive subdivides unresolved or ambiguous regions, two candidate structures, and substantial second patterns.';
@@ -553,8 +594,18 @@ for(const name of ['pointerup','pointercancel'])$('overview').addEventListener(n
 $('overview').addEventListener('keydown',e=>{if(overlapPlanning())return;const saved=e.target.closest('.saved-region-overlay');if(saved&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openSavedRegion(saved.dataset.regionId);return}if(!meta||isDiffraction()||e.altKey||e.ctrlKey||e.metaKey)return;const offsets={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};if(!offsets[e.key])return;const n=e.shiftKey?50:10;roi.x+=offsets[e.key][0]*n;roi.y+=offsets[e.key][1]*n;updateBox(true);schedule();e.preventDefault()});
 for(const [id,key]of [['roi-x','x'],['roi-y','y'],['roi-nm','w']])$(id).addEventListener('change',()=>{if(!meta)return;const n=Number($(id).value);if(!Number.isFinite(n))return;roi[key]=key==='w'?n/meta.pixel_x_nm:n;updateBox();schedule(0)});
 $('centre').onclick=()=>{if(!meta)return;roi.x=(meta.width-roi.w)/2;roi.y=(meta.height-roi.h)/2;updateBox();schedule(0)};
+function relatedDDEvidence(data){
+ const model=data.beta_omega,dd=model?.double_diffraction;
+ if(!dd?.profile_count)return '';
+ return ` ${phaseLabel('BCC')} + ω has ${model.combined.matched_profiles} allowed profiles plus ${dd.profile_count} DD candidates.`+(data.settings?.double_diffraction_weight?` DD adds ${(model.fit.double_diffraction_bonus||0).toFixed(3)} to its rank.`:' DD weight is zero, so those candidates add no ranking credit.');
+}
 function patternExplanation(data){
- if(data.beta_omega)return betaOmegaSummary(data);
+ if(data.beta_omega?.selected)return betaOmegaSummary(data)+relatedDDEvidence(data);
+ if(combinedFitSelected(data)){
+  const phases=data.classification.combined_fit.phase.split('+'),same=phases.every(p=>p===phases[0]);
+  return `The highest-ranked fit combines ${same?`${phases.length} ${phaseLabel(phases[0])} orientations`:phases.map(phase=>phaseLabel(phase)).join(' and ')}.`+(data.classification.ambiguity_reason==='related_pattern_tradeoff'?` ${phaseLabel('BCC')} + related ω also passes with a similar score; the phase assignment remains ambiguous.`:['brightness_group_tradeoff','additional_evidence_tradeoff'].includes(data.classification.ambiguity_reason)?' A passing single-pattern alternative scores similarly; the phase assignment remains ambiguous.':' Both patterns are displayed together; their proportions are unknown.')+relatedDDEvidence(data);
+ }
+ if(['brightness_group_tradeoff','additional_evidence_tradeoff'].includes(data.classification.ambiguity_reason))return 'Geometry and the enabled evidence weights favour two candidates together, but a passing single-pattern alternative scores similarly. The phase assignment remains ambiguous.';
  const label=data.classification.label;
  if(label==='coexisting_candidates')return 'Separate peak sets support passing fits of different structures. Both may contribute; their proportions are unknown.';
  if(label==='multiple_orientations')return 'Separate peak sets support multiple orientations of the same candidate structure.';
@@ -566,15 +617,18 @@ function patternExplanation(data){
 }
 function scaleSummary(settings){
  const label=settings.scale_mode==='auto_hcp_ratio'?'automatic overall scale + HCP/ω c/a':settings.scale_mode==='auto_uniform'?'automatic single scale per candidate and region':settings.scale_mode==='auto_hcp_ac'?'automatic cubic single / HCP/ω a+c / ORT a+b+c per region':`fixed prediction scale ×${settings.scale.toFixed(3)}`;
- return label+(settings.scale_mode==='auto_hcp_ratio'?` · c/a penalty ${(settings.ca_penalty_strength??.10).toFixed(3)} per 5%`:'')+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'')+` · peak evidence ${(settings.peak_evidence_weight??0).toFixed(2)} · missing falloff ${settings.peak_evidence_half_weight_nm_inv?settings.peak_evidence_half_weight_nm_inv+' nm⁻¹ half-weight':'off'} · ${config?.material_presets?.[settings.material]?.label??'Custom'} references · fitting band ${settings.g_min??settings.diffraction?.exclude_radius_nm_inv??3}–${settings.g_max??10} nm⁻¹`;
+ return label+(settings.scale_mode==='auto_hcp_ratio'?` · c/a penalty ${(settings.ca_penalty_strength??.10).toFixed(3)} per 5%`:'')+` · DD weight ${(settings.double_diffraction_weight??0).toFixed(2)}`+(settings.scale_mode?.startsWith('auto_')?` · scale penalty ${(settings.scale_penalty_strength??0).toFixed(3)} per 5%`:'')+` · weak bonus ${(settings.peak_evidence_weight??0).toFixed(2)} · missing penalty ${(settings.missing_peak_weight??settings.peak_evidence_weight??0).toFixed(2)} · brightness grouping ${(settings.brightness_grouping_weight??0).toFixed(2)} · missing falloff ${settings.peak_evidence_half_weight_nm_inv?settings.peak_evidence_half_weight_nm_inv+' nm⁻¹ half-weight':'off'} · ${config?.material_presets?.[settings.material]?.label??'Custom'} references · fitting band ${settings.g_min??settings.diffraction?.exclude_radius_nm_inv??3}–${settings.g_max??10} nm⁻¹`;
 }
 function fittedDimensions(model){
+ if(model.independent_combination||model.coordinate_units==='relative'||model.related_pattern)return '—';
  if(model.phase==='ORT')return [...'abc'].map(axis=>{const v=model['fitted_'+axis+'_nm'];return Number.isFinite(v)?v.toFixed(4):'unconstrained'}).join(' / ');
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
  const c=model.fitted_c_nm??(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)?null:model.nominal_c_nm/model.shared_scale);
  return a.toFixed(4)+(['HCP','OMEGA'].includes(model.phase)?' / '+(c===null?'unconstrained':c.toFixed(4)):'');
 }
 function scaleDetails(model){
+ if(model.independent_combination)return 'Combined rank; individual cell parameters are shown on the component rows.';
+ if(model.coordinate_units==='relative'||model.scale_mode==='relative_geometry')return 'Relative geometry search; absolute scale is not penalized. Cell dimensions require a calibrated image.';
  if(model.phase==='ORT')return 'Orthorhombic a*/b*/c*: '+[...'abc'].map((axis,i)=>model.axis_observable?.[i]===false?'unconstrained':`×${(model['scale_'+axis]??model.shared_scale).toFixed(4)}`).join(' / ');
  const a=model.scale_a??model.shared_scale,c=model.scale_c;
  if(model.scale_mode==='auto_hcp_ratio')return `overall prediction ×${model.overall_prediction_scale.toFixed(4)}`+(['HCP','OMEGA'].includes(model.phase)?` · c/a ${model.ca_ratio_multiplier==null?'unconstrained':'×'+model.ca_ratio_multiplier.toFixed(4)} · `:' · ')+`overall cost ${(model.overall_scale_penalty??0).toFixed(3)} + c/a cost ${(model.ca_ratio_penalty??0).toFixed(3)}`;
@@ -582,6 +636,7 @@ function scaleDetails(model){
  return `prediction scale ×${a.toFixed(4)}`;
 }
 function scalePercentages(model){
+ if(model.independent_combination||model.coordinate_units==='relative'||model.scale_mode==='relative_geometry')return '—';
  const percent=value=>{if(value==null||!Number.isFinite(value)||value<=0)return 'unconstrained';const change=(value-1)*100;return (Math.abs(change)<.05?'0.0':(change>0?'+':'−')+Math.abs(change).toFixed(1))+'%'};
  // The stored scales move reciprocal predictions; the table describes real cells.
  const cellPercent=scale=>percent(Number.isFinite(scale)&&scale>0?1/scale:null);
@@ -598,23 +653,73 @@ function predictionCounts(model){
 }
 function evidenceDescription(model){
  const e=model.peak_evidence;if(!e)return 'Original detected profiles / prediction positions.';
- return `${e.detected_count} strong + ${e.weak_count} weak; ${e.unsupported_count} unsupported; ${e.unassessable_count} unchecked. Search radius ${e.search_radius_nm_inv.toFixed(3)} nm⁻¹. Weak maxima do not count toward the initial screen.${e.half_weight_nm_inv?` Missing cost has half weight at ${e.half_weight_nm_inv} nm⁻¹; weighted missing fraction ${(100*e.missing_factor).toFixed(1)}% (uniform ${(100*e.unweighted_missing_factor).toFixed(1)}%).`:''}`;
+ const graded=e.missing_method==='detected-presence-weak-graded-v3'?` Assigned detected spots have no missing-site cost. Weak matches retain ${(e.weak_missing_equivalent_count??0).toFixed(2)} missing predictions before radial attenuation.`:e.missing_method==='graded-position-v2'?` Positional offsets retain ${(e.detected_missing_equivalent_count??0).toFixed(2)} missing predictions; weak matches retain ${(e.weak_missing_equivalent_count??0).toFixed(2)}, before radial attenuation.`:e.missing_method==='graded-weak-v1'&&e.weak_count?` Weak matches still contribute ${e.weak_missing_equivalent_count.toFixed(2)} missing predictions before radial attenuation.`:'';
+ const allowance=model.position_matching?.scale_rule==='width-plus-relative-distortion-v1'?' Combines spot width with a 4% median-radius distortion allowance in quadrature, shared by all phases.':'';
+ const position=e.distance_scale_nm_inv?` Positional credit falls continuously with offset (distance scale ${e.distance_scale_nm_inv.toFixed(3)} ${reciprocalUnit()}).${allowance}`:'';
+ return `${e.detected_count} strong + ${e.weak_count} weak; ${e.unsupported_count} unsupported; ${e.unassessable_count} unchecked.${graded}${position} Search radius ${e.search_radius_nm_inv.toFixed(3)} ${reciprocalUnit()}; weak maxima do not count toward the initial screen.${e.half_weight_nm_inv?` Missing cost has half weight at ${e.half_weight_nm_inv} ${reciprocalUnit()}; weighted missing fraction ${(100*e.missing_factor).toFixed(1)}% (uniform ${(100*e.unweighted_missing_factor).toFixed(1)}%).`:''}`;
 }
-function rankDescription(m){return (m.scale_mode==='auto_hcp_ratio'&&m.phase!=='ORT'?`Scale cost: overall ${(m.overall_scale_penalty??0).toFixed(3)} + c/a ${(m.ca_ratio_penalty??0).toFixed(3)}. `:'')+`Position ${(m.position_score??m.score).toFixed(3)} − scale ${(m.scale_penalty??0).toFixed(3)} + weak ${(m.weak_peak_bonus??0).toFixed(3)} − missing ${(m.missing_peak_penalty??0).toFixed(3)} = rank ${m.score.toFixed(3)}`}
+function rankDescription(m){return (m.scale_mode==='auto_hcp_ratio'&&m.phase!=='ORT'?`Scale cost: overall ${(m.overall_scale_penalty??0).toFixed(3)} + c/a ${(m.ca_ratio_penalty??0).toFixed(3)}. `:'')+`Position ${(m.position_score??m.score).toFixed(3)} − scale ${(m.scale_penalty??0).toFixed(3)} + weak ${(m.weak_peak_bonus??0).toFixed(3)} − missing ${(m.missing_peak_penalty??0).toFixed(3)} − extra patterns ${(m.additional_pattern_penalty??0).toFixed(3)}${m.brightness_grouping?' + brightness '+(m.brightness_bonus??0).toFixed(3):''}${m.double_diffraction_weight?' + DD '+(m.double_diffraction_bonus??0).toFixed(3):''} = rank ${m.score.toFixed(3)}`+(m.related_pattern&&m.additional_pattern_basis==='related_phase_family'?' The parent-linked ω variants share one addition cost; each variant still requires its own observed support.':'')}
 function compareRank(a,b){
  if(!a)return b?1:0;
  if(!b)return -1;
  return b.score-a.score||b.coverage-a.coverage;
 }
-const COVERAGE_HELP='Weighted share of original detected peak profiles matched by this fit. FFT weights use radial-background enrichment; direct spots use log(1 + local contrast). Both are capped at 1–6. Extra weak maxima are excluded. Not an intensity fraction or phase probability.';
+function candidateName(m){
+ if(m.related_pattern)return betaOmegaCombinedLabel(m);
+ if(m.independent_combination){
+  const names=m.phase.split('+').map((phase,i)=>`${phaseLabel(phase)} ${zoneLabel({phase,zone_3index:m.component_zones[i]})}`);
+  return new Set(names).size===1?`${names.length} × ${names[0]}`:names.join(' + ');
+ }
+ return `${phaseLabel(m.phase)} ${zoneLabel(m)}`;
+}
+function combinedFitComponents(data){return (data.classification?.combined_fit_components||[data.classification?.primary_model,data.classification?.secondary_model]).filter(Boolean)}
+function combinedFitSelected(data){
+ const c=data.classification,fit=c?.combined_fit;
+ // Older results compared a union without exporting its selected flag.
+ return c?.combined_fit_selected??Boolean(!data.beta_omega?.selected&&fit?.valid&&fit.score>(c.primary_model?.score??-Infinity));
+}
+function evidenceModels(data){return [...data.models,...(data.beta_omega?.fit?[data.beta_omega.fit]:[]),...(data.classification?.combined_fit?[data.classification.combined_fit]:[])]}
+function brightnessDescription(m){
+ const b=m.brightness_grouping;if(!b)return 'No integrated intensity evidence';
+ const states={supported:'Supports phase grouping',single_phase:'One phase; neutral',no_grouping_gain:'No gain after complexity cost',insufficient_intensity:'Too few reliable intensities',insufficient_group_support:'Too little independent group support',fit_unavailable:'Intensity fit unavailable'};
+ return (m.brightness_grouping_weight===0?'Off · ':'')+(states[b.status]||b.status);
+}
+function renderBrightnessEvidence(data){
+ const seen=new Set(),models=evidenceModels(data).filter(m=>m.brightness_grouping).sort(compareRank).filter(m=>{
+  if(m.related_pattern)return true;
+  if(m.independent_combination)return true;
+  if(seen.has(m.phase))return false;seen.add(m.phase);return true;
+ }),container=$('brightness-table');container.replaceChildren();
+ $('brightness-details').hidden=!models.length;
+ if($('brightness-details').hidden)return;
+ const table=document.createElement('table'),head=document.createElement('thead'),header=document.createElement('tr'),body=document.createElement('tbody');
+ for(const label of ['Candidate / zone','+ Brightness','Evidence','Relative levels','Profiles']){const th=document.createElement('th');th.textContent=label;header.append(th)}
+ head.append(header);table.append(head,body);container.append(table);
+ for(const m of models){
+  const b=m.brightness_grouping,row=document.createElement('tr');
+  const groups=b.groups.map(g=>`${phaseLabel(g.phase)} ${g.relative_level.toFixed(2)}`).join(' / ')||'—';
+  const ids=b.groups.map(g=>`${phaseLabel(g.phase)}: ${g.profile_ids.join(', ')}`).join(' · ')||b.reliable_profile_ids.join(', ')||'—';
+  const values=[candidateName(m),(m.brightness_bonus??0).toFixed(3),brightnessDescription(m),groups,ids];
+  for(const [i,value]of values.entries()){
+   const td=document.createElement('td');td.textContent=value;
+   if(i===1){td.title=rankDescription(m);td.tabIndex=0}
+   if(i===2){td.title=`${b.reliable_profile_ids.length} reliable matched / ${b.available_profiles} available profiles. `+(b.baseline_loss!=null?`One-level loss ${b.baseline_loss.toFixed(3)}; phase-level loss ${b.grouped_loss.toFixed(3)}; complexity cost ${b.complexity_cost.toFixed(3)}. Bounded support ${(100*b.factor).toFixed(1)}% × strength ${(m.brightness_grouping_weight??0).toFixed(2)}.`:'Geometry establishes groups before intensity is compared.');td.tabIndex=0}
+   if(i===4&&b.shared_profile_ids.length)td.textContent+=` · shared: ${b.shared_profile_ids.join(', ')} (counted once)`;
+   row.append(td);
+  }
+  body.append(row);
+ }
+}
+const COVERAGE_HELP='Weighted share of original detected peak profiles assigned to this fit. Coverage counts assignments; rank discounts larger positional offsets. FFT weights use radial-background enrichment; direct spots use compressed, background-subtracted integrated intensity, with local contrast retained for unreliable measurements. Weights are capped at 1–6. Extra weak maxima are excluded. Not an intensity fraction or phase probability.';
 function renderEvidence(data){
+ renderBrightnessEvidence(data);
  const container=$('evidence-table');container.replaceChildren();$('evidence-details').hidden=!data.models.some(m=>m.peak_evidence);
  const table=document.createElement('table'),header=document.createElement('tr'),head=document.createElement('thead'),body=document.createElement('tbody');
- for(const label of ['Candidate / zone','Strong','Weak','No peak','Unchecked','+ Bonus','− Missing']){const th=document.createElement('th');th.textContent=label;header.append(th)}
+ for(const label of ['Candidate / zone','Strong','Weak','No peak','Unchecked','+ Weak','− Missing']){const th=document.createElement('th');th.textContent=label;header.append(th)}
  head.append(header);table.append(head,body);container.append(table);
- for(const m of [...data.models].sort(compareRank)){
+ for(const m of evidenceModels(data).sort(compareRank)){
   const e=m.peak_evidence;if(!e)continue;const row=document.createElement('tr');row.title=rankDescription(m)+' · '+evidenceDescription(m);
-  for(const value of [`${m.phase} ${zoneLabel(m)}`,e.detected_count,e.weak_count,e.unsupported_count,e.unassessable_count,m.weak_peak_bonus.toFixed(3),m.missing_peak_penalty.toFixed(3)]){const td=document.createElement('td');td.textContent=value;row.append(td)}
+  for(const value of [candidateName(m),e.detected_count,e.weak_count,e.unsupported_count,e.unassessable_count,m.weak_peak_bonus.toFixed(3),m.missing_peak_penalty.toFixed(3)]){const td=document.createElement('td');td.textContent=value;row.append(td)}
   body.append(row);
  }
 }
@@ -630,8 +735,20 @@ function screenReasons(m){
 }
 function screenLabel(m){return m.valid?'Pass':'Below\n'+(screenReasons(m)[0]||'fit screen').replace(' strong profiles',' strong').replace('peak coverage','coverage')}
 function bestModel(data,phase){return data.models.find(m=>m.phase===phase&&m.valid)??data.models.find(m=>m.phase===phase)}
-function overlayModels(data,choice){
+function overlayModels(data,choice,{vectors=false}={}){
+ if(choice==='passing'){
+  const seen=new Set(),models=[...data.models.filter(m=>m.valid),...(data.classification?.combined_fit?.valid?combinedFitComponents(data):[])]
+   .filter(m=>enabledPhases.includes(m.phase)).sort(compareRank).filter(m=>{
+    const key=JSON.stringify([m.phase,m.predicted_nodes??[m.zone_3index,m.rotation_deg,m.shared_scale]]);
+    if(seen.has(key))return false;seen.add(key);return true;
+   });
+  if(vectors&&enabledPhases.includes('BCC')&&enabledPhases.includes('OMEGA')&&data.beta_omega?.fit?.valid)models.push(...data.beta_omega.components.filter(c=>c.active&&c.vector_model).map(c=>c.vector_model));
+  return models;
+ }
+ if(choice==='related')return vectors?(data.beta_omega?.components||[]).filter(c=>c.active&&c.vector_model).map(c=>c.vector_model):[];
  if(choice==='winner'||choice==='winner_any'){
+  if(data.beta_omega?.selected&&(choice==='winner_any'||data.beta_omega.fit?.valid))return vectors?data.beta_omega.components.filter(c=>c.active&&c.vector_model).map(c=>c.vector_model):[];
+  if(combinedFitSelected(data))return combinedFitComponents(data);
   return data.models.filter(model=>enabledPhases.includes(model.phase)&&(choice==='winner_any'||model.valid)).sort(compareRank).slice(0,1);
  }
  const phases=choice==='all'?PHASES:choice==='both'?['HCP','BCC']:PHASES.includes(choice)?[choice]:[];
@@ -647,7 +764,6 @@ function geometryFits(data){
  });
 }
 function geometryDescription(data){
- if(data.beta_omega)return betaOmegaSummary(data);
  const p=data.periodicity||{};
  if(p.status==='multiple_periodic_patterns')return 'Geometry check: a substantial second periodic pattern is supported.';
  if(p.status==='predominantly_one_periodic_pattern')return 'Geometry check: one periodic pattern predominates.'+
@@ -655,13 +771,13 @@ function geometryDescription(data){
  return 'Geometry check: pattern count remains unresolved.';
 }
 // Shared column definitions keep both candidate tables aligned.
-const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP/ω use the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP/ω a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Cell Δ\n%","Real-space cell change from reference: positive means larger, negative means smaller. Each axis uses 100 × (1 / reciprocal scale − 1). HCP/ω overall + c/a mode also shows the real c/a ratio change, with its sign unchanged. Unconstrained axes are not measurements."]];
-function renderFitHeader(head, showToggle=false){
+const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP/ω use the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost − extra-pattern cost + brightness-grouping bonus + DD bonus; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all","Original strong profiles + separately checked weak maxima / prediction positions. Weak maxima do not count toward the four-profile screen."],["coverage","Peak\ncoverage",COVERAGE_HELP],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP/ω a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Cell Δ\n%","Real-space cell change from reference: positive means larger, negative means smaller. Each axis uses 100 × (1 / reciprocal scale − 1). HCP/ω overall + c/a mode also shows the real c/a ratio change, with its sign unchanged. Unconstrained axes are not measurements."]];
+function renderFitHeader(head, showToggle=false, relative=false){
  const row=document.createElement('tr');
  const columns=showToggle?[['show','Show','Toggle this overlay'],...FIT_COLUMNS]:FIT_COLUMNS;
  for(const [key,label,help]of columns){
   const cell=document.createElement('th');cell.scope='col';cell.className='col-'+key;cell.dataset.column=key;
-  cell.textContent=label;cell.title=help;
+  cell.textContent=key==='rms'&&relative?'RMS\nrel.':label;cell.title=help+(key==='coverage'?' Related combinations use the same measured-profile weights; component-only rows report unweighted assignment coverage.':key==='rank'?' Constrained combinations use the same score, with an additional-pattern cost.':'');
   if(key==='rank')cell.setAttribute('aria-sort','descending');
   row.append(cell);
  }
@@ -669,7 +785,7 @@ function renderFitHeader(head, showToggle=false){
 }
 function appendFitCells(row,m,{name,geometry=false,rotation=false}){
  const values={
-  candidate:name+(m&&rotation?`\n${m.rotation_deg.toFixed(1)}°`:''),
+  candidate:name+(m&&rotation&&fitRotationLabel(m.rotation_deg)?`\n${fitRotationLabel(m.rotation_deg)}`:''),
   rank:m?m.score.toFixed(3):'—',
   screen:m?(geometry?(m.valid?'Pass':'Below'):screenLabel(m)):'No fit',
   peaks:m?(geometry?m.matched_profile_count+' peaks':predictionCounts(m)):'—',
@@ -680,11 +796,12 @@ function appendFitCells(row,m,{name,geometry=false,rotation=false}){
   dimensions:m&&!geometry?fittedDimensions(m).replaceAll(' / ','\n'):'—',
   scale:m&&!geometry?scalePercentages(m).replaceAll(' / ','\n'):'—'
  };
- for(const [key,,help]of FIT_COLUMNS){
-  const cell=document.createElement('td');cell.className='col-'+key;cell.dataset.column=key;
+ for(const [key,label,help]of FIT_COLUMNS){
+  const cell=document.createElement('td');cell.className='col-'+key;cell.dataset.column=key;cell.dataset.label=label.replaceAll('\n',' ');
   cell.textContent=values[key];cell.title=help;
   if(m){
-   if(key==='candidate')cell.className+=' '+(geometry?'geometry-fit':m.phase.toLowerCase());
+   if(key==='candidate')cell.className+=' '+(geometry?'geometry-fit':new Set(m.phase.split('+')).size===1?m.phase.split('+')[0].toLowerCase():m.phase.toLowerCase());
+   if(key==='candidate'&&m.independent_combination)cell.title=m.phase.split('+').map((phase,i)=>`${phaseLabel(phase)} ${zoneLabel({phase,zone_3index:m.component_zones[i]})}${Number.isFinite(m.component_rotations_deg?.[i])?' · '+fitRotationLabel(m.component_rotations_deg[i]):''}`).join(' + ')+'. Joint score; components are available in Individual fit overlays.';
    if(key==='cost'&&m.scale_mode==='auto_hcp_ratio')cell.title=scaleDetails(m);
    if(key==='rank')cell.title=geometry?'Geometry-only score':rankDescription(m);
    if(key==='peaks')cell.title=geometry?'Profiles matched by a freely fitted reciprocal grid':evidenceDescription(m);
@@ -696,32 +813,59 @@ function appendFitCells(row,m,{name,geometry=false,rotation=false}){
 }
 renderFitHeader($('model-head'));
 function renderModels(data){
+ renderFitHeader($('model-head'),false,data.spectrum.coordinate_units==='relative');
+ $('model-head').closest('table').classList.toggle('linked-only',false);
  $('models').replaceChildren();
- const ranked=analysisPhases(data.settings).map(phase=>({phase,m:bestModel(data,phase)})).sort((a,b)=>compareRank(a.m,b.m));
- for(const {phase,m}of ranked){
+ const linked=data.beta_omega;
+ const ranked=analysisPhases(data.settings).map(phase=>({phase,m:bestModel(data,phase)}));
+ if(linked?.fit)ranked.push({phase:'BCC + ω',m:linked.fit,linked:true});
+ if(data.classification?.combined_fit)ranked.push({phase:data.classification.combined_fit.phase,m:data.classification.combined_fit});
+ ranked.sort((a,b)=>compareRank(a.m,b.m));
+ for(const item of ranked){
   const row=document.createElement('tr');
-  appendFitCells(row,m,{name:m?`${phase} ${zoneLabel(m)}`:phase});
+  if(item.linked)appendBetaOmegaFitCells(row,linked);
+  else appendFitCells(row,item.m,{name:item.m?candidateName(item.m):phaseLabel(item.phase)});
   $('models').append(row);
  }
- $('fit-summary').textContent=scaleSummary(data.settings)+'. Rank = position − scale cost + weak-peak bonus − missing-prediction cost. S+W separates strong profiles from weak maxima; peak coverage is the weighted share of original detected profiles matched by the candidate. Prediction-site evidence below shows the separate adjustments. Model dimensions assume the image calibration used; these scores are not phase probabilities.';
+ $('fit-summary').textContent='Rank = position − scale cost + weak-peak bonus − missing-prediction cost − extra-pattern cost'+(evidenceModels(data).some(m=>m.brightness_grouping)?' + brightness-grouping bonus':'')+(data.settings.double_diffraction_weight?' + DD bonus':'')+'. All candidates use the same measured-peak weights and evidence checks. Shared predictions count once in a combined fit. Scores are not phase probabilities.';
+ $('models').closest('.candidate-table').hidden=!$('models').children.length;$('fit-summary').hidden=!$('models').children.length;
 }
 function renderMeasuredPeaks(data){
- const direct=data.image_kind==='diffraction',s=data.spectrum;
- const radiusHelp=direct?'Half the estimated FWHM of the observation with greatest local contrast in each opposite-spot profile. Manual additions use a smoothing-based size estimate.':'Equivalent radius of the detected above-threshold component (half its equivalent diameter). Threshold-dependent; not a fitted FWHM.';
- const intensityHelp=direct?'Recorded detector value at the observation with greatest local contrast in each opposite-spot profile; not integrated or background-subtracted.':'FFT power at the detected component maximum, before display contrast adjustments; arbitrary units, not integrated intensity.';
+ const direct=data.image_kind==='diffraction',s=data.spectrum,hasIntegrated=direct||Boolean(s.photometry)||s.peaks.some(p=>Object.hasOwn(p,'integrated_intensity'));
+ const radiusHelp=direct?'Half the estimated FWHM of the observation with greatest local contrast. Manual additions use a smoothing-based size estimate.':'Equivalent radius of the detected above-threshold FFT component; threshold-dependent, not a fitted FWHM.';
+ const intensityHelp=direct?'Image value at the detected centre of the observation with greatest local contrast. Not integrated or background-subtracted.':'FFT power at the detected component maximum, before display contrast adjustments; arbitrary units.';
+ const integratedHelp='Background-subtracted sum over each measured spot aperture, in '+(direct?'image signal × pixels':'native FFT power × bins')+'. Opposite spots are measured separately and averaged, using reliable measurements where available. Overlap and incomplete apertures are flagged; missing signal is not extrapolated. Profile IDs number integrated signal from brightest to faintest.';
+ const weightHelp='Direct diffraction: 3 × square root of integrated intensity / median reliable intensity, limited to 1–6. Unreliable measurements retain the local-contrast weight. This controls matching influence, not a phase fraction or probability.';
  $('peak-radius-heading').title=radiusHelp;$('peak-intensity-heading').title=intensityHelp;
- $('peak-intensity-heading').textContent=direct?'Intensity (pixel)':'Intensity (FFT power)';
+ $('peak-intensity-heading').textContent=direct?'Centre value':'Peak FFT power'+(hasIntegrated?'':' ↓');
+ $('peak-intensity-heading').setAttribute('aria-sort',hasIntegrated?'none':'descending');
+ $('peak-integrated-heading').hidden=!hasIntegrated;$('peak-integrated-heading').title=integratedHelp;
+ $('peak-integrated-heading').setAttribute('aria-sort','descending');
+ $('peak-weight-heading').title=direct?weightHelp:'FFT fitting weight uses radial-background enrichment, limited to 1–6; brightness grouping uses integrated power separately.';
  $('peaks').replaceChildren();
- for(const p of s.peaks){
+ const key=hasIntegrated?'integrated_intensity':'intensity';
+ const orderedPeaks=[...s.peaks].sort((a,b)=>{
+  const ai=Number.isFinite(a[key])?a[key]:-Infinity,bi=Number.isFinite(b[key])?b[key]:-Infinity;
+  return ai===bi?a.profile_id-b.profile_id:bi-ai;
+ });
+ for(const p of orderedPeaks){
   const radius=p.radius_nm_inv??(Number.isFinite(p.equivalent_profile_diameter_nm_inv)?p.equivalent_profile_diameter_nm_inv/2:null);
   const intensity=Number.isFinite(p.intensity)?p.intensity.toExponential(3):'—';
+  const flags=[...new Set((p.spot_measurements||[]).flatMap(m=>m.flags||[]))];
+  const integrated=Number.isFinite(p.integrated_intensity)?p.integrated_intensity.toExponential(3)+(flags.length?' *':''):'—';
   const tr=document.createElement('tr');
-  const values=[p.profile_id,p.g_nm_inv.toFixed(3),s.coordinate_units==='relative'?'—':(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3),Number.isFinite(radius)?radius.toFixed(3):'—',intensity];
-  for(const [i,v] of values.entries()){const td=document.createElement('td');td.textContent=v;if(i===5)td.title=radiusHelp+(p.radius_estimated_from_smoothing?' This value is estimated from smoothing.':'');if(i===6)td.title=intensityHelp;tr.append(td)}
+  const values=[p.profile_id,p.g_nm_inv.toFixed(3),s.coordinate_units==='relative'?'—':(1/p.g_nm_inv).toFixed(4),p.qx.toFixed(3),p.qy.toFixed(3),Number.isFinite(radius)?radius.toFixed(3):'—',intensity,integrated,Number.isFinite(p.weight)?p.weight.toFixed(2):'—'];
+  for(const [i,v] of values.entries()){
+   const td=document.createElement('td');td.textContent=v;
+   if(i===5)td.title=radiusHelp+(p.radius_estimated_from_smoothing?' Estimated from smoothing.':'');
+   if(i===6)td.title=intensityHelp;
+   if(i===7){td.hidden=!hasIntegrated;td.title=integratedHelp+(flags.length?' Measurement flags: '+flags.map(f=>f.replaceAll('_',' ')).join(', ')+'.':'');if(flags.length)td.tabIndex=0}
+   if(i===8)td.title=direct?weightHelp+' This profile uses '+(p.weight_source||'local_contrast').replaceAll('_',' ')+'.':'FFT weight uses log radial enrichment, limited to 1–6.';
+   tr.append(td);
+  }
   $('peaks').append(tr);
  }
- const matchRadius=Math.max(.10,s.peak_width_nm_inv??s.hann_power_fwhm_nm_inv??1.44*s.df);
- $('peak-measurement-note').textContent=`${radiusHelp} Shared prediction matching radius: ${matchRadius.toFixed(3)} ${reciprocalUnit()}. ${intensityHelp} — means unavailable in this saved result; recalculate to populate it.`;
+ $('peak-measurement-note').textContent=(s.profile_numbering==='integrated_intensity_descending'?'Peak 1 is brightest; IDs rank integrated signal and match the plot and fit assignments. ':hasIntegrated?'Sorted by integrated signal; recalculate to number peaks by brightness. ':'Sorted by peak FFT power; recalculate for integrated signal and brightness numbering. ')+(hasIntegrated?'* Measurement flags: hover or focus the value. — means unavailable. ':'')+'Opposite spots share one number.';
  $('peak-count').textContent=`(${s.peaks.length})`;
 }
 async function renderResult(data,version,body){renderAutoStrength(data);if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} ${reciprocalUnit()}/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}renderMeasuredPeaks(data);renderFitChoices(data);renderBetaOmega(data);const [raw,detector]=await Promise.all([decodeSpectrumImage(data.images),data.images.detector_signal16?decodeSpectrumImage({fft_log16:data.images.detector_signal16,fft_log_limits:data.images.detector_signal_limits}).then(raw=>({...raw,detector:true})):null]);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;if(data.image_kind==='diffraction')displayedDiffraction=data;fftRaw=raw;detectorRaw=detector;syncSignalToggle();if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');spectrumResultArrived();$('save-region').disabled=version!==generation}
@@ -750,8 +894,35 @@ function peakNumberLabel(x,y,id,scale=1,attrs={}){
  return el('text',{x:x+5*scale,y:y-5*scale,fill:'#ffffff','font-size':7*scale,stroke:'#05090e','stroke-width':1.8*scale,'paint-order':'stroke','data-profile-number':id,...attrs},String(id));
 }
 function syncPhaseMarkerControls(){
- const linked=isDiffraction()&&$('search-beta-omega').checked;
+ const linked=isDiffraction()&&relatedPhasesSelected();
  for(const phase of PHASES)$(phase.toLowerCase()+'-marker').closest('label').hidden=!(enabledPhases.includes(phase)||(linked&&['BCC','OMEGA'].includes(phase)));
+ $('omega-color-by').closest('label').hidden=!enabledPhases.length;
+}
+// Independent orientations use stable per-phase display slots in this result.
+// Hiding an overlay never renumbers the remaining orientations.
+const fitVariantColors={};
+function orientationColorKey(key){return /^(HCP|BCC|FCC|ORT|OMEGA):[1-9]\d*$/.test(key)}
+function defaultOrientationColor(phase,index){
+ const base=phaseColors[phase];if(index===1)return base;
+ const [r,g,b]=[1,3,5].map(i=>parseInt(base.slice(i,i+2),16)/255),hi=Math.max(r,g,b),lo=Math.min(r,g,b),d=hi-lo;
+ let h=d===0?0:hi===r?((g-b)/d)%6:hi===g?(b-r)/d+2:(r-g)/d+4;
+ h=((h*60+(index-1)*137.508)%360+360)%360/60;
+ const c=.48,x=c*(1-Math.abs(h%2-1)),m=.44;
+ const rgb=h<1?[c,x,0]:h<2?[x,c,0]:h<3?[0,c,x]:h<4?[0,x,c]:h<5?[x,0,c]:[c,0,x];
+ return '#'+rgb.map(v=>Math.round((v+m)*255).toString(16).padStart(2,'0')).join('');
+}
+function independentFitStyle(model,data=result){
+ const phase=model.phase,plain={name:phaseLabel(phase),color:phaseColors[phase],colorTarget:'phase:'+phase};
+ if($('omega-color-by').value==='phase')return plain;
+ const candidates=(data?.models||[]).filter(m=>m.phase===phase).sort(compareRank);
+ const index=candidates.findIndex(m=>m===model||JSON.stringify(m.predicted_nodes)===JSON.stringify(model.predicted_nodes));
+ if(index<0)return plain;
+ const key=phase+':'+(index+1);
+ return {name:phaseLabel(phase)+' '+(index+1),color:fitVariantColors[key]||defaultOrientationColor(phase,index+1),colorTarget:'orientation:'+key};
+}
+function vectorFitStyle(model){
+ const linked=result?.beta_omega,component=linked?.components.find(c=>c.vector_model===model);
+ return component?{name:betaOmegaLabel(component.id,linked),color:betaOmegaComponentColor(component,linked),colorTarget:betaOmegaColorTarget(component)}:independentFitStyle(model);
 }
 function weakMarker(x,y,id){
  const choice=$('weak-marker').value,mode=choice==='follow'?$('peak-marker').value:choice;
@@ -762,19 +933,19 @@ function weakMarker(x,y,id){
 }
 function rememberMarkerStyles(){
  const value={motion:$('marker-motion').value};
- for(const id of ['hcp-marker','bcc-marker','fcc-marker','ort-marker','omega-marker','primary-geometry-marker','secondary-geometry-marker','weak-marker'])value[id]=$(id).value;
+ for(const id of ['hcp-marker','bcc-marker','fcc-marker','ort-marker','omega-marker','omega-color-by','double-diffraction-marker','primary-geometry-marker','secondary-geometry-marker','weak-marker'])value[id]=$(id).value;
  writePreference('tem-marker-styles',value);
 }
 function applyMarkerAnimation(){const mode=$('marker-motion').value;document.body.classList.toggle('marker-pulse',mode==='pulse');document.body.classList.toggle('marker-bounce',mode==='bounce');document.body.classList.toggle('marker-wobble',mode==='wobble');document.body.classList.toggle('marker-rotate',mode==='rotate')}
 function applyPhaseColors(redraw=true){
  for(const [phase,id,key,fallback]of [['HCP','hcp-color','hcp_compatible','blue'],['BCC','bcc-color','bcc_compatible','gold'],['FCC','fcc-color','fcc_compatible','pink'],['ORT','ort-color','ort_compatible','mint'],['OMEGA','omega-color','omega_compatible','purple']]){
   const choice=phaseColorChoices[phase]||fallback;
-  const color=PHASE_COLOR_OPTIONS[choice][1];$(id).style.color=$(id).value==='disabled'?'var(--muted)':color;
+  const color=phaseColorValue(choice);$(id).style.color=$(id).value==='disabled'?'var(--muted)':color;
   phaseColors[phase]=color;colors[key]=color;document.documentElement.style.setProperty('--'+id,color);
  }
  if(redraw){
   if(result)$('phase-label').style.color=colors[result.classification.label]||'#ddd';
-  if(result?.beta_omega)renderBetaOmega(result);
+  if(result)refreshBetaOmegaDisplay();
   drawGrid();drawFFT();
  }
 }
@@ -813,6 +984,29 @@ function spectrumTicks(extent){
  const count=Math.floor(limit/step);
  return Array.from({length:count*2+1},(_,i)=>(i-count)*step);
 }
+function drawSpectrumAxes(extent,qp){
+ const axes=$('fft-axes');axes.replaceChildren();
+ if(showDetectorSignal&&detectorRaw)axes.append(el('text',{x:0,y:-3,fill:'#aab9c8','font-size':7.5},processedSignalCaption(result)));
+ for(const q of spectrumTicks(extent)){
+  if(q>=extent[0]&&q<=extent[1]){
+   const [x]=qp(q,0);
+   axes.append(el('text',{x,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));
+  }
+  if(q>=extent[2]&&q<=extent[3]){
+   const [,y]=qp(0,q);
+   axes.append(el('text',{x:-7,y:y+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q));
+  }
+ }
+ const [zero]=qp(0,0);
+ axes.append(el('text',{x:clamp(zero+12,12,375),y:437,fill:'#8c9eaf','font-size':9,'data-axis-units':'true'},reciprocalUnit()));
+}
+function spectrumOverlaysVisible(){return $('show-spectrum-overlays').getAttribute('aria-pressed')!=='false'}
+function syncSpectrumOverlays(){
+ // An explicit SVG attribute survives enlarged/hover clones and PNG/GIF export.
+ $('fft-overlay').setAttribute('display',spectrumOverlaysVisible()?'inline':'none');
+ renderSpectrumLegend();syncFFTZoom();drawSnapOverlays();
+ if(!$('spectrum-hover').hidden)showSpectrumHover();
+}
 function drawFittingBand(qp){
  const outer=fittingLimitDrag?currentFittingLimits().outer:(result.spectrum.g_max??result.settings.g_max??10);
  const inner=fittingLimitDrag?currentFittingLimits().inner:(result.spectrum.g_min??result.settings.g_min??result.settings.diffraction?.exclude_radius_nm_inv??3);
@@ -840,7 +1034,7 @@ function drawForbiddenReflections(fits,qp){
  details.hidden=!models.length;
  for(const model of models){
   const report=model.forbidden_reflections,section=document.createElement('div');section.className='forbidden-fit';
-  const heading=document.createElement('strong');heading.textContent=`${model.phase} ${zoneLabel(model)}`;heading.style.color=phaseColors[model.phase];section.append(heading);
+  const heading=document.createElement('strong');heading.textContent=`${phaseLabel(model.phase)} ${zoneLabel(model)}`;heading.style.color=phaseColors[model.phase];section.append(heading);
   const status=document.createElement('p');
   if(!report)status.textContent='Reanalyse to check forbidden positions.';
   else if(report.status==='not_applicable')status.textContent='No absence rules for generic primitive orthorhombic.';
@@ -851,10 +1045,10 @@ function drawForbiddenReflections(fits,qp){
    const rule=document.createElement('p');rule.textContent=report.rule;section.append(rule);
    const list=document.createElement('ul'),listed=new Set();
    for(const hit of report.hits){
-    const plane=planeLabel(model,hit.hkl),label=`${model.phase} ${plane} · profile ${hit.profile_id} · offset ${hit.residual_nm_inv.toFixed(3)} nm⁻¹`;
+    const plane=planeLabel(model,hit.hkl),label=`${phaseLabel(model.phase)} ${plane} · profile ${hit.profile_id} · offset ${hit.residual_nm_inv.toFixed(3)} nm⁻¹`;
     // Conjugates are one profile; retain both actual observed positions on the image.
     if(!listed.has(hit.profile_id)){const row=document.createElement('li');row.textContent=label;list.append(row);listed.add(hit.profile_id)}
-    if(!$('show-forbidden').checked)continue;
+    if(!$('show-forbidden').checked||($('double-diffraction-marker').value!=='off'&&model.double_diffraction?.hits.some(h=>h.profile_id===hit.profile_id&&Math.hypot(h.observed_q[0]-hit.observed_q[0],h.observed_q[1]-hit.observed_q[1])<1e-7)))continue;
     const[x,y]=qp(...hit.observed_q);if(x<0||x>420||y<0||y>420)continue;
     const shape=markerShape(x,y,'triangle',{stroke:'#ffbd69','stroke-width':1.4,fill:'none','data-marker-kind':'forbidden','data-marker-phase':model.phase},10);
     shape.removeAttribute('class');shape.append(el('title',{},`${label} · ${report.rule} · diagnostic only`));$('fft-overlay').append(shape);
@@ -864,17 +1058,8 @@ function drawForbiddenReflections(fits,qp){
   section.append(status);host.append(section);
  }
 }
-function drawFFT(){
- if(!peakEditing())hideSpectrumHover();
- if(!result||!fftRaw)return;
- $('fft-image').setAttribute('href',colourSpectrum(showDetectorSignal&&detectorRaw?detectorRaw:fftRaw,result.image_kind));$('contrast-value').textContent=$('contrast').value+'%';
- const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();$('fft-axes').replaceChildren();drawFittingBand(qp);if(showDetectorSignal&&detectorRaw)$('fft-axes').append(el('text',{x:0,y:-3,fill:'#aab9c8','font-size':7.5},processedSignalCaption(result)));for(const q of spectrumTicks(ex)){if(q<ex[0]||q>ex[1])continue;const [px]=qp(q,0);$('fft-axes').append(el('text',{x:px,y:437,fill:'#8c9eaf','font-size':10,'text-anchor':'middle'},q));const[,py]=qp(0,q);$('fft-axes').append(el('text',{x:-7,y:py+3,fill:'#8c9eaf','font-size':10,'text-anchor':'end'},q))}const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off'&&!(result.beta_omega&&overlay==='beta_omega'))for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const manual=(p.manual_observed_spots||[]).some(m=>Math.hypot(m[0]-q[0],m[1]-q[1])<1e-8);const attrs={stroke:manual?'#ff8ac3':'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id,'data-manual-peak':manual?'true':'false'};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`${manual?'Manual observation · ':''}Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} ${reciprocalUnit()}`));$('fft-overlay').append(shape);const label=peakNumberLabel(x,y,p.profile_id);if(label)$('fft-overlay').append(label)}}const fits=[];
-for(const model of overlayModels(result,overlay))fits.push({model,color:phaseColors[model.phase],geometry:false});
-if(overlay==='geometry')fits.push(...geometryFits(result));
-if(overlay==='custom'){
- for(const key of chosenFits){if(key.startsWith('phase-')){const m=result.models[Number(key.slice(6))];if(m)fits.push({model:m,color:phaseColors[m.phase],geometry:false})}else{const fit=geometryFits(result).find(f=>f.key===key);if(fit)fits.push(fit)}}
-}
-const shownWeak=new Set();
+function drawFitPredictions(fits,qp){
+const shownWeak=new Set(),positions=new Map();
 for(const f of fits){
  const matched=new Set(f.model.matches.map(m=>m.node_index));
  for(const [nodeIndex,node] of f.model.predicted_nodes.entries()){
@@ -886,9 +1071,20 @@ for(const f of fits){
    if(weak)attrs['stroke-dasharray']='5 3';else if(!f.model.valid)attrs['stroke-dasharray']='2 2';else if(!supported)attrs['stroke-dasharray']='1 3';
    if(evidence?.status==='unassessable')attrs.opacity=.35;
    const styleId=f.geometry?(f.model===result.periodicity.primary_lattice?'primary-geometry-marker':'secondary-geometry-marker'):(f.model.phase.toLowerCase()+'-marker');
-   const shape=markerShape(x,y,$(styleId).value,{...attrs,'data-marker-kind':'prediction','data-marker-phase':f.geometry?'geometry':f.model.phase,'data-legend-label':f.geometry?f.name:f.model.phase+' prediction'},7);
+   const shapeMode=$(styleId).value;
    const evidenceText=supported?'matched original detected profile':weak?`weak local maximum ${evidence.weak_id}, local contrast ${evidence.local_contrast.toFixed(1)}, offset ${evidence.offset_nm_inv.toFixed(3)} nm⁻¹`:evidence?.status==='unassessable'?'not reliably assessable':'no strong or qualifying weak maximum assigned';
-   if(shape){shape.append(el('title',{},f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.model.phase} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${evidenceText}`));$('fft-overlay').append(shape)}
+   if(shapeMode!=='off'){
+    const title=f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.name} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${evidenceText}`;
+    const entry={shapeMode,title,attrs:{...attrs,'data-marker-kind':'prediction','data-marker-phase':f.geometry?'geometry':f.model.phase,'data-marker-shape':shapeMode,'data-legend-label':f.geometry?f.name:f.name+' prediction','data-legend-color-target':f.colorTarget||''}};
+    if(f.geometry){const shape=markerShape(x,y,shapeMode,entry.attrs,7);shape.append(el('title',{},title));$('fft-overlay').append(shape)}
+    else{
+     const match=f.model.matches.find(m=>m.node_index===nodeIndex),q=node.q.map(v=>v*sign);
+     const polarity=match&&q[0]*match.observed_q[0]+q[1]*match.observed_q[1]>=0?1:-1;
+     const key=match?'profile:'+match.profile_id+':'+polarity:'position:'+q.map(v=>Math.round(v*1e7)).join(',');
+     if(!positions.has(key))positions.set(key,{x:0,y:0,entries:[]});
+     const point=positions.get(key);point.x+=x;point.y+=y;point.entries.push(entry);
+    }
+   }
    if(weak){
     const observations=evidence.observed_spots?(sign===1?evidence.observed_spots:[]):[[sign*evidence.observed_q[0],sign*evidence.observed_q[1]]];
     for(const q of observations){
@@ -900,31 +1096,54 @@ for(const f of fits){
   }
  }
 }
+ for(const {x,y,entries}of positions.values()){
+  const px=x/entries.length,py=y/entries.length;
+  if(entries.length>1){
+   const symbol=sharedPredictionSymbols(px,py,entries,7);
+   symbol.append(el('title',{},'Shared assigned spot or prediction: '+entries.map(e=>e.title).join(' / ')+'. Symbol centred on the mean fitted position; numerical fits are unchanged.'));
+   $('fft-overlay').append(symbol);
+  }else{const entry=entries[0],shape=markerShape(px,py,entry.shapeMode,entry.attrs,7);shape.append(el('title',{},entry.title));$('fft-overlay').append(shape)}
+ }
+}
+function drawFFT(){
+ if(!peakEditing())hideSpectrumHover();
+ if(!result||!fftRaw)return;
+ $('fft-image').setAttribute('href',colourSpectrum(showDetectorSignal&&detectorRaw?detectorRaw:fftRaw,result.image_kind));$('contrast-value').textContent=$('contrast').value+'%';
+ const ex=result.spectrum.extent;const qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];$('fft-overlay').replaceChildren();drawSpectrumAxes(ex,qp);drawFittingBand(qp);const overlay=$('overlay').value;const marker=$('peak-marker').value;if(marker!=='off'&&!betaOmegaOverlayActive(result))for(const p of result.spectrum.peaks){for(const q of (p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])){const[x,y]=qp(q[0],q[1]);const manual=(p.manual_observed_spots||[]).some(m=>Math.hypot(m[0]-q[0],m[1]-q[1])<1e-8);const attrs={stroke:manual?'#ff8ac3':'#ffffff','stroke-width':1,fill:'none','data-measured-profile':p.profile_id,'data-manual-peak':manual?'true':'false'};const shape=peakMarker(x,y,marker,attrs);shape.append(el('title',{},`${manual?'Manual observation · ':''}Measured profile ${p.profile_id} · g ${p.g_nm_inv.toFixed(3)} ${reciprocalUnit()}`));$('fft-overlay').append(shape);const label=peakNumberLabel(x,y,p.profile_id);if(label)$('fft-overlay').append(label)}}const fits=[];
+for(const model of overlayModels(result,overlay))fits.push({model,...independentFitStyle(model),geometry:false});
+if(overlay==='geometry')fits.push(...geometryFits(result));
+if(overlay==='custom'){
+ for(const key of chosenFits){if(key.startsWith('phase-')){const m=result.models[Number(key.slice(6))];if(m)fits.push({model:m,...independentFitStyle(m),geometry:false})}else{const fit=geometryFits(result).find(f=>f.key===key);if(fit)fits.push(fit)}}
+}
+ drawFitPredictions(fits,qp);
  drawBetaOmega(result,qp);
  drawForbiddenReflections(fits,qp);
+ drawDoubleDiffraction(fits,qp);
  drawReflectionVectors(qp);
  if(result.image_kind==='diffraction')drawDetectorExclusions(qp);
- renderSpectrumLegend();syncFFTZoom();drawSnapOverlays();
- if(!$('spectrum-hover').hidden)showSpectrumHover();
+ syncSpectrumOverlays();
 }
 // Read the rendered overlays so hidden marker types and unused evidence styles
 // never acquire legend entries. Swatches stay still for easy comparison.
 function renderSpectrumLegend(){
  const host=$('fft-legend'),overlay=$('fft-overlay');host.replaceChildren();
  const identities=new Map(),styles=new Map();
- const add=(map,key,label,shape,attrs={},help='')=>{if(!map.has(key))map.set(key,{label,shape,attrs,help})};
+ const add=(map,key,label,shape,attrs={},help='',colorTarget='')=>{if(!map.has(key))map.set(key,{label,shape,attrs,help,colorTarget})};
  for(const node of overlay.querySelectorAll('[data-marker-kind]')){
   const kind=node.getAttribute('data-marker-kind'),shape=kind==='weak'&&Number(node.getAttribute('data-marker-radius'))<2?'dot':node.getAttribute('data-marker-shape');
   const stroke=node.getAttribute('stroke'),dash=node.getAttribute('stroke-dasharray');
   if(kind==='prediction'){
    const label=node.getAttribute('data-legend-label');
-   add(identities,label,label,shape,{stroke});
+   const phase=node.getAttribute('data-marker-phase'),colorTarget=node.getAttribute('data-legend-color-target')||(PHASES.includes(phase)?'phase:'+phase:'');
+   add(identities,label,label,shape,{stroke},'',colorTarget);
    const geometry=node.getAttribute('data-marker-phase')==='geometry';
    const labelStyle=node.getAttribute('data-parent-linked')==='true'?(dash?'No assigned peak':'Assigned profile'):dash==='5 3'?'Weak match':dash==='2 2'?'Below screen':dash==='1 3'?'No assigned peak':geometry?'Passing geometry':'Strong match · passing fit';
    add(styles,labelStyle,labelStyle,'line',{'stroke-dasharray':dash||''},dash==='5 3'?'A weak maximum is assigned. Long dashes take precedence whether the candidate passes or fails the screen.':dash==='1 3'?'Passing candidate, but no strong or qualifying weak peak is assigned at this position.':geometry?'Geometry-only fit; no crystal phase is assigned.':'');
    if(node.getAttribute('opacity')==='.35'||Number(node.getAttribute('opacity'))===.35)add(styles,'unchecked','Not assessable','line',{opacity:.35},'Faint predictions cannot be checked reliably; they are not evidence of a missing reflection.');
   }else if(kind==='assignment'){
    const label=node.getAttribute('data-legend-label');add(identities,label,label,shape,{stroke,fill:node.getAttribute('fill'),'stroke-dasharray':dash||''},'Numbers identify measured profiles in the assignment table. Shared observations do not identify a unique component.');
+  }else if(kind==='double-diffraction'){
+   add(identities,'double-diffraction','DD candidate',shape,{stroke:'#ffffff','stroke-dasharray':dash||''},'Double-diffraction candidate: observed peak reached by two allowed, observed reflections. Image markers retain phase/variant colours. Candidate geometry only; not used in fit ranking.');
   }else if(kind==='forbidden'){
    add(identities,'forbidden','Near forbidden position','triangle',{stroke},'Measured profile near a nominal absence of a displayed fit. Diagnostic only; not used in rank or phase acceptance.');
   }else{
@@ -933,53 +1152,125 @@ function renderSpectrumLegend(){
    add(identities,label,label,shape,{stroke,fill:node.getAttribute('fill')||'none','stroke-dasharray':dash||''},kind==='weak'?'Additional local maximum checked for a displayed fit; excluded from the initial strong-profile screen.':manual?'Manually added observation.':'Original detected observation. Opposite spots count as one profile.');
   }
  }
- for(const phase of new Set([...overlay.querySelectorAll('[data-reflection-vector]')].map(n=>n.getAttribute('data-reflection-vector')))){
-  add(identities,'vector-'+phase,phase+' vectors','arrow',{stroke:phaseColors[phase]},'Reciprocal vectors: g in nm⁻¹ and d = 1/g in nm. These are not real-space unit-cell edges.');
+ const shared=overlay.querySelector('[data-shared-prediction]');
+ if(shared)add(styles,'shared','Shared prediction','shared',{},'Concentric shapes identify visible phases predicting the same position. Split colours identify variants within one phase. Shared spots do not establish a unique phase or variant.');
+ for(const node of overlay.querySelectorAll('[data-reflection-vector]')){
+  const phase=node.getAttribute('data-reflection-vector'),name=node.getAttribute('data-vector-name')||phase;
+  add(identities,'vector-'+name,name+' vectors','arrow',{stroke:node.getAttribute('data-vector-colour')||phaseColors[phase]},'Reciprocal vectors: g in nm⁻¹ and d = 1/g in nm. These are not real-space unit-cell edges.');
  }
  if(overlay.querySelector('[data-vector-leader]'))add(styles,'leader','Label connector','line',{'stroke-dasharray':'2 2',opacity:.7},'Connects a displaced label to its vector endpoint.');
  if(overlay.querySelector('[data-fitting-band]'))add(styles,'band','Fitting limits','circle',{stroke:'#b3c2d0','stroke-dasharray':'3 3'},'Inner circle: central exclusion. Outer circle: fitting limit. Shaded areas are excluded.');
  if(overlay.querySelector('[data-exclusion-mask]'))add(styles,'mask','Excluded area','square',{stroke:'#f4b75e',fill:'#f4b75e','fill-opacity':.12},'User-defined exclusion rectangle.');
- const heading=document.createElement('strong');heading.textContent='Overlay key';host.append(heading);
+ const heading=document.createElement('strong');heading.textContent='Overlay key'+([...identities.values()].some(e=>e.colorTarget)?' · click a swatch to edit colour':'');host.append(heading);
  for(const entries of [identities,styles]){
   if(!entries.size)continue;
   const row=document.createElement('div');row.className='spectrum-legend-row';
-  for(const {label,shape,attrs,help} of entries.values()){
+  for(const {label,shape,attrs,help,colorTarget} of entries.values()){
    const item=document.createElement('span');item.className='spectrum-legend-item';if(help)item.title=help;
    const swatch=el('svg',{viewBox:'0 0 28 24',width:28,height:24,'aria-hidden':'true'});
    const base={stroke:'#dce6ef','stroke-width':1.5,fill:'none',...attrs};
    let mark;
-   if(shape==='line'||shape==='arrow')mark=el('path',{...base,d:shape==='arrow'?'M3 19L24 5M16 5H24V13':'M2 12H26'});
+   if(shape==='shared'){
+    const segments=[...shared.querySelectorAll('[data-marker-kind="prediction"]')].map(n=>({shapeMode:n.getAttribute('data-marker-shape'),attrs:{stroke:n.getAttribute('stroke'),'data-marker-phase':n.getAttribute('data-marker-phase')}}));
+    mark=sharedPredictionSymbols(14,12,segments,4.5,4,false);
+   }else if(shape==='line'||shape==='arrow')mark=el('path',{...base,d:shape==='arrow'?'M3 19L24 5M16 5H24V13':'M2 12H26'});
    else {mark=markerShape(14,12,shape==='dot'?'circle':shape,base,shape==='dot'?2:7);mark.removeAttribute('class')}
-   swatch.append(mark);item.append(swatch,document.createTextNode(label));row.append(item);
+   swatch.append(mark);
+   if(colorTarget){
+    const editor=document.createElement('label');editor.className='spectrum-colour-swatch';
+    const input=document.createElement('input');input.type='color';input.value=attrs.stroke;input.dataset.legendColorTarget=colorTarget;
+    const name=colorTarget==='phase:OMEGA'?'ω phase (all variants)':label.replace(/^DD candidate · /,'');
+    input.setAttribute('aria-label',`Colour for ${name}`);editor.title=`Edit ${name} colour`;
+    editor.append(swatch,input);item.append(editor);
+   }else item.append(swatch);
+   item.append(document.createTextNode(label));row.append(item);
   }
   host.append(row);
  }
- host.hidden=!identities.size&&!styles.size;
+ host.hidden=!spectrumOverlaysVisible()||(!identities.size&&!styles.size);
  syncSpectrumLegendZoom();
 }
 function syncSpectrumLegendZoom(){
  const source=$('fft-legend'),target=$('fft-zoom-legend');
  target.hidden=source.hidden;target.replaceChildren(...[...source.childNodes].map(n=>n.cloneNode(true)));
 }
-function renderFitChoices(data){
- chosenFits=new Set();$('fit-list').replaceChildren();
+function editLegendColor(event){
+ const target=event.target.dataset.legendColorTarget,color=event.target.value;
+ if(!target||!isHexColor(color))return;
+ const [kind,...parts]=target.split(':'),id=parts.join(':');
+ if(kind==='variant'&&Object.hasOwn(omegaVariantColors,id)){
+  omegaVariantColors[id]=color;writePreference('tem-omega-variant-colors',omegaVariantColors);
+  refreshBetaOmegaDisplay();drawFFT();
+ }else if(kind==='orientation'&&orientationColorKey(id)){
+  fitVariantColors[id]=color;writePreference('tem-fit-variant-colors',fitVariantColors);
+  refreshBetaOmegaDisplay();drawFFT();
+ }else if(kind==='phase'&&PHASES.includes(id)){
+  phaseColorChoices[id]=color;syncCustomPhaseColor(id);
+  $(id.toLowerCase()+'-color').value=enabledPhases.includes(id)?color:'disabled';
+  writePreference('tem-phase-colors',phaseColorChoices);applyPhaseColors();
+ }
+}
+function renderFitChoices(data,preserve=false){
+ const components=combinedFitComponents(data),independent=data.models.map((m,i)=>({m,key:'phase-'+i}));
+ const componentEntries=components.map(c=>independent.find(({m})=>m.phase===c.phase&&JSON.stringify(m.predicted_nodes)===JSON.stringify(c.predicted_nodes))).filter(Boolean);
+ const componentKeys=new Set(data.classification?.combined_fit?componentEntries.map(({key})=>key):[]);
+ if(!preserve){
+  chosenFits=new Set(betaOmegaOverlayActive(data)?(data.beta_omega?.components||[]).filter(c=>c.active&&($('overlay').value==='passing'||!betaOmegaHidden.has(c.id))).map(c=>'linked-'+c.id):[]);
+  if(['winner','winner_any'].includes($('overlay').value)&&combinedFitSelected(data))for(const key of componentKeys)chosenFits.add(key);
+  if($('overlay').value==='passing'){
+   for(const {m,key}of independent)if(enabledPhases.includes(m.phase)&&(m.valid||(data.classification?.combined_fit?.valid&&componentKeys.has(key))))chosenFits.add(key);
+  }
+ }
+ $('fit-list').replaceChildren();
  const table=document.createElement('table');table.className='model-table fit-table';
+ table.classList.toggle('linked-only',Boolean(data.beta_omega?.combined&&!data.models.length&&!geometryFits(data).length));
  const head=document.createElement('thead'),body=document.createElement('tbody');
- renderFitHeader(head,true);table.append(head,body);$('fit-list').append(table);
- const add=(key,m,name,geometry=false,target=body)=>{
-  const row=document.createElement('tr'),toggle=document.createElement('td'),box=document.createElement('input');
-  toggle.className='col-show';toggle.dataset.column='show';
-  box.type='checkbox';box.dataset.fit=key;box.setAttribute('aria-label','Overlay '+name);
-  box.addEventListener('change',()=>{box.checked?chosenFits.add(key):chosenFits.delete(key);$('overlay').value='custom';drawFFT()});
-  toggle.append(box);row.append(toggle);
-  appendFitCells(row,m,{name,geometry,rotation:!geometry});target.append(row);
+ renderFitHeader(head,true,data.spectrum.coordinate_units==='relative');table.append(head,body);$('fit-list').append(table);
+ const change=()=>{$('overlay').value='custom';renderFitChoices(data,true);drawFFT()};
+ const toggle=(row,key,name,keys=[key],disabled=false)=>{
+  const cell=document.createElement('td'),box=document.createElement('input');
+  cell.className='col-show';cell.dataset.column='show';box.type='checkbox';box.dataset.fit=key;box.setAttribute('aria-label','Overlay '+name);
+  box.disabled=disabled;box.checked=keys.length>0&&keys.every(k=>chosenFits.has(k));box.indeterminate=!box.checked&&keys.some(k=>chosenFits.has(k));
+  box.addEventListener('change',()=>{for(const k of keys){box.checked?chosenFits.add(k):chosenFits.delete(k);if(k.startsWith('linked-'))box.checked?betaOmegaHidden.delete(k.slice(7)):betaOmegaHidden.add(k.slice(7))}change()});
+  cell.append(box);row.append(cell);
  };
- data.models.map((m,i)=>({m,i})).sort((a,b)=>compareRank(a.m,b.m)).forEach(({m,i})=>add('phase-'+i,m,`${m.phase} ${zoneLabel(m)}`));
+ const add=(key,m,name,{geometry=false,group=null,target=body}={})=>{
+  const row=document.createElement('tr');
+  if(group){row.className='fit-component';row.dataset.fitGroup=group;}
+  const style=geometry?null:independentFitStyle(m,data);if(style)name=style.name+' '+zoneLabel(m);
+  toggle(row,key,name);appendFitCells(row,m,{name,geometry,rotation:!geometry});
+  if(style)[...row.children].find(c=>c.dataset.column==='candidate').style.color=style.color;
+  if(group){const cell=[...row.children].find(c=>c.dataset.column==='candidate');cell.title='Component of the combined fit above. Independently fitted orientation; the displayed rank and screen apply to this component alone.';}
+  target.append(row);
+ };
+ // Sort top-level candidates by the same rank as the results table, keeping
+ // each combination's components together rather than sorting them separately.
+ const entries=independent.filter(({key})=>!componentKeys.has(key));
+ if(data.classification?.combined_fit)entries.push({kind:'independent',m:data.classification.combined_fit});
+ if(data.beta_omega?.combined)entries.push({kind:'related',m:data.beta_omega.fit||data.beta_omega.combined});
+ entries.sort((a,b)=>compareRank(a.m,b.m));
+ for(const entry of entries){
+  if(!entry.kind){add(entry.key,entry.m,`${entry.m.phase} ${zoneLabel(entry.m)}`);continue;}
+  const row=document.createElement('tr');row.className='fit-combination';row.dataset.fitGroup=entry.kind;
+  if(entry.kind==='related'){
+   const model=data.beta_omega,active=betaOmegaComponents(model).filter(c=>c.active);
+   toggle(row,'related-combined',betaOmegaCombinedLabel(model),active.map(c=>'linked-'+c.id));
+   appendBetaOmegaFitCells(row,model);body.append(row);
+   for(const component of active){
+    const child=document.createElement('tr');child.className='fit-component';child.dataset.fitGroup='related';
+    toggle(child,'linked-'+component.id,betaOmegaLabel(component.id,model));appendBetaOmegaFitCells(child,model,component);body.append(child);
+   }
+  }else{
+   toggle(row,'independent-combined',candidateName(entry.m),[...componentKeys],componentKeys.size!==components.length);
+   appendFitCells(row,entry.m,{name:candidateName(entry.m)});body.append(row);
+   componentEntries.sort((a,b)=>compareRank(a.m,b.m)).forEach(({key,m})=>add(key,m,`${m.phase} ${zoneLabel(m)}`,{group:'independent'}));
+  }
+ }
  const geometryEntries=geometryFits(data);
  if(geometryEntries.length){
   const geometryBody=document.createElement('tbody'),heading=document.createElement('tr'),cell=document.createElement('td');
   heading.className='fit-section';cell.colSpan=FIT_COLUMNS.length+1;cell.textContent='Geometry-only checks · separate score';heading.append(cell);geometryBody.append(heading);table.append(geometryBody);
-  geometryEntries.sort((a,b)=>compareRank(a.model,b.model)).forEach(({key,name,model})=>add(key,model,name,true,geometryBody));
+  geometryEntries.sort((a,b)=>compareRank(a.model,b.model)).forEach(({key,name,model})=>add(key,model,name,{geometry:true,target:geometryBody}));
  }
  if(!body.children.length&&!geometryEntries.length)$('fit-list').textContent='No retained candidate fits in this region.';
 }
@@ -999,13 +1290,19 @@ function syncSignalToggle(){
  $('show-detector-signal').setAttribute('aria-pressed',String(active));
  $('show-detector-signal').disabled=!detectorRaw;
  $('spectrum-title').textContent=active?'Processed':direct?'Diffraction space':'FFT space';
- $('fft-zoom-title').textContent=(direct?(active?'Processed diffraction':'Diffraction space'):active?'Processed FFT detector signal':'FFT space')+' · '+reciprocalUnit();
+ $('fft-zoom-title').textContent=direct?(active?'Processed diffraction':'Diffraction space'):active?'Processed FFT detector signal':'FFT space';
  $('fft-curve').disabled=active||!config?.fft_log16;
  $('fft-curve').querySelector('option[value="log"]').textContent=active?(direct?'Processed intensity':'Detector response'):direct?'Log intensity':'Log power';
  $('fft-curve').querySelector('option[value="linear"]').textContent=active?(direct?'Processed intensity':'Detector response'):direct?'Linear intensity':'Linear amplitude';
 }
 for(const [id,active]of [['show-original-fft',false],['show-detector-signal',true]])$(id).onclick=()=>{
  showDetectorSignal=active;syncSignalToggle();drawFFT();
+};
+$('show-spectrum-overlays').setAttribute('aria-pressed',String(readPreference('tem-spectrum-overlays',true)!==false));
+$('show-spectrum-overlays').onclick=()=>{
+ const visible=!spectrumOverlaysVisible();
+ $('show-spectrum-overlays').setAttribute('aria-pressed',String(visible));
+ writePreference('tem-spectrum-overlays',visible);syncSpectrumOverlays();
 };
 function rememberFFTDisplay(){writePreference('tem-fft-display',{curve:$('fft-curve').value,background:Number($('contrast').value),white:Number($('fft-white').value)})}
 function autoFFTContrast(){const linear=$('fft-curve').value==='linear'&&!(showDetectorSignal&&detectorRaw);$('contrast').value=linear?30:60;$('fft-white').value=linear?99.9:99.8;rememberFFTDisplay();drawFFT()}
@@ -1019,7 +1316,8 @@ const savedPhaseColors=readPreference('tem-phase-colors',{});
 for(const phase of PHASES){
  const field=$(phase.toLowerCase()+'-color');field.append(new Option('Disabled','disabled'));
  for(const [value,[name]]of Object.entries(PHASE_COLOR_OPTIONS))field.append(new Option(name,value));
- phaseColorChoices[phase]=Object.hasOwn(PHASE_COLOR_OPTIONS,savedPhaseColors?.[phase])?savedPhaseColors[phase]:PHASE_DEFAULT_COLORS[phase];
+ phaseColorChoices[phase]=isPhaseColor(savedPhaseColors?.[phase])?savedPhaseColors[phase]:PHASE_DEFAULT_COLORS[phase];
+ syncCustomPhaseColor(phase);
  field.value=phaseColorChoices[phase];
  field.onchange=()=>{
   const previous=[...enabledPhases];
@@ -1032,6 +1330,8 @@ for(const phase of PHASES){
 setPhaseSelection(enabledPhases);
 $('reset-phase-colors').onclick=()=>{
  const previous=[...enabledPhases];Object.assign(phaseColorChoices,PHASE_DEFAULT_COLORS);
+ for(const key of Object.keys(fitVariantColors))delete fitVariantColors[key];writePreference('tem-fit-variant-colors',fitVariantColors);
+ Object.assign(omegaVariantColors,OMEGA_VARIANT_COLORS);writePreference('tem-omega-variant-colors',omegaVariantColors);
  setPhaseSelection(config?.phase_selection?materialPhases():PHASES);finishPhaseChange(previous);
 };
 $('show-peak-numbers').checked=readPreference('tem-peak-numbers',false)===true;
@@ -1039,14 +1339,30 @@ $('show-peak-numbers').onchange=()=>{writePreference('tem-peak-numbers',$('show-
 $('show-forbidden').checked=readPreference('tem-show-forbidden',true)!==false;
 $('show-forbidden').onchange=()=>{writePreference('tem-show-forbidden',$('show-forbidden').checked);drawFFT()};
 const savedMarkerStyles=readPreference('tem-marker-styles',{});
-for(const [id,fallback]of Object.entries({'hcp-marker':'diamond','bcc-marker':'diamond','fcc-marker':'diamond','ort-marker':'diamond','omega-marker':'diamond','primary-geometry-marker':'square','secondary-geometry-marker':'square','weak-marker':'dot'})){
+const savedVariantColors=readPreference('tem-omega-variant-colors',{});
+for(const [key,color]of Object.entries(readPreference('tem-fit-variant-colors',{})))if(orientationColorKey(key)&&isHexColor(color))fitVariantColors[key]=color;
+for(const id of Object.keys(omegaVariantColors))if(isHexColor(savedVariantColors?.[id]))omegaVariantColors[id]=savedVariantColors[id];
+$('omega-color-by').value=savedMarkerStyles?.['omega-color-by']==='phase'?'phase':'variant';
+$('omega-color-by').onchange=()=>{rememberMarkerStyles();refreshBetaOmegaDisplay();drawFFT()};
+for(const id of ['fft-legend','fft-zoom-legend'])$(id).addEventListener('change',editLegendColor);
+for(const [id,fallback]of Object.entries({'hcp-marker':'diamond','bcc-marker':'diamond','fcc-marker':'diamond','ort-marker':'diamond','omega-marker':'diamond','double-diffraction-marker':'circle','primary-geometry-marker':'square','secondary-geometry-marker':'square','weak-marker':'dot'})){
  const choices=id==='weak-marker'?[...MARKER_SHAPES,'follow','dot']:MARKER_SHAPES;
  $(id).value=choices.includes(savedMarkerStyles?.[id])?savedMarkerStyles[id]:fallback;
  $(id).onchange=()=>{rememberMarkerStyles();drawFFT()};
 }
 $('marker-motion').value=['off','pulse','bounce','wobble','rotate'].includes(savedMarkerStyles?.motion)?savedMarkerStyles.motion:savedMarkerStyles?.pulse===true?'bounce':savedMarkerStyles?.pulse===false?'off':'rotate';applyMarkerAnimation();
 $('marker-motion').onchange=()=>{rememberMarkerStyles();applyMarkerAnimation()};
-$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT();if(isDiffraction())drawDetector()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{if($('overlay').value==='custom')$('fit-controls').open=true;drawFFT()};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
+$('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onchange=()=>{writePreference('tem-peak-marker',$('peak-marker').value);drawFFT();if(isDiffraction())drawDetector()};const savedMarker=readPreference('tem-peak-marker',null);if(MARKER_SHAPES.includes(savedMarker))$('peak-marker').value=savedMarker;$('overlay').onchange=()=>{
+ if($('overlay').value==='custom')$('fit-controls').open=true;
+ if(['winner','winner_any','related','passing'].includes($('overlay').value)){
+  const vectors=$('reflection-vectors'),mode=$('overlay').value,automatic=vectors.value.match(/^(fitted_|planes_)?(winner|winner_any|related)$/);
+  if(automatic&&(mode==='related'||automatic[2]==='related')){
+   vectors.value=(automatic[1]||'')+mode;writePreference('tem-reflection-vectors',vectors.value);
+  }
+  betaOmegaHidden.clear();if(result)renderFitChoices(result);
+ }
+ drawFFT();
+};$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);syncIntensityKey();drawFFT()};
 const oldPalette=readPreference('tem-palette',null),savedPalette=({ice:'viridis',violet:'plasma',green:'viridis'})[oldPalette]||oldPalette;if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;syncIntensityKey();
 const BATCH_PNG_VIEWS={standard:[['classification','Classification + zone labels']],overlap:[['support_all','Passing frequency · all phases'],['support_phases','Passing frequency · each phase'],['hex','Top match · averaged hex grid'],['hex_support','Passing support · hex grid'],['spread_phases','Placement disagreement · each phase'],['samples','Sample coverage'],['separate','Separate-pattern frequency'],['raw','Raw centres · classification circles']]};
 let batchPngSelections=readPreference('tem-batch-png-views',{});
@@ -1228,7 +1544,7 @@ function renderZoneBreakdown(phase,totalArea,open){
  const details=document.createElement('details'),summary=document.createElement('summary');
  details.className='zone-breakdown';details.dataset.phase=phase;details.open=open;
  const passing=entries.reduce((sum,e)=>sum+e.passing,0);
- summary.textContent=`${phase} zone axes · ${passing} passing fits`;summary.style.color=phaseColors[phase];details.append(summary);
+ summary.textContent=`${phaseLabel(phase)} zone axes · ${passing} passing fits`;summary.style.color=phaseColors[phase];details.append(summary);
  const note=document.createElement('p');note.className='hint';
  note.textContent='Passing best fits for this structure in current map regions only. Regions may appear in more than one structure list; image area here is not a phase fraction.';
  details.append(note);
@@ -1297,13 +1613,13 @@ function renderZoneLegend(found){
  const legend=$('zone-legend');legend.replaceChildren();legend.hidden=PHASES.every(phase=>!found[phase].size);
  if(legend.hidden)return;
  const hint=document.createElement('p');hint.className='hint';
- hint.textContent='Best candidates for '+analysisPhases(grid?.settings).join(', ')+' are stacked by rank, highest at the top. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Legend counts and areas include passing fits only, largest area first.';
+ hint.textContent='Best candidates for '+analysisPhases(grid?.settings).map(phase=>phaseLabel(phase,grid?.settings?.material)).join(', ')+' are stacked by rank, highest at the top. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Legend counts and areas include passing fits only, largest area first.';
  if(grid?.grid.mode==='overlap')hint.textContent='Raw window centres show only the highest-ranked candidate. Faded symbols are below threshold. Counts include passing winners only; overlapping windows are not independent and counts are not image area.';
  legend.append(hint);
  for(const phase of PHASES){
   if(!found[phase].size)continue;
   const group=document.createElement('div');group.className='zone-legend-group';group.style.color=phaseColors[phase];
-  const title=document.createElement('strong');title.textContent=phase;group.append(title);
+  const title=document.createElement('strong');title.textContent=phaseLabel(phase);group.dataset.phase=phase;group.append(title);
   for(const [key,entry] of [...found[phase]].sort((a,b)=>b[1].area-a[1].area||b[1].count-a[1].count||a[0].localeCompare(b[0]))){
    const item=document.createElement('span');item.className='zone-key';
    const symbol=document.createElement('b');symbol.textContent=zoneSymbols[phase].get(key);
@@ -1324,7 +1640,7 @@ function renderOverlapSummary(container){
  if(!a)return;
  const table=document.createElement('table'),head=document.createElement('tr');
  for(const label of ['Phase','Mean local passing frequency','Candidate available']){const th=document.createElement('th');th.textContent=label;head.append(th)}table.append(head);
- for(const [phase,values]of Object.entries(a.phases)){const row=document.createElement('tr');for(const value of [phase,(100*values.mean_support).toFixed(1)+'%',(100*values.mean_fit_presence).toFixed(1)+'%']){const td=document.createElement('td');td.textContent=value;row.append(td)}row.firstChild.style.color=phaseColors[phase];table.append(row)}container.append(table);
+ for(const [phase,values]of Object.entries(a.phases)){const row=document.createElement('tr');for(const value of [phaseLabel(phase),(100*values.mean_support).toFixed(1)+'%',(100*values.mean_fit_presence).toFixed(1)+'%']){const td=document.createElement('td');td.textContent=value;row.append(td)}row.firstChild.style.color=phaseColors[phase];table.append(row)}container.append(table);
  const note=document.createElement('p');note.className='hint';note.textContent='Means cover sampled raster locations only. Placement disagreement is the range of per-pass passing frequencies; it is not an error bar. Blank areas were not sampled. A smooth map does not improve the resolution set by the window. Click or hover to inspect a contributing window. JSON includes all raw fits and aggregate fields.';container.append(note);
 }
 function drawOverlapMap(){
@@ -1334,13 +1650,13 @@ function drawOverlapMap(){
  const shown=phaseMaps();
  const select=$('map-phase'),phases=analysisPhases(grid.settings),previous=select.value;
  const view=$('map-view').value,hexView=['hex','hex_support'].includes(view),supportView=['support','hex_support'].includes(view),choices=supportView?['all',...phases]:phases;
- select.replaceChildren(...choices.map(phase=>{const o=document.createElement('option');o.value=phase;o.textContent=phase==='all'?`All phases (${phases.join(' + ')})`:phase;return o}));if(choices.includes(previous))select.value=previous;
+ select.replaceChildren(...choices.map(phase=>{const o=document.createElement('option');o.value=phase;o.textContent=phase==='all'?`All phases (${phases.map(p=>phaseLabel(p)).join(' + ')})`:phaseLabel(phase);return o}));if(choices.includes(previous))select.value=previous;
  const phase=select.value,a=grid.aggregation,opacity=Number($('grid-opacity').value)/100,combined=supportView&&phase==='all';
  $('map-view').querySelector('option[value=spread]').disabled=grid.grid.passes<2;
  if(view==='spread'&&grid.grid.passes<2){$('map-view').value='support';drawOverlapMap();return}
  $('map-phase-label').hidden=['raw','samples','separate','hex'].includes(view);
  const symbolStyle=$('map-symbol').value;$('map-symbol-label').hidden=Boolean(a)&&view!=='raw';
- $('overlap-key').textContent=view==='hex'?'Hex winner by averaged rank · faded = less passing support · click inspects a contributing FFT window':view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':combined?`${phases.join(' + ')} passing frequency · hue blends relative support · opacity = strongest passing frequency · not proof of coexisting structures · blank = unmeasured`:`${phase} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
+ $('overlap-key').textContent=view==='hex'?'Hex winner by averaged rank · faded = less passing support · click inspects a contributing FFT window':view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':combined?`${phases.map(p=>phaseLabel(p)).join(' + ')} passing frequency · hue blends relative support · opacity = strongest passing frequency · not proof of coexisting structures · blank = unmeasured`:`${phaseLabel(phase)} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
  if(!a&&view!=='raw')$('overlap-key').textContent+=' · showing raw centres until aggregation';
  if($('show-grid').checked){
   if(a&&hexView){
@@ -1365,13 +1681,13 @@ function drawOverlapMap(){
     if(combined){
      const blend=blendSupport(phases.map(p=>[phaseColors[p],cell.phases[p]?.support??0]));
      const node=el('rect',{x:cell.x*meta.width/a.width,y:cell.y*meta.height/a.height,width:meta.width/a.width,height:meta.height/a.height,fill:blend.colour,'fill-opacity':opacity*(.15+.85*blend.value),class:'grid-cell','data-id':cell.region_id,'data-support-index':cellIndex});
-     node.setAttribute('aria-label',phases.map(p=>`${p}: ${((cell.phases[p]?.support??0)*100).toFixed(1)}%`).join(' · ')+` passing; ${cell.samples} windows, ${cell.passes} passes`);group.append(node);
+     node.setAttribute('aria-label',phases.map(p=>`${phaseLabel(p)}: ${((cell.phases[p]?.support??0)*100).toFixed(1)}%`).join(' · ')+` passing; ${cell.samples} windows, ${cell.passes} passes`);group.append(node);
      continue;
     }
     const value=view==='separate'?cell.separate_support:view==='samples'?cell.samples/max:cell.phases[phase]?.[view==='spread'?'spread':'support']??0;
     const colour=view==='separate'?'#d692fa':view==='samples'?'#00d9e8':phaseColors[phase]||'#aaa';
     const node=el('rect',{x:cell.x*meta.width/a.width,y:cell.y*meta.height/a.height,width:meta.width/a.width+.2,height:meta.height/a.height+.2,fill:value>0?colour:'#596778','fill-opacity':opacity*(.15+.85*value),class:'grid-cell','data-id':cell.region_id});
-    node.setAttribute('aria-label',`${phase}: ${(100*value).toFixed(1)}%; ${cell.samples} windows, ${cell.passes} passes`);group.append(node);
+    node.setAttribute('aria-label',`${phaseLabel(phase)}: ${(100*value).toFixed(1)}%; ${cell.samples} windows, ${cell.passes} passes`);group.append(node);
    }
   }else{
    for(const r of grid.regions){
@@ -1429,7 +1745,7 @@ function drawGrid(){
   if(!r.leaf)continue;
   const e=el('rect',{x:r.roi.x,y:r.roi.y,width:r.roi.w,height:r.roi.h,fill:colors[r.label]||'#aaa',stroke:showGrid?(colors[r.label]||'#aaa'):'none',class:'grid-cell','data-id':r.id,'fill-opacity':showGrid?Number($('grid-opacity').value)/100:0});
   const descriptions=[labels[r.label]];
-  for(const phase of PHASES){const m=r.best_zones?.[phase];if(m)descriptions.push(`${phase} ${zoneLabel(m)} · ${m.valid?'passes screen':'below threshold'}`)}
+  for(const phase of PHASES){const m=r.best_zones?.[phase];if(m)descriptions.push(`${phaseLabel(phase)} ${zoneLabel(m)} · ${m.valid?'passes screen':'below threshold'}`)}
   e.setAttribute('role','img');e.setAttribute('aria-label',descriptions.join(' · '));group.append(e);
   const rankedZones=analysisPhases(grid.settings).map(phase=>({phase,model:r.best_zones?.[phase]}))
    .filter(entry=>entry.model).sort((a,b)=>compareRank(a.model,b.model));
@@ -1462,18 +1778,75 @@ const savedOpacity=readPreference('tem-grid-opacity',12);
 if(Number.isFinite(savedOpacity))$('grid-opacity').value=clamp(savedOpacity,0,100);
 updateGridOpacity();
 function isGridRunning(){return Boolean(jobId&&(!grid||grid.state==='running'))}
-function gridStatus(){
+function gridSessionKey(){return 'tem-grid-session:'+(config.state_namespace||config.data_root)}
+function rememberGrid(id){writePreference(gridSessionKey(),id)}
+function gridMatchesSource(job){
+ return Boolean(meta&&fileId===job.source.id&&['sha256_pixels','width','height','pixel_x_nm','pixel_y_nm'].every(key=>meta[key]===job.source[key]));
+}
+function restoreGridControls(job){
+ applyRegionSettings(job.settings);
+ const options=job.grid,overlap=options.mode==='overlap';
+ $('grid-mode').value=overlap?'overlap':'standard';
+ if(overlap){
+  for(const [id,key,fallback]of [['map-size-mode','size_mode','fixed_nm'],['map-spacing-mode','spacing_mode','fixed_nm'],['map-layout','layout','hex'],['map-passes','passes',1]])$(id).value=options[key]??fallback;
+  for(const [id,key]of [['map-window','window_nm'],['map-window-percent','window_percent'],['map-spacing','spacing_nm'],['map-spacing-percent','spacing_percent']])if(options[key]!=null)$(id).value=options[key];
+ }else{
+  $('grid-count').value=options.count;$('adaptive').checked=options.adaptive;$('grid-min').value=options.minimum_nm;$('check-passing').checked=options.check_passing;
+ }
+ $('grid-workers').value=job.execution.requested_workers??job.execution.workers;
+ if(!$('grid-workers').value)$('grid-workers').value=0;
+ rememberBasicControls();updateGridSizeNote();
+}
+async function openInitialImage(){
+ const latest=config.grid_job,remembered=readPreference(gridSessionKey(),null);
+ const recovery=latest&&(latest.state==='running'||latest.id===remembered)?latest:null;
+ const activeFile=recovery&&config.files.find(f=>f.id===recovery.source.id);
+ if(activeFile)clearFileSearch();
+ const lastImage=readPreference(lastImageKey(),null),initial=activeFile||projectFiles().find(f=>f.id===lastImage)||projectFiles().find(f=>f.id===config.default_file)||projectFiles()[0];
+ if(!recovery)rememberGrid(null);
+ if(initial){
+  $('file').value=initial.id;
+  const opening=openFile(),version=sourceRequest;
+  await opening;if(version!==sourceRequest)return;
+ }else message('Choose a data folder containing DigitalMicrograph DM3 or DM4 files.');
+ if(!recovery)return;
+ if(gridMatchesSource(recovery)){restoreGridControls(recovery);schedule(0)}
+ // Attach after opening the source: changing an already open source cancels its grid.
+ jobId=recovery.id;rememberGrid(jobId);
+ $('run-grid').disabled=true;$('cancel-grid').disabled=recovery.state!=='running';updatePenaltyControls();
+ $('grid-status').textContent='Reconnecting to grid…';
+ await poll(jobId);
+}
+function gridStatus(status=grid){
+ const grid=status;
  if(!grid)return;
  reportJobError('grid',grid.id,grid.error?'Grid stopped: '+grid.error:'');
  $('grid-status').textContent=`${grid.processed} regions analysed · ${grid.pending} pending · ${grid.cancelling?'stopping':grid.state}${grid.execution?` · ${grid.execution.workers} worker${grid.execution.workers===1?'':'s'} · ${grid.execution.elapsed_seconds.toFixed(1)} s${grid.execution.status?' · '+grid.execution.status:''}`:''}${grid.error?' — '+grid.error:''}`+(grid.rescore?` · reweighted in ${(grid.rescore.elapsed_ms/1000).toFixed(2)} s using cached fits`:'');
 }
+let gridPollTimer=null;
 async function poll(id){
+ if(id!==jobId)return;
+ clearTimeout(gridPollTimer);
  try{
   const status=await api('job?id='+encodeURIComponent(id));if(id!==jobId)return;
-  grid=status;drawGrid();gridStatus();
-  if(status.state==='running')setTimeout(()=>poll(id),600);
-  else{$('run-grid').disabled=isDiffraction();$('cancel-grid').disabled=true;updatePenaltyControls()}
- }catch(e){if(id===jobId){message(e.message,true);$('run-grid').disabled=isDiffraction();$('cancel-grid').disabled=true}}
+  const matchingSource=gridMatchesSource(status),running=status.state==='running';
+  grid=matchingSource?status:null;
+  if(!matchingSource&&!running){jobId=null;rememberGrid(null)}
+  drawGrid();gridStatus(status);
+  if(!matchingSource)$('grid-status').textContent+=' · Source image unavailable or changed; map hidden.';
+  $('run-grid').disabled=running||!meta||isDiffraction();$('cancel-grid').disabled=!running||status.cancelling;
+  if(running)gridPollTimer=setTimeout(()=>poll(id),600);
+  updatePenaltyControls();
+ }catch(e){if(id===jobId){
+  if(e.status===400||e.status===404){
+   jobId=null;grid=null;rememberGrid(null);drawGrid();
+   $('grid-status').textContent=e.message;$('run-grid').disabled=!meta||isDiffraction();$('cancel-grid').disabled=true;updatePenaltyControls();
+  }else{
+   $('grid-status').textContent='Grid status unavailable; reconnecting… '+e.message;
+   $('run-grid').disabled=true;$('cancel-grid').disabled=false;
+   gridPollTimer=setTimeout(()=>poll(id),2000);
+  }
+ }}
 }
 $('run-grid').onclick=async()=>{
  if(!meta||isDiffraction())return;
@@ -1484,15 +1857,15 @@ $('run-grid').onclick=async()=>{
   hideRegionPreview();$('run-grid').disabled=true;$('clear-grid').disabled=true;$('cancel-grid').disabled=true;
   const version=sourceRequest,expectedSettings=JSON.stringify(settings()),d=await api('grid',{...requestBody(),count:Number($('grid-count').value),adaptive:$('adaptive').checked,minimum_nm:Number($('grid-min').value),check_passing:$('adaptive').checked&&$('check-passing').checked,workers:Number($('grid-workers').value),overlap:overlapRequest()});
   if(version!==sourceRequest||JSON.stringify(settings())!==expectedSettings){await api('cancel',{job_id:d.id});$('run-grid').disabled=isDiffraction();updatePenaltyControls();return}
-  jobId=d.id;grid=null;drawGrid();$('cancel-grid').disabled=false;$('save-grid').disabled=true;
-  $('scale-penalty').disabled=true;$('scale-penalty-slider').disabled=true;$('peak-evidence-weight').disabled=true;$('peak-evidence-slider').disabled=true;poll(jobId);
+  jobId=d.id;rememberGrid(jobId);grid=null;drawGrid();$('cancel-grid').disabled=false;$('save-grid').disabled=true;
+  $('scale-penalty').disabled=true;$('scale-penalty-slider').disabled=true;$('peak-evidence-weight').disabled=true;$('peak-evidence-slider').disabled=true;$('missing-peak-weight').disabled=true;$('missing-peak-slider').disabled=true;poll(jobId);
  }catch(e){$('run-grid').disabled=isDiffraction();message(e.message,true);updatePenaltyControls()}
 };
 $('cancel-grid').onclick=async()=>{try{await api('cancel',{job_id:jobId});$('cancel-grid').disabled=true}catch(e){message(e.message,true)}};
 $('clear-grid').onclick=()=>{
  const id=jobId,running=isGridRunning();
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
- jobId=null;grid=null;drawGrid();
+ jobId=null;rememberGrid(null);grid=null;drawGrid();
  $('run-grid').disabled=isDiffraction();$('cancel-grid').disabled=true;
  $('grid-status').textContent='Grid cleared. Run grid to create a new map.';
  if(id&&running)api('cancel',{job_id:id}).catch(e=>message(e.message,true));
@@ -1558,23 +1931,31 @@ function updatePenaltyControls(){
  if(unknown||document.activeElement!==$('scale-penalty'))$('scale-penalty').value=effectiveScalePenalty().toFixed(2);$('scale-penalty-slider').value=effectiveScalePenalty();
  $('scale-penalty').disabled=disabled||unknown;$('scale-penalty-slider').disabled=disabled||unknown;
  if(unknown)$('scale-penalty').title='Disabled for Unknown material; HCP/ω c/a penalty remains separate.';
+ $('peak-falloff-label').textContent='Missing half-weight, '+reciprocalUnit();
  $('peak-falloff').disabled=!config?.peak_evidence_falloff||running;$('peak-falloff-slider').disabled=$('peak-falloff').disabled;
  $('peak-evidence-weight').disabled=!config?.peak_evidence||!config?.grid_rescore||running;$('peak-evidence-slider').disabled=$('peak-evidence-weight').disabled;
- const mismatch=Boolean(grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||(config?.peak_evidence&&peakEvidenceWeight!==grid.settings.peak_evidence_weight||(config?.peak_evidence_falloff&&peakFalloff!==(grid.settings.peak_evidence_half_weight_nm_inv??0)))));
+ $('missing-peak-weight').disabled=!config?.separate_peak_penalties||!config?.grid_rescore||running;$('missing-peak-slider').disabled=$('missing-peak-weight').disabled;
+ $('dd-weight').disabled=!config?.double_diffraction_scoring||running;$('dd-slider').disabled=$('dd-weight').disabled;
+ $('brightness-grouping-field').hidden=false;
+ $('brightness-grouping-weight').disabled=!(isDiffraction()?config?.brightness_grouping:config?.fft_brightness_grouping)||running;$('brightness-grouping-slider').disabled=$('brightness-grouping-weight').disabled;
+ const mismatch=Boolean(grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||(config?.peak_evidence&&peakEvidenceWeight!==grid.settings.peak_evidence_weight||(config?.separate_peak_penalties&&missingPeakWeight!==(grid.settings.missing_peak_weight??grid.settings.peak_evidence_weight))||(config?.fft_brightness_grouping&&brightnessGroupingWeight!==(grid.settings.brightness_grouping_weight??.1))||(config?.double_diffraction_scoring&&ddWeight!==(grid.settings.double_diffraction_weight??0))||(config?.peak_evidence_falloff&&peakFalloff!==(grid.settings.peak_evidence_half_weight_nm_inv??0)))));
  const updating=rescorePending||rescoreBusy;
  syncMapLoading();
  $('grid-map').classList.toggle('stale',updating||mismatch);
  $('save-grid').disabled=!grid||running||updating||mismatch||$('save-grid').dataset.exportState==='busy';syncMapExportControls();
  $('clear-grid').disabled=!grid&&!jobId;
  const note=$('penalty-note');
- note.textContent=unknown?'Unknown material: overall scale penalty is off. HCP/ω c/a and peak-evidence penalties still apply.':!config?.peak_evidence?'Restart TEM Workbench and reload to enable prediction-site evidence.':running?'Finish or cancel this grid to adjust ranking weights.':updating?'Updating the map from cached fits…':mismatch?'This map still shows its previous weights; adjust a control again to retry.':grid?'Updates labels, symbols and totals from cached fits. Existing cell boundaries stay fixed.':automatic?'Zero disables a weight. Scale cost favours smaller adjustments; peak evidence checks weak and missing spots.':'Fixed scale has no scale penalty. Peak-evidence weight adjusts weak and missing spot contributions; zero disables it.';
+ note.textContent=unknown?'Unknown material: overall scale penalty is off. HCP/ω c/a and peak-evidence penalties still apply.':!config?.peak_evidence?'Restart TEM Workbench and reload to enable prediction-site evidence.':running?'Finish or cancel this grid to adjust ranking weights.':updating?'Updating the map from cached fits…':mismatch?'This map still shows its previous weights; adjust a control again to retry.':grid?'Updates labels, symbols and totals from cached fits. Existing cell boundaries stay fixed.':automatic?'Zero disables a weight. Scale cost favours smaller adjustments; peak evidence checks weak and missing spots.':'Fixed scale has no scale penalty. Weak-peak bonus and missing-peak penalty are independent; zero disables only that term.';
 }
 function penaltyChanged(input){
  if(!input.value)return;
  const value=Number(input.value);
- const falloff=['peak-falloff','peak-falloff-slider'].includes(input.id);
- if(!Number.isFinite(value)||value<0||value>(falloff?30:.5)){message(falloff?'Use a half-weight radius from 0 to 30 nm⁻¹ (0 = off).':'Use a ranking weight from 0 to 0.5.',true);return}
+ const falloff=['peak-falloff','peak-falloff-slider'].includes(input.id),missing=['missing-peak-weight','missing-peak-slider'].includes(input.id),dd=['dd-weight','dd-slider'].includes(input.id);
+ if(!Number.isFinite(value)||value<0||value>(falloff?30:missing?2:dd?1:.5)){message(falloff?'Use a half-weight radius from 0 to 30 nm⁻¹ (0 = off).':missing?'Use a missing-peak penalty from 0 to 2.':dd?'Use a double-diffraction weight from 0 to 1.':'Use a ranking weight from 0 to 0.5.',true);return}
  if(falloff){peakFalloff=value;if(input.id==='peak-falloff-slider')$('peak-falloff').value=value;else $('peak-falloff-slider').value=value;writePreference('tem-peak-falloff',value)}
+ else if(dd){ddWeight=value;if(input.id==='dd-slider')$('dd-weight').value=value.toFixed(2);else $('dd-slider').value=value;writePreference('tem-dd-weight',value)}
+ else if(['brightness-grouping-weight','brightness-grouping-slider'].includes(input.id)){brightnessGroupingWeight=value;if(input.id==='brightness-grouping-slider')$('brightness-grouping-weight').value=value.toFixed(2);else $('brightness-grouping-slider').value=value;writePreference('tem-brightness-grouping-weight',value)}
+ else if(missing){missingPeakWeight=value;if(input.id==='missing-peak-slider')$('missing-peak-weight').value=value.toFixed(2);else $('missing-peak-slider').value=value;writePreference('tem-missing-peak-weight',value)}
  else if(['peak-evidence-weight','peak-evidence-slider'].includes(input.id)){peakEvidenceWeight=value;if(input.id==='peak-evidence-slider')$('peak-evidence-weight').value=value.toFixed(2);else $('peak-evidence-slider').value=value;writePreference('tem-peak-evidence-weight',value)}
  else if(['ca-penalty','ca-penalty-slider'].includes(input.id)){caPenalty=value;if(input.id==='ca-penalty-slider')$('ca-penalty').value=value.toFixed(2);else $('ca-penalty-slider').value=value;writePreference('tem-ca-penalty',value)}
  else{scalePenalty=value;if(input.id==='scale-penalty-slider')$('scale-penalty').value=value.toFixed(2);else $('scale-penalty-slider').value=value;writePreference('tem-scale-penalty',value)}
@@ -1585,10 +1966,10 @@ function penaltyChanged(input){
 }
 async function rescoreGrid(){
  if(rescoreBusy||!rescorePending)return;
- const id=jobId,version=rescoreRevision,strength=effectiveScalePenalty(),evidenceWeight=peakEvidenceWeight,caWeight=caPenalty,falloff=peakFalloff;
+ const id=jobId,version=rescoreRevision,strength=effectiveScalePenalty(),evidenceWeight=peakEvidenceWeight,missingWeight=missingPeakWeight,brightnessWeight=brightnessGroupingWeight,ddStrength=ddWeight,caWeight=caPenalty,falloff=peakFalloff;
  rescoreBusy=true;rescoreJobId=id;rescorePending=false;updatePenaltyControls();
  try{
-  const status=await api('rescore-grid',{job_id:id,scale_penalty_strength:strength,peak_evidence_weight:evidenceWeight,ca_penalty_strength:caWeight,peak_evidence_half_weight_nm_inv:falloff});
+  const status=await api('rescore-grid',{job_id:id,scale_penalty_strength:strength,peak_evidence_weight:evidenceWeight,...(config?.separate_peak_penalties?{missing_peak_weight:missingWeight}:{}),...(config?.fft_brightness_grouping?{brightness_grouping_weight:brightnessWeight}:{}),...(config?.double_diffraction_scoring?{double_diffraction_weight:ddStrength}:{}),ca_penalty_strength:caWeight,peak_evidence_half_weight_nm_inv:falloff});
   if(id===jobId&&version===rescoreRevision){grid=status;drawGrid();gridStatus()}
  }catch(e){if(id===jobId&&version===rescoreRevision)message(e.message,true)}
  finally{
@@ -1612,25 +1993,41 @@ const savedEvidenceWeight=readPreference('tem-peak-evidence-weight',.10);
 if(Number.isFinite(savedEvidenceWeight)&&savedEvidenceWeight>=0&&savedEvidenceWeight<=.5)peakEvidenceWeight=savedEvidenceWeight;
 $('peak-evidence-weight').value=peakEvidenceWeight;$('peak-evidence-slider').value=peakEvidenceWeight;
 $('peak-evidence-weight').onblur=()=>{$('peak-evidence-weight').value=peakEvidenceWeight};
-for(const id of ['scale-penalty','scale-penalty-slider','ca-penalty','ca-penalty-slider','peak-evidence-weight','peak-evidence-slider','peak-falloff','peak-falloff-slider'])$(id).oninput=()=>penaltyChanged($(id));
+const savedMissingWeight=readPreference('tem-missing-peak-weight',peakEvidenceWeight);
+missingPeakWeight=Number.isFinite(savedMissingWeight)&&savedMissingWeight>=0&&savedMissingWeight<=2?savedMissingWeight:peakEvidenceWeight;
+$('missing-peak-weight').value=missingPeakWeight;$('missing-peak-slider').value=missingPeakWeight;
+$('missing-peak-weight').onblur=()=>{$('missing-peak-weight').value=missingPeakWeight};
+const savedDDWeight=readPreference('tem-dd-weight',0);
+ddWeight=Number.isFinite(savedDDWeight)&&savedDDWeight>=0&&savedDDWeight<=1?savedDDWeight:0;
+$('dd-weight').value=ddWeight;$('dd-slider').value=ddWeight;$('dd-weight').onblur=()=>{$('dd-weight').value=ddWeight};
+const savedBrightnessWeight=readPreference('tem-brightness-grouping-weight',.10);
+brightnessGroupingWeight=Number.isFinite(savedBrightnessWeight)&&savedBrightnessWeight>=0&&savedBrightnessWeight<=.5?savedBrightnessWeight:.10;
+$('brightness-grouping-weight').value=brightnessGroupingWeight;$('brightness-grouping-slider').value=brightnessGroupingWeight;
+$('brightness-grouping-weight').onblur=()=>{$('brightness-grouping-weight').value=brightnessGroupingWeight};
+for(const id of ['scale-penalty','scale-penalty-slider','ca-penalty','ca-penalty-slider','peak-evidence-weight','peak-evidence-slider','missing-peak-weight','missing-peak-slider','brightness-grouping-weight','brightness-grouping-slider','dd-weight','dd-slider','peak-falloff','peak-falloff-slider'])$(id).oninput=()=>penaltyChanged($(id));
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=effectiveScalePenalty().toFixed(2)};
 const REFERENCE_CONTROLS={'hcp-a':'hcp_a','hcp-c':'hcp_c','bcc-a':'bcc_a','fcc-a':'fcc_a','ort-a':'ort_a','ort-b':'ort_b','ort-c':'ort_c','omega-a':'omega_a','omega-c':'omega_c'};
 let materialDefaultPreset=readPreference('tem-reference-preset','titanium');
 function materialView(){
- syncReferenceControls();
  const selected=$('material').value,preset=config?.material_presets?.[selected];
  if(preset){materialDefaultPreset=selected;writePreference('tem-reference-preset',selected)}
  const resetPreset=config?.material_presets?.[materialDefaultPreset]||config?.material_presets?.titanium;
  $('reset-material').disabled=!resetPreset;
  $('reset-material').title='Restore '+(resetPreset?.name||materialDefaultPreset)+' lattice constants';
- if(selected!=='unknown'&&preset&&Object.entries(REFERENCE_CONTROLS).some(([id,key])=>Math.abs(Number($(id).value)-preset.references[key])>1e-9))$('material').value='custom';
+ // Preserve older explicit phase choices by exposing them as a custom comparison.
+ if(selected!=='unknown'&&preset&&(Object.entries(REFERENCE_CONTROLS).some(([id,key])=>Math.abs(Number($(id).value)-preset.references[key])>1e-9)||enabledPhases.some(phase=>!materialAvailablePhases(selected).includes(phase))))$('material').value='custom';
+ syncReferenceControls();
+ syncPhaseControlLabels();
+ syncOverlayMenus();
+ $('phase-search-note').textContent=phaseSearchDescription();
  const note=config?.material_presets?.[$('material').value]?.note??'Custom reference cells. Changing the material or a reference recalculates this region; rerun any grid.';
  $('material-note').textContent=note+'\nCubic: a = b = c; HCP/ω: a = b, γ = 120°. Dimensions in nm.';
+ if(config)$('library-note').textContent=`Exploratory ${materialAvailablePhases().map(p=>phaseLabel(p)).join('/')} comparison from a finite library of ${config.template_count||46} zone-axis templates. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;
 }
 function invalidateAnalysisSettings(){
  if(!meta)return;
  if(isGridRunning())api('cancel',{job_id:jobId}).catch(e=>message(e.message,true));
- rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);jobId=null;grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=isDiffraction();$('cancel-grid').disabled=true;
+ rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);jobId=null;rememberGrid(null);grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=isDiffraction();$('cancel-grid').disabled=true;
  $('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(0);
 }
 function updateStrengthMode(){
@@ -1673,7 +2070,10 @@ $('reset-material').onclick=()=>{
  const key=config?.material_presets?.[materialDefaultPreset]?materialDefaultPreset:'titanium';
  const preset=config?.material_presets?.[key];if(!preset)return;
  for(const [id,name]of Object.entries(REFERENCE_CONTROLS))$(id).value=preset.references[name];
- $('material').value=key;materialView();rememberBasicControls();calibrationView();updatePenaltyControls();invalidateAnalysisSettings();
+ $('material').value=key;
+ const supported=enabledPhases.filter(phase=>materialAvailablePhases(key).includes(phase));
+ setPhaseSelection(supported.length||!enabledPhases.length?supported:materialPhases());
+ materialView();rememberBasicControls();calibrationView();updatePenaltyControls();invalidateAnalysisSettings();
  message('Material lattice defaults restored.');
 };
 $('material').onchange=()=>{
@@ -1708,7 +2108,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('OMEGA')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('library-note').textContent=`Exploratory ${(config.phases||['HCP','BCC']).join('/')} comparison using ${config.template_count||46} templates from a limited set of zone axes. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();const lastImage=readPreference(lastImageKey(),null),initial=projectFiles().find(f=>f.id===lastImage)||projectFiles().find(f=>f.id===config.default_file)||projectFiles()[0];if(initial)$('file').value=initial.id;if(initial)await openFile();else message('Choose a data folder or download the optional demo images above.',true)}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('OMEGA')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}for(const id of ['fft-hann','fft-mean']){$(id).disabled=!config.fft_processing;if(!config.fft_processing)$(id).checked=true}$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();await openInitialImage();}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 // Reuse the displayed spectrum and overlays; hovering never requests analysis.
@@ -1751,7 +2151,7 @@ function showSpectrumHover(){
  content.replaceChildren($('fft-image').cloneNode(true),$('fft-overlay').cloneNode(true));
  for(const node of content.querySelectorAll('[id]'))node.removeAttribute('id');
  for(const node of content.querySelectorAll('title'))node.remove();
- $('spectrum-hover-title').textContent=isDiffraction()?'Diffraction':'FFT';
+ $('spectrum-hover-title').textContent=detectorToolLabel()||(isDiffraction()?'Diffraction':'FFT');
  card.hidden=false;positionSpectrumHover();
  syncSpectrumHoverRadii();
  // Keep enlarged markers in the same animation phase as the source view.
@@ -2047,12 +2447,11 @@ async function loadSavedRegions(){
  catch(e){$('saved-region-note').textContent=e.message;$('store-region').disabled=true;$('copy-region').disabled=true}
 }
 function applyRegionSettings(saved){
- $('search-beta-omega').checked=saved.search_beta_omega??(saved.diffraction_model==='beta_omega');
  betaOmegaHidden.clear();
- if(isDiffraction())$('overlay').value=$('search-beta-omega').checked?'beta_omega':'winner';
+ if(isDiffraction())$('overlay').value='winner';
  const defaults={hcp_a:.295,hcp_c:.468,bcc_a:.330,fcc_a:.417,ort_a:.3,ort_b:.4,ort_c:.5,omega_a:.4614,omega_c:.2832};
  for(const [id,key]of Object.entries(REFERENCE_CONTROLS))$(id).value=saved[key]??defaults[key];
- $('material').value=saved.material??'titanium';setPhaseSelection(analysisPhases(saved));materialView();
+ $('material').value=saved.material??'titanium';setPhaseSelection(migratedPhaseSelection(saved));materialView();
  if(!isDiffraction())$('fft-g-min').value=saved.g_min??3;
  $('g-max').value=saved.g_max??10;
  if(isDiffraction()&&saved.diffraction){diffractionSettings=withTranslationDefaults(JSON.parse(JSON.stringify(saved.diffraction)));diffractionSettings.beta_parent_anchors=saved.beta_parent_anchors||[];syncBetaAnchorInputs();syncDetectorControls();rememberDiffraction();}
@@ -2064,6 +2463,9 @@ function applyRegionSettings(saved){
  caPenalty=saved.ca_penalty_strength??.10;$('ca-penalty').value=caPenalty;$('ca-penalty-slider').value=caPenalty;writePreference('tem-ca-penalty',caPenalty);
  peakFalloff=saved.peak_evidence_half_weight_nm_inv??0;$('peak-falloff').value=peakFalloff;$('peak-falloff-slider').value=peakFalloff;writePreference('tem-peak-falloff',peakFalloff);
  scalePenalty=saved.scale_penalty_strength??.1;peakEvidenceWeight=saved.peak_evidence_weight??.1;
+ ddWeight=saved.double_diffraction_weight??0;$('dd-weight').value=ddWeight;$('dd-slider').value=ddWeight;writePreference('tem-dd-weight',ddWeight);
+ brightnessGroupingWeight=saved.brightness_grouping_weight??.1;$('brightness-grouping-weight').value=brightnessGroupingWeight;$('brightness-grouping-slider').value=brightnessGroupingWeight;writePreference('tem-brightness-grouping-weight',brightnessGroupingWeight);
+ missingPeakWeight=saved.missing_peak_weight??peakEvidenceWeight;$('missing-peak-weight').value=missingPeakWeight;$('missing-peak-slider').value=missingPeakWeight;writePreference('tem-missing-peak-weight',missingPeakWeight);
  $('scale-penalty').value=scalePenalty;$('scale-penalty-slider').value=scalePenalty;$('peak-evidence-weight').value=peakEvidenceWeight;$('peak-evidence-slider').value=peakEvidenceWeight;
  calibrationView();rememberCalibration();rememberBasicControls();syncBetaOmegaControls();
  writePreference('tem-scale-penalty',scalePenalty);writePreference('tem-peak-evidence-weight',peakEvidenceWeight);
@@ -2150,7 +2552,7 @@ function setupImageKind(){
  }
  setupBetaOmegaSearch();
 }
-function rememberDiffraction(){if(isDiffraction()&&validDiffraction(diffractionSettings)){const saved={...diffractionSettings,search_beta_omega:$('search-beta-omega').checked};if(fittingLimitsLocal)saved.exclude_radius_nm_inv=readPreference(diffractionKey(),{}).exclude_radius_nm_inv??2.5;writePreference(diffractionKey(),saved)}}
+function rememberDiffraction(){if(isDiffraction()&&validDiffraction(diffractionSettings)){const saved={...diffractionSettings,phase_search_version:2};delete saved.search_beta_omega;delete saved.indexing_model;if(fittingLimitsLocal)saved.exclude_radius_nm_inv=readPreference(diffractionKey(),{}).exclude_radius_nm_inv??2.5;writePreference(diffractionKey(),saved)}}
 function syncDetectorControls(){
  if(!isDiffraction()||!diffractionSettings)return;
  for(const [id,key]of Object.entries(DETECTOR_FIELDS)){
@@ -2266,6 +2668,18 @@ $('diff-calibration-reset').onclick=()=>{if(!isDiffraction())return;diffractionS
 $('diff-undo-mask').onclick=()=>{if(isDiffraction()){diffractionSettings.masks.pop();commitDetector()}};
 $('diff-clear-masks').onclick=()=>{if(isDiffraction()){diffractionSettings.masks=[];commitDetector()}};
 function hideCentreLoupe(){$('centre-loupe').hidden=true}
+function detectorToolLabel(){
+ if(!isDiffraction())return '';
+ return {add:`Add peak · snap ${$('diff-snap').checked?'on':'off'}`,remove:'Remove peak',mask:'Mask area',center:'Set centre'}[$('diff-tool').value]||'';
+}
+function syncDetectorToolIndicators(){
+ const label=detectorToolLabel(),tool=$('diff-tool').value;
+ for(const id of ['detector-tool-indicator','spectrum-tool-indicator','zoom-tool-indicator']){
+  const badge=$(id);badge.hidden=!label;badge.textContent=label;badge.setAttribute('data-tool',tool);
+ }
+ $('centre-loupe-title').textContent=label||'Detector preview';
+ $('spectrum-hover-title').textContent=label||(isDiffraction()?'Diffraction':'FFT');
+}
 function clonePreviewOverlay(node,source=null,preview=null){
  const copy=node.cloneNode(true);copy.removeAttribute('id');
  for(const child of copy.querySelectorAll('[id]'))child.removeAttribute('id');
@@ -2298,6 +2712,7 @@ function prepareCentreLoupe(){
 function centreLoupeSpan(){
  const tool=$('diff-tool').value;
  if(!['add','remove'].includes(tool)||!diffractionSettings)return 128;
+ if(tool==='add'&&!$('diff-snap').checked)return 128;
  const snapping=tool==='add'&&$('diff-snap').checked;
  const radius=Number($(snapping?'diff-snap-radius':'diff-dedupe-radius').value);
  if(!Number.isFinite(radius)||radius<.001||radius>5)return 128;
@@ -2310,7 +2725,7 @@ function moveCentreLoupe(p,event){
  const x=p.x,y=p.y,loupe=$('centre-loupe');
  // Escape the image panel's containment so fixed coordinates follow the viewport.
  if(loupe.parentElement!==document.body)document.body.append(loupe);
- $('centre-loupe-title').textContent=$('diff-tool').value==='center'?'Magnified centre':'Detector preview';
+ $('centre-loupe-title').textContent=detectorToolLabel()||'Detector preview';
  $('centre-loupe-hint').hidden=$('diff-tool').value!=='center';
  if(!$('centre-loupe-image').getAttribute('href'))prepareCentreLoupe();
  loupe.hidden=false;
@@ -2378,6 +2793,7 @@ function syncSpectrumExportControls(){
 function clearSpectrumDisplay(){
  hideSpectrumHover();hideCentreLoupe();
  $('beta-omega-results').hidden=true;
+ $('double-diffraction-details').hidden=true;
  $('fft-image').removeAttribute('href');
  $('crop').removeAttribute('src');
  for(const id of ['fft-overlay','fft-axes','fft-zoom-view','fft-legend','fft-zoom-legend'])$(id).replaceChildren();
@@ -2466,7 +2882,7 @@ function renderRegionPreviewDetails(region){
   rows.replaceChildren();
   for(const [phase,fit]of Object.entries(cell.phases).filter(([,f])=>region.support||f.fit_presence>0).sort((a,b)=>b[1].rank-a[1].rank)){
    const row=document.createElement('div'),label=document.createElement('span'),rank=document.createElement('span'),support=document.createElement('span');
-   label.textContent=phase;label.style.color=phaseColors[phase];rank.textContent=Number.isFinite(fit.rank)?'Mean '+fit.rank.toFixed(3):'No fit';support.textContent=(100*fit.support).toFixed(0)+'% passing';row.append(label,rank,support);rows.append(row);
+   label.textContent=phaseLabel(phase);label.style.color=phaseColors[phase];rank.textContent=Number.isFinite(fit.rank)?'Mean '+fit.rank.toFixed(3):'No fit';support.textContent=(100*fit.support).toFixed(0)+'% passing';row.append(label,rank,support);rows.append(row);
   }
   return;
  }
@@ -2478,7 +2894,7 @@ function renderRegionPreviewDetails(region){
  candidates.sort((a,b)=>Number(Boolean(b.model?.valid))-Number(Boolean(a.model?.valid))||compareRank(a.model,b.model));
  for(const {phase,model}of candidates){
   const row=document.createElement('div'),name=document.createElement('span'),rank=document.createElement('span'),status=document.createElement('span');
-  name.textContent=phase+(model?' '+zoneLabel(model):'');name.style.color=phaseColors[phase];
+  name.textContent=phaseLabel(phase)+(model?' '+zoneLabel(model):'');name.style.color=phaseColors[phase];
   rank.textContent=Number.isFinite(model?.score)?'Rank '+model.score.toFixed(3):'—';rank.className='preview-rank';
   status.textContent=model?(model.valid?'Pass':'Below threshold'):'No fit';status.className='muted';
   row.append(name,rank,status);rows.append(row);
@@ -2643,7 +3059,7 @@ $('export-crop').onclick=async()=>{
 $('export-png').onclick=()=>exportSpectrum('png');$('export-gif').onclick=()=>exportSpectrum('gif');
 
 function syncMapExportControls(){
- const button=$('export-map'),mismatch=grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||peakEvidenceWeight!==grid.settings.peak_evidence_weight||(config?.peak_evidence_falloff&&peakFalloff!==(grid.settings.peak_evidence_half_weight_nm_inv??0)));
+ const button=$('export-map'),mismatch=grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||peakEvidenceWeight!==grid.settings.peak_evidence_weight||(config?.separate_peak_penalties&&missingPeakWeight!==(grid.settings.missing_peak_weight??grid.settings.peak_evidence_weight))||(config?.fft_brightness_grouping&&brightnessGroupingWeight!==(grid.settings.brightness_grouping_weight??.1))||(config?.double_diffraction_scoring&&ddWeight!==(grid.settings.double_diffraction_weight??0))||(config?.peak_evidence_falloff&&peakFalloff!==(grid.settings.peak_evidence_half_weight_nm_inv??0)));
  button.disabled=!config?.map_exports||!meta||isDiffraction()||grid?.state!=='complete'||Boolean(grid?.error)||grid?.source?.sha256_pixels!==meta?.sha256_pixels||rescoreBusy||rescorePending||mismatch||mapExportBusy||spectrumExportBusy;
  button.title=!config?.map_exports?'Restart TEM Workbench, then reload to enable map exports':button.disabled?'Complete a grid and finish reweighting before exporting':'Save the visible map, colours and zone legend as PNG';
 }
@@ -2666,7 +3082,7 @@ function mapSnapshot(){
  if(!$('class-legend').hidden)for(const node of $('class-legend').children)if(!node.hidden)legendItem('● '+node.textContent,colors[node.dataset.label]);
  if(x!==20){x=20;y+=28}
  if(!$('zone-legend').hidden)for(const group of $('zone-legend').querySelectorAll('.zone-legend-group')){
-  const phase=group.querySelector('strong').textContent;legendItem(phase,phaseColors[phase]);
+  const phase=group.dataset.phase;legendItem(group.querySelector('strong').textContent,phaseColors[phase]);
   for(const node of group.querySelectorAll('.zone-key'))legendItem([...node.childNodes].map(n=>n.textContent).join(' '),phaseColors[phase]);
   x=20;y+=28;
  }
@@ -2702,49 +3118,30 @@ async function exportMap(){
 }
 $('export-map').onclick=exportMap;
 
-function reflectionCellDimensions(model,hkl,g){
- if(!Number.isFinite(g)||g<=0||!Array.isArray(hkl)||hkl.length!==3)return '';
- const [h,k,l]=hkl,d=1/g,dimension=(name,value)=>`${name} ${value.toFixed(4)} nm`;
- // Use the vector's own distance: measured planes or fitted planes/A/B/C.
- if(model.phase==='BCC'||model.phase==='FCC')return dimension('a',d*Math.hypot(h,k,l));
- if(['HCP','OMEGA'].includes(model.phase)){
-  if(l===0&&(h!==0||k!==0))return dimension('a',d*Math.sqrt(4*(h*h+h*k+k*k)/3));
-  if(h===0&&k===0&&l!==0)return dimension('c',d*Math.abs(l));
-  const ratio=model.fitted_c_nm/model.fitted_a_nm;
-  return Number.isFinite(ratio)&&ratio>0?dimension('a',d*Math.sqrt(4*(h*h+h*k+k*k)/3+l*l/(ratio*ratio))):'a unavailable';
- }
- if(model.phase==='ORT'){
-  const axes=hkl.map((value,index)=>({value,index})).filter(axis=>axis.value!==0);
-  if(axes.length===1)return dimension('abc'[axes[0].index],d*Math.abs(axes[0].value));
-  return axes.map(axis=>'abc'[axis.index]).join('/')+' coupled';
- }
- return '';
-}
-function measuredHcpCell(vectors){
- // Solve g² = 4(h²+hk+k²)/(3a²) + l²/c² from the displayed pair.
- if(vectors.length<2)return null;
- const rows=vectors.slice(0,2).map(({hkl:[h,k,l],g})=>[4*(h*h+h*k+k*k)/3,l*l,g*g]);
- const [[u,v,y],[w,z,t]]=rows,det=u*z-w*v;
- if(!Number.isFinite(det)||Math.abs(det)<=1e-8*Math.max(1,Math.abs(u*z),Math.abs(w*v)))return null;
- const aa=(y*z-t*v)/det,cc=(u*t-w*y)/det;
- if(!Number.isFinite(aa)||!Number.isFinite(cc)||aa<=0||cc<=0)return null;
- return {a:1/Math.sqrt(aa),c:1/Math.sqrt(cc)};
-}
-function vectorCellRatio(model,vectors=null){
+function vectorCellRatio(model){
  if(!['HCP','OMEGA'].includes(model.phase))return '';
- if(vectors){const cell=measuredHcpCell(vectors);return cell?` · c/a ${(cell.c/cell.a).toFixed(4)}`:' · c/a unavailable'}
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
  const c=model.fitted_c_nm??(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)?null:model.nominal_c_nm/model.shared_scale);
  return model.c_axis_visible===false||!Number.isFinite(a)||!Number.isFinite(c)||a<=0||c<=0?' · c/a unconstrained':` · c/a ${(c/a).toFixed(4)}`;
 }
-function matchedReflectionVectors(model,fitted=false){
+function vectorCellSummary(model){
+ if(model.coordinate_units==='relative')return vectorCellRatio(model);
+ const dimension=(axis,value)=>`${axis} ${Number.isFinite(value)&&value>0?value.toFixed(4)+' nm':'unconstrained'}`;
+ const axes=model.phase==='ORT'?['a','b','c']:['HCP','OMEGA'].includes(model.phase)?['a','c']:['a'];
+ const values=axes.map(axis=>{
+  let value=model['fitted_'+axis+'_nm'];
+  if(value==null&&!(axis==='c'&&['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)))value=model['nominal_'+axis+'_nm']/model.shared_scale;
+  if(model.axis_observable?.['abc'.indexOf(axis)]===false||(axis==='c'&&model.c_axis_visible===false))value=null;
+  return dimension(axis,value);
+ });
+ return ' · '+values.join(' · ')+vectorCellRatio(model);
+}
+function matchedReflectionVectors(model){
  const selected=[];
- for(const match of (model.matches||[]).filter(m=>m.observed_q&&m.hkl).sort((a,b)=>Math.hypot(...a.observed_q)-Math.hypot(...b.observed_q))){
-  const sign=match.observed_q[1]<0||(match.observed_q[1]===0&&match.observed_q[0]<0)?-1:1,q=match.observed_q.map(v=>sign*v),g=Math.hypot(...q);
+ for(const match of (model.matches||[]).filter(m=>m.predicted_q&&m.hkl).sort((a,b)=>Math.hypot(...a.predicted_q)-Math.hypot(...b.predicted_q))){
+  const sign=match.predicted_q[1]<0||(match.predicted_q[1]===0&&match.predicted_q[0]<0)?-1:1,q=match.predicted_q.map(v=>sign*v),g=Math.hypot(...q);
   if(!g||selected.some(s=>Math.abs(s.q[0]*q[1]-s.q[1]*q[0])/(s.g*g)<.15))continue;
-  const indexSign=match.predicted_q&&match.observed_q[0]*match.predicted_q[0]+match.observed_q[1]*match.predicted_q[1]<0?-sign:sign;
-  const vector=fitted&&match.predicted_q?match.predicted_q.map(v=>indexSign*v):q;
-  selected.push({q:vector,g:Math.hypot(...vector),hkl:match.hkl,sign:indexSign});if(selected.length===2)break;
+  selected.push({q,g,hkl:match.hkl,sign});if(selected.length===2)break;
  }
  return selected;
 }
@@ -2833,29 +3230,27 @@ function vectorLabelPosition(x,y,w,h,occupied,anchors){
  occupied.push(chosen);return chosen;
 }
 function drawReflectionVectors(qp){
- const mode=$('reflection-vectors').value,abc=mode.startsWith('fitted_'),fitted=abc||mode.startsWith('planes_'),choice=fitted?mode.slice(7):mode;
- const models=overlayModels(result,choice),occupied=[],groups=[];
+ const mode=$('reflection-vectors').value,abc=mode.startsWith('fitted_'),choice=mode.slice(7),info=$('vector-info').value;
+ if(mode==='off')return;
+ const models=overlayModels(result,choice,{vectors:true}),occupied=[],groups=[];
  for(const model of models){
-  const vectors=(abc?fittedReferenceVectors(model):matchedReflectionVectors(model,fitted)).map((v,i)=>({...v,name:abc?v.name:`P${i+1}`}));
-  if(vectors.length)groups.push({phase:model.phase,model,vectors});
+  const vectors=(abc?fittedReferenceVectors(model):matchedReflectionVectors(model)).map((v,i)=>({...v,name:abc?v.name:`P${i+1}`}));
+  if(vectors.length)groups.push({phase:model.phase,model,vectors,style:vectorFitStyle(model)});
  }
  // Keep full measurements together below the zone/angle summary. Equal-length
  // fitted vectors share a letter and therefore a single measurement row.
- const panels=groups.map(({phase,model,vectors})=>{
-  const measuredCell=!fitted&&['HCP','OMEGA'].includes(phase)?measuredHcpCell(vectors):null;
-  const dimensionModel=!fitted&&['HCP','OMEGA'].includes(phase)?{...model,fitted_a_nm:measuredCell?.a,fitted_c_nm:measuredCell?.c}:model;
-  const lines=[[phase+' '+zoneLabel(model)+vectorCellRatio(model,fitted?null:vectors),10,12,phaseColors[phase]]];
+ const panels=(info==='summary'||info==='full'?groups:[]).map(({phase,model,vectors,style})=>{
+  const lines=[[style.name+' '+zoneLabel(model)+(info==='full'?vectorCellSummary(model):''),10,12,style.color]];
   let baseline=26;
   if(abc){lines.push([fittedVectorSummary(vectors),9,baseline,'#dce6ef']);baseline+=13}
   const seen=new Set();
-  for(const {g,hkl,sign,name}of vectors){
+  if(info==='full')for(const {g,hkl,sign,name}of vectors){
    if(seen.has(name))continue;seen.add(name);
-   const prefix=abc?name:`${phase} ${planeLabel(model,hkl,sign)}`;
-   const dimensions=[...new Set(vectors.filter(v=>v.name===name).map(v=>reflectionCellDimensions(dimensionModel,v.hkl,v.g)).filter(Boolean))].join(' · ');
-   lines.push([`${prefix} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm${dimensions?' · '+dimensions:''}`,9,baseline,'#edf5fc']);baseline+=13;
+   const prefix=abc?name:`${phaseLabel(phase)} ${planeLabel(model,hkl,sign)}`;
+   lines.push([`${prefix} · g ${g.toFixed(3)} ${reciprocalUnit()}${model.coordinate_units==='relative'?'':` · d ${(1/g).toFixed(4)} nm`}`,9,baseline,'#edf5fc']);baseline+=13;
   }
   const panel=addVectorLabel($('fft-overlay'),{'data-vector-key':phase},lines,baseline-7,.92);
-  panel.group.append(el('title',{},(fitted?'Distances and cell dimensions from the fitted grid.':'Distances measured at detected spots. HCP/ω a, c and c/a are solved from the two displayed indexed reflections; unavailable means that pair cannot independently determine both dimensions.')+(fitted?' Mixed hexagonal reflections derive a using the fitted c/a ratio.':'')+' Coupled orthorhombic reflections cannot determine each listed cell dimension independently.'));
+  panel.group.append(el('title',{},'Distances and cell dimensions from the fitted lattice. Full details show cell parameters once in the header; unconstrained axes are not measurements.'));
   return panel;
  });
  let top=415-panels.reduce((sum,p)=>sum+p.h,0)-Math.max(0,panels.length-1)*4;
@@ -2866,13 +3261,13 @@ function drawReflectionVectors(qp){
  const points=[[0,0],...groups.flatMap(entry=>entry.vectors.map(v=>v.q)),
   ...(result.spectrum?.peaks||[]).flatMap(p=>p.observed_spots||[[p.qx,p.qy],[-p.qx,-p.qy]])];
  const anchors=points.map(q=>{const [x,y]=qp(...q);return {x:x-8,y:y-8,w:16,h:16}});
- for(const {phase,model,vectors}of groups){
+ for(const {phase,model,vectors,style}of groups){
   for(const {q,g,sign,hkl,name}of vectors){
-   const [ox,oy]=qp(0,0),[x,y]=qp(...q),dx=x-ox,dy=y-oy,length=Math.hypot(dx,dy),ux=dx/length,uy=dy/length,color=phaseColors[phase];
-   const group=el('g',{'data-reflection-vector':phase});
+   const [ox,oy]=qp(0,0),[x,y]=qp(...q),dx=x-ox,dy=y-oy,length=Math.hypot(dx,dy),ux=dx/length,uy=dy/length,color=style.color;
+   const group=el('g',{'data-reflection-vector':phase,'data-vector-name':style.name,'data-vector-colour':color,'data-legend-color-target':style.colorTarget});
    const line=el('path',{d:`M${ox} ${oy}L${x} ${y}M${x-7*ux+3*uy} ${y-7*uy-3*ux}L${x} ${y}L${x-7*ux-3*uy} ${y-7*uy+3*ux}`,stroke:color,'stroke-width':1.2,fill:'none'});
    if(!model.valid)line.setAttribute('stroke-dasharray','4 3');group.append(line);$('fft-overlay').append(group);
-   const identifier=abc?(groups.length===1?name:`${phase} ${name}`):`${phase} ${planeLabel(model,hkl,sign)}`;
+   const identifier=abc?(groups.length===1?name:`${style.name} ${name}`):`${style.name} ${planeLabel(model,hkl,sign)}`;
    const label=addVectorLabel(group,{'data-vector-label':phase},[[identifier,9.5,11,color]],16,.88);
    const {x:lx,y:ly}=vectorLabelPosition(x,y,label.w,label.h,occupied,anchors);
    label.group.setAttribute('transform',`translate(${lx} ${ly})`);
@@ -2881,15 +3276,18 @@ function drawReflectionVectors(qp){
     const lead=el('path',{d:`M${x+8*(edgeX-x)/distance} ${y+8*(edgeY-y)/distance}L${edgeX} ${edgeY}`,stroke:color,'stroke-width':.7,'stroke-dasharray':'2 2',opacity:.7,fill:'none','data-vector-leader':phase});
     group.insertBefore(lead,label.group);
    }
-   group.append(el('title',{},abc?`${name}: ${planeLabel(model,hkl,sign)} from the fitted prediction lattice. Letters run from longest to shortest reciprocal length; equal lengths share a letter. These are not unit-cell edges or a separate phase test.`:`${phase} ${planeLabel(model,hkl,sign)} · g ${g.toFixed(3)} nm⁻¹ · d ${(1/g).toFixed(4)} nm. ${fitted?'Fitted grid distance and plane spacing.':'Measured reciprocal distance and plane spacing, indexed by this candidate fit.'} Opposite observations count as one profile.`));
+   group.append(el('title',{},`${style.name} ${zoneLabel(model)} · ${abc?name+': ':''}${planeLabel(model,hkl,sign)} · g ${g.toFixed(3)} ${reciprocalUnit()}${model.coordinate_units==='relative'?'':` · d ${(1/g).toFixed(4)} nm`}. Fitted lattice.${abc?' Letters run from longest to shortest reciprocal length; equal lengths share a letter.':''} These are not real-space unit-cell edges.`));
   }
  }
 }
 
-const VECTOR_MODES=['off',...['winner','winner_any',...PHASES,'both','all'].map(choice=>'planes_'+choice),'fitted_winner','fitted_winner_any','fitted_HCP','fitted_BCC','fitted_FCC','fitted_ORT','fitted_OMEGA','fitted_both','fitted_all','winner','winner_any',...PHASES,'both','all'];
-const savedVectors=readPreference('tem-reflection-vectors','fitted_winner');
+const VECTOR_MODES=['off',...['winner','winner_any','passing',...PHASES,'both','all','related'].flatMap(choice=>['fitted_'+choice,'planes_'+choice])];
+const savedVectors=fittedVectorMode(readPreference('tem-reflection-vectors','fitted_winner'));
 syncOverlayMenus($('overlay').value,VECTOR_MODES.includes(savedVectors)?savedVectors:'fitted_winner');
 $('reflection-vectors').onchange=()=>{writePreference('tem-reflection-vectors',$('reflection-vectors').value);drawFFT()};
+const savedVectorInfo=readPreference('tem-vector-info','off');
+$('vector-info').value=['off','summary','full'].includes(savedVectorInfo)?savedVectorInfo:'off';
+$('vector-info').onchange=()=>{writePreference('tem-vector-info',$('vector-info').value);drawFFT()};
 
 start();
 
@@ -2936,6 +3334,7 @@ let peakEditBusy=false,displayedDiffraction=null,snapPointer=null,radiusDrag=nul
 function peakEditing(){return isDiffraction()&&['add','remove'].includes($('diff-tool').value)}
 function syncPeakTool(){
  document.body.classList.toggle('editing-peaks',peakEditing());
+ syncDetectorToolIndicators();
  for(const button of document.querySelectorAll('[data-detector-tool]'))button.setAttribute('aria-pressed',String(button.dataset.detectorTool===$('diff-tool').value));
  setSpectrumSpinner(spectrumLoading&&spectrumLoadingTimer===null);
 }
@@ -3050,11 +3449,12 @@ function deletePeakEdit(index){
  commitDetector();drawSnapOverlays();message('Peak edit deleted. Undo peak edit restores it.');
 }
 function drawSnapOverlays(){
+ syncDetectorToolIndicators();
  for(const svg of [$('overview'),$('fft'),$('fft-zoom-view').querySelector('svg')].filter(Boolean)){
   // Refresh peak-edit rings without removing the independent fitting-limit controls.
   svg.querySelectorAll('.manual-snap-overlay').forEach(n=>n.remove());
   if(!isDiffraction()||!diffractionSettings)continue;
-  const source=svg===$('overview'),snapshot=editSnapshot();if(!source&&(!snapshot||!peakEditing()))continue;
+  const source=svg===$('overview'),snapshot=editSnapshot();if(!source&&(!snapshot||!peakEditing()||!spectrumOverlaysVisible()))continue;
   const d=source?diffractionSettings:snapshot.settings.diffraction,e=snapshot?.spectrum.extent,c=snapshot?.spectrum.beam_center_px;
   const sx=source?1/d.pixel_x_nm_inv:420/(e[1]-e[0]),sy=source?1/d.pixel_y_nm_inv:420/(e[3]-e[2]);
   const project=(x,y)=>source?[x,y]:[((x-c[0])*d.pixel_x_nm_inv-e[0])/(e[1]-e[0])*420,(e[3]-(c[1]-y)*d.pixel_y_nm_inv)/(e[3]-e[2])*420];
@@ -3068,7 +3468,7 @@ function drawSnapOverlays(){
     const handleSize=source?Math.max(meta.width/350,4):2.8;
     group.append(el('rect',{x:cx+rx-handleSize,y:cy-handleSize,width:handleSize*2,height:handleSize*2,fill:colour,stroke:'#101925','stroke-width':1,'vector-effect':'non-scaling-stroke','pointer-events':'all','data-snap-index':index,class:'snap-radius-handle'}));
    }
-   const boundary=el('ellipse',{...attrs,'stroke-dasharray':index===null?'3 3':'5 3',...(removal?{'data-removal-index':index}:{})});
+   const boundary=el('ellipse',{...attrs,'stroke-dasharray':index===null?'3 3':'5 3',...(index===null?{'data-hover-peak-radius':'true'}:{}),...(removal?{'data-removal-index':index}:{})});
    boundary.append(el('title',{},removal?`Peak removal radius ${r.toFixed(3)} ${reciprocalUnit()}${diffractionSettings.peak_edits?.[index]?.single?' (legacy single spot; resize to remove all within radius)':''}`:'Peak snap search'));
    group.append(boundary);
    if(index!==null){
@@ -3087,9 +3487,11 @@ function drawSnapOverlays(){
    else if(edit.action==='add')ring(edit.snap_x??edit.x,edit.snap_y??edit.y,dragging?radiusDrag.radius:savedSnapRadius(edit),index);
   });
   if(peakEditing()&&snapPointer?.svg===svg&&!radiusDrag){
-   const snapping=$('diff-tool').value==='add'&&$('diff-snap').checked;
-   const r=Number($(snapping?'diff-snap-radius':'diff-dedupe-radius').value);
-   if(r>=.001&&r<=5)ring(snapPointer.x,snapPointer.y,r,null,$('diff-tool').value==='remove');
+   const removing=$('diff-tool').value==='remove';
+   if(removing||$('diff-snap').checked){
+    const r=Number($(removing?'diff-dedupe-radius':'diff-snap-radius').value);
+    if(r>=.001&&r<=5)ring(snapPointer.x,snapPointer.y,r,null,removing);
+   }
   }
  }
  syncSpectrumHoverRadii();syncCentreLoupeOverlays();
@@ -3372,7 +3774,6 @@ $('batch-cancel').onclick=async()=>{try{renderBatch(await api('batch/cancel',{})
 renderBatchFiles();
 pollBatch();
 
-$('search-beta-omega').onchange=()=>{if(!isDiffraction())return;diffractionSettings.search_beta_omega=$('search-beta-omega').checked;writePreference('tem-search-beta-omega',$('search-beta-omega').checked);rememberDiffraction();$('overlay').value=$('search-beta-omega').checked?'beta_omega':'winner';betaOmegaHidden.clear();syncBetaOmegaControls();schedule(0)};
 $('raster-relative').onclick=async()=>{
  const context=rasterContext;if(!context)return;$('raster-relative').disabled=true;
  try{await api('raster-calibration',{file_id:context.id,method:'relative_diffraction'});

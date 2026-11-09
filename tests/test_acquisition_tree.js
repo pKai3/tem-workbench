@@ -11,7 +11,7 @@ const controls=new Map(),saved=new Map();const context={clearTimeout:()=>{},docu
 vm.createContext(context);let source=fs.readFileSync('web/acquisition-map.js','utf8');
 source=source.slice(0,source.indexOf(" byId('acquisition-map-open').onclick="))+`
  globalThis.test={set:(files,groups,ref)=>{data={files,batches:groups};visible=files;scopedBatches=groups;reference=files.find(f=>f.id===ref);batchId='*';treeSnapshot=null;treeMasterId=ref},view:id=>{reference=data.files.find(f=>f.id===id)},parent:()=>parentImage()?.id,render:renderImageTree,tree:spatialTree,tilt,peers:footprintPeers,outside:outsideReferenceFraction,parents:comparisonParents,crop:cropDetails,label:groupName,startMove:startPlacementMove,move:applyPlacementMove,finishMove:finishPlacementMove,location:f=>location(f),place:(f,ref,x,y)=>placements.set(placementKey(f,ref),{x,y}),clearMoves:()=>placements.clear(),leavesFirst,referenceChildCount,
- remember:rememberSelection,restore:(sample,current=null,opening=false)=>{data.sample=sample;restoreSelection(current,opening)},seed:openingSeed,
+ remember:rememberSelection,restore:(sample,current=null,opening=false)=>{data.sample=sample;restoreSelection(current,opening)},seed:openingSeed,setOrigin:id=>{originId=id},current:showCurrentImage,
  selection:()=>({folder:selectedFolder,batch:batchId}),
  updateSelection:()=>{renderImageTree=()=>{};navigation=()=>{};syncAdjustment=()=>{};preview=()=>{};fit=()=>{};draw=()=>{};update()},
  reference:()=>reference?.id,
@@ -194,6 +194,29 @@ assert.equal(context.test.selection().folder,'test');assert.equal(context.test.s
 assert.equal(context.document.getElementById('acquisition-date').value,'*');
 assert.equal(context.test.reference(),'i402');
 console.log('Leaf ordering, most-covered ties, retained references, selection restoration and stale-state fallbacks passed.');
+
+// Opening follows the analysis image even when the last map used another sample,
+// folder, date, batch or larger reference. Point-only images use their own batch.
+const navigationFiles=[row('i501',8000),...['i502','i503','i504'].map((id,i)=>({...row(id,[8000,1000,0][i],0,'b'),folder:'new folder',date:'tomorrow'}))];
+const navigationBatches=[{id:'a',reference_id:'i501',members:['i501']},{id:'b',reference_id:'i502',members:['i502','i503','i504']}];
+context.config.files=[{id:'other-sample',sample:'ST'},...navigationFiles.map(f=>({...f,sample:'STA'}))];
+saved.set('tem-acquisition-selection:'+JSON.stringify(['test',null]),'ST');
+const navigationKey='tem-acquisition-selection:'+JSON.stringify(['test','STA']);
+saved.set(navigationKey,{folder:'test',scope:'sample',date:'today',batch:'a',reference:'i501'});
+context.test.set(navigationFiles,navigationBatches,'i501');context.test.setOrigin('i503');
+assert.equal(context.test.seed().id,'i503','Current image takes priority over the last map sample');
+context.test.restore('STA',navigationFiles[2],true);context.test.updateSelection();
+assert.equal(context.test.selection().folder,'new folder');assert.equal(context.test.selection().batch,'b');
+assert.equal(context.document.getElementById('acquisition-date').value,'tomorrow');
+assert.equal(context.document.getElementById('acquisition-scope').value,'folder');
+assert.equal(context.test.reference(),'i503','Use the current calibrated image, not the widest image');
+// Return after navigating away within the loaded sample uses the same selection path.
+context.fileId='i503';context.test.view('i501');context.document.getElementById('acquisition-date').value='today';
+context.test.current();assert.equal(context.test.reference(),'i503');
+context.test.setOrigin('i504');context.test.restore('STA',navigationFiles[3],true);context.test.updateSelection();
+assert.equal(context.test.reference(),'i502','Diffraction/uncalibrated images retain a valid batch reference');
+assert.equal(context.test.selection().batch,'b');
+console.log('Current-image navigation: remembered scopes overridden, calibrated image selected, return button and point-only fallback passed.');
 
 // Reference-specific saved movements must not retain impossible parent links.
 const shifted=[row('i1189',8000),row('i1187',3123),row('i1188',1984),row('i1185',1526)];

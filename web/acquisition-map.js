@@ -14,7 +14,9 @@
  }
  function restoreSelection(current,opening){
   const saved=readPreference(selectionKey(data.sample),null);
-  const state=saved&&typeof saved==='object'?saved:{};
+  // Opening/returning follows the analysis image, not a previous map visit.
+  const state=opening&&current?{folder:current.folder,date:current.date,scope:'folder',batch:current.acquisition_batch,
+   reference:field(current)?current.id:batchOf(current)?.reference_id}:(saved&&typeof saved==='object'?saved:{});
   const dates=[...new Set(data.files.map(f=>f.date))].sort();
   const date=dates.includes(state.date)||state.date==='*'?state.date:current?.date??'*';
   options(byId('acquisition-date'),[['*','All dates'],...dates.map(d=>[d,d||'Date unknown'])],date);
@@ -29,7 +31,7 @@
  }
  function openingSeed(){
   const sample=readPreference(selectionKey(),null);
-  return config.files.find(f=>f.sample===sample)||config.files.find(f=>f.id===originId);
+  return config.files.find(f=>f.id===originId)||config.files.find(f=>f.sample===sample);
  }
  const batches=()=>data?.batches||[];
  const batchOf=f=>batches().find(b=>b.id===f?.acquisition_batch);
@@ -302,6 +304,7 @@
   }
   function entry(g){
    const li=document.createElement('li'),row=document.createElement('div');row.className='acquisition-entry';
+   row.setAttribute('data-image-ids',JSON.stringify(g.files.map(f=>f.id)));
    const isRoot=g.files.some(f=>f.id===reference?.id),key=g.files[0].id;
    let f=g.files.find(f=>f.id===groupChoices.get(key))||(isRoot?reference:g.files[0]);
    if(isRoot)row.classList.add('acquisition-tree-reference');
@@ -314,10 +317,11 @@
     box.append(select);
    }
    const use=document.createElement('button');use.type='button';use.textContent=g.files.length>1?(f.id===reference?.id?'Current reference':'Use reference'):f.name;
+   if(g.files.some(f=>f.id===originId))use.setAttribute('aria-current','true');
    use.title=title(f);use.onclick=()=>{moved=false;chooseImage(f)};
    row.onmouseenter=()=>{highlight(g.files);selectPlacementTarget(f)};row.onmouseleave=()=>{if(!drag?.image)hideHover()};
    use.onfocus=()=>{highlight(g.files);selectPlacementTarget(f)};use.onblur=hideHover;box.append(use);
-   const sub=document.createElement('small');sub.textContent=[isRoot?'Reference image':'',!g.pos?'Not placed':g.rect?`${fmt(f.field_nm[0])} nm wide`:'Point only'].filter(Boolean).join(' · ');box.append(sub);
+   const sub=document.createElement('small');sub.textContent=[g.files.some(f=>f.id===originId)?'Current image':'',isRoot?'Reference image':'',!g.pos?'Not placed':g.rect?`${fmt(f.field_nm[0])} nm wide`:'Point only'].filter(Boolean).join(' · ');box.append(sub);
    const open=document.createElement('button');open.type='button';open.textContent='Open';open.title='Open selected image for analysis';open.onclick=()=>{moved=false;openImage(f)};
    open.onmouseenter=e=>hover(f,e);open.onmouseleave=hideHover;open.onfocus=e=>hover(f,e);open.onblur=hideHover;
    row.append(box,open);li.append(row);
@@ -429,7 +433,7 @@
    const [w,h]=reference.field_nm.map(v=>v/1000);
    const im=node('image',{x:sx(-w/2),y:sy(-h/2),width:w*800/view.w,height:h*620/view.h,preserveAspectRatio:'none',opacity:'.65',href:previews.get(reference.id)||'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22/%3E'});
    im.addEventListener('error',()=>{byId('acquisition-status').textContent+=' Overview preview unavailable.'},{once:true});svg.append(im);
-   svg.append(node('rect',{x:sx(-w/2),y:sy(-h/2),width:w*800/view.w,height:h*620/view.h,class:'location reference-outline','data-image-ids':JSON.stringify([reference.id]),'pointer-events':'none',fill:'none',stroke:'#fff','stroke-dasharray':'5 5'}));
+   svg.append(node('rect',{x:sx(-w/2),y:sy(-h/2),width:w*800/view.w,height:h*620/view.h,class:'location reference-outline','data-image-ids':JSON.stringify([reference.id]),'pointer-events':'none',fill:'none',stroke:reference.id===originId?'#ff8197':'#fff','stroke-dasharray':'5 5'}));
   }
   const placed=mappedImages().sort((a,b)=>adjust?(Number(a.id===adjustId)-Number(b.id===adjustId)||((b.field_nm?.[0]||0)-(a.field_nm?.[0]||0))):((b.field_nm?.[0]||0)-(a.field_nm?.[0]||0)));
   const usedLabels=new Set();
@@ -457,8 +461,9 @@
   // Draw the reference identifier last so overlapping footprints cannot hide it.
   if(field(reference)){
    const peers=footprintPeers(reference),x=sx(reference.field_nm[0]/2000),y=sy(-reference.field_nm[1]/2000);
+   const colour=peers.some(f=>f.id===originId)?'#ff8197':'#7abaff';
    const label=node('g',{class:'location','data-image-ids':JSON.stringify(peers.map(f=>f.id)),tabindex:'0'});
-   label.append(node('circle',{cx:x,cy:y,r:4,fill:'#7abaff'}),node('text',{x:x-7,y:y-6,'text-anchor':'end',fill:'#7abaff','font-size':12,'paint-order':'stroke',stroke:'#080d13','stroke-width':3},groupName({files:peers})));
+   label.append(node('circle',{cx:x,cy:y,r:4,fill:colour}),node('text',{x:x-7,y:y-6,'text-anchor':'end',fill:colour,'font-size':12,'paint-order':'stroke',stroke:'#080d13','stroke-width':3},groupName({files:peers})));
    bindHover(label,reference);svg.append(label);
   }
   highlight(visible.filter(f=>highlighted.includes(f.id)));
@@ -480,11 +485,36 @@
   navigation();draw();
   try{
    const result=await api(`acquisition-map?id=${encodeURIComponent(seedId)}`);if(ticket!==request)return;data=result;
-   restoreSelection(opening?data.files.find(f=>f.id===originId):null,opening);
+   const current=opening?data.files.find(f=>f.id===originId):null;
+   restoreSelection(current,opening);
    byId('acquisition-errors').hidden=!data.errors.length;for(const err of data.errors){const p=document.createElement('p');p.textContent=`${err.name}: ${err.error}`;byId('acquisition-error-list').append(p)}
-   busy=false;update();
+   busy=false;update();if(current)frameCurrentImage(current);
   }catch(e){if(ticket===request){busy=false;byId('acquisition-status').textContent=e.message;draw()}}
   finally{if(ticket===request)busy=false}
+ }
+ function frameCurrentImage(current){
+  const group=footprintGroups().find(g=>g.files.some(f=>f.id===current.id));
+  if(group)groupChoices.set(group.files[0].id,current.id);
+  for(const ancestor of treePath(current))treeExpanded.set(`${treeMasterId}:${ancestor.files[0].id}`,true);
+  treeExpanded.set(`${treeMasterId}:unplaced`,true);
+  renderImageTree();fit(field(current));
+  const row=[...byId('acquisition-list').querySelectorAll('[data-image-ids]')].find(el=>JSON.parse(el.getAttribute('data-image-ids')).includes(current.id));
+  row?.scrollIntoView({block:'nearest'});
+  byId('acquisition-detail').textContent=`Current image: ${current.name}`+(!field(current)?' · No calibrated real-space footprint; shown in its acquisition batch.':'');
+ }
+ function showCurrentImage({reload=false}={}){
+  if(!fileId)return;
+  originId=fileId;
+  const samples=[...new Set(config.files.map(f=>f.sample))].sort((a,b)=>a.localeCompare(b));
+  const seed=openingSeed();
+  options(byId('acquisition-sample'),samples.map(s=>[s,s||'Unlabelled']),seed?.sample);
+  const current=data?.files.find(f=>f.id===originId);
+  if(current&&!busy&&!reload){
+   treeMasterId=null;treeSnapshot=null;moved=false;adjustId='';
+   restoreSelection(current,true);update();frameCurrentImage(current);
+   return;
+  }
+  return loadSample(seed?.id||originId,true);
  }
  const cropMode=readPreference('tem-acquisition-crop-source','closest');
  byId('acquisition-crop-source').value=['closest','master','all','current'].includes(cropMode)?cropMode:'closest';
@@ -548,12 +578,9 @@
  }
  byId('acquisition-map-open').onclick=()=>{
   if(!fileId)return;
-  originId=fileId;
-  const samples=[...new Set(config.files.map(f=>f.sample))].sort((a,b)=>a.localeCompare(b));
-  const seed=openingSeed();
-  options(byId('acquisition-sample'),samples.map(s=>[s,s||'Unlabelled']),seed?.sample);
-  dialog.showModal();return loadSample(seed?.id||originId,true);
+  dialog.showModal();return showCurrentImage({reload:true});
  };
+ byId('acquisition-current').onclick=()=>showCurrentImage();
  byId('acquisition-sample').onchange=()=>{
   const seed=config.files.find(f=>f.sample===byId('acquisition-sample').value);
   if(seed)return loadSample(seed.id);

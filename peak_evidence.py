@@ -10,8 +10,9 @@ from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.optimize import linear_sum_assignment
 import analysis_core as core
 
-VERSION = 'local-maxima-v3'
+VERSION = 'local-maxima-v6'
 DEFAULT_WEIGHT = .10
+MAX_MISSING_WEIGHT = 2.
 
 
 def prepare_candidates(spectrum, shape, sx, sy):
@@ -90,15 +91,17 @@ def qualities(points, maxima, radius):
     q = np.array([p['q'] for p in maxima])
     distance = np.minimum(np.linalg.norm(points[:, None]-q[None], axis=2),
                           np.linalg.norm(points[:, None]+q[None], axis=2))
-    quality = np.exp(-.5*(distance/(radius/2))**2)*np.array([p['strength'] for p in maxima])
-    quality[distance > radius] = 0
+    quality = core.positional_quality(distance, radius)*np.array([p['strength'] for p in maxima])
     return quality, distance
 
 
 def inspect(model, context):
     points = np.array([node['q'] for node in model['predicted_nodes']])
     n = len(points); radius = context['radius']; maxima = context['maxima']
-    assigned = {m['node_index'] for m in model['matches']}
+    position_scale = context.get('position_scale', radius)
+    if context.get('position_matching'):
+        model['position_matching'] = dict(context['position_matching'])
+    assigned = {m['node_index']: m for m in model['matches']}
     separations = np.minimum(np.linalg.norm(points[:, None]-points[None], axis=2),
                              np.linalg.norm(points[:, None]+points[None], axis=2))
     np.fill_diagonal(separations, np.inf)
@@ -109,7 +112,7 @@ def inspect(model, context):
                   (separations.min(axis=1) >= radius))
     if 'visible' in context:
         assessable &= context['visible'](points)
-    quality, distance = qualities(points, maxima, radius)
+    quality, distance = qualities(points, maxima, position_scale)
     eligible = assessable.copy()
     for i in assigned:
         eligible[i] = False
@@ -122,6 +125,13 @@ def inspect(model, context):
     for i in range(n):
         record = {'node_index': i, 'status': 'detected' if i in assigned else
                   'weak' if i in chosen else 'unsupported' if assessable[i] else 'unassessable'}
+        if i in assigned:
+            match = assigned[i]
+            record.update(quality=float(match.get('quality', 1.)))
+            if 'residual_nm_inv' in match:
+                record['offset_nm_inv'] = match['residual_nm_inv']
+            if 'observed_q' in match:
+                record['observed_q'] = match['observed_q']
         if i in chosen:
             j = chosen[i]; peak = maxima[j]
             record.update(weak_id=peak['weak_id'], observed_q=peak['q'],
@@ -134,7 +144,7 @@ def inspect(model, context):
     controls = []
     for angle in (-75, -60, -45, -30, -15, 15, 30, 45, 60, 75, 90):
         rotated = core.rotation(points, np.radians(angle))
-        control, _ = qualities(rotated, maxima, radius)
+        control, _ = qualities(rotated, maxima, position_scale)
         control[~eligible] = 0
         if 'visible' in context:
             control[~context['visible'](rotated)] = 0
@@ -142,14 +152,16 @@ def inspect(model, context):
                 (abs(rotated[:, 1])+radius > context['y_limit'])] = 0
         rows, cols = linear_sum_assignment(np.c_[-control, np.zeros((n, n))])
         controls.append(sum(float(control[i, j]) for i, j in zip(rows, cols) if j < len(maxima))/n)
-    weak_support = sum(row.get('quality', 0.) for row in nodes)/max(n, 1)
+    weak_support = sum(row.get('quality', 0.) for row in nodes if row['status'] == 'weak')/max(n, 1)
     control_support = float(np.mean(controls))
     unsupported = sum(row['status'] == 'unsupported' for row in nodes)
     unassessable = sum(row['status'] == 'unassessable' for row in nodes)
     model['peak_evidence'] = {
         'version': VERSION, 'nodes': nodes, 'detected_count': len(assigned),
         'weak_count': len(chosen), 'unsupported_count': unsupported,
-        'unassessable_count': unassessable, 'search_radius_nm_inv': radius,
+        'unassessable_count': unassessable, 'search_radius_nm_inv': core.matching_radius(position_scale),
+        'distance_scale_nm_inv': position_scale,
+        'assessment_radius_nm_inv': radius,
         'weak_support': weak_support, 'control_support': control_support,
         'bonus_factor': max(0., weak_support-control_support),
         'missing_factor': unsupported/max(n-unassessable, 1)}
@@ -163,10 +175,23 @@ def validate_falloff(value):
     return value
 
 
-def apply(model, weight, half_weight_nm_inv=0.):
+def validate_missing_weight(value):
+    value = float(value)
+    if not np.isfinite(value) or not 0 <= value <= MAX_MISSING_WEIGHT:
+        raise ValueError('Missing-peak penalty must be between 0 and 2.')
+    return value
+
+
+def missing_weight(settings):
+    """Old requests used one weight for both terms; preserve that starting value."""
+    return validate_missing_weight(settings.get('missing_peak_weight', settings.get('peak_evidence_weight', DEFAULT_WEIGHT)))
+
+
+def apply(model, weight, half_weight_nm_inv=0., missing_weight=None):
     weight = float(weight)
     if not np.isfinite(weight) or not 0 <= weight <= .5:
-        raise ValueError('Peak evidence weight must be between 0 and 0.5.')
+        raise ValueError('Weak-peak bonus weight must be between 0 and 0.5.')
+    missing_weight = validate_missing_weight(weight if missing_weight is None else missing_weight)
     evidence = model.get('peak_evidence', {})
     half_weight_nm_inv = validate_falloff(half_weight_nm_inv)
     # Keep the assessable-node COUNT as denominator: normalizing by decayed
@@ -174,25 +199,43 @@ def apply(model, weight, half_weight_nm_inv=0.):
     # This is an observability preference, not a contrast-transfer correction.
     nodes = evidence.get('nodes', [])
     if nodes:
-        missing_sum = 0.
+        missing_sum = unweighted_sum = weak_deficit = detected_deficit = 0.
         for node in nodes:
             q = model['predicted_nodes'][node['node_index']]['q']
             g = math.hypot(*q)
             radial_weight = float(2.**(-min(g/half_weight_nm_inv, 40.)**2)) if half_weight_nm_inv else 1.
-            node.update(radius_nm_inv=g, missing_weight=radial_weight)
-            if node['status'] == 'unsupported':
-                missing_sum += radial_weight
+            # The same strength × positional quality used by the weak bonus
+            # supplies partial support, capped at one half. A marginal weak
+            # maximum must not erase the entire cost of an otherwise empty site.
+            # Every assigned detected spot establishes presence. Its offset
+            # already lowers positional credit; do not charge for absence too.
+            # Ignore obsolete presence_quality in cached/saved site records.
+            support = (1. if node['status'] == 'detected' else
+                       float(np.clip(node.get('quality', 0.), 0., .5)) if node['status'] == 'weak' else 0.)
+            deficit = 1.-support if node['status'] in ('detected', 'weak') else 1. if node['status'] == 'unsupported' else 0.
+            node.update(radius_nm_inv=g, missing_weight=radial_weight, missing_fraction=deficit)
+            missing_sum += radial_weight*deficit
+            unweighted_sum += deficit
+            if node['status'] == 'weak':
+                weak_deficit += deficit
+            elif node['status'] == 'detected':
+                detected_deficit += deficit
         count = max(sum(node['status'] != 'unassessable' for node in nodes), 1)
-        evidence['unweighted_missing_factor'] = sum(node['status'] == 'unsupported' for node in nodes)/count
+        evidence['unweighted_missing_factor'] = unweighted_sum/count
         evidence['missing_factor'] = missing_sum/count
+        evidence['missing_equivalent_count'] = unweighted_sum
+        evidence['weak_missing_equivalent_count'] = weak_deficit
+        evidence['detected_missing_equivalent_count'] = detected_deficit
+        evidence['missing_method'] = 'detected-presence-weak-graded-v3'
     elif half_weight_nm_inv and evidence:
         raise ValueError('This saved fit has no prediction-site records; rerun it to apply missing-peak falloff.')
     evidence['half_weight_nm_inv'] = half_weight_nm_inv
     bonus = weight*evidence.get('bonus_factor', 0.)
-    missing = weight*evidence.get('missing_factor', 0.)
-    model.update(weak_peak_bonus=bonus, missing_peak_penalty=missing, peak_evidence_weight=weight, peak_evidence_half_weight_nm_inv=half_weight_nm_inv)
-    model['score'] = model['position_score']-model.get('scale_penalty', 0.)+bonus-missing
+    missing = missing_weight*evidence.get('missing_factor', 0.)
+    model.update(weak_peak_bonus=bonus, missing_peak_penalty=missing, peak_evidence_weight=weight,
+                 missing_peak_weight=missing_weight, peak_evidence_half_weight_nm_inv=half_weight_nm_inv)
+    model['score'] = model['position_score']-model.get('scale_penalty', 0.)+bonus-missing-model.get('additional_pattern_penalty', 0.)+model.get('brightness_bonus', 0.)+model.get('double_diffraction_bonus', 0.)
     # Weak peaks may rerank an existing fit, but do not supply the four-profile
     # screen or the unique-profile evidence needed for a second structure.
-    model['valid'] = bool(model['position_valid'] and model['score'] > .20)
+    model['valid'] = bool(model['position_valid'] and model['score']-model.get('brightness_bonus', 0.)-model.get('double_diffraction_bonus', 0.) > .20)
     return model

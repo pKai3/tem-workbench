@@ -98,6 +98,41 @@ class CoordinatorChecks(unittest.TestCase):
         app.lock=threading.RLock();app.job_lock=threading.RLock()
         return app
 
+    def test_page_reconnect_discovers_job_without_starting_or_cancelling_it(self):
+        app=self.app();item=image();item['info'].update(id='source',sha256_pixels='pixels')
+        class StalledPool:
+            def __init__(self,*args):pass
+            def submit(self,roi):return Future()
+            def diagnostics(self):return []
+            def close(self):pass
+        self.assertIsNone(app.grid_summary())
+        with patch('server.RegionPool',StalledPool) as pool:
+            job_id=app.grid(item,{'enabled_phases':['BCC']},2,False,1,workers=0)['id']
+            try:
+                summary=app.grid_summary()
+                self.assertEqual(summary['id'],job_id)
+                self.assertEqual(summary['state'],'running')
+                self.assertEqual(summary['execution']['requested_workers'],0)
+                self.assertEqual(set(summary),{'id','state','source','settings','grid','execution'})
+                summary['settings']['enabled_phases'].append('HCP')
+                summary['source']['id']='changed'
+                self.assertEqual(app.jobs[job_id]['settings']['enabled_phases'],['BCC'])
+                self.assertEqual(app.jobs[job_id]['source']['id'],'source')
+                self.assertFalse(app.jobs[job_id]['cancel'])
+                self.assertNotIn('_batch',app.status(job_id,full=True))
+            finally:
+                app.cancel_grid(job_id);app.grid_thread.join(3)
+        self.assertEqual(app.grid_summary()['state'],'cancelled')
+        for state in ['complete','error']:
+            app.jobs[job_id]['state']=state
+            self.assertEqual(app.grid_summary()['state'],state)
+        # Batch jobs reconnect through their own controls, never the interactive grid.
+        app.jobs[job_id]['_batch']=True
+        self.assertIsNone(app.grid_summary())
+        app.jobs.clear()
+        self.assertIsNone(app.grid_summary())
+        app.close()
+
     def test_wait_is_logged_before_any_region_completes(self):
         app=self.app();item=image()
         class StalledPool:

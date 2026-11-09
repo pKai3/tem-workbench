@@ -10,6 +10,7 @@ from scipy.ndimage import gaussian_filter, maximum_filter, map_coordinates, labe
 from scipy.spatial import cKDTree
 from scipy.optimize import least_squares
 import analysis_core as core
+import spot_intensity
 
 VERSION = 'direct-spots-v2'
 DEFAULT_G_MAX = 10.
@@ -591,6 +592,11 @@ def spectrum(array, settings, cache=None, g_max=10.):
     cx, cy = settings['center_x'], settings['center_y']
     sigma = settings['spot_sigma_px']
     spots = [p for p in edit_spots(array, settings, prepared['spots']) if p.get('manual') or p['local_contrast'] >= min(3., settings['spot_snr'])]
+    yy, xx = np.indices(array.shape)
+    photo_valid = np.hypot((xx-cx)*sx, (yy-cy)*sy) >= g_min
+    for rect in settings['masks']:
+        photo_valid &= ~((xx >= rect['x']) & (xx <= rect['x']+rect['w']) & (yy >= rect['y']) & (yy <= rect['y']+rect['h']))
+    spots = spot_intensity.measure(array, [dict(p) for p in spots], photo_valid)
     strong = [p for p in spots if p.get('manual') or p['local_contrast'] >= settings['spot_snr']]
     width = float(np.median([p['width_nm_inv'] for p in strong])) if strong else 2.355*sigma*max(sx, sy)
     width = float(np.clip(width, 2*max(sx, sy), .30))
@@ -605,8 +611,11 @@ def spectrum(array, settings, cache=None, g_max=10.):
                       'radius_estimated_from_smoothing': bool(strongest.get('manual')),
                       'log_local_contrast': float(np.log1p(strength)),
                       'weight': float(np.clip(np.log1p(strength), 1, 6)),
+                      **spot_intensity.profile_measurements(p['spots']),
                       'observed_spots': [s['q'] for s in p['spots']],
                       'manual_observed_spots': [s['q'] for s in p['spots'] if s.get('manual')]})
+    photometry = spot_intensity.apply_weights(peaks)
+    spot_intensity.number_profiles(peaks)
     maxima = []
     for p in _profiles([s for s in spots if not s.get('manual') and s['local_contrast'] < settings['spot_snr']], radius):
         if any(min(np.linalg.norm(p['q']-[s['qx'], s['qy']]), np.linalg.norm(p['q']+[s['qx'], s['qy']])) < radius for s in peaks):
@@ -630,4 +639,6 @@ def spectrum(array, settings, cache=None, g_max=10.):
               'full_band_on_detector': complete_band, 'can_index': prepared['can_index'],
               'mask_count': len(settings['masks']), 'detector': VERSION,
               'detection_scales_px': prepared['scales'], 'duplicate_count': prepared['duplicate_count']}
+    result['photometry'] = photometry
+    result['profile_numbering'] = 'integrated_intensity_descending'
     return result, context

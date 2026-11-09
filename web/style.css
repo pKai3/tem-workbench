@@ -26,10 +26,12 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 .orientations{color:#64d6bb}.ambiguous{color:#df9da6}.legend .unresolved{color:#a4adba}.insufficient{color:#596778}
 
 #evidence-table table{table-layout:fixed;font-size:11px}#evidence-table th,#evidence-table td{padding:5px 3px;overflow-wrap:anywhere}#evidence-table th:first-child{width:28%}#evidence-table th:not(:first-child),#evidence-table td:not(:first-child){text-align:right}
+#brightness-table table{table-layout:fixed;font-size:11px}#brightness-table th,#brightness-table td{padding:5px 4px;overflow-wrap:anywhere;vertical-align:top}#brightness-table th:first-child{width:19%}#brightness-table th:nth-child(2){width:13%}#brightness-table th:nth-child(3){width:21%}#brightness-table th:nth-child(4){width:17%}#brightness-table th:last-child{width:30%}
 
 .fit-table .fit-section td{padding-top:10px;color:var(--muted);font-size:10px;font-weight:500;text-align:left}
+.fit-table .fit-component .col-candidate{padding-left:20px;position:relative}.fit-table .fit-component .col-candidate::before{content:'↳';position:absolute;left:4px;color:var(--muted)}.fit-table .fit-component .col-show input{transform:translateX(8px)}.fit-table .fit-combination .col-candidate{font-weight:600}
 
-.model-table{width:100%;table-layout:fixed;font-size:11.5px;line-height:1.25}.model-table th,.model-table td{padding:6px 4px;vertical-align:top;white-space:pre-line;overflow-wrap:anywhere;text-align:right}.model-table th{font-size:11px}.model-table .col-candidate,.model-table .col-screen,.model-table .col-show{text-align:left}.model-table .col-show{width:36px;white-space:nowrap;overflow-wrap:normal;text-align:center}.model-table .col-candidate{width:13.5%}.fit-table .col-candidate{width:calc(13.5% - 36px)}.model-table .col-rank{width:8%;padding-right:10px}.model-table .col-screen{width:13%;padding-left:8px;white-space:pre;overflow-wrap:normal;font-size:10.5px}.model-table .col-peaks{width:10%}.model-table .col-coverage{width:9%}.model-table .col-rms{width:7%}.model-table .col-position,.model-table .col-cost{width:8%}.model-table .col-dimensions{width:10%}.model-table .col-scale{width:13.5%}.fit-table thead{position:sticky;top:0;background:#121c28;z-index:1}
+.model-table{width:100%;min-width:0;table-layout:fixed;font-size:11.5px;line-height:1.25}.model-table th,.model-table td{padding:6px 4px;vertical-align:top;white-space:pre-line;overflow-wrap:anywhere;text-align:right}.model-table th{font-size:11px}.model-table .col-candidate,.model-table .col-screen,.model-table .col-show{text-align:left}.model-table .col-show{width:4%;white-space:nowrap;overflow-wrap:normal;text-align:center}.model-table .col-candidate{width:25%}.fit-table .col-candidate{width:21%}.model-table .col-rank{width:7%}.model-table .col-screen{width:10%;white-space:pre-line;overflow-wrap:anywhere;font-size:10.5px}.model-table .col-peaks{width:11%}.model-table .col-coverage{width:8%}.model-table .col-rms{width:7%}.model-table .col-position,.model-table .col-cost{width:7%}.model-table .col-dimensions{width:8%}.model-table .col-scale{width:10%}.fit-table thead{position:sticky;top:0;background:#121c28;z-index:1}
 .image-panel{container-type:inline-size}.zone-key small{font-size:10px;color:var(--muted)}.zone-breakdown{margin-top:10px;padding-top:10px}.zone-breakdown table{font-size:11px}.zone-breakdown summary{font-size:12px}.zone-breakdown .hint{font-size:11px;margin:8px 0}.zone-breakdown td:first-child{white-space:nowrap}
 @container(max-width:480px){.map-legends .legend{font-size:9px;gap:4px}.map-legends .legend>span:before{margin-right:3px}}
 @container(max-width:430px){.model-table{font-size:10.5px}.model-table th{font-size:10px}}
@@ -47,6 +49,11 @@ main>.calibration-bar{padding:12px 0 0;align-items:end}main>.calibration-bar>lab
 
 /* A native-pixel loupe follows centre placement without capturing clicks. */
 .image-wrap{position:relative}
+.detector-tool-indicator{position:absolute;top:10px;left:10px;z-index:3;max-width:calc(100% - 20px);padding:4px 8px;border:1px solid currentColor;border-radius:5px;background:#0c121aeb;color:var(--cyan);font-size:12px;line-height:1.3;white-space:nowrap;pointer-events:none}
+.detector-tool-indicator[hidden]{display:none}
+.detector-tool-indicator[data-tool="add"]{color:#c58aff}
+.detector-tool-indicator[data-tool="remove"]{color:#ff879b}
+.detector-tool-indicator[data-tool="mask"]{color:#f4b75e}
 #centre-loupe{position:fixed;width:min(270px,calc(100vw - 16px),calc(100vh - 100px));z-index:50;pointer-events:none;line-height:1.3;background:#0c121a;border:1px solid var(--cyan);border-radius:7px;overflow:hidden;box-shadow:0 3px 18px #0009}
 #centre-loupe[hidden]{display:none}
 .marker-style-controls label[hidden]{display:none}
@@ -249,6 +256,7 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .spectrum-legend{margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:10px;color:#b9c7d7;line-height:1.3}
 .spectrum-legend[hidden]{display:none}.spectrum-legend>strong{display:block;font-size:10px;color:var(--muted);font-weight:500;margin-bottom:2px}
 .spectrum-legend-row{display:flex;flex-wrap:wrap;gap:1px 10px}.spectrum-legend-item{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}.spectrum-legend-item svg{width:24px;height:21px;flex:none}
+.spectrum-colour-swatch{position:relative;display:inline-flex;border-radius:4px;cursor:pointer}.spectrum-colour-swatch:hover,.spectrum-colour-swatch:focus-within{outline:1px solid var(--accent,#59d4cb);background:#203044}.spectrum-colour-swatch input[type=color]{position:absolute;inset:0;width:100%;height:100%;min-height:0;padding:0;border:0;opacity:0;cursor:pointer}
 #fft-zoom{overflow:auto}#fft-zoom-legend{font-size:11px}
 
 /* Collapsible map controls must stay hidden despite row flex layout. */
@@ -331,6 +339,7 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .scale-settings .penalty-field{min-width:0;gap:6px}
 .scale-settings .penalty-field[hidden]{display:none}
 .scale-settings .penalty-field label{min-height:16px}
+.brightness-label{display:flex;align-items:center;gap:4px}.brightness-label .settings-help-button{height:16px;min-height:16px;line-height:16px}
 .scale-settings .weight-inputs{min-width:0}
 .scale-settings .weight-inputs input[type=number]{flex:0 0 64px;width:64px;height:32px}
 .scale-settings .weight-inputs input[type=range]{flex:1;width:0;min-width:40px;max-width:none}
@@ -358,17 +367,21 @@ body.diffraction .scale-settings{grid-column:1/-1;width:100%;max-width:1000px;ju
 .fft-processing-heading,.scale-heading{position:relative}
 .fft-processing-heading .settings-help,.scale-heading .settings-help{position:static}
 .settings-help-popup{width:min(360px,calc(100vw - 100px))}
-.scale-settings .settings-help-popup{left:50%;right:auto;transform:translateX(-50%)}
+.scale-settings .settings-help-popup{left:0;right:auto;transform:none}
 
 /* Shared material row and compact diffraction groups. */
-.material-settings{display:grid;grid-template-columns:500px minmax(0,1fr);align-items:stretch}
-.material-settings .phase-color-controls{align-content:start;padding:12px;gap:12px 10px}
+.material-settings{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);max-width:calc(1060px + var(--panel-gap));align-items:stretch}
+.material-settings:is([data-material=titanium],[data-material=iron]){max-width:calc(840px + var(--panel-gap))}
+.material-settings .phase-color-controls{position:relative;align-content:start;padding:12px;gap:12px 10px}
 .phase-colors-heading,.material-heading,.diffraction-heading,.peak-edit-heading{position:relative;display:flex;align-items:center;gap:6px;min-height:28px}
 .settings-heading-label{display:flex;align-items:center;gap:6px}
 .phase-colors-heading .settings-help,.material-heading .settings-help,.diffraction-heading .settings-help,.peak-edit-heading .settings-help{position:static}
-.material-settings .material-bar{display:grid;grid-template-columns:minmax(170px,1.5fr) repeat(9,minmax(70px,1fr));align-content:start;align-items:end;gap:12px 10px;padding:12px}
+.phase-colors-heading .settings-help-popup{max-width:100%}
+.material-settings .material-bar{display:grid;grid-template-columns:minmax(140px,1.5fr) repeat(4,minmax(0,1fr));align-content:start;align-items:end;gap:12px 10px;padding:12px}
+.material-settings:is([data-material=titanium],[data-material=iron]) .material-bar{grid-template-columns:repeat(3,minmax(0,1fr))}
 .material-heading{grid-column:1/-1;font-size:12px;color:var(--muted)}
 .material-settings label{min-width:0;gap:6px}
+.material-settings label[hidden]{display:none}
 .material-settings input,.material-settings select{height:32px;min-height:32px;box-sizing:border-box;font-size:12px}
 .material-settings .material-choice-control{height:32px}
 #diffraction-controls{grid-template-columns:minmax(0,1fr) 360px;padding:12px;gap:var(--panel-gap)}
@@ -394,8 +407,6 @@ body.diffraction .scale-settings{grid-column:1/-1;width:100%;max-width:1000px;ju
 body.diffraction .scale-settings{max-width:none}
 body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:1600px){
- .material-settings{grid-template-columns:500px minmax(0,1fr)}
- .material-settings .material-bar{grid-template-columns:repeat(4,minmax(0,1fr))}
  #diffraction-controls .diffraction-calibration{grid-template-columns:repeat(3,minmax(0,1fr))}
  #diffraction-controls .fitting-limits{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
@@ -405,10 +416,13 @@ body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(
  .peak-edit-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
  body.diffraction .scale-settings .penalty-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+@media(min-width:801px){
+ .material-settings:is([data-material=titanium],[data-material=iron]){grid-template-columns:minmax(0,4fr) minmax(0,3fr)}
+}
 @media(max-width:600px){
  #diffraction-controls .diffraction-calibration,#diffraction-controls .diffraction-detection,#diffraction-controls .fitting-limits{grid-template-columns:repeat(2,minmax(0,1fr))}
  #diffraction-controls .diffraction-calibration button{grid-column:1/-1}
- .material-settings .material-bar{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .material-settings .material-bar,.material-settings:is([data-material=titanium],[data-material=iron]) .material-bar{grid-template-columns:repeat(2,minmax(0,1fr))}
  .phase-color-controls .settings-help-popup,.material-heading .settings-help-popup,.diffraction-heading .settings-help-popup{left:0;right:auto}
 }
 #diffraction-controls .diffraction-main{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px 12px;align-items:end}
@@ -637,3 +651,55 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .centre-coordinate-fields input{width:100%;min-width:0}
 #diff-centre-dialog .dialog-actions{flex-wrap:wrap}
 #diff-centre-pick{margin-right:auto}
+
+/* Keep path alternatives compact inside the existing diagnostic table. */
+#double-diffraction-list td details{margin:.25rem 0 0;padding:0;border:0}
+#double-diffraction-list td details summary{font-size:.85em}
+
+/* The colour grouping control applies to every selected phase. */
+.phase-color-controls #omega-color-by-label[hidden]{display:none}
+.phase-color-controls:has(#omega-color-by-label:not([hidden])){grid-template-columns:repeat(3,minmax(0,1fr))}
+.phase-color-controls #omega-color-by-label .settings-help{position:static}
+.phase-color-controls #omega-color-by-label .settings-help-popup{left:0;right:auto;max-width:100%}
+.model-table .fit-section td{text-align:left;color:var(--muted);font-size:10px;padding-top:10px}
+
+.model-table.linked-only :is(.col-position,.col-cost,.col-dimensions,.col-scale){display:none}
+.model-table.linked-only .col-candidate{width:24%}.model-table.linked-only .col-rank{width:12%}.model-table.linked-only .col-screen{width:18%}.model-table.linked-only .col-peaks{width:20%}.model-table.linked-only .col-coverage{width:14%}.model-table.linked-only .col-rms{width:12%}
+
+/* Keep peak snapping on the same row as its radius controls. */
+.peak-edit-options{grid-column:1/-1;display:grid;grid-template-columns:minmax(95px,1fr) repeat(2,minmax(60px,1fr));gap:8px;align-items:end}
+#diffraction-controls .peak-edit-options>.check{min-height:32px;white-space:normal}
+#dd-weight-field .brightness-label{position:relative}
+#dd-weight-field .settings-help{position:static}
+.scale-settings #dd-weight-field .settings-help-popup{left:auto;right:0}
+
+/* Keep comparisons inside the inspector; secondary measurements wrap as a row. */
+.model-table{font-variant-numeric:tabular-nums}
+@container(max-width:900px){
+ .model-table,.model-table thead,.model-table tbody{display:block;width:100%}
+ .model-table tr{display:grid;grid-template-columns:0 repeat(24,minmax(0,1fr));border-bottom:1px solid var(--line)}
+ .fit-table tr{grid-template-columns:32px repeat(24,minmax(0,1fr))}
+ .inspector .model-table tr>[data-column]{width:auto;min-width:0;border-bottom:0;padding:6px 3px}
+ .model-table .col-show{grid-column:1;grid-row:1}
+ .model-table .col-candidate{grid-column:2/span 7;grid-row:1}
+ .model-table .col-rank{grid-column:9/span 3;grid-row:1}
+ .model-table .col-screen{grid-column:12/span 3;grid-row:1}
+ .model-table .col-peaks{grid-column:15/span 4;grid-row:1}
+ .model-table .col-coverage{grid-column:19/span 4;grid-row:1}
+ .model-table .col-rms{grid-column:23/span 3;grid-row:1}
+ .model-table .col-position{grid-column:2/span 6;grid-row:2}
+ .model-table .col-cost{grid-column:8/span 6;grid-row:2}
+ .model-table .col-dimensions{grid-column:14/span 6;grid-row:2}
+ .model-table .col-scale{grid-column:20/span 6;grid-row:2}
+ .inspector .model-table tbody :is(.col-position,.col-cost,.col-dimensions,.col-scale){padding:2px 3px 8px;text-align:left;font-size:10.5px}
+ .model-table tbody :is(.col-position,.col-cost,.col-dimensions,.col-scale)::before{content:attr(data-label);display:block;color:var(--muted);font-size:10px;margin-bottom:2px}
+ .model-table thead :is(.col-position,.col-cost,.col-dimensions,.col-scale),
+ .model-table .fit-component[data-linked-fit] :is(.col-position,.col-cost,.col-dimensions,.col-scale){display:none}
+ .inspector .fit-table .fit-component .col-candidate{padding-left:18px}
+ .fit-table .fit-component .col-show input{transform:translateX(4px)}
+ .model-table td[colspan]{grid-column:1/-1;border:0}
+}
+@container(max-width:500px){.model-table th{font-size:10px}}
+.spectrum-view-controls{display:flex;align-items:center;gap:6px;margin-left:auto}
+.spectrum-view-controls .signal-toggle{margin:0}
+.previews figcaption{flex-wrap:wrap;gap:6px}

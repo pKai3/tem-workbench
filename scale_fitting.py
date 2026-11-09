@@ -174,8 +174,9 @@ def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weight
         lower, upper = max(low, low/ratio), min(high, high/ratio)
         if lower > upper+1e-10:
             continue
-        pair = np.argwhere((lengths[:16, None] >= g[None, :]*lower-tol) &
-                           (lengths[:16, None] <= g[None, :]*upper+tol))
+        reach = core.matching_radius(tol)
+        pair = np.argwhere((lengths[:16, None] >= g[None, :]*lower-reach) &
+                           (lengths[:16, None] <= g[None, :]*upper+reach))
         if not len(pair):
             continue
         oi, pi = pair.T
@@ -191,8 +192,8 @@ def _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weight
         distance = distance.reshape(len(scale), -1)
         nearest = nearest.reshape(distance.shape) % len(observed)
         visible = (g[None, :]*scale[:, None] >= g_min) & (g[None, :]*scale[:, None] <= g_max)
-        quality = np.exp(-.5*(distance/(tol/2))**2)
-        quality[(distance > tol) | ~visible] = 0
+        quality = core.positional_quality(distance, tol)
+        quality[~visible] = 0
         support = np.zeros((len(scale), len(observed)))
         np.maximum.at(support, (np.repeat(np.arange(len(scale)), len(q)), nearest.ravel()), quality.ravel())
         quick = support @ weights/weights.sum()
@@ -238,7 +239,7 @@ def _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min):
         observed = np.array([m['observed_q'] for m in matches])
         predicted = np.array([m['predicted_q'] for m in matches])
         observed *= np.where(np.sum(observed*predicted, axis=1) < 0, -1., 1.)[:, None]
-        weights = np.sqrt([m['weight']*max(m['quality'], .05) for m in matches])[:, None]
+        weights = np.sqrt([m['weight']*m['quality'] for m in matches])[:, None]
 
         def residual(params):
             a, s1 = params[:2]

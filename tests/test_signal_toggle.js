@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const source=fs.readFileSync('web/app.js','utf8'),controls=new Map();
 function $(id){if(!controls.has(id))controls.set(id,{attrs:{},setAttribute(k,v){this.attrs[k]=v},querySelector:q=>$(id+q)});return controls.get(id)}
 const context={$,direct:true,isDiffraction:()=>context.direct,showDetectorSignal:false,detectorRaw:{detector:true},
- config:{fft_log16:true,diffraction_processed_view:true},reciprocalUnit:()=> 'rel.',draws:0,drawFFT(){context.draws++}};
+ config:{fft_log16:true,diffraction_processed_view:true},reciprocalUnit:()=> 'rel.',draws:0,drawFFT(){context.draws++},readPreference:(key,fallback)=>fallback};
 vm.createContext(context);
 vm.runInContext(source.slice(source.indexOf('function processedSignalCaption('),source.indexOf('function rememberFFTDisplay(')),context);
 context.syncSignalToggle();

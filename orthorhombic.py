@@ -49,7 +49,7 @@ def fit(peaks, template, tol, g_min, g_max):
         design=np.stack((g3[i]**2,g3[j]**2,g3[i]*g3[j]))
         scales2 = 1+(targets-design.sum(1)) @ np.linalg.pinv(design).T
         valid=((scales2>=low**2-1e-8)&(scales2<=high**2+1e-8)).all(1)
-        valid &= np.max(abs(scales2@design.T-targets),axis=1)<max(tol*g_max,1e-5)
+        valid &= np.max(abs(scales2@design.T-targets),axis=1)<max(core.matching_radius(tol)*g_max,1e-5)
         for values, origin in zip(scales2[valid],first[valid]):
             scales=np.sqrt(np.clip(values,low**2,high**2))
             v=q[i]@transform(template,scales)
@@ -66,8 +66,8 @@ def fit(peaks, template, tol, g_min, g_max):
         radii=np.linalg.norm(pred,axis=2)
         dist,nearest=tree.query(pred.reshape(-1,2));dist=dist.reshape(len(batch),-1)
         nearest=nearest.reshape(dist.shape)%len(observed)
-        quality=np.exp(-.5*(dist/(tol/2))**2)
-        quality[(dist>tol)|(radii<g_min)|(radii>g_max)]=0
+        quality=core.positional_quality(dist,tol)
+        quality[(radii<g_min)|(radii>g_max)]=0
         support=np.zeros((len(batch),len(observed)))
         np.maximum.at(support,(np.repeat(np.arange(len(batch)),len(q)),nearest.ravel()),quality.ravel())
         scores.extend(support@weights/weights.sum())
@@ -94,7 +94,7 @@ def fit(peaks, template, tol, g_min, g_max):
             obs=np.array([m['observed_q'] for m in matches])
             pred=np.array([m['predicted_q'] for m in matches])
             obs*=np.where((obs*pred).sum(1)<0,-1.,1.)[:,None]
-            w=np.sqrt([m['weight']*max(m['quality'],.05) for m in matches])[:,None]
+            w=np.sqrt([m['weight']*m['quality'] for m in matches])[:,None]
             def residual(params):
                 s=scales.copy();s[active]=params[1:]
                 return ((core.rotation(mq@transform(template,s),params[0])-obs)*w).ravel()

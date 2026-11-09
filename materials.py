@@ -15,26 +15,29 @@ REFERENCE_LIMITS = {'hcp_a': (.15, .65), 'hcp_c': (.20, 1.20), 'omega_a': (.15, 
 MATERIAL_PRESETS = {
     'unknown': {
         'label': 'Unknown',
+        'available_phases': list(PHASES),
         'enabled_phases': list(PHASES),
         'references': {'hcp_a': .295, 'hcp_c': .468, 'bcc_a': .330, 'fcc_a': .417},
         'note': 'Unknown material: all phases enabled; automatic reciprocal scales search ×0.5–2.0. Dimensions are editable search anchors, not a material identification. Overall scale penalty is disabled; HCP/ω c/a penalty remains active in overall + c/a mode. The zone-axis library remains finite.',
     },
     'titanium': {
         'label': 'Titanium',
+        'available_phases': ['HCP', 'BCC', 'OMEGA'],
         'enabled_phases': ['HCP', 'BCC', 'OMEGA'],
         'references': {'hcp_a': .295, 'hcp_c': .468, 'bcc_a': .330, 'fcc_a': .417},
-        'note': 'Nominal Ti references: α-HCP, approximate β-BCC, ideal ω and a metastable FCC comparison. Alloy composition and temperature can change these dimensions.',
+        'note': 'Nominal Ti references: α-HCP, approximate β-BCC and ideal ω. Alloy composition and temperature can change these dimensions. Choose Unknown or Custom to compare other structures.',
     },
     'iron': {
         'label': 'Iron',
+        'available_phases': ['BCC', 'FCC'],
         'enabled_phases': ['BCC', 'FCC'],
         'references': {'hcp_a': .24637, 'hcp_c': .39568, 'bcc_a': .28675, 'fcc_a': .36484},
-        'note': 'Fe references: α-BCC at 295 K; γ-FCC at 1183 K; ε-HCP at 15 GPa / 300 K. These phases are not all stable at ambient conditions. Edit for your alloy and conditions.',
+        'note': 'Fe references: α-BCC at 295 K; γ-FCC at 1183 K. These phases are not both stable at ambient conditions. Edit for your alloy and conditions. Choose Unknown or Custom to compare other structures.',
     },
 }
 
 # ORT is a generic primitive cell; omega uses an editable titanium reference.
-# Disabled phases retain anchors for explicit opt-in comparisons.
+# Other anchors remain available through Unknown/Custom and older saved analyses.
 for preset in MATERIAL_PRESETS.values():
     preset['references'].update(ort_a=.3, ort_b=.4, ort_c=.5, omega_a=.4614, omega_c=.2832)
 

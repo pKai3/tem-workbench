@@ -25,8 +25,12 @@ import phase_comparison
 import demo_data
 import peak_evidence
 import forbidden_reflections
+import double_diffraction
 import diffraction
 import beta_omega
+import diffraction_fitting
+import brightness_grouping
+import spot_intensity
 import raster_images
 from materials import scale_bounds, PHASES, reference_settings
 from crystal_templates import fcc_templates, orthorhombic_templates, omega_templates, HEX_PHASES
@@ -68,7 +72,7 @@ class Engine:
         self.auto_templates = self.templates
         self._template_cache = {(10., 3., .295, .468, .330, .417, .3, .4, .5, .4614, .2832, .85, 1.15): self.templates}
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'beta_omega.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'forbidden_reflections.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'orthorhombic.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'beta_omega.py', 'diffraction_fitting.py', 'spot_intensity.py', 'brightness_grouping.py', 'double_diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'forbidden_reflections.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'orthorhombic.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
         self.acquisition_index = MetadataIndex()
@@ -376,6 +380,9 @@ class Engine:
         if not (.85 <= values['scale'] <= 1.15 and 0 <= values['g_min'] < 30 and 4 <= values['g_max'] <= 30 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['ca_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
             raise ValueError('Analysis settings are outside the supported range.')
         peak_evidence.validate_falloff(values['peak_evidence_half_weight_nm_inv'])
+        values['missing_peak_weight'] = peak_evidence.missing_weight(settings)
+        values['double_diffraction_weight'] = double_diffraction.validate_weight(settings.get('double_diffraction_weight', 0.))
+        values['brightness_grouping_weight'] = brightness_grouping.validate_weight(settings.get('brightness_grouping_weight', brightness_grouping.DEFAULT_WEIGHT))
         detector_defaults = {'fft_smoothing_sigma': .65, 'fft_threshold_floor': 1.8,
                              'fft_minimum_enrichment': 3., 'fft_minimum_separation': .5,
                              'fft_max_peaks': 70}
@@ -405,11 +412,9 @@ class Engine:
         if objective not in ('rank', 'geometry'):
             raise ValueError('Choose rank or geometry for automatic peak strength.')
         values.update(fft_window=window, remove_mean=remove_mean, fft_auto_strength=auto_strength, fft_auto_objective=objective)
-        # Migrate the former exclusive mode into an independent search switch.
-        search_joint = settings.get('search_beta_omega', settings.get('diffraction_model') == 'beta_omega')
-        if not isinstance(search_joint, bool):
-            raise ValueError('Beta + Omega search must be enabled or disabled.')
-        values['search_beta_omega'] = search_joint if direct else False
+        # Phase selection is the only search switch; legacy linked-mode flags
+        # are accepted in saved requests but no longer select a separate path.
+        values['phase_search_version'] = 2
         anchors = settings.get('beta_parent_anchors', [])
         if not isinstance(anchors, list) or len(anchors) not in (0, 2):
             raise ValueError('Provide zero or two beta parent anchors.')
@@ -423,7 +428,9 @@ class Engine:
 
     def _fit_spectrum(self, s, settings, templates, can_index, context, prediction_cache=None):
         """Compare one detected profile set; the FFT pixels are already prepared."""
-        tol = max(.10, core.peak_width(s))
+        if context is not None:
+            context = core.matching_context(s, context)
+        tol = core.matching_parameters(s)['distance_scale_nm_inv']
         candidates = []
         if not can_index:
             models = []
@@ -446,11 +453,34 @@ class Engine:
                                           candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'], prediction_cache=prediction_cache)
         if can_index:
             s['weak_maxima'] = context['maxima']
+            s['prediction_evidence_context'] = {k: context[k] for k in ('radius', 'position_scale', 'position_matching', 'g_min', 'g_max', 'x_limit', 'y_limit')}
             for model in candidates:
                 peak_evidence.inspect(model, context)
-                peak_evidence.apply(model, settings['peak_evidence_weight'], settings.get('peak_evidence_half_weight_nm_inv', 0.))
+                peak_evidence.apply(model, settings['peak_evidence_weight'], settings.get('peak_evidence_half_weight_nm_inv', 0.), peak_evidence.missing_weight(settings))
+                brightness_grouping.inspect(model, s['peaks'])
+                brightness_grouping.apply(model, settings['brightness_grouping_weight'])
+                double_diffraction.evaluate(model, s['peaks'], context['radius'], settings['g_min'], settings['g_max'], settings.get('double_diffraction_weight', 0.))
             models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
         return models, candidates
+
+    @staticmethod
+    def diffraction_anchors(s, settings):
+        anchors = []
+        for anchor in settings['beta_parent_anchors']:
+            if not isinstance(anchor, dict):
+                raise ValueError('Beta anchors must contain a profile and three-index reflection.')
+            current = dict(anchor)
+            if 'detector_position' in anchor:
+                point = np.asarray(anchor['detector_position'], dtype=float)
+                if point.shape != (2,) or not np.isfinite(point).all():
+                    raise ValueError('Beta anchor detector positions must contain two finite coordinates.')
+                q = (point-s['beam_center_px'])*np.array(s['reciprocal_pixel_size'])*[1, -1]
+                nearest = sorted((min(np.linalg.norm(q-[p['qx'], p['qy']]), np.linalg.norm(q+[p['qx'], p['qy']])), p['profile_id']) for p in s['peaks'])
+                if not nearest or nearest[0][0] > max(.10, core.peak_width(s)):
+                    raise ValueError('A beta anchor is no longer detected. Restore its detection or clear the anchors.')
+                current['profile_id'] = nearest[0][1]
+            anchors.append(current)
+        return anchors
 
     def analyze(self, item, roi, settings, images=True, cache_candidates=False, cancel_event=None):
         roi, settings = self.validate(item, roi, settings)
@@ -479,26 +509,9 @@ class Engine:
         if direct:
             s['coordinate_units'] = 'relative' if relative else 'nm^-1'
         selected_geometry = None
-        if direct and settings['search_beta_omega']:
-            anchors = []
-            for anchor in settings['beta_parent_anchors']:
-                if not isinstance(anchor, dict):
-                    raise ValueError('Beta anchors must contain a profile and three-index reflection.')
-                current = dict(anchor)
-                if 'detector_position' in anchor:
-                    point = np.asarray(anchor['detector_position'], dtype=float)
-                    if point.shape != (2,) or not np.isfinite(point).all():
-                        raise ValueError('Beta anchor detector positions must contain two finite coordinates.')
-                    q = (point-s['beam_center_px'])*np.array(s['reciprocal_pixel_size'])*[1, -1]
-                    nearest = sorted((min(np.linalg.norm(q-[p['qx'], p['qy']]), np.linalg.norm(q+[p['qx'], p['qy']])), p['profile_id']) for p in s['peaks'])
-                    if not nearest or nearest[0][0] > max(.10, core.peak_width(s)):
-                        raise ValueError('A beta anchor is no longer detected. Restore its detection or clear the anchors.')
-                    current['profile_id'] = nearest[0][1]
-                anchors.append(current)
-            joint = beta_omega.fit(s['peaks'], max(.10, core.peak_width(s)), settings['g_min'], settings['g_max'], context['visible'], anchors)
-            models, candidates = ([], []) if relative else self._fit_spectrum(s, settings, templates, can_index, context)
-        elif direct:
-            models, candidates = ([], []) if relative else self._fit_spectrum(s, settings, templates, can_index, context)
+        if direct:
+            anchors = self.diffraction_anchors(s, settings)
+            models, candidates, joint = diffraction_fitting.search(self, s, settings, context, relative, anchors)
         else:
             # Minimum strength only filters the existing connected components.
             # Reuse one FFT and test every distinct admitted profile set, including
@@ -515,7 +528,8 @@ class Engine:
             for strength in levels:
                 if cancel_event is not None and cancel_event.is_set():
                     raise CancelledError('Grid cancelled')
-                peaks = [p for p in pool if p['log_radial_enrichment'] >= strength]
+                peaks = [dict(p) for p in pool if p['log_radial_enrichment'] >= strength]
+                spot_intensity.number_profiles(peaks)
                 if auto_strength and len(pool) >= 4 and len(peaks) < 4:
                     break
                 if len(peaks) == last_count:
@@ -545,8 +559,8 @@ class Engine:
                 if best is None or merit > best[0]:
                     best = (merit, trial, trial_models, trial_candidates)
             _, s, models, candidates = best
+            context = peak_evidence.for_peaks(weak_candidates, s['peaks']) if can_index else None
             if geometry_auto:
-                context = peak_evidence.for_peaks(weak_candidates, s['peaks'])
                 models, candidates = self._fit_spectrum(s, settings, templates, can_index, context)
             if settings['fft_auto_strength']:
                 s['auto_peak_strength'] = {
@@ -563,15 +577,12 @@ class Engine:
                 }
         tol = max(.10, core.peak_width(s))
         forbidden_reflections.annotate(models, s, tol, settings['g_min'], settings['g_max'])
+        double_diffraction.annotate(models, s, tol, settings['g_min'], settings['g_max'])
         classification = self.classify(s, models, settings, width_nm, height_nm, can_index)
-        if joint is not None:
-            classification = dict(label=joint['status'], primary_model=None, secondary_model=None,
-                                  flags=[joint['interpretation'], 'Mask printed annotations before fitting; they are not diffraction evidence.'])
-            periodicity = dict(status='parent_linked_model', substantial_second_pattern=False)
-        else:
-            periodicity = selected_geometry if selected_geometry is not None else (core.purity(s['peaks'], tol, g_max=settings['g_max'], g_min=settings['g_min']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False})
+        classification = diffraction_fitting.compare(classification, joint, s, context, settings, models)
+        periodicity = selected_geometry if selected_geometry is not None else (core.purity(s['peaks'], tol, g_max=settings['g_max'], g_min=settings['g_min']) if can_index else {'status': 'unresolved_pattern', 'substantial_second_pattern': False})
         if relative:
-            classification['flags'].append('Uncalibrated image: independent reference-cell searches are inactive. Peak and geometry checks remain available; Beta + Omega is an optional relative-geometry search.')
+            classification['flags'].append('Relative geometry: selected phases are searched without absolute lattice calibration. Cell dimensions are not measured. Related omega orientations are tested when BCC and omega are both selected.')
         log = s.pop('log')
         detector_signal = s.pop('detector_signal', None)
         # Return an encoded log-power field; display contrast is adjusted in the browser only.
@@ -646,8 +657,8 @@ class Engine:
                 classification['flags'].append(primary['scale_note'])
         if not relative and can_index and len(s['peaks']) == 3:
             classification['flags'].append('Only three independent profiles were detected; the current crystal screen requires four. Some high-symmetry projections have only three first-order profiles. Higher-order reflections or a larger fitting band may supply additional evidence; three profiles alone do not identify a phase.')
-        if not relative and settings.get('peak_evidence_weight', 0):
-            classification['flags'].append('Prediction-site evidence is an exploratory ranking adjustment. Weak maxima are checked against local background and rotated controls; they do not count toward the initial fit screen or separate-pattern criteria. Missing spots are not proof of an absent reflection.')
+        if settings.get('peak_evidence_weight', 0) or peak_evidence.missing_weight(settings):
+            classification['flags'].append('Prediction-site evidence is an exploratory ranking adjustment. Weak maxima are checked against local background and rotated controls; they provide partial relief from missing cost and do not count toward the initial fit screen or separate-pattern criteria. Missing spots are not proof of an absent reflection.')
         if not relative and settings.get('peak_evidence_half_weight_nm_inv', 0):
             classification['flags'].append(f"Missing-prediction costs fall smoothly with reciprocal radius: half weight at {settings['peak_evidence_half_weight_nm_inv']:g} nm⁻¹. Detected-peak agreement and weak bonuses are unchanged. This is a heuristic, not a CTF correction.")
         if not can_index:
@@ -661,7 +672,8 @@ class Engine:
             units = 'rel.' if relative else 'nm⁻¹'
             calibration = 'relative coordinates' if relative else 'reciprocal calibration'
             classification['flags'].append(f"Direct detector spots, without an FFT. Verify the beam centre and {calibration}; fitting uses the {settings.get('g_min', 3.):g}–{settings['g_max']:g} {units} band.")
-            classification['flags'].append(f"Matching radius {max(.10, core.peak_width(s)):.3f} {units} uses the estimated spot width with a 0.10 {units} floor. Opposite spots are grouped once; only observed spots are marked.")
+            matching = core.matching_parameters(s)
+            classification['flags'].append(f"Soft positional matching searches to {matching['search_radius_nm_inv']:.3f} {units}; credit falls continuously with offset using a {matching['distance_scale_nm_inv']:.3f} {units} distance scale. This combines spot width and a distortion allowance of 4% of the median spot radius in quadrature, equally for all phases. Assigned detected spots have no missing-site cost; their displacement still lowers positional credit. Opposite spots are grouped once; only observed spots are marked.")
             translation = s.get('center_refinement', {})
             if translation.get('enabled') and not translation.get('applied'):
                 classification['flags'].append('Translation refinement: '+translation['reason'])
@@ -699,20 +711,25 @@ class Engine:
         candidates = json.loads(zlib.decompress(result['_fit_cache']))
         candidates = [model for model in candidates if model['phase'] in settings.get('enabled_phases', PHASES)]
         for model in candidates:
-            if settings['scale_mode'] != 'fixed':
-                c = model.get('scale_c') if model.get('scale_parameter_count') == 2 else None
-                scale_fitting.penalize(model, model['scale_a'], c, settings['scale_penalty_strength'], settings.get('ca_penalty_strength', .10))
-            peak_evidence.apply(model, settings.get('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT), settings.get('peak_evidence_half_weight_nm_inv', 0.))
+            diffraction_fitting.rescore_scale(model, settings)
+            peak_evidence.apply(model, settings.get('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT), settings.get('peak_evidence_half_weight_nm_inv', 0.), peak_evidence.missing_weight(settings))
+            if 'brightness_grouping' in model:
+                brightness_grouping.apply(model, settings.get('brightness_grouping_weight', brightness_grouping.DEFAULT_WEIGHT))
+            if settings.get('double_diffraction_weight', 0.) or 'double_diffraction_bonus' in model:
+                spectrum = result['spectrum']
+                double_diffraction.evaluate(model, spectrum['peaks'], max(.10, core.peak_width(spectrum)), settings['g_min'], settings['g_max'], settings.get('double_diffraction_weight', 0.), reuse_report=True)
         return candidates
 
-    def rescore(self, result, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None):
+    def rescore(self, result, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None, missing_weight=None, brightness_weight=None, dd_weight=None):
         """Only ranking/classification changes; all measured evidence is reused."""
-        if result.get('beta_omega') and not result['models']:
-            return result  # Shared relative geometry has no standalone scale/weak-peak penalties.
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= .5:
             raise ValueError('Scale penalty must be between 0 and 0.5.')
         settings = {**result['settings'], 'scale_penalty_strength': 0. if result['settings'].get('material') == 'unknown' else strength}
+        settings['missing_peak_weight'] = peak_evidence.missing_weight(result['settings']) if missing_weight is None else peak_evidence.validate_missing_weight(missing_weight)
+        settings['double_diffraction_weight'] = double_diffraction.validate_weight(settings.get('double_diffraction_weight', 0.) if dd_weight is None else dd_weight)
+        if brightness_weight is not None:
+            settings['brightness_grouping_weight'] = brightness_grouping.validate_weight(brightness_weight)
         if half_weight_nm_inv is not None:
             settings['peak_evidence_half_weight_nm_inv'] = peak_evidence.validate_falloff(half_weight_nm_inv)
         if evidence_weight is not None:
@@ -722,11 +739,39 @@ class Engine:
             if not np.isfinite(ca_penalty_strength) or not 0 <= ca_penalty_strength <= .5:
                 raise ValueError('c/a penalty must be between 0 and 0.5.')
             settings['ca_penalty_strength'] = ca_penalty_strength
-        candidates = self.cached_models(result, settings)
-        models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
-        forbidden_reflections.annotate(models, result['spectrum'], max(.10, core.peak_width(result['spectrum'])), settings['g_min'], settings['g_max'])
-        classification = self.classify(result['spectrum'], models, settings,
-                                       result['width_nm'], result['height_nm'])
-        if result.get('beta_omega'):
-            classification = result['classification']
-        return {**result, 'settings': settings, 'models': models, 'classification': classification}
+        spectrum = result['spectrum']
+        direct = spectrum.get('kind') == 'diffraction'
+        related = context = None
+        if direct:
+            # Reconsider every parent/subset, not just the previous winner.
+            # Reuse saved observations/photometry; no detector or pixels rerun.
+            sx, sy = spectrum['reciprocal_pixel_size']; cx, cy = spectrum['beam_center_px']
+            shape = (result['roi']['h'], result['roi']['w'])
+            diff = {**settings['diffraction'], 'center_x': cx, 'center_y': cy}
+            radius = max(.1, core.peak_width(spectrum))
+            context = dict(maxima=spectrum.get('weak_maxima', []), radius=radius,
+                g_min=settings['g_min'], g_max=settings['g_max'], x_limit=max(cx, shape[1]-1-cx)*sx,
+                y_limit=max(cy, shape[0]-1-cy)*sy,
+                visible=lambda q: diffraction.visible(q, diff, shape, radius) | diffraction.visible(-np.asarray(q), diff, shape, radius))
+            models, candidates, related = diffraction_fitting.search(self, spectrum, settings, context,
+                spectrum.get('coordinate_units') == 'relative', self.diffraction_anchors(spectrum, settings))
+        else:
+            candidates = self.cached_models(result, settings)
+            models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
+        forbidden_reflections.annotate(models, spectrum, max(.10, core.peak_width(spectrum)), settings['g_min'], settings['g_max'])
+        double_diffraction.annotate(models, spectrum, max(.10, core.peak_width(spectrum)), settings['g_min'], settings['g_max'])
+        classification = self.classify(spectrum, models, settings, result['width_nm'], result['height_nm'])
+        extra = {}
+        if not direct and spectrum.get('prediction_evidence_context'):
+            context = {**spectrum['prediction_evidence_context'], 'maxima': spectrum.get('weak_maxima', [])}
+        classification = diffraction_fitting.compare(classification, related, spectrum, context, settings, models)
+        if direct:
+            if spectrum.get('coordinate_units') == 'relative':
+                classification['flags'].append('Relative geometry: selected phases are searched without absolute lattice calibration. Cell dimensions are not measured. Related omega orientations are tested when BCC and omega are both selected.')
+            if related:
+                extra['beta_omega'] = related
+            if '_fit_cache' in result:
+                extra['_fit_cache'] = zlib.compress(json.dumps(candidates).encode())
+        # Do not retain a stale linked winner when the new search has none.
+        result = {k: v for k, v in result.items() if k != 'beta_omega'}
+        return {**result, **extra, 'settings': settings, 'models': models, 'classification': classification}

@@ -32,6 +32,9 @@ from crystal_templates import PHASES
 from materials import MATERIAL_PRESETS
 from engine import Engine
 import diffraction
+import peak_evidence
+import brightness_grouping
+import double_diffraction
 from batch_grids import BatchGrids, eligibility, safe_name
 import demo_data
 from demo_packs import DemoDownload
@@ -149,8 +152,8 @@ class Workbench:
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
                 'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
-                'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True,
-                'peak_evidence': 'local-maxima-v3', 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
+                'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(),
+                'peak_evidence': peak_evidence.VERSION, 'separate_peak_penalties': True, 'double_diffraction_scoring': True, 'brightness_grouping': True, 'fft_brightness_grouping': True, 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
     def set_folders(self, data, output):
         with self.lock, self.job_lock:
@@ -244,6 +247,7 @@ class Workbench:
         return deleted
 
     def grid(self, item, settings, count, adaptive, minimum, check_passing=False, workers=0, batch=False, engine=None, overlap=None):
+        requested_workers = workers
         workers = worker_count(workers)
         settings = copy.deepcopy(settings)
         engine = engine or self.engine  # Snapshot even if the open image changes.
@@ -266,13 +270,13 @@ class Workbench:
         if samples is None and np.diff(bounds).min() < 32:
             raise ValueError('Grid regions would be smaller than 32 pixels.')
         check_passing = bool(adaptive and check_passing)
-        job = {'id': uuid.uuid4().hex, 'state': 'running', 'source': item['info'],
+        job = {'id': uuid.uuid4().hex, 'state': 'running', 'source': item['info'], '_batch': batch,
                'settings': settings.copy(), 'initial_settings': settings.copy(), 'grid': {'count': count, 'adaptive': adaptive, 'minimum_nm': minimum,
                                              'check_passing': check_passing,
                                              'refinement_policy': adaptive_refinement.VERSION if check_passing else 'unresolved_or_multiple_patterns' if adaptive else 'uniform'},
                'lookahead': {'checked': 0, 'refined': 0, 'retained': 0},
                'regions': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False,
-               'execution': {'backend': 'processes', 'workers': workers, 'elapsed_seconds': 0.}}
+               'execution': {'backend': 'processes', 'workers': workers, 'requested_workers': requested_workers, 'elapsed_seconds': 0.}}
         if samples is not None:
             job['grid'] = overlap_options
             job['pending'] = len(samples)
@@ -461,12 +465,21 @@ class Workbench:
                 zones[phase] = {key: model[key] for key in ('phase', 'zone_3index', 'valid', 'score', 'coverage')}
         return zones
 
+    def grid_summary(self):
+        """Reconnect a page to the latest interactive job without copying its fits."""
+        with self.job_lock:
+            job = next((j for j in self.jobs.values() if not j.get('_batch')), None)
+            if job is None:
+                return None
+            return copy.deepcopy({key: job[key] for key in
+                                  ('id', 'state', 'source', 'settings', 'grid', 'execution')})
+
     def status(self, job_id, full=False):
         with self.job_lock:
             job = self.jobs.get(job_id)
             if not job:
                 raise ValueError('This grid is no longer in memory.')
-            result = {k: v for k, v in job.items() if k not in ['cancel', 'regions']}
+            result = {k: v for k, v in job.items() if k not in ['cancel', 'regions'] and not k.startswith('_')}
             result['cancelling'] = bool(job['cancel'] and job['state'] == 'running')
             regions = list(job['regions'])
             result['can_rescore'] = (job['state'] != 'running' and
@@ -477,7 +490,7 @@ class Workbench:
                                    'best_zones': self.best_zones(r), 'pass_id': r.get('pass_id')} for r in regions])
             return result
 
-    def rescore(self, job_id, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None):
+    def rescore(self, job_id, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None, missing_weight=None, brightness_weight=None, dd_weight=None):
         strength = float(strength)
         if not np.isfinite(strength) or not 0 <= strength <= .5:
             raise ValueError('Scale penalty must be between 0 and 0.5.')
@@ -489,9 +502,12 @@ class Workbench:
                 raise ValueError('Finish or cancel the grid before adjusting its penalty.')
             if job['settings'].get('material') == 'unknown':
                 strength = 0.
+            missing_weight = peak_evidence.missing_weight(job['settings']) if missing_weight is None else peak_evidence.validate_missing_weight(missing_weight)
+            dd_weight = double_diffraction.validate_weight(job['settings'].get('double_diffraction_weight', 0.) if dd_weight is None else dd_weight)
+            brightness_weight = brightness_grouping.validate_weight(job['settings'].get('brightness_grouping_weight', brightness_grouping.DEFAULT_WEIGHT) if brightness_weight is None else brightness_weight)
             evidence_weight = float(job['settings'].get('peak_evidence_weight', .10) if evidence_weight is None else evidence_weight)
             if not np.isfinite(evidence_weight) or not 0 <= evidence_weight <= .5:
-                raise ValueError('Peak evidence weight must be between 0 and 0.5.')
+                raise ValueError('Weak-peak bonus weight must be between 0 and 0.5.')
             ca_penalty_strength = float(job['settings'].get('ca_penalty_strength', .10) if ca_penalty_strength is None else ca_penalty_strength)
             if not np.isfinite(ca_penalty_strength) or not 0 <= ca_penalty_strength <= .5:
                 raise ValueError('c/a penalty must be between 0 and 0.5.')
@@ -501,14 +517,14 @@ class Workbench:
             started = time.perf_counter()
             # Build a replacement before publishing, so a failure cannot leave
             # half the map at the new penalty. Parent/child boundaries stay fixed.
-            regions = [self.engine.rescore(region, strength, evidence_weight, ca_penalty_strength, half_weight_nm_inv) for region in job['regions']]
-            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_half_weight_nm_inv': half_weight_nm_inv},
-                       rescore={'strength': strength, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_weight': evidence_weight, 'peak_evidence_half_weight_nm_inv': half_weight_nm_inv, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
+            regions = [self.engine.rescore(region, strength, evidence_weight, ca_penalty_strength, half_weight_nm_inv, missing_weight, brightness_weight, dd_weight) for region in job['regions']]
+            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight, 'missing_peak_weight': missing_weight, 'double_diffraction_weight': dd_weight, 'brightness_grouping_weight': brightness_weight, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_half_weight_nm_inv': half_weight_nm_inv},
+                       rescore={'strength': strength, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_weight': evidence_weight, 'missing_peak_weight': missing_weight, 'double_diffraction_weight': dd_weight, 'brightness_grouping_weight': brightness_weight, 'peak_evidence_half_weight_nm_inv': half_weight_nm_inv, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                                 'region_count': len(regions), 'reused_fits': True, 'boundaries_unchanged': True,
                                 'at': datetime.now().astimezone().isoformat()})
             if job['grid'].get('mode') == 'overlap':
                 job['aggregation'] = overlap_maps.aggregate(job)
-            LOG.info('Grid %s reweighted: scale penalty %.3f; peak evidence %.3f', job_id[:8], strength, evidence_weight)
+            LOG.info('Grid %s reweighted: scale penalty %.3f; weak bonus %.3f; missing penalty %.3f', job_id[:8], strength, evidence_weight, missing_weight)
             return self.status(job_id)
 
     def export_crop(self, body):
@@ -720,7 +736,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
@@ -832,7 +848,7 @@ def make_handler(app):
                         started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)), body.get('workers', 0), overlap=body.get('overlap'))
                     self.send(started)
                 elif self.path == '/api/rescore-grid':
-                    self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight'), body.get('ca_penalty_strength'), body.get('peak_evidence_half_weight_nm_inv')))
+                    self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight'), body.get('ca_penalty_strength'), body.get('peak_evidence_half_weight_nm_inv'), body.get('missing_peak_weight'), body.get('brightness_grouping_weight'), body.get('double_diffraction_weight')))
                 elif self.path == '/api/cancel':
                     app.cancel_grid(body['job_id'])
                     LOG.info('Grid %s cancellation requested', body['job_id'][:8])

@@ -3,6 +3,7 @@
 Independent of the web server; no file access or output at import time.
 """
 import itertools
+import spot_intensity
 import numpy as np
 from scipy.fft import fft2, fftshift, fftfreq
 from scipy.ndimage import gaussian_filter, label
@@ -36,7 +37,6 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
   ys,xs=np.where(components==ci)
   if not len(ys):continue
   j=int(np.argmax(wh[ys,xs]));y=int(ys[j]);x=int(xs[j]);en=float(wh[y,x])
-  if en<minimum_enrichment:continue
   # One position per connected Fourier profile; shoulders remain in its footprint.
   dx=dy=0.
   if 0<x<lg.shape[1]-1 and 0<y<lg.shape[0]-1:
@@ -46,7 +46,7 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
     else:dy=off
   q=canonical(np.array([[float(xx[y,x]+dx*df),float(yy[y,x]-dy*df)]]))[0].tolist();weights=np.maximum(wh[ys,xs]-threshold,0);area=int(len(ys));width=float(np.sqrt(max(area,1)/np.pi)*2*df)
   if not g_min <= np.linalg.norm(q) <= g_max or np.linalg.norm(q)==0:continue
-  peaks.append({'profile_id':0,'qx':q[0],'qy':q[1],'g_nm_inv':float(np.linalg.norm(q)),'log_radial_enrichment':en,'weight':float(np.clip(en-2,1,6)),'profile_area_bins':area,'equivalent_profile_diameter_nm_inv':width,'radius_nm_inv':width/2,'intensity':float(np.expm1(lg[y,x]))})
+  peaks.append({'_fft_position_px':[float(ix[x]+dx),float(iy[y]+dy)],'profile_id':0,'qx':q[0],'qy':q[1],'g_nm_inv':float(np.linalg.norm(q)),'log_radial_enrichment':en,'weight':float(np.clip(en-2,1,6)),'profile_area_bins':area,'equivalent_profile_diameter_nm_inv':width,'radius_nm_inv':width/2,'intensity':float(np.expm1(lg[y,x]))})
  peaks.sort(key=lambda p:p['log_radial_enrichment'],reverse=True)
  # Weak fragments within one window response cannot be counted independently.
  # Profiles represent +/-q: neighbours can cross the canonical half-plane seam.
@@ -55,24 +55,94 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
   if any(min(np.hypot(p['qx']-v['qx'],p['qy']-v['qy']),np.hypot(p['qx']+v['qx'],p['qy']+v['qy']))<max(minimum_separation,window_width) for v in clean):continue
   p['profile_id']=len(clean)+1;clean.append(p)
   if len(clean)>=max_peaks:break
- return {'g_min':float(g_min),'g_max':float(g_max),'log':lg,'detector_signal':wh,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
+ photometry=spot_intensity.measure_fft(power,fx,fy,clean,1.44 if window=='hann' else .886,neighbours=peaks)
+ clean=[p for p in clean if p['log_radial_enrichment']>=minimum_enrichment]
+ spot_intensity.number_profiles(clean)
+ return {'kind':'fft','photometry':photometry,'profile_numbering':'integrated_intensity_descending','g_min':float(g_min),'g_max':float(g_max),'log':lg,'detector_signal':wh,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
 
 def rotation(q,ang):
  c=np.cos(ang);s=np.sin(ang);return q@np.array([[c,s],[-s,c]])
 
-def score_hypothesis(peaks,T,q,scale,ang,tol,g_max=10.,g_min=3.):
- O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);rawP=rotation(q*scale,ang);flip=(rawP[:,1]<-1e-8)|((abs(rawP[:,1])<1e-8)&(rawP[:,0]<0));P=canonical(rawP);hkl=T['hkl'].copy();hkl[flip]*=-1;g=np.linalg.norm(P,axis=1);keep=(g>0)&(g>=g_min)&(g<=g_max);P=P[keep];hi=hkl[keep]
- if len(P)<4:return None
- d=np.linalg.norm(O[:,None]-P[None,:],axis=2);d=np.minimum(d,np.linalg.norm(O[:,None]+P[None,:],axis=2));qual=np.exp(-.5*(d/(tol/2))**2);qual[d>tol]=0;cost=np.c_[-w[:,None]*qual,np.zeros((len(O),len(O)))];ii,jj=linear_sum_assignment(cost);matches=[]
+def matching_parameters(spectrum):
+ """A common distance scale, fixed before comparing any crystal candidates.
+
+ In direct diffraction, combine spot width in quadrature with 4% of the median
+ measured reciprocal radius. This is a phase-neutral ranking allowance, not a
+ measured strain or distortion model. Both terms follow coordinate rescaling.
+ FFT retains its window-response scale: a broader neighbourhood can merge
+ support from separate phases or admit noise in automatic-threshold searches.
+ """
+ width=float(peak_width(spectrum))
+ radii=[np.hypot(p['qx'],p['qy']) for p in spectrum.get('peaks',[])]
+ reference=float(np.median(radii)) if radii else 0.
+ direct=spectrum.get('kind')=='diffraction'
+ fraction=.04 if direct else 0.
+ allowance=fraction*reference
+ scale=float(np.hypot(width,allowance)) if direct else max(.10,width)
+ return dict(method='soft-cauchy-v1',scale_rule='width-plus-relative-distortion-v1' if direct else 'fft-window-width-v1',
+             peak_width_nm_inv=width,reference_radius_nm_inv=reference,
+             relative_distortion_fraction=fraction,distortion_allowance_nm_inv=allowance,
+             distance_scale_nm_inv=scale,search_radius_nm_inv=matching_radius(scale))
+
+def matching_context(spectrum,context):
+ # Preserve the physical footprint used to assess masks/borders and neighbours.
+ # A positional allowance must not make unsupported sites unassessable.
+ parameters=matching_parameters(spectrum)
+ return {**context,'position_scale':parameters['distance_scale_nm_inv'],
+         'position_matching':parameters}
+
+def matching_radius(width):
+ # Width controls loss of positional credit, not a hard acceptance boundary.
+ return 4.*width
+
+def positional_quality(distance,width):
+ """Heavy-tailed positional agreement, tapering continuously to zero at 4 widths.
+
+ The Cauchy tail admits displaced/distorted reflections with partial credit.
+ Subtracting its boundary value avoids a jump at the finite search limit.
+ This is a ranking kernel, not a measurement-error probability distribution.
+ """
+ x=np.asarray(distance)/width
+ return np.maximum(0.,(1./(1.+x*x)-1./17.)/(16./17.))
+
+def positional_chance(observed_radii,predicted_radii,width):
+ """Mean of the SAME kernel under random relative angles, for +/- profiles.
+
+ Integrate each prediction's support over the nearest half-circle analytically.
+ Summing and capping is a conservative density allowance for overlapping nodes.
+ A wider search must not get free credit from more chance coincidences.
+ """
+ r=np.asarray(observed_radii)[:,None];p=np.asarray(predicted_radii)[None,:]
+ delta=width*width+(r-p)**2;total=width*width+(r+p)**2
+ cosine=(r*r+p*p-matching_radius(width)**2)/np.maximum(2*r*p,1e-30)
+ angle=np.arccos(np.clip(cosine,0.,1.))
+ integral=2*width*width/np.sqrt(delta*total)*np.arctan(np.sqrt(total/delta)*np.tan(angle/2))
+ chance=(2/np.pi)*(integral-angle/17.)/(16./17.)
+ return np.clip(np.maximum(chance,0.).sum(axis=1),0.,1.)
+
+def score_prediction_nodes(peaks,nodes,tol):
+ # Common assignment/score for independent lattices and constrained unions.
+ if not peaks or not nodes:return None
+ O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);P=np.array([n['q'] for n in nodes]);hi=np.array([n['hkl'] for n in nodes])
+ d=np.linalg.norm(O[:,None]-P[None,:],axis=2);d=np.minimum(d,np.linalg.norm(O[:,None]+P[None,:],axis=2));qual=positional_quality(d,tol);cost=np.c_[-w[:,None]*qual,np.zeros((len(O),len(O)))];ii,jj=linear_sum_assignment(cost);matches=[]
  for i,j in zip(ii,jj):
   if j>=len(P) or qual[i,j]<=0:continue
   matches.append({'profile_id':peaks[i]['profile_id'],'hkl':hi[j].tolist(),'predicted_q':P[j].tolist(),'observed_q':O[i].tolist(),'residual_nm_inv':float(d[i,j]),'quality':float(qual[i,j]),'weight':float(w[i]),'node_index':int(j)})
  if not matches:return None
  coverage=sum(x['weight'] for x in matches)/w.sum();quality=sum(x['weight']*x['quality'] for x in matches)/w.sum();og=np.linalg.norm(O,axis=1);pg=np.linalg.norm(P,axis=1)
  # Angular chance support conditional on measured radii corrects node density without declaring absent reflections forbidden.
- chance=np.minimum(1,((abs(og[:,None]-pg[None,:])<tol)*(2*np.arcsin(np.minimum(tol/np.maximum(og[:,None],.1),1))/np.pi)).sum(axis=1));penalty=float(w@chance/w.sum());score=quality-penalty
+ chance=positional_chance(og,pg,tol);penalty=float(w@chance/w.sum());score=quality-penalty
  angles=np.array([np.arctan2(x['observed_q'][1],x['observed_q'][0]) for x in matches]);spread=float(np.max(abs(np.sin(angles[:,None]-angles[None,:])))) if len(angles)>1 else 0
- return {'template_id':T['id'],'phase':T['phase'],'zone_3index':T['zone_3index'],'mirror':T['mirror'],'rotation_deg':float(np.degrees(ang)%180),'shared_scale':scale,'score':float(score),'coverage':float(coverage),'quality_coverage':float(quality),'chance_density_penalty':penalty,'matched_profile_count':len(matches),'predicted_visible_band_node_count':len(P),'nonparallel_spread_sine':spread,'rms_nm_inv':float(np.sqrt(np.mean([x['residual_nm_inv']**2 for x in matches]))),'matches':matches,'predicted_nodes':[{'q':v.tolist(),'hkl':h.tolist()} for v,h in zip(P,hi)],'valid':bool(len(matches)>=4 and spread>.5 and score>.20 and coverage>.30)}
+ return {'score':float(score),'coverage':float(coverage),'quality_coverage':float(quality),'chance_density_penalty':penalty,'matched_profile_count':len(matches),'predicted_visible_band_node_count':len(P),'nonparallel_spread_sine':spread,'rms_nm_inv':float(np.sqrt(np.mean([x['residual_nm_inv']**2 for x in matches]))),'matches':matches,'predicted_nodes':nodes,'position_matching':dict(method='soft-cauchy-v1',distance_scale_nm_inv=float(tol),search_radius_nm_inv=float(matching_radius(tol))),'valid':bool(len(matches)>=4 and spread>.5 and score>.20 and coverage>.30)}
+
+
+def score_hypothesis(peaks,T,q,scale,ang,tol,g_max=10.,g_min=3.):
+ rawP=rotation(q*scale,ang);flip=(rawP[:,1]<-1e-8)|((abs(rawP[:,1])<1e-8)&(rawP[:,0]<0));P=canonical(rawP);hkl=T['hkl'].copy();hkl[flip]*=-1;g=np.linalg.norm(P,axis=1);keep=(g>0)&(g>=g_min)&(g<=g_max)
+ nodes=[{'q':v.tolist(),'hkl':h.tolist()} for v,h in zip(P[keep],hkl[keep])]
+ if len(nodes)<4:return None
+ result=score_prediction_nodes(peaks,nodes,tol)
+ if result:result.update(template_id=T['id'],phase=T['phase'],zone_3index=T['zone_3index'],mirror=T['mirror'],rotation_deg=float(np.degrees(ang)%180),shared_scale=scale)
+ return result
 
 def additional_orientation_seeds(angles, scores, support, initial, limit=2):
  """Supplement existing seeds with distinct orientations AND measured support.
@@ -95,9 +165,9 @@ def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a
  if len(peaks)<4:return []
  O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);og=np.linalg.norm(O,axis=1);oa=np.arctan2(O[:,1],O[:,0]);tree=cKDTree(np.r_[O,-O]);candidates=[]
  for T in templates:
-  qs=T['q']*({'BCC':.330/bcc_a,'FCC':.417/fcc_a}.get(T['phase'],1));g=np.linalg.norm(qs,axis=1)*scale;ta=np.arctan2(qs[:,1],qs[:,0]);pairs=np.argwhere(abs(og[:min(16,len(og)),None]-g[None,:])<tol)
+  qs=T['q']*({'BCC':.330/bcc_a,'FCC':.417/fcc_a}.get(T['phase'],1));g=np.linalg.norm(qs,axis=1)*scale;ta=np.arctan2(qs[:,1],qs[:,0]);pairs=np.argwhere(abs(og[:min(16,len(og)),None]-g[None,:])<matching_radius(tol))
   if not len(pairs):continue
-  angles=np.unique(np.round(((oa[pairs[:,0]]-ta[pairs[:,1]])%np.pi)/np.radians(.5))*np.radians(.5));cs=np.cos(angles);sn=np.sin(angles);P=np.empty((len(angles),len(qs),2));P[:,:,0]=scale*(cs[:,None]*qs[None,:,0]-sn[:,None]*qs[None,:,1]);P[:,:,1]=scale*(sn[:,None]*qs[None,:,0]+cs[:,None]*qs[None,:,1]);dist,ind=tree.query(P.reshape(-1,2));dist=dist.reshape(len(angles),-1);ind=ind.reshape(len(angles),-1)%len(O);vals=np.exp(-.5*(dist/(tol/2))**2);vals[(dist>tol)|((g<g_min)|(g>g_max))[None,:]]=0;support=np.zeros((len(angles),len(O)));np.maximum.at(support,(np.repeat(np.arange(len(angles)),len(qs)),ind.ravel()),vals.ravel());quick=support@w/w.sum()
+  angles=np.unique(np.round(((oa[pairs[:,0]]-ta[pairs[:,1]])%np.pi)/np.radians(.5))*np.radians(.5));cs=np.cos(angles);sn=np.sin(angles);P=np.empty((len(angles),len(qs),2));P[:,:,0]=scale*(cs[:,None]*qs[None,:,0]-sn[:,None]*qs[None,:,1]);P[:,:,1]=scale*(sn[:,None]*qs[None,:,0]+cs[:,None]*qs[None,:,1]);dist,ind=tree.query(P.reshape(-1,2));dist=dist.reshape(len(angles),-1);ind=ind.reshape(len(angles),-1)%len(O);vals=positional_quality(dist,tol);vals[:,(g<g_min)|(g>g_max)]=0;support=np.zeros((len(angles),len(O)));np.maximum.at(support,(np.repeat(np.arange(len(angles)),len(qs)),ind.ravel()),vals.ravel());quick=support@w/w.sum()
   initial=list(np.argsort(quick)[-2:])
   for ai in initial+additional_orientation_seeds(angles,quick,support,initial):
    if quick[ai]<.2:continue
@@ -108,7 +178,7 @@ def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a
     for iteration in range(2):
      num=0j
      for match in r['matches']:
-      pv=np.array(match['predicted_q']);ov=np.array(match['observed_q']);ov=ov if ov@pv>=0 else -ov;num+=match['weight']*complex(*ov)*np.conj(complex(*pv))
+      pv=np.array(match['predicted_q']);ov=np.array(match['observed_q']);ov=ov if ov@pv>=0 else -ov;num+=match['weight']*match['quality']*complex(*ov)*np.conj(complex(*pv))
      delta=float(np.angle(num)) if abs(num)>0 else 0
      if abs(delta)>np.radians(2):delta=float(np.clip(delta,-np.radians(2),np.radians(2)))
      rr=score_hypothesis(peaks,T,qs,scale,ang+delta,tol,g_max,g_min)
@@ -180,7 +250,7 @@ def gridfit(peaks,tol,min_profiles=4,exclude_ids=(),g_max=10.,g_min=3.):
    # Predict a finite reciprocal grid from observed basis seeds; no missing half-basis is invented.
    cs=np.array(list(itertools.product(range(-4,5),repeat=2)));qp=cs@B;gg=np.linalg.norm(qp,axis=1);sel=(gg>0)&(gg>=g_min)&(gg<=g_max)&((qp[:,1]>1e-8)|((abs(qp[:,1])<=1e-8)&(qp[:,0]>0)));cs=cs[sel];qp=qp[sel];gg=gg[sel]
    if len(qp)>32 or len(qp)<min_profiles:break
-   og=np.linalg.norm(O,axis=1);chance=np.minimum(1,((abs(og[:,None]-gg[None,:])<tol)*(2*np.arcsin(np.minimum(tol/np.maximum(og[:,None],.1),1))/np.pi)).sum(axis=1));chance=float(w@chance/total);coverage=float(w[rr].sum()/total);qcoverage=float((w[rr]*quality[rr]).sum()/total);score=qcoverage-chance-.03
+   og=np.linalg.norm(O,axis=1);chance=np.minimum(1,((abs(og[:,None]-gg[None,:])<tol)*(2*np.arcsin(np.minimum(tol/np.maximum(og[:,None],1e-12),1))/np.pi)).sum(axis=1));chance=float(w@chance/total);coverage=float(w[rr].sum()/total);qcoverage=float((w[rr]*quality[rr]).sum()/total);score=qcoverage-chance-.03
    matches=[{'profile_id':peaks[k]['profile_id'],'coefficients_mn':coeff[k].tolist(),'observed_q':O[k].tolist(),'predicted_q':P[k].tolist(),'residual_nm_inv':float(dist[k]),'weight':float(w[k])} for k in inds]
    coupled=bool(np.any(np.prod(coeff[rr],axis=1)!=0));unique=[k for k in inds if peaks[k]['profile_id'] not in exclude_ids];unique_weight=float(sum(w[k] for k in unique)/total);unique_quality=float(sum(w[k]*quality[k] for k in unique)/total);ua=np.arctan2(O[unique,1],O[unique,0]) if unique else np.array([]);us=float(np.max(abs(np.sin(ua[:,None]-ua[None,:])))) if len(ua)>1 else 0;valid=score>.25 and coverage>=.5 and coupled
    if exclude_ids:valid=score>.20 and coverage>=.3 and coupled and len(unique)>=3 and us>.5

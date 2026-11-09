@@ -1,0 +1,957 @@
+{
+  "review_date": "2026-11-08",
+  "purpose": "Archived geometry supporting a literature review; not a dynamical simulation or independently verified phase identification.",
+  "source_replay": "20261106_232659_Unknown_3_diffraction_886294.json",
+  "source_image": "Unknown 3.png",
+  "source_image_sha256": "86701867b92bca77871cf08d96924ebd4a7eea3147d6ceb37d64d7fe03907dcc",
+  "image_size_px": [
+    1080,
+    912
+  ],
+  "engine_sha256": "e636454199a2b75a2fa272cd0a5309161b2d7be0e618735fd5cd25289dd5e140",
+  "coordinates": {
+    "q_units": "arbitrary relative units; source absolute calibration is unreliable",
+    "detector_origin": "upper left; x right, y down",
+    "q_orientation": "x right, y up; relative to fitted centre",
+    "beam_center_px": [
+      549.193916905052,
+      451.64607896641274
+    ],
+    "relative_units_per_detector_pixel": [
+      0.021929824561403508,
+      0.021929824561403508
+    ],
+    "residual_normalization": "shortest fitted beta reciprocal reflection",
+    "fundamental_spacing": 5.973263334659701,
+    "profile_ids": "local to this archived replay; opposite spots grouped into one profile"
+  },
+  "settings": {
+    "g_min_relative": 2.5,
+    "g_max_relative": 10.0,
+    "diffraction": {
+      "center_x": 548.0650562863887,
+      "center_y": 450.55722166217595,
+      "pixel_x_nm_inv": 0.021929824561403508,
+      "pixel_y_nm_inv": 0.021929824561403508,
+      "exclude_radius_nm_inv": 2.5,
+      "spot_sigma_px": 2.0,
+      "spot_snr": 9.0,
+      "refine_center": true,
+      "max_center_shift_px": 50.0,
+      "smoothing_workers": 0,
+      "masks": [],
+      "peak_edits": [
+        {
+          "action": "remove",
+          "x": 602.145142458003,
+          "y": 244.67534406990296,
+          "radius_nm_inv": 0.5
+        },
+        {
+          "action": "remove",
+          "x": 566.0256811495292,
+          "y": 208.55585245737277,
+          "radius_nm_inv": 0.5
+        },
+        {
+          "action": "remove",
+          "x": 581.3192262260102,
+          "y": 304.0907393529867,
+          "radius_nm_inv": 0.5
+        },
+        {
+          "action": "remove",
+          "x": 774.6230074557673,
+          "y": 212.63705528953017,
+          "radius_nm_inv": 0.5
+        },
+        {
+          "action": "remove",
+          "x": 815.7395181059559,
+          "y": 231.00887833255013,
+          "radius_nm_inv": 0.5
+        },
+        {
+          "action": "remove",
+          "x": 875.4421511221756,
+          "y": 421.5267683631606,
+          "radius_nm_inv": 0.5
+        },
+        {
+          "action": "remove",
+          "x": 989.6463146663957,
+          "y": 522.7513431812121,
+          "radius_nm_inv": 0.5
+        },
+        {
+          "action": "remove",
+          "x": 757.7223203058517,
+          "y": 86.62326148531076,
+          "radius_nm_inv": 0.5
+        },
+        {
+          "action": "remove",
+          "x": 738.0878688191438,
+          "y": 130.340323379609,
+          "radius_nm_inv": 0.5
+        }
+      ]
+    }
+  },
+  "parent": {
+    "zone_3index": [
+      0,
+      1,
+      1
+    ],
+    "mirror": 1,
+    "rotation_deg": 0.5800741909598031,
+    "reciprocal_scale": 4.223735009750844,
+    "fundamental_spacing": 5.973263334659701,
+    "absolute_cell_nm": null,
+    "anchors": [],
+    "matched_profiles": 2,
+    "requires_variant_support": true
+  },
+  "combined": {
+    "coverage": 0.6666666666666666,
+    "weighted_coverage": 0.6646549147759143,
+    "rms_relative": 0.015161866777972693,
+    "matched_profiles": 10,
+    "total_profiles": 15,
+    "score": 0.6424042188663844,
+    "positional_quality": 0.5295246656930227,
+    "complexity_cost": 0.05,
+    "prediction_support": 1.0,
+    "geometry_matched_profiles": 14,
+    "geometry_coverage": 0.9333333333333333,
+    "rms_geometry_relative": 0.014606285991684103,
+    "beta_only_coverage": 0.13333333333333333
+  },
+  "profiles": [
+    {
+      "profile_id": 1,
+      "observed_q": [
+        -7.899611951894733,
+        2.8161656374583757
+      ],
+      "observed_spots": [
+        [
+          7.895897657318768,
+          -2.792166418935732
+        ],
+        [
+          -7.903326246470698,
+          2.840164855981019
+        ]
+      ],
+      "component": "omega3",
+      "compatible_components": [
+        "omega3"
+      ],
+      "indices": [
+        {
+          "component": "omega3",
+          "hkl": [
+            2,
+            0,
+            -1
+          ]
+        }
+      ],
+      "residual": 0.12328464866005026,
+      "residual_relative": 0.02063941295617998,
+      "predicted_q": [
+        -7.992450429722,
+        2.7350476885817665
+      ],
+      "observed_detector_pixels": [
+        [
+          909.2468500787878,
+          578.9688676698821
+        ],
+        [
+          188.80224006598814,
+          322.13456153367827
+        ]
+      ],
+      "image_intensity_8bit": 224.0,
+      "local_contrast": 37.04588317871094
+    },
+    {
+      "profile_id": 2,
+      "observed_q": [
+        7.823400675569764,
+        2.9041157287455888
+      ],
+      "observed_spots": [
+        [
+          -7.818361667344923,
+          -2.9106741298519516
+        ],
+        [
+          7.828439683794605,
+          2.897557327639226
+        ]
+      ],
+      "component": "omega4",
+      "compatible_components": [
+        "omega4"
+      ],
+      "indices": [
+        {
+          "component": "omega4",
+          "hkl": [
+            2,
+            0,
+            -1
+          ]
+        }
+      ],
+      "residual": 0.11230635197471883,
+      "residual_relative": 0.018801506928895,
+      "predicted_q": [
+        7.935435460863564,
+        2.8963103730175273
+      ],
+      "observed_detector_pixels": [
+        [
+          192.6766248741235,
+          584.3728192876617
+        ],
+        [
+          906.170766486086,
+          319.51746482606404
+        ]
+      ],
+      "image_intensity_8bit": 241.0,
+      "local_contrast": 36.15000915527344
+    },
+    {
+      "profile_id": 3,
+      "observed_q": [
+        1.8754030946846318,
+        2.876907626953159
+      ],
+      "observed_spots": [
+        [
+          -1.8695951267531703,
+          -2.875709624823537
+        ],
+        [
+          1.8812110626160934,
+          2.8781056290827802
+        ]
+      ],
+      "component": "unexplained",
+      "compatible_components": [],
+      "indices": [],
+      "residual": null,
+      "geometry_diagnostic": {
+        "kind": "nominal_omega_absence",
+        "compatible_components": [
+          "omega4"
+        ],
+        "indices": [
+          {
+            "component": "omega4",
+            "hkl": [
+              1,
+              0,
+              0
+            ]
+          }
+        ],
+        "predicted_q": [
+          1.9624782518939776,
+          2.8358368663541165
+        ],
+        "residual_relative": 0.01611766822110652
+      },
+      "observed_detector_pixels": [
+        [
+          463.9403791251074,
+          582.778437858366
+        ],
+        [
+          634.9771413603459,
+          320.40446228023796
+        ]
+      ],
+      "image_intensity_8bit": 250.0,
+      "local_contrast": 31.818157196044922
+    },
+    {
+      "profile_id": 4,
+      "observed_q": [
+        3.9433131897584666,
+        2.868255121513732
+      ],
+      "observed_spots": [
+        [
+          -3.9536831483692807,
+          -2.8814563745823536
+        ],
+        [
+          3.932943231147652,
+          2.8550538684451103
+        ]
+      ],
+      "component": "omega3",
+      "compatible_components": [
+        "omega3"
+      ],
+      "indices": [
+        {
+          "component": "omega3",
+          "hkl": [
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "residual": 0.015917179343197866,
+      "residual_relative": 0.0026647375900605047,
+      "predicted_q": [
+        3.9534639882171727,
+        2.855994701908586
+      ],
+      "observed_detector_pixels": [
+        [
+          368.9059653394128,
+          583.0404896473681
+        ],
+        [
+          728.5361282453849,
+          321.4556225653157
+        ]
+      ],
+      "image_intensity_8bit": 250.0,
+      "local_contrast": 30.27690315246582
+    },
+    {
+      "profile_id": 5,
+      "observed_q": [
+        3.917829863511633,
+        5.606814271696706
+      ],
+      "observed_spots": [
+        [
+          -3.913528314464565,
+          -5.607883253034303
+        ],
+        [
+          3.922131412558701,
+          5.605745290359108
+        ]
+      ],
+      "component": "unexplained",
+      "compatible_components": [],
+      "indices": [],
+      "residual": null,
+      "geometry_diagnostic": {
+        "kind": "nominal_omega_absence",
+        "compatible_components": [
+          "omega4"
+        ],
+        "indices": [
+          {
+            "component": "omega4",
+            "hkl": [
+              2,
+              0,
+              0
+            ]
+          }
+        ],
+        "predicted_q": [
+          3.9249565037879552,
+          5.671673732708233
+        ],
+        "residual_relative": 0.010923646564451479
+      },
+      "observed_detector_pixels": [
+        [
+          370.7370257654678,
+          707.365555304777
+        ],
+        [
+          728.0431093177287,
+          196.0240937260374
+        ]
+      ],
+      "image_intensity_8bit": 249.00001525878906,
+      "local_contrast": 29.306476593017578
+    },
+    {
+      "profile_id": 6,
+      "observed_q": [
+        -4.028129826744662,
+        2.816687752848206
+      ],
+      "observed_spots": [
+        [
+          -4.03517519107458,
+          2.829977184717139
+        ],
+        [
+          4.021084462414743,
+          -2.803398320979273
+        ]
+      ],
+      "component": "omega4",
+      "compatible_components": [
+        "omega4"
+      ],
+      "indices": [
+        {
+          "component": "omega4",
+          "hkl": [
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "residual": 0.04493616216266727,
+      "residual_relative": 0.007522883162027428,
+      "predicted_q": [
+        -4.010478957075609,
+        2.7753633596907057
+      ],
+      "observed_detector_pixels": [
+        [
+          365.1899281920511,
+          322.5991193433112
+        ],
+        [
+          732.5553683911643,
+          579.4810424030676
+        ]
+      ],
+      "image_intensity_8bit": 242.0,
+      "local_contrast": 29.138214111328125
+    },
+    {
+      "profile_id": 7,
+      "observed_q": [
+        -1.962295618274779,
+        2.8504961199005674
+      ],
+      "observed_spots": [
+        [
+          -1.9663108724908096,
+          2.8468976257948304
+        ],
+        [
+          1.9582803640587485,
+          -2.8540946140063044
+        ]
+      ],
+      "component": "unexplained",
+      "compatible_components": [],
+      "indices": [],
+      "residual": null,
+      "geometry_diagnostic": {
+        "kind": "nominal_omega_absence",
+        "compatible_components": [
+          "omega3"
+        ],
+        "indices": [
+          {
+            "component": "omega3",
+            "hkl": [
+              1,
+              0,
+              0
+            ]
+          }
+        ],
+        "predicted_q": [
+          -2.019493220752414,
+          2.7955211952451764
+        ],
+        "residual_relative": 0.013281437600530554
+      },
+      "observed_detector_pixels": [
+        [
+          459.53014111947107,
+          321.8275472301685
+        ],
+        [
+          638.4915015061309,
+          581.7927933651002
+        ]
+      ],
+      "image_intensity_8bit": 247.0,
+      "local_contrast": 27.795780181884766
+    },
+    {
+      "profile_id": 8,
+      "observed_q": [
+        -4.098297914568185,
+        5.556268178865626
+      ],
+      "observed_spots": [
+        [
+          -4.1094361965272075,
+          5.550177031468942
+        ],
+        [
+          4.087159632609164,
+          -5.56235932626231
+        ]
+      ],
+      "component": "unexplained",
+      "compatible_components": [],
+      "indices": [],
+      "residual": null,
+      "geometry_diagnostic": {
+        "kind": "nominal_omega_absence",
+        "compatible_components": [
+          "omega3"
+        ],
+        "indices": [
+          {
+            "component": "omega3",
+            "hkl": [
+              2,
+              0,
+              0
+            ]
+          }
+        ],
+        "predicted_q": [
+          -4.038986441504828,
+          5.591042390490353
+        ],
+        "residual_relative": 0.011510271794128684
+      },
+      "observed_detector_pixels": [
+        [
+          361.80362634341134,
+          198.55800633142897
+        ],
+        [
+          735.5683961520299,
+          705.2896642439741
+        ]
+      ],
+      "image_intensity_8bit": 254.0,
+      "local_contrast": 25.956857681274414
+    },
+    {
+      "profile_id": 9,
+      "observed_q": [
+        7.775561097640296,
+        5.600377537162125
+      ],
+      "observed_spots": [
+        [
+          -7.770897357314345,
+          -5.598239451223599
+        ],
+        [
+          7.780224837966247,
+          5.602515623100651
+        ]
+      ],
+      "component": "omega3",
+      "compatible_components": [
+        "omega3"
+      ],
+      "indices": [
+        {
+          "component": "omega3",
+          "hkl": [
+            0,
+            0,
+            2
+          ]
+        }
+      ],
+      "residual": 0.1723788433141216,
+      "residual_relative": 0.02885840346496997,
+      "predicted_q": [
+        7.906927976434345,
+        5.711989403817172
+      ],
+      "observed_detector_pixels": [
+        [
+          194.84099741151783,
+          706.9257979422089
+        ],
+        [
+          903.9721695163129,
+          196.17136655302303
+        ]
+      ],
+      "image_intensity_8bit": 242.0,
+      "local_contrast": 23.62474822998047
+    },
+    {
+      "profile_id": 10,
+      "observed_q": [
+        -7.9370121921163275,
+        5.518801999183424
+      ],
+      "observed_spots": [
+        [
+          7.925081448347956,
+          -5.507047399102324
+        ],
+        [
+          -7.948942935884699,
+          5.530556599264525
+        ]
+      ],
+      "component": "omega4",
+      "compatible_components": [
+        "omega4"
+      ],
+      "indices": [
+        {
+          "component": "omega4",
+          "hkl": [
+            0,
+            0,
+            2
+          ]
+        }
+      ],
+      "residual": 0.08981131336128599,
+      "residual_relative": 0.01503555231529108,
+      "predicted_q": [
+        -8.020957914151218,
+        5.550726719381411
+      ],
+      "observed_detector_pixels": [
+        [
+          910.5776309497188,
+          702.7674403654787
+        ],
+        [
+          186.7221190287097,
+          199.4526980399504
+        ]
+      ],
+      "image_intensity_8bit": 252.99998474121094,
+      "local_contrast": 22.611757278442383
+    },
+    {
+      "profile_id": 11,
+      "observed_q": [
+        1.865150337602656,
+        5.57912071115477
+      ],
+      "observed_spots": [
+        [
+          -1.8564775844089265,
+          -5.577624319584903
+        ],
+        [
+          1.8738230907963855,
+          5.580617102724638
+        ]
+      ],
+      "component": "omega3",
+      "compatible_components": [
+        "omega3"
+      ],
+      "indices": [
+        {
+          "component": "omega3",
+          "hkl": [
+            1,
+            0,
+            1
+          ]
+        }
+      ],
+      "residual": 0.09988650820923473,
+      "residual_relative": 0.01672226764717469,
+      "predicted_q": [
+        1.9339707674647593,
+        5.651515897153764
+      ],
+      "observed_detector_pixels": [
+        [
+          464.53853905600494,
+          705.9857479394843
+        ],
+        [
+          634.6402498453672,
+          197.16993908216924
+        ]
+      ],
+      "image_intensity_8bit": 239.0,
+      "local_contrast": 19.09231185913086
+    },
+    {
+      "profile_id": 12,
+      "observed_q": [
+        -2.0053795676369544,
+        5.565551366025074
+      ],
+      "observed_spots": [
+        [
+          2.011903502200065,
+          -5.564896604927875
+        ],
+        [
+          -1.998855633073844,
+          5.566206127122273
+        ]
+      ],
+      "component": "omega4",
+      "compatible_components": [
+        "omega4"
+      ],
+      "indices": [
+        {
+          "component": "omega4",
+          "hkl": [
+            1,
+            0,
+            1
+          ]
+        }
+      ],
+      "residual": 0.062453020637155326,
+      "residual_relative": 0.010455427316383884,
+      "predicted_q": [
+        -2.0480007051816322,
+        5.611200226044823
+      ],
+      "observed_detector_pixels": [
+        [
+          640.936716605375,
+          705.4053641511239
+        ],
+        [
+          458.0461000368847,
+          197.82707956963708
+        ]
+      ],
+      "image_intensity_8bit": 248.0,
+      "local_contrast": 17.149843215942383
+    },
+    {
+      "profile_id": 13,
+      "observed_q": [
+        -0.0903998701086837,
+        8.45481483465835
+      ],
+      "observed_spots": [
+        [
+          0.12285429964984922,
+          -8.480447062209269
+        ],
+        [
+          -0.057945440567518165,
+          8.429182607107434
+        ]
+      ],
+      "component": "beta",
+      "compatible_components": [
+        "beta",
+        "omega3",
+        "omega4"
+      ],
+      "indices": [
+        {
+          "component": "beta",
+          "hkl": [
+            -2,
+            0,
+            0
+          ]
+        },
+        {
+          "component": "omega3",
+          "hkl": [
+            2,
+            0,
+            1
+          ]
+        },
+        {
+          "component": "omega4",
+          "hkl": [
+            2,
+            0,
+            1
+          ]
+        }
+      ],
+      "residual": 0.009180548431324815,
+      "residual_relative": 0.0015369401810991536,
+      "predicted_q": [
+        -0.08552245328765448,
+        8.447037092398938
+      ],
+      "observed_detector_pixels": [
+        [
+          554.7960729690851,
+          838.3544650031554
+        ],
+        [
+          546.5516048151732,
+          67.27535208231376
+        ]
+      ],
+      "image_intensity_8bit": 246.00001525878906,
+      "local_contrast": 16.18320083618164
+    },
+    {
+      "profile_id": 14,
+      "observed_q": [
+        5.9611348704345755,
+        0.053059726299988896
+      ],
+      "observed_spots": [
+        [
+          -5.9780980937979775,
+          -0.051596182310649295
+        ],
+        [
+          5.944171647071173,
+          0.054523270289328504
+        ]
+      ],
+      "component": "beta",
+      "compatible_components": [
+        "beta",
+        "omega3",
+        "omega4"
+      ],
+      "indices": [
+        {
+          "component": "beta",
+          "hkl": [
+            0,
+            1,
+            -1
+          ]
+        },
+        {
+          "component": "omega3",
+          "hkl": [
+            -1,
+            0,
+            1
+          ]
+        },
+        {
+          "component": "omega4",
+          "hkl": [
+            1,
+            0,
+            -1
+          ]
+        }
+      ],
+      "residual": 0.013954634632031056,
+      "residual_relative": 0.0023361827279670833,
+      "predicted_q": [
+        5.9729572089695875,
+        0.06047350666341023
+      ],
+      "observed_detector_pixels": [
+        [
+          276.5926438278642,
+          453.99886487977835
+        ],
+        [
+          820.2481440114975,
+          449.15981784121936
+        ]
+      ],
+      "image_intensity_8bit": 247.0,
+      "local_contrast": 13.097067832946777
+    },
+    {
+      "profile_id": 15,
+      "observed_q": [
+        5.830231711416558,
+        2.631244931168301
+      ],
+      "observed_spots": [
+        [
+          5.830231711416558,
+          2.631244931168301
+        ]
+      ],
+      "component": "unexplained",
+      "compatible_components": [],
+      "indices": [],
+      "residual": null,
+      "observed_detector_pixels": [
+        [
+          815.0524829456471,
+          331.6613101051382
+        ]
+      ],
+      "image_intensity_8bit": 166.0,
+      "local_contrast": 11.38192081451416
+    }
+  ],
+  "candidate_double_diffraction_paths": [
+    {
+      "target_profile_id": 3,
+      "first_profile_id": 2,
+      "second_profile_id": 14,
+      "second_vector_sign": -1,
+      "sum_q": [
+        1.8622658051351886,
+        2.8510560024456
+      ],
+      "residual_relative_to_parent_spacing": 0.004854664137534908
+    },
+    {
+      "target_profile_id": 5,
+      "first_profile_id": 12,
+      "second_profile_id": 14,
+      "second_vector_sign": 1,
+      "sum_q": [
+        3.955755302797621,
+        5.618611092325064
+      ],
+      "residual_relative_to_parent_spacing": 0.006649263788358742
+    },
+    {
+      "target_profile_id": 7,
+      "first_profile_id": 1,
+      "second_profile_id": 14,
+      "second_vector_sign": 1,
+      "sum_q": [
+        -1.9384770814601575,
+        2.8692253637583645
+      ],
+      "residual_relative_to_parent_spacing": 0.005072651800008532
+    },
+    {
+      "target_profile_id": 8,
+      "first_profile_id": 11,
+      "second_profile_id": 14,
+      "second_vector_sign": -1,
+      "sum_q": [
+        -4.0959845328319195,
+        5.526060984854781
+      ],
+      "residual_relative_to_parent_spacing": 0.00507187555421652
+    }
+  ],
+  "annotation_candidate": {
+    "profile_id": 15,
+    "interpretation": "Detection falls on printed subscript 2 in omega2 label, based on visual inspection. Exclude annotation before interpreting coverage.",
+    "applied_to_live_settings": false
+  },
+  "limitations": [
+    "Source alloy, heat treatment and original publication unidentified.",
+    "Parent alternatives remain ambiguous; two parent profiles are shared with omega.",
+    "Vector relations are positional consistency checks, not independent mechanism confirmation.",
+    "No intensity, thickness or excitation simulation performed."
+  ]
+}
