@@ -804,4 +804,8 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .source-name-status{position:absolute;top:100%;margin-top:3px;font-size:11px;color:var(--muted);line-height:1.2}
 .source-name-status.error{color:#ff8d9e;position:static;order:3}
 
+#saved-regions-panel{border-top:0;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:14px}
+#saved-regions-panel>:not(summary){width:100%;max-width:760px}
+#saved-regions-panel .region-fields>label{min-width:0}
+
 #crop-live-view{display:block;width:100%;height:100%}

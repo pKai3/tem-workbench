@@ -6,7 +6,7 @@
 - Add optional image-rim sampling. Rim-point visibility can be customized after a run; points always remain visible while their grid is running. Remove finished-map gridlines.
 - Reopen the last image after reload, retain grids while browsing other images, and show persistent clickable grid/batch progress cards with two-click cancellation.
 - Use selected phase/variant colours throughout combined-fit labels, add DD counts and DD-inclusive coverage, label fitted cell axes, and use compact omega subscripts.
-- Align crop/FFT image areas, streamline overlay legends and tooltips, move saved regions beneath image details, and add scale-fitting reset and parameter help from the info icons. Slider drags and numeric entry no longer open help popups.
+- Align crop/FFT image areas, streamline overlay legends and tooltips, move a compact Saved regions panel beneath image details, and add scale-fitting reset and parameter help from the info icons. Slider drags and numeric entry no longer open help popups.
 - Allow fitting-limit handles to move in radius and angle, with 15° angle snapping and per-image persistence in direct diffraction. All FFT colour palettes now share a near-black zero.
 
 Use **Check for updates → Install update and restart**. Export unsaved grid results before restarting. Display changes do not alter measured map values or fitting scores.
