@@ -279,6 +279,8 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .support-pair>span:last-child{text-align:right}
 .support-pair-ramp{grid-column:1/-1;height:10px;border-radius:3px}
 .support-scalar{display:grid;gap:6px;width:160px;font-size:11px;text-align:left}
+.map-phase-key{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;width:160px;font-size:11px;font-weight:600;text-align:left}
+.map-phase-key>span{white-space:nowrap}
 .fit-label-separator{color:#dce6ef}
 .model-table .col-rank .settings-help-popup{white-space:normal;width:min(360px,calc(100vw - 48px));max-width:none;text-align:left}
 #roi-controls #map-normalize-label{display:flex;flex-direction:row;align-items:center;gap:6px;min-height:24px;font-size:11px}

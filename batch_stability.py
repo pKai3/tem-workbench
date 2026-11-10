@@ -99,7 +99,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     if phase is not None and phase not in phases:
         raise ValueError('PNG phase is not enabled for this analysis.')
     if view == 'spread' and (phase is None or job['grid']['passes'] < 2):
-        raise ValueError('Placement disagreement requires a phase and multiple passes.')
+        raise ValueError('Placement sensitivity requires a phase and multiple passes.')
     w = round(1800*source['width']/max(source['width'],source['height']))
     h = round(1800*source['height']/max(source['width'],source['height']))
     strength_view=view in ('strength','hex_strength')
@@ -157,9 +157,9 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     try: font=ImageFont.truetype('DejaVuSans.ttf',18); title=ImageFont.truetype('DejaVuSans.ttf',26)
     except OSError: font=ImageFont.load_default(size=18); title=ImageFont.load_default(size=26)
     draw.text((40,20),source['name'],font=title,fill='white')
-    titles=dict(support='Passing frequency'+(' · '+phase if phase else ' · all phases'),hex='Top match · averaged hex grid',hex_support='Passing support · hex grid',
-        strength='Average passing strength'+(' · '+phase if phase else ' · all phases'),hex_strength='Average passing strength · hex grid'+(' · '+phase if phase else ''),
-        spread='Placement disagreement · '+str(phase),samples='Sample coverage',separate='Separate-pattern frequency',raw='Raw centres · classification circles')
+    titles=dict(support='Match frequency'+(' · '+phase if phase else ' · all phases'),hex='Best match · averaged hex grid',hex_support='Match frequency · hex grid',
+        strength='Match score'+(' · '+phase if phase else ' · all phases'),hex_strength='Match score · hex grid'+(' · '+phase if phase else ''),
+        spread='Placement sensitivity · '+str(phase),samples='Sampling density',separate='Multiple-structure support',raw='Individual windows · classification circles')
     draw.text((40,h+85),titles[view],font=title,fill='white')
     g=job['grid']
     draw.text((40,h+120),f"{g['layout']} · {g['window_nm']:.3g} nm windows / {g['spacing_nm']:.3g} nm spacing · {g['passes']} passes",font=font,fill='#a4adba')

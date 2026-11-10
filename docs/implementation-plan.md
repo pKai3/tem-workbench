@@ -2,6 +2,16 @@
 
 Last updated: 10 November 2026
 
+## Map legends, names and region dragging — completed 10 November 2026
+
+Approved: move the best-match phase legend into the existing right-hand colour-key area beside the overlay controls, for both continuous and hex displays. Keep phase colours, help and PNG keys intact. Rename the mode choices and order them as requested: Individual windows, Best match, Match score, Match frequency, Multiple-structure support, Placement sensitivity, Sampling density. Several modes aggregate overlapping windows, so “Average” is removed from the score label; help retains the distinct averaging rules. Preserve stored mode values, calculations and the user's current selection.
+
+Approved interaction follow-up: releasing the region box must not restart fitting when its position is unchanged or the latest drag position has already been fitted. Only movement that changes the rounded, bounded region invalidates the fit; release flushes any still-pending work while retaining a current result or request. Preserve immediate crops and FFT-only hover previews.
+
+Implemented: best-match phase keys occupy the same right-hand colour-key host as blended/scalar keys, for both map representations. Hover/focus/tap help retains interpretation, and exported PNGs retain phase colours with a concise caption. The dropdown follows the approved names/order without changing stored values or calculations. Region release now flushes pending analysis without invalidating current work; stationary, subpixel and edge-clamped pointer events do not queue another fit.
+
+Validation: all 22 JavaScript suites pass, plus 18 focused batch-map Python checks. Gesture regressions cover stationary clicks, cancellation, queued/in-flight/completed fits, newer movement superseding an older request, resize and image boundaries. Live ST1203 checks confirm stationary clicks retain the fit in FFT Only and Real + FFT, moved regions still update, both map styles put their phase keys on the right, help stays readable and PNG export retains the key. No browser warnings/errors. No version bump.
+
 ## Map reweighting responsiveness — completed 10 November 2026
 
 Implementation commit: `d1e7cdf`.
@@ -15,6 +25,8 @@ Map updates compute outside the shared job lock, keeping status/navigation respo
 Validation: the 216-window ST1203 hex/rim map produced byte-identical public results and aggregate fields for four weight combinations, including DD on/off, brightness off and changes to scale, c/a, weak/missing weights and radial falloff. Repeated DD-enabled updates fell from 10.50–12.44 s to 2.54–2.83 s on this machine; DD-off updates were 2.58 s before and 2.14 s after. First DD activation remains approximately 10 s (9.81 s before, 9.68 s after) because previously unused geometric evidence must be computed once. No candidate pruning, lower-resolution maps, changed thresholds or approximate scoring. All 395 Python checks completed with 14 platform skips; the one process-inspection check requiring OS access passed on its permitted rerun. All 21 JavaScript suites pass, including stale-weight/image response guards. Regressions cover cache immutability/equivalence, no repeated single-fit diagnostics, cross-component DD, concurrent status, supersession, removed jobs and atomic failure handling.
 
 ## Map display follow-ups — completed 10 November 2026
+
+Implementation commit: `bc1c9dd`.
 
 Approved display follow-up: align the first phase label with the left end of its colour-reference bar; keep the second phase label at the right end. Single-phase labels also align with the bar's left edge.
 

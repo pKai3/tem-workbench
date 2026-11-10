@@ -117,7 +117,7 @@ def png_exports(options, phases):
     if not options.get('export_png'):return []
     if not choices:raise ValueError('Select at least one PNG map or turn off PNG export.')
     if 'spread_phases' in choices and options['overlap'].get('passes',1)<2:
-        raise ValueError('Placement disagreement PNGs require multiple passes.')
+        raise ValueError('Placement sensitivity PNGs require multiple passes.')
     products=[]
     for choice in dict.fromkeys(choices):
         if choice in ('support_phases','strength_phases','spread_phases'):
