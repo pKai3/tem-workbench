@@ -2,9 +2,9 @@
 
 Last updated: 10 November 2026
 
-## Release after map and drag follow-ups — approved 10 November 2026
+## Release after map and drag follow-ups — completed 10 November 2026
 
-The user approved publishing a version when this work is done. Include the map reweighting improvements (`d1e7cdf`), continuous best-match maps (`bc1c9dd`), map names/legend placement and redundant-drag-fit fix (`23a9273`). Approved final UI cleanup: move the raw-window legend explanation into inline hover/focus/tap help beside its symbols, keeping the phase keys and counts visible. Publish through the manual Publish Workbench release workflow with all analysis, Windows and macOS gates intact; do not change the version locally or skip verification. Publication is pending.
+The user approved publishing a version when this work is done. Include the map reweighting improvements (`d1e7cdf`), continuous best-match maps (`bc1c9dd`), map names/legend placement and redundant-drag-fit fix (`23a9273`). Approved final UI cleanup: move the raw-window legend explanation into inline hover/focus/tap help beside its symbols, keeping the phase keys and counts visible. Publish through the manual Publish Workbench release workflow with all analysis, Windows and macOS gates intact; do not change the version locally or skip verification. Implementation commits: `ca43698` and `771e98b`.
 
 Tooltip cleanup is implemented. Live verification confirms the paragraph is absent from the normal legend and appears in the info popup with its full text; zone symbols and counts remain visible. Focused map/drag regressions and syntax/whitespace checks pass. Release notes cover the accumulated changes since v1.0.28.
 
@@ -21,6 +21,8 @@ Approved toolbar adjustment: swap Sort by and Acquisition map, retaining their e
 Approved PNG cleanup: omit the “Raw centres…” interaction instructions and explanatory footer. Keep the actual legend and sampling row; format window size and spacing to two decimals, use “1 pass” / “N passes”, and retain “hex centres”. Apply consistent sampling labels and footer removal to batch stability PNGs as well.
 
 Implemented and checked: all 22 JavaScript suites and 18 focused batch/export checks pass. First-use/reset c/a mode, preserved saved choices and older-backend fallback are verified. Live ST1203 checks cover all seven map modes at 480, 1280 and 2400 px: no horizontal overflow, stable dropdown widths and aligned header controls. Mode/display and appearance share a row on wide panels and wrap on narrower panels. Native keyboard editing updates the region; Show grid hides/restores the map without changing mode/intensity. Both export buttons share their busy state and save successfully. Individual-window type keys span the image; zone counts sit left above Mode with inline help. A one-pass PNG confirms two-decimal sampling values, “1 pass”, “hex centres”, retained keys and no instructional/footer text. No browser warnings/errors.
+
+Published **[v1.0.29](https://github.com/pKai3/tem-workbench/releases/tag/v1.0.29)** on 10 November 2026, release commit `c67d915`. The [manual release workflow](https://github.com/pKai3/tem-workbench/actions/runs/42761362703) passed the full analysis/JavaScript, Windows update/process and macOS launcher/shutdown gates before publication. The update ZIP and checksum are published with verified upload sizes/digests; the local checkout is synchronized.
 
 ## Map legends, names and region dragging — completed 10 November 2026
 
