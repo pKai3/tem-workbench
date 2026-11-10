@@ -157,7 +157,7 @@ context.PHASE_COLOR_OPTIONS={gold:['Gold','#f4b75e'],purple:['Purple','#b49aff']
 context.phaseColorChoices={BCC:'gold',OMEGA:'purple'};
 context.Option=function(label,value){this.textContent=label;this.value=value;this.dataset={}};
 const saved=new Map();context.writePreference=(key,value)=>saved.set(key,JSON.parse(JSON.stringify(value)));
-context.result=model;context.renderModels=()=>{};context.renderFitChoices=()=>{};context.renderBetaOmega=()=>{};context.drawFFT=()=>{};context.applyPhaseColors=()=>{};
+context.result=model;context.renderEvidence=()=>{};context.renderModels=()=>{};context.renderFitChoices=()=>{};context.renderBetaOmega=()=>{};context.drawFFT=()=>{};context.applyPhaseColors=()=>{};
 vm.runInContext(appSource.slice(appSource.indexOf('const isHexColor='),appSource.indexOf('let enabledPhases=')),context);
 vm.runInContext(appSource.slice(appSource.indexOf('function editLegendColor('),appSource.indexOf('function renderFitChoices(')),context);
 for(const id of ['omega-color','bcc-color']){

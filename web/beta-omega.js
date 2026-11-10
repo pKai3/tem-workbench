@@ -35,10 +35,10 @@ function betaOmegaOverlayActive(data){
 }
 function refreshBetaOmegaDisplay(){
  if(!result)return;
- renderModels(result);renderFitChoices(result,true);renderBetaOmega(result);
+ renderModels(result);renderFitChoices(result,true);renderBetaOmega(result);renderEvidence(result);
 }
-function appendBetaOmegaFitCells(row,model,component=null){
- if(!component&&model.fit){appendFitCells(row,{...model.fit,double_diffraction:model.fit.double_diffraction??model.double_diffraction},{name:betaOmegaCombinedLabel(model)});row.dataset.linkedFit='combined';return}
+function appendBetaOmegaFitCells(row,model,component=null,data=result){
+ if(!component&&model.fit){appendFitCells(row,{...model.fit,double_diffraction:model.fit.double_diffraction??model.double_diffraction},{name:betaOmegaCombinedLabel(model),data,linked:model});row.dataset.linkedFit='combined';return}
  const summary=model.combined,source=component||summary,relative=source?.rms_relative;
  const predicted=component?component.predicted_nodes.length:new Set(model.components.filter(c=>c.active).flatMap(c=>c.predicted_nodes.map(n=>n.q.map(v=>Math.round(v*1e7)).join(',')))).size;
  const values={candidate:component?betaOmegaCandidateLabel(component,model):betaOmegaCombinedLabel(model),
@@ -56,6 +56,7 @@ function appendBetaOmegaFitCells(row,model,component=null){
    key==='rms'?`RMS in the image reciprocal units${relative==null?'':`; ${(relative*100).toFixed(2)}% of the parent’s shortest reflection`}.`:
    'Not independently fitted for linked components. The combined fit uses the common candidate score and prediction-site evidence.';
   if(key==='candidate'&&component)cell.style.color=betaOmegaComponentColor(component,model);
+  if(key==='candidate'&&!component)renderCandidateLabel(cell,model.fit||{},{data,linked:model});
   row.append(cell);
  }
 }
@@ -132,7 +133,9 @@ function betaOmegaSummary(data){
 function renderBetaOmega(data){
  const model=data.beta_omega, panel=$('beta-omega-results');panel.hidden=!model;
  if(!model)return;
- $('beta-omega-summary').textContent=betaOmegaSummary(data);
+ const summaryText=betaOmegaSummary(data),summaryHost=$('beta-omega-summary');
+ if(model.combined){renderCandidateLabel(summaryHost,model.fit||{},{data,linked:model});summaryHost.append(document.createTextNode(summaryText.slice(summaryText.indexOf(' · '))))}
+ else summaryHost.textContent=summaryText;
  $('beta-omega-components').replaceChildren();$('beta-omega-assignments').replaceChildren();
  for(const component of betaOmegaComponents(model)){
   const row=document.createElement('tr');row.title=betaOmegaIdentity(component,model)+(component.active?'':' Not independently supported.');
@@ -157,8 +160,14 @@ function renderBetaOmega(data){
  $('beta-omega-detail').textContent=combined?`Allowed reflections: ${combined.matched_profiles}/${combined.total_profiles}; BCC alone ${(100*combined.beta_only_coverage).toFixed(1)}%. Nominal ω absences: ${model.nominal_absence_profile_ids?.join(', ')||'none'}. Outside the combined geometry: ${(model.unexplained_geometry_profile_ids||model.unexplained_profile_ids).join(', ')||'none'}. Shared profiles count once in combined totals. Absence IDs are geometry diagnostics, excluded from allowed coverage and model selection.${model.nominal_absence_profile_ids?.length?` Geometry RMS ${(100*combined.rms_geometry_relative).toFixed(2)}%.`:''} RMS is divided by the parent’s shortest reciprocal reflection.${model.parent.requires_variant_support?' Two parent profiles: the linked interpretation also relies on independent omega support.':''}`:model.interpretation;
  if(model.double_diffraction?.profile_count)$('beta-omega-detail').textContent+=` Double-diffraction candidate IDs: ${model.double_diffraction.profile_ids.join(', ')}. Remaining without an allowed reflection or supported two-step path: ${model.double_diffraction.remaining_profile_ids.join(', ')||'none'}. Candidates may overlap the absence IDs; they do not alter ranking or allowed coverage.`;
  const comparison=model.comparison,rival=comparison?.rival;
- $('beta-omega-alternatives').textContent=model.fit?(rival?`Common-score comparison: ${betaOmegaCombinedLabel(model)} ${model.fit.score.toFixed(3)}; ${candidateName(rival)} ${rival.score.toFixed(3)}. ${comparison.ambiguous?'Both pass and differ by at most '+comparison.near_tie_margin.toFixed(2)+'.':'The higher passing score is preferred.'} ${comparison.preferred==='related'?'The related combination':'The independent fit'} is selected. Scores use the same intensity weighting and prediction evidence; see the candidate table and individual overlays.`:'No independently passing rival. Inspect the candidate table for attempted fits.'):'Saved legacy geometry ranking; recalculate to compare candidates with the common scorer.';
-
+ const alternatives=$('beta-omega-alternatives');
+ alternatives.textContent=model.fit?'No independently passing rival. Inspect the candidate table for attempted fits.':'Saved legacy geometry ranking; recalculate to compare candidates with the common scorer.';
+ if(model.fit&&rival){
+  const relatedName=document.createElement('span'),rivalName=document.createElement('span');
+  renderCandidateLabel(relatedName,model.fit,{data,linked:model});renderCandidateLabel(rivalName,rival,{data});
+  alternatives.replaceChildren(document.createTextNode('Common-score comparison: '),relatedName,document.createTextNode(` ${model.fit.score.toFixed(3)}; `),rivalName,
+   document.createTextNode(` ${rival.score.toFixed(3)}. ${comparison.ambiguous?'Both pass and differ by at most '+comparison.near_tie_margin.toFixed(2)+'.':'The higher passing score is preferred.'} ${comparison.preferred==='related'?'The related combination':'The independent fit'} is selected. Scores use the same intensity weighting and prediction evidence; see the candidate table and individual overlays.`));
+ }
 }
 const betaOmegaHidden=new Set();
 function drawBetaOmega(data,qp){

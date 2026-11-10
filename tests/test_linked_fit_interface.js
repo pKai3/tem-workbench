@@ -5,11 +5,13 @@ function node(tag){
   append(...children){for(const c of children){c.parent=this;this.children.push(c)}},replaceChildren(...children){this.children=[];this.append(...children)},
   setAttribute(k,v){this.attrs[k]=v},addEventListener(k,fn){this.events[k]=fn},
   closest(selector){let p=this;while(p){if(selector==='table'?p.tag==='table':p.className.split(' ').includes(selector.slice(1)))return p;p=p.parent}return null}};
+ let content='';Object.defineProperty(n,'textContent',{get(){return n.children.length?String(content)+n.children.map(c=>c.textContent).join(''):content},set(value){content=value;n.children=[]}});
+ const replace=n.replaceChildren;n.replaceChildren=function(...children){content='';replace.apply(this,children)};
  n.classList={toggle(c,enabled){const classes=new Set(n.className.split(' ').filter(Boolean));enabled?classes.add(c):classes.delete(c);n.className=[...classes].join(' ')}};return n;
 }
 const controls=new Map();function $(id){if(!controls.has(id))controls.set(id,node('div'));return controls.get(id)}
 const table=node('table'),panel=node('div');panel.className='candidate-table';table.append($('model-head'),$('models'));panel.append(table);
-const context={$ ,document:{createElement:node},COVERAGE_HELP:'Weighted coverage',phaseColors:{BCC:'#f4b75e',OMEGA:'#b49aff'},chosenFits:new Set(),result:null,
+const context={$ ,document:{createElement:node,createTextNode:text=>{const n=node('text');n.textContent=text;return n}},COVERAGE_HELP:'Weighted coverage',phaseColors:{BCC:'#f4b75e',OMEGA:'#b49aff'},chosenFits:new Set(),result:null,
  indexLabel:v=>'['+v.join(' ')+']',geometryFits:d=>d.geometry||[],analysisPhases:s=>s.enabled_phases,bestModel:(d,p)=>d.models.find(m=>m.phase===p),compareRank:(a,b)=>(b?.score||0)-(a?.score||0),
  scaleSummary:()=>'',zoneLabel:m=>'['+m.zone_3index.join(' ')+']',screenLabel:()=> 'Pass',predictionCounts:()=> '3 + 0 / 3',fittedDimensions:()=> 'a 0.330',scalePercentages:()=> 'a 0%',rankDescription:()=>'',evidenceDescription:()=>'',doubleDiffractionCountHelp:()=>'',coverageCounts:m=>(100*m.coverage).toFixed(0)+'% | —',scaleDetails:()=>'',drawFFT:()=>{}};
 vm.createContext(context);vm.runInContext(fs.readFileSync('web/beta-omega.js','utf8'),context);
@@ -28,13 +30,13 @@ const before=JSON.stringify(data);context.renderModels(data);context.renderFitCh
 const cells=r=>Object.fromEntries(r.children.map(c=>[c.dataset.column,c.textContent]));
 assert.equal($('models').children.length,2);assert.equal(panel.hidden,false);
 assert.equal(cells($('models').children[0]).rank,'0.700');
-assert.equal(cells($('models').children[0]).candidate,'BCC [0 1 1] + 2×ω','Zone axis belongs to the parent, before the added phase');
-assert.equal(context.candidateName(fit),'BCC [0 1 1] + 2×ω','Evidence tables use the same combined label');
+assert.equal(cells($('models').children[0]).candidate,'BCC [0 1 1] + ω₁ + ω₂','Zone axis belongs to the parent, before the added phase');
+assert.equal(context.candidateName(fit),'BCC [0 1 1] + ω₁ + ω₂','Evidence tables use the same combined label');
 assert.equal(cells($('models').children[0]).rms,'0.050','Relative residual is converted to the image coordinate units');
 assert.equal($('model-head').children[0].children.find(c=>c.dataset.column==='rms').textContent,'RMS\nrel.');
 assert.equal(table.className.includes('linked-only'),false,'The same columns show comparable scores for all candidates');
 const descendants=n=>n.children.flatMap(c=>[c,...descendants(c)]),boxes=()=>descendants($('fit-list')).filter(n=>n.tag==='input');
-assert.deepEqual(boxes().map(b=>b.attrs['aria-label']),['Overlay BCC [0 1 1] + 2×ω','Overlay BCC parent','Overlay ω₁','Overlay ω₂']);
+assert.deepEqual(boxes().map(b=>b.attrs['aria-label']),['Overlay BCC [0 1 1] + ω₁ + ω₂','Overlay BCC parent','Overlay ω₁','Overlay ω₂']);
 assert.equal(cells(boxes()[1].parent.parent).candidate,'BCC parent [0 1 1]\n0.6°','Parent shows its recorded in-plane rotation');
 assert.ok(boxes().slice(1).every(b=>b.parent.parent.className==='fit-component'));
 assert.ok(boxes().every(b=>b.checked));
@@ -65,7 +67,7 @@ assert.equal(context.phaseControlLabel('ORT','iron'),'ORT (orthorhombic)');
 assert.equal(context.phaseLabel('BCC+FCC','iron'),'α (BCC) + γ (FCC)');
 const labelledBefore=JSON.stringify(joint);
 $('material').value='titanium';context.renderFitChoices(data,true);
-assert.equal(cells(boxes().find(b=>b.dataset.fit==='related-combined').parent.parent).candidate,'β (BCC) [0 1 1] + 2×ω');
+assert.equal(cells(boxes().find(b=>b.dataset.fit==='related-combined').parent.parent).candidate,'β (BCC) [0 1 1] + ω₁ + ω₂');
 assert.equal(cells(boxes().find(b=>b.dataset.fit==='linked-beta').parent.parent).candidate,'β (BCC) parent [0 1 1]\n0.6°');
 assert.equal(context.betaOmegaColorTarget(components[0]),'phase:BCC');
 assert.equal(context.betaOmegaColorTarget(components[3]),'variant:omega3');
@@ -132,7 +134,7 @@ const twoBCC={...data,models:[bccA,bccB],beta_omega:{...joint,selected:false},
  classification:{primary_model:bccA,secondary_model:bccB,combined_fit:bccPair,label:'ambiguous',ambiguity_reason:'related_pattern_tradeoff'}};
 context.enabledPhases=['BCC','OMEGA'];context.PHASES=['BCC','OMEGA'];$('overlay').value='winner';
 context.renderModels(twoBCC);context.renderFitChoices(twoBCC);
-assert.equal(cells($('models').children[0]).candidate,'2 × BCC [0 0 1]');
+assert.equal(cells($('models').children[0]).candidate,'BCC [0 0 1] + BCC [0 0 1]');
 assert.equal(cells($('models').children[0]).rank,'0.795');
 assert.deepEqual(Array.from(context.overlayModels(twoBCC,'winner')),[bccA,bccB]);
 assert.deepEqual(Array.from(context.overlayModels(twoBCC,'winner',{vectors:true})),[bccA,bccB]);
@@ -212,3 +214,25 @@ assert.deepEqual(Array.from(context.overlayModels({...passing,models:[bccA,below
  'Passing joint fits retain all of their components, even a component below the independent screen');
 assert.equal(context.overlayModels({...passing,models:[rejected],classification:{},beta_omega:null},'passing').length,0);
 console.log('All-passing overlays: accepted independent/combined fits, multiple orientations, deduplication, rejected exclusion and checkbox state passed.');
+
+// Label colours resolve against the supplied result, including repeated phases,
+// before the global result has switched from the previous image.
+const label=node('td');$('omega-color-by').value='variant';
+vm.runInContext("fitVariantColors['BCC:1']='#13579b';fitVariantColors['BCC:2']='#e86420';omegaVariantColors.omega3='#abcdef';omegaVariantColors.omega4='#fedcba'",context);
+context.renderCandidateLabel(label,bccPair,{data:twoBCC});
+assert.deepEqual(label.children.map(n=>n.style.color||null),['#13579b',null,'#e86420']);
+assert.deepEqual(label.children.filter(n=>n.dataset.fitColorTarget).map(n=>n.dataset.fitColorTarget),['orientation:BCC:1','orientation:BCC:2']);
+assert.equal(label.children[1].className,'fit-label-separator');
+context.renderCandidateLabel(label,fit,{data});
+assert.deepEqual(label.children.map(n=>n.style.color||null),[context.phaseColors.BCC,null,'#abcdef',null,'#fedcba']);
+$('omega-color-by').value='phase';context.renderCandidateLabel(label,bccPair,{data:twoBCC});
+assert.equal(label.textContent,'2 × BCC [0 0 1]');assert.equal(label.children[0].style.color,context.phaseColors.BCC);
+context.renderCandidateLabel(label,fit,{data});assert.equal(label.textContent,'BCC [0 1 1] + 2×ω');
+assert.equal(label.children[2].style.color,context.phaseColors.OMEGA);
+vm.runInContext(app.slice(app.indexOf('function fittedDimensions('),app.indexOf('function scaleDetails(')),context);
+assert.equal(context.fittedDimensions({phase:'BCC',fitted_a_nm:.3232}),'a 0.3232');
+assert.equal(context.fittedDimensions({phase:'OMEGA',fitted_a_nm:.461,fitted_c_nm:.2843}),'a 0.4610 / c 0.2843');
+assert.equal(context.fittedDimensions({phase:'HCP',fitted_a_nm:.2922,scale_mode:'auto_hcp_ratio'}),'a 0.2922 / c unconstrained');
+assert.equal(context.fittedDimensions({phase:'ORT',fitted_a_nm:.4,fitted_c_nm:.6}),'a 0.4000 / b unconstrained / c 0.6000');
+assert.equal(context.fittedDimensions({...fit,coordinate_units:'relative'}),'—');
+console.log('Combined labels: selected phase/variant colours, neutral joins, repeated orientations, current-result identity and explicit cell axes passed.');

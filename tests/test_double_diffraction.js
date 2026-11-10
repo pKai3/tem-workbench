@@ -1,9 +1,9 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-function node(tag,attrs={},text=''){return {tag,attrs,text,textContent:text,style:{},children:[],append(...v){this.children.push(...v)},replaceChildren(...v){this.children=v},removeAttribute(k){delete this.attrs[k]},setAttribute(k,v){this.attrs[k]=v}}}
+function node(tag,attrs={},text=''){return {tag,attrs,dataset:{},text,textContent:text,style:{},children:[],append(...v){this.children.push(...v)},replaceChildren(...v){this.children=v},removeAttribute(k){delete this.attrs[k]},setAttribute(k,v){this.attrs[k]=v}}}
 const controls=new Map();function $(id){if(!controls.has(id))controls.set(id,Object.assign(node('div'),{value:'circle',checked:false}));return controls.get(id)}
-const context={$ ,el:node,document:{createElement:tag=>node(tag)},phaseColors:{BCC:'#ff0000',OMEGA:'#00ff00',HCP:'#0000ff'},result:null,zoneLabel:()=> '[010]',planeLabel:(m,h)=>`(${h.join(' ')})`};
+const context={$ ,compareRank:(a,b)=>(b.score||0)-(a.score||0),el:node,document:{createElement:tag=>node(tag)},phaseColors:{BCC:'#ff0000',OMEGA:'#00ff00',HCP:'#0000ff'},result:null,zoneLabel:()=> '[010]',planeLabel:(m,h)=>`(${h.join(' ')})`};
 vm.createContext(context);vm.runInContext(fs.readFileSync('web/beta-omega.js','utf8'),context);vm.runInContext(fs.readFileSync('web/double-diffraction.js','utf8'),context);
-const app=fs.readFileSync('web/app.js','utf8');vm.runInContext(app.slice(app.indexOf('function markerMotionOffset('),app.indexOf('function weakMarker(')),context);
+const app=fs.readFileSync('web/app.js','utf8');vm.runInContext(app.slice(app.indexOf('function candidateName('),app.indexOf('function brightnessDescription(')),context);vm.runInContext(app.slice(app.indexOf('function markerMotionOffset('),app.indexOf('function weakMarker(')),context);
 vm.runInContext(app.slice(app.indexOf('function materialPhaseSymbol('),app.indexOf('const PHASE_DEFAULT_COLORS=')),context);
 const step=(component,phase,id,hkl)=>({component,phase,profile_id:id,hkl});
 const path={kind:'cross_component',steps:[step('beta','BCC',1,[0,1,-1]),step('omega3','OMEGA',2,[1,0,1])],residual_relative:.012,measured_residual_relative:.006};

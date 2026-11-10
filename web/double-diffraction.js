@@ -29,13 +29,15 @@ function drawDoubleDiffraction(fits,qp){
  const joint=betaOmegaOverlayActive(result)?result.beta_omega:null;
  const union=result.classification?.combined_fit,components=typeof combinedFitComponents==='function'?combinedFitComponents(result):[];
  const unionVisible=union?.double_diffraction&&components.length&&components.every(c=>fits.some(f=>!f.geometry&&f.model.phase===c.phase&&JSON.stringify(f.model.predicted_nodes)===JSON.stringify(c.predicted_nodes)));
- const models=[...(joint?[{label:phaseLabel('BCC')+' + ω'+(joint.status==='unresolved'?' · below fit screen':''),report:joint.double_diffraction,linked:joint,model:joint.fit}]:[]),
-  ...(unionVisible?[{label:candidateName(union),report:union.double_diffraction,model:union}]:[]),
-  ...[...new Set(fits.filter(f=>!f.geometry).map(f=>f.model))].map(m=>{const display=fits.find(f=>f.model===m);return {label:`${display.name||phaseLabel(m.phase)} ${zoneLabel(m)}${m.valid===false?' · below fit screen':''}`,report:m.double_diffraction,linked:null,model:m,display}})];
+ const models=[...(joint?[{report:joint.double_diffraction,linked:joint,model:joint.fit}]:[]),
+  ...(unionVisible?[{report:union.double_diffraction,model:union}]:[]),
+  ...[...new Set(fits.filter(f=>!f.geometry).map(f=>f.model))].map(m=>{const display=fits.find(f=>f.model===m);return {report:m.double_diffraction,linked:null,model:m,display}})];
  details.hidden=!models.length;
- for(const {label,report,linked,model,display} of models){
+ for(const {report,linked,model,display} of models){
   const section=document.createElement('div');section.className='forbidden-fit';
-  const heading=document.createElement('strong');heading.textContent=label;section.append(heading);
+  const heading=document.createElement('strong');renderCandidateLabel(heading,model||{},{data:result,linked});
+  if(linked?.status==='unresolved'||(!linked&&model?.valid===false)){const status=document.createElement('span');status.textContent=' · below fit screen';heading.append(status)}
+  section.append(heading);
   const summary=document.createElement('p');summary.textContent=doubleDiffractionSummary(report)+(model?.double_diffraction_weight?` DD rank +${(model.double_diffraction_bonus||0).toFixed(3)} · weight ${model.double_diffraction_weight.toFixed(2)} × quality-weighted additional coverage ${(100*(model.double_diffraction_factor||0)).toFixed(1)}%.`:' DD weight is zero; diagnostic only.');section.append(summary);
   if(report?.status==='checked'||report?.status==='partial'){
    const help=document.createElement('p');help.className='hint';

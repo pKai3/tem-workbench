@@ -2,6 +2,22 @@
 
 Last updated: 10 November 2026
 
+## Combined-fit colours and map presentation — completed 10 November 2026
+
+Approved: each component of a combined fit label follows its selected phase/variant colour, with neutral separators, throughout the candidate/overlay tables and diagnostic reports. Repeated orientations expand in variant mode so both colours remain identifiable; phase mode retains compact repeated-phase labels. Label Cell values with a/c (and a/b/c for ORT). Move Saved regions directly below image metadata. Add a two-click Cancel action to each grid/batch progress card while retaining click-to-return navigation.
+
+Approved map follow-ups: Window results gains a remembered Show rim points checkbox that hides only extra rim-window markers, retaining all sampled data and aggregate contributions. Average passing strength initially selects All phases when entering the mode. Scalar colour bars occupy the same compact area beside the ROI controls as the two/three-phase keys; detailed descriptions remain in hover/focus/tap help.
+
+Display decision following the user's normalization question: provide optional Normalise opacity, initially on for passing frequency/strength. Use one maximum over the displayed cells and phases, leaving measured frequencies, ranks, phase colour proportions and acceptance unchanged. Off restores the fixed 0–1 display scale for comparisons between images. Preserve the existing faint baseline for measured zero-support cells. The visible-map PNG records the selected normalization. This is a browser presentation preference, not a new fitting normalization or a change to batch-export defaults.
+
+Further approved cleanup: Analysis notes is collapsed; the rank equation lists positive terms before costs and lives with its comparison caveats in a hover/focus/tap info popup. The ambiguity explanation appears only for ambiguous, two-structure or multiple-orientation results; corresponding map legend entries have contextual help. Help popups share viewport clamping. The normalization checkbox uses the standard 13 px size.
+
+Validation: all 19 JavaScript suites pass, with regressions for current-result phase/variant colours, repeated orientations, cell-axis labels, rim-only filtering, normalization versus fixed opacity, zero support, unchanged map values, independent cancel buttons, two-click confirmation, confirmation expiry and duplicate-request prevention. Live 1390 checks confirm phase/variant labels and a/c values; a 60-window ST1203 rim grid drops to 33 visible interior points without changing its aggregate data. Frequency/strength share the selected maximum opacity, scalar keys use the right-hand key area, and the visible-map PNG records normalization. Cancel changes to Confirm cancel, then Stopping, without navigating. Rank and rim tooltips are readable and within the viewport; irrelevant ambiguity help and explanatory footers are hidden. No scoring changes or version bump.
+
+## Project-name autosave and live region previews — in progress 10 November 2026
+
+Approved: project-name edits autosave on blur or Enter with visible saving/error status, preserving the current image and grid. The existing Apply sources action is hard to find; source-folder changes retain a clearly placed save action. Move the blue ROI box and update its crop/FFT preview independently of the slower fitting request. Fit results must not be attached to a different current ROI. Validation pending.
+
 ## Reload, background progress and fitting controls — completed 10 November 2026
 
 Approved: refresh/reload reopens the last successfully opened image from the full catalogue, even when a remembered project filter or a grid's source differs. A running interactive grid continues when browsing other images. Persistent bottom-right progress cards track interactive and batch grids, reconnect after refresh, and return to the relevant image when clicked. Completed/cancelled cards clear after five seconds; unavailable status retries without losing the running job. A recovered map is drawn only on its matching image. This supersedes the grid-source-first startup and image-switch cancellation described in the 9 November recovery work.

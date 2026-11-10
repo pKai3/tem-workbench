@@ -657,10 +657,10 @@ function scaleSummary(settings){
 }
 function fittedDimensions(model){
  if(model.independent_combination||model.coordinate_units==='relative'||model.related_pattern)return '—';
- if(model.phase==='ORT')return [...'abc'].map(axis=>{const v=model['fitted_'+axis+'_nm'];return Number.isFinite(v)?v.toFixed(4):'unconstrained'}).join(' / ');
+ if(model.phase==='ORT')return [...'abc'].map(axis=>{const v=model['fitted_'+axis+'_nm'];return axis+' '+(Number.isFinite(v)?v.toFixed(4):'unconstrained')}).join(' / ');
  const a=model.fitted_a_nm??model.nominal_a_nm/model.shared_scale;
  const c=model.fitted_c_nm??(['auto_hcp_ac','auto_hcp_ratio'].includes(model.scale_mode)?null:model.nominal_c_nm/model.shared_scale);
- return a.toFixed(4)+(['HCP','OMEGA'].includes(model.phase)?' / '+(c===null?'unconstrained':c.toFixed(4)):'');
+ return 'a '+a.toFixed(4)+(['HCP','OMEGA'].includes(model.phase)?' / c '+(c===null?'unconstrained':c.toFixed(4)):'');
 }
 function scaleDetails(model){
  if(model.independent_combination)return 'Combined rank; individual cell parameters are shown on the component rows.';
@@ -712,19 +712,47 @@ function evidenceDescription(model){
  const position=e.distance_scale_nm_inv?` Positional credit falls continuously with offset (distance scale ${e.distance_scale_nm_inv.toFixed(3)} ${reciprocalUnit()}).${allowance}`:'';
  return `${e.detected_count} strong + ${e.weak_count} weak; ${e.unsupported_count} unsupported; ${e.unassessable_count} unchecked.${graded}${position} Search radius ${e.search_radius_nm_inv.toFixed(3)} ${reciprocalUnit()}; weak maxima do not count toward the initial screen.${e.half_weight_nm_inv?` Missing cost has half weight at ${e.half_weight_nm_inv} ${reciprocalUnit()}; weighted missing fraction ${(100*e.missing_factor).toFixed(1)}% (uniform ${(100*e.unweighted_missing_factor).toFixed(1)}%).`:''}`;
 }
-function rankDescription(m){return (m.scale_mode==='auto_hcp_ratio'&&m.phase!=='ORT'?`Scale cost: overall ${(m.overall_scale_penalty??0).toFixed(3)} + c/a ${(m.ca_ratio_penalty??0).toFixed(3)}. `:'')+`Position ${(m.position_score??m.score).toFixed(3)} − scale ${(m.scale_penalty??0).toFixed(3)} + weak ${(m.weak_peak_bonus??0).toFixed(3)} − missing ${(m.missing_peak_penalty??0).toFixed(3)} − extra patterns ${(m.additional_pattern_penalty??0).toFixed(3)}${m.brightness_grouping?' + brightness '+(m.brightness_bonus??0).toFixed(3):''}${m.double_diffraction_weight?' + DD '+(m.double_diffraction_bonus??0).toFixed(3):''} = rank ${m.score.toFixed(3)}`+(m.related_pattern&&m.additional_pattern_basis==='related_phase_family'?' The parent-linked ω variants share one addition cost; each variant still requires its own observed support.':'')}
+function rankDescription(m){return (m.scale_mode==='auto_hcp_ratio'&&m.phase!=='ORT'?`Scale cost: overall ${(m.overall_scale_penalty??0).toFixed(3)} + c/a ${(m.ca_ratio_penalty??0).toFixed(3)}. `:'')+`Position ${(m.position_score??m.score).toFixed(3)} + weak ${(m.weak_peak_bonus??0).toFixed(3)}${m.brightness_grouping?' + brightness '+(m.brightness_bonus??0).toFixed(3):''}${m.double_diffraction_weight?' + DD '+(m.double_diffraction_bonus??0).toFixed(3):''} − scale ${(m.scale_penalty??0).toFixed(3)} − missing ${(m.missing_peak_penalty??0).toFixed(3)} − extra patterns ${(m.additional_pattern_penalty??0).toFixed(3)} = rank ${m.score.toFixed(3)}`+(m.related_pattern&&m.additional_pattern_basis==='related_phase_family'?' The parent-linked ω variants share one addition cost; each variant still requires its own observed support.':'')}
 function compareRank(a,b){
  if(!a)return b?1:0;
  if(!b)return -1;
  return b.score-a.score||b.coverage-a.coverage;
 }
-function candidateName(m){
- if(m.related_pattern)return betaOmegaCombinedLabel(m);
- if(m.independent_combination){
-  const names=m.phase.split('+').map((phase,i)=>`${phaseLabel(phase)} ${zoneLabel({phase,zone_3index:m.component_zones[i]})}`);
-  return new Set(names).size===1?`${names.length} × ${names[0]}`:names.join(' + ');
+function candidateName(m,data=result,linked=null){return candidateLabelParts(m,data,linked).map(p=>p.text).join('')}
+function candidateLabelParts(m,data=result,linked=null){
+ const join=parts=>parts.flatMap((part,i)=>i?[{text:' + '},part]:[part]);
+ if(m.related_pattern||linked){
+  const model=linked||data?.beta_omega,fit=model?.fit||m,zone=model?.parent?.zone_3index||fit.zone_3index;
+  const parent={text:phaseLabel('BCC')+(zone?' '+indexLabel(zone):''),color:phaseColors.BCC,colorTarget:'phase:BCC'};
+  const variants=model?.components?betaOmegaComponents(model).filter(c=>c.active&&c.id!=='beta'):(fit.component_ids||[]).filter(id=>id!=='beta').map(id=>({id}));
+  if(!variants.length)return fit.component_ids||model?.components?[parent]:join([parent,{text:'ω',color:phaseColors.OMEGA,colorTarget:'phase:OMEGA'}]);
+  if($('omega-color-by').value==='phase')return join([parent,{text:(variants.length>1?variants.length+'×':'')+'ω',color:phaseColors.OMEGA,colorTarget:'phase:OMEGA'}]);
+  return join([parent,...variants.map((c,i)=>({text:omegaVariantLabel(i+1),color:betaOmegaComponentColor(c,model),colorTarget:betaOmegaColorTarget(c)}))]);
  }
- return `${phaseLabel(m.phase)} ${zoneLabel(m)}`;
+ if(m.independent_combination){
+  const components=data?combinedFitComponents(data):[],used=new Set();
+  const parts=m.phase.split('+').map((phase,i)=>{
+   const zone=m.component_zones[i],rotation=m.component_rotations_deg?.[i];
+   const component=[...components,...(data?.models||[])].find(c=>!used.has(c)&&c.phase===phase&&JSON.stringify(c.zone_3index)===JSON.stringify(zone)&&(!Number.isFinite(rotation)||Math.abs(c.rotation_deg-rotation)<1e-6));
+   if(component)used.add(component);
+   const style=component?independentFitStyle(component,data):{color:phaseColors[phase],colorTarget:'phase:'+phase};
+   return {text:`${phaseLabel(phase)} ${zoneLabel({phase,zone_3index:zone})}`,...style};
+  });
+  // A repeated phase can be abbreviated only when its orientations share a colour.
+  if($('omega-color-by').value==='phase'&&new Set(parts.map(p=>p.text)).size===1)return [{...parts[0],text:parts.length+' × '+parts[0].text}];
+  return join(parts);
+ }
+ return [{text:`${phaseLabel(m.phase)} ${zoneLabel(m)}`,...independentFitStyle(m,data)}];
+}
+function renderCandidateLabel(host,m,{data=result,linked=null,suffix=''}={}){
+ host.replaceChildren();
+ for(const [i,part] of candidateLabelParts(m,data,linked).entries()){
+  const span=document.createElement('span');span.textContent=part.text+(i===0?suffix:'');
+  span.className=part.color?'fit-label-part':'fit-label-separator';
+  if(part.color)span.style.color=part.color;
+  if(part.colorTarget)span.dataset.fitColorTarget=part.colorTarget;
+  host.append(span);
+ }
 }
 function combinedFitComponents(data){return (data.classification?.combined_fit_components||[data.classification?.primary_model,data.classification?.secondary_model]).filter(Boolean)}
 function combinedFitSelected(data){
@@ -753,9 +781,10 @@ function renderBrightnessEvidence(data){
   const b=m.brightness_grouping,row=document.createElement('tr');
   const groups=b.groups.map(g=>`${phaseLabel(g.phase)} ${g.relative_level.toFixed(2)}`).join(' / ')||'—';
   const ids=b.groups.map(g=>`${phaseLabel(g.phase)}: ${g.profile_ids.join(', ')}`).join(' · ')||b.reliable_profile_ids.join(', ')||'—';
-  const values=[candidateName(m),(m.brightness_bonus??0).toFixed(3),brightnessDescription(m),groups,ids];
+  const values=[candidateName(m,data),(m.brightness_bonus??0).toFixed(3),brightnessDescription(m),groups,ids];
   for(const [i,value]of values.entries()){
    const td=document.createElement('td');td.textContent=value;
+   if(i===0)renderCandidateLabel(td,m,{data});
    if(i===1){td.title=rankDescription(m);td.tabIndex=0}
    if(i===2){td.title=`${b.reliable_profile_ids.length} reliable matched / ${b.available_profiles} available profiles. `+(b.baseline_loss!=null?`One-level loss ${b.baseline_loss.toFixed(3)}; phase-level loss ${b.grouped_loss.toFixed(3)}; complexity cost ${b.complexity_cost.toFixed(3)}. Bounded support ${(100*b.factor).toFixed(1)}% × strength ${(m.brightness_grouping_weight??0).toFixed(2)}.`:'Geometry establishes groups before intensity is compared.');td.tabIndex=0}
    if(i===4&&b.shared_profile_ids.length)td.textContent+=` · shared: ${b.shared_profile_ids.join(', ')} (counted once)`;
@@ -773,7 +802,7 @@ function renderEvidence(data){
  head.append(header);table.append(head,body);container.append(table);
  for(const m of evidenceModels(data).sort(compareRank)){
   const e=m.peak_evidence;if(!e)continue;const row=document.createElement('tr');row.title=rankDescription(m)+' · '+evidenceDescription(m);
-  for(const value of [candidateName(m),e.detected_count,e.weak_count,e.unsupported_count,e.unassessable_count,m.weak_peak_bonus.toFixed(3),m.missing_peak_penalty.toFixed(3)]){const td=document.createElement('td');td.textContent=value;row.append(td)}
+  for(const [i,value] of [candidateName(m,data),e.detected_count,e.weak_count,e.unsupported_count,e.unassessable_count,m.weak_peak_bonus.toFixed(3),m.missing_peak_penalty.toFixed(3)].entries()){const td=document.createElement('td');td.textContent=value;if(i===0)renderCandidateLabel(td,m,{data});row.append(td)}
   body.append(row);
  }
 }
@@ -825,19 +854,26 @@ function geometryDescription(data){
  return 'Geometry check: pattern count remains unresolved.';
 }
 // Shared column definitions keep both candidate tables aligned.
-const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP/ω use the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Position − scale cost + weak-peak bonus − missing-prediction cost − extra-pattern cost + brightness-grouping bonus + DD bonus; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all + DD","Strong + weak matches / allowed prediction positions, followed by additional double-diffraction candidate profiles. DD is separate from the prediction denominator and allowed coverage; weak maxima and DD do not count toward the four-profile screen."],["coverage","Coverage\nAllowed | +DD",COVERAGE_HELP+" The left percentage is allowed-reflection coverage; the right includes additional DD-candidate profiles using the same measured-peak weights. DD counts once per profile, is geometric evidence only, and does not change allowed coverage or the fit screen. A dash means the DD check or its weights are unavailable."],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP/ω a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Cell Δ\n%","Real-space cell change from reference: positive means larger, negative means smaller. Each axis uses 100 × (1 / reciprocal scale − 1). HCP/ω overall + c/a mode also shows the real c/a ratio change, with its sign unchanged. Unconstrained axes are not measurements."]];
+const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP/ω use the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Rank = position + weak-peak bonus + brightness-grouping bonus + DD bonus − scale cost − missing-prediction cost − extra-pattern cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all + DD","Strong + weak matches / allowed prediction positions, followed by additional double-diffraction candidate profiles. DD is separate from the prediction denominator and allowed coverage; weak maxima and DD do not count toward the four-profile screen."],["coverage","Coverage\nAllowed | +DD",COVERAGE_HELP+" The left percentage is allowed-reflection coverage; the right includes additional DD-candidate profiles using the same measured-peak weights. DD counts once per profile, is geometric evidence only, and does not change allowed coverage or the fit screen. A dash means the DD check or its weights are unavailable."],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP/ω a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Cell Δ\n%","Real-space cell change from reference: positive means larger, negative means smaller. Each axis uses 100 × (1 / reciprocal scale − 1). HCP/ω overall + c/a mode also shows the real c/a ratio change, with its sign unchanged. Unconstrained axes are not measurements."]];
 function renderFitHeader(head, showToggle=false, relative=false){
  const row=document.createElement('tr');
  const columns=showToggle?[['show','Show','Toggle this overlay'],...FIT_COLUMNS]:FIT_COLUMNS;
  for(const [key,label,help]of columns){
   const cell=document.createElement('th');cell.scope='col';cell.className='col-'+key;cell.dataset.column=key;
   cell.textContent=key==='rms'&&relative?'RMS\nrel.':label;cell.title=help+(key==='coverage'?' Related combinations use the same measured-profile weights; component-only rows report unweighted assignment coverage.':key==='rank'?' Constrained combinations use the same score, with an additional-pattern cost.':'');
-  if(key==='rank')cell.setAttribute('aria-sort','descending');
+  if(key==='rank'){
+   cell.setAttribute('aria-sort','descending');
+   const helpHost=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');
+   helpHost.className='settings-help';button.type='button';button.className='settings-help-button';button.textContent='ⓘ';button.setAttribute('aria-label','About fit rank');
+   popup.className='settings-help-popup';popup.setAttribute('role','tooltip');
+   popup.textContent=help+'. All candidates use the same measured-peak weights and evidence checks. Shared predictions count once in a combined fit. Scores are not phase probabilities.';
+   helpHost.append(button,popup);cell.append(helpHost);cell.title='';
+  }
   row.append(cell);
  }
  head.replaceChildren(row);
 }
-function appendFitCells(row,m,{name,geometry=false,rotation=false}){
+function appendFitCells(row,m,{name,geometry=false,rotation=false,data=result,linked=null}){
  const values={
   candidate:name+(m&&rotation&&fitRotationLabel(m.rotation_deg)?`\n${fitRotationLabel(m.rotation_deg)}`:''),
   rank:m?m.score.toFixed(3):'—',
@@ -855,6 +891,7 @@ function appendFitCells(row,m,{name,geometry=false,rotation=false}){
   cell.textContent=values[key];cell.title=help;
   if(m){
    if(key==='candidate')cell.className+=' '+(geometry?'geometry-fit':new Set(m.phase.split('+')).size===1?m.phase.split('+')[0].toLowerCase():m.phase.toLowerCase());
+   if(key==='candidate'&&!geometry)renderCandidateLabel(cell,m,{data,linked,suffix:rotation&&fitRotationLabel(m.rotation_deg)?'\n'+fitRotationLabel(m.rotation_deg):''});
    if(key==='candidate'&&m.independent_combination)cell.title=m.phase.split('+').map((phase,i)=>`${phaseLabel(phase)} ${zoneLabel({phase,zone_3index:m.component_zones[i]})}${Number.isFinite(m.component_rotations_deg?.[i])?' · '+fitRotationLabel(m.component_rotations_deg[i]):''}`).join(' + ')+'. Joint score; components are available in Individual fit overlays.';
    if(key==='cost'&&m.scale_mode==='auto_hcp_ratio')cell.title=scaleDetails(m);
    if(key==='rank')cell.title=geometry?'Geometry-only score':rankDescription(m);
@@ -877,12 +914,11 @@ function renderModels(data){
  ranked.sort((a,b)=>compareRank(a.m,b.m));
  for(const item of ranked){
   const row=document.createElement('tr');
-  if(item.linked)appendBetaOmegaFitCells(row,linked);
-  else appendFitCells(row,item.m,{name:item.m?candidateName(item.m):phaseLabel(item.phase)});
+  if(item.linked)appendBetaOmegaFitCells(row,linked,null,data);
+  else appendFitCells(row,item.m,{name:item.m?candidateName(item.m,data):phaseLabel(item.phase),data});
   $('models').append(row);
  }
- $('fit-summary').textContent='Rank = position − scale cost + weak-peak bonus − missing-prediction cost − extra-pattern cost'+(evidenceModels(data).some(m=>m.brightness_grouping)?' + brightness-grouping bonus':'')+(data.settings.double_diffraction_weight?' + DD bonus':'')+'. All candidates use the same measured-peak weights and evidence checks. Shared predictions count once in a combined fit. Scores are not phase probabilities.';
- $('models').closest('.candidate-table').hidden=!$('models').children.length;$('fit-summary').hidden=!$('models').children.length;
+ $('models').closest('.candidate-table').hidden=!$('models').children.length;
 }
 function renderMeasuredPeaks(data){
  const direct=data.image_kind==='diffraction',s=data.spectrum,hasIntegrated=direct||Boolean(s.photometry)||s.peaks.some(p=>Object.hasOwn(p,'integrated_intensity'));
@@ -922,7 +958,7 @@ function renderMeasuredPeaks(data){
  $('peak-measurement-note').textContent=(s.profile_numbering==='integrated_intensity_descending'?'Peak 1 is brightest; IDs rank integrated signal and match the plot and fit assignments. ':hasIntegrated?'Sorted by integrated signal; recalculate to number peaks by brightness. ':'Sorted by peak FFT power; recalculate for integrated signal and brightness numbering. ')+(hasIntegrated?'* Measurement flags: hover or focus the value. — means unavailable. ':'')+'Opposite spots share one number.';
  $('peak-count').textContent=`(${s.peaks.length})`;
 }
-async function renderResult(data,version,body){renderAutoStrength(data);if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} ${reciprocalUnit()}/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}renderMeasuredPeaks(data);renderFitChoices(data);renderBetaOmega(data);const [raw,detector]=await Promise.all([decodeSpectrumImage(data.images),data.images.detector_signal16?decodeSpectrumImage({fft_log16:data.images.detector_signal16,fft_log_limits:data.images.detector_signal_limits}).then(raw=>({...raw,detector:true})):null]);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;if(data.image_kind==='diffraction')displayedDiffraction=data;fftRaw=raw;detectorRaw=detector;syncSignalToggle();if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');spectrumResultArrived();$('save-region').disabled=version!==generation}
+async function renderResult(data,version,body){renderAutoStrength(data);if(data.images.crop)$('crop').src=data.images.crop;$('phase-label').textContent=labels[data.classification.label]||data.classification.label;$('phase-label').style.color=colors[data.classification.label]||'#ddd';$('timing').textContent=`${data.elapsed_ms.toFixed(0)} ms · `+(data.image_kind==='diffraction'?'direct detector spots':`ROI ${data.roi.x}, ${data.roi.y}`);$('pattern-label').textContent=patternExplanation(data);$('result-label-help').hidden=!['ambiguous','coexisting_candidates','multiple_orientations'].includes(data.classification.label);$('geometry-check').textContent=geometryDescription(data);renderModels(data);renderEvidence(data);$('result-detail').textContent=data.image_kind==='diffraction'?`${data.spectrum.observed_spot_count} observed spots · ${data.spectrum.peaks.length} independent profiles · detector sampling ${data.spectrum.df.toFixed(4)} ${reciprocalUnit()}/px. Only observed spots are marked; opposite spots count once.`:`${data.spectrum.peaks.length} independent peak profiles · FFT bins ${data.spectrum.df.toFixed(3)} nm⁻¹. Opposite spots represent the same profile.`;$('analysis-notes').hidden=!data.classification.flags.length;$('flags').replaceChildren();for(const f of data.classification.flags){const li=document.createElement('li');li.textContent=f;$('flags').append(li)}renderMeasuredPeaks(data);renderFitChoices(data);renderBetaOmega(data);const [raw,detector]=await Promise.all([decodeSpectrumImage(data.images),data.images.detector_signal16?decodeSpectrumImage({fft_log16:data.images.detector_signal16,fft_log_limits:data.images.detector_signal_limits}).then(raw=>({...raw,detector:true})):null]);if(version!==generation&&(!drag||body.file_id!==fileId||JSON.stringify(body.settings)!==JSON.stringify(settings())))return;result=data;if(data.image_kind==='diffraction')displayedDiffraction=data;fftRaw=raw;detectorRaw=detector;syncSignalToggle();if(!isDiffraction())cacheRegionPreview(previewKey(data.roi,data.settings),analysisPreview(data));drawFFT();if(isDiffraction()){drawDetector();renderTranslation()}document.querySelector('.previews').classList.remove('stale');spectrumResultArrived();$('save-region').disabled=version!==generation}
 const MARKER_SHAPES=['circle','diamond','square','triangle','crosshair','open-crosshair','off'];
 // Fraction of one animation cycle; the same value drives live CSS and GIF frames.
 function markerMotionOffset(kind,phase){
@@ -969,7 +1005,7 @@ function independentFitStyle(model,data=result){
  const phase=model.phase,plain={name:phaseLabel(phase),color:phaseColors[phase],colorTarget:'phase:'+phase};
  if($('omega-color-by').value==='phase')return plain;
  const candidates=(data?.models||[]).filter(m=>m.phase===phase).sort(compareRank);
- const index=candidates.findIndex(m=>m===model||JSON.stringify(m.predicted_nodes)===JSON.stringify(model.predicted_nodes));
+ const index=candidates.findIndex(m=>m===model||(m.predicted_nodes&&model.predicted_nodes&&JSON.stringify(m.predicted_nodes)===JSON.stringify(model.predicted_nodes)));
  if(index<0)return plain;
  const key=phase+':'+(index+1);
  return {name:phaseLabel(phase),color:fitVariantColors[key]||defaultOrientationColor(phase,index+1),colorTarget:'orientation:'+key};
@@ -1285,7 +1321,7 @@ function renderFitChoices(data,preserve=false){
   const row=document.createElement('tr');
   if(group){row.className='fit-component';row.dataset.fitGroup=group;}
   const style=geometry?null:independentFitStyle(m,data);if(style)name=style.name+' '+zoneLabel(m);
-  toggle(row,key,name);appendFitCells(row,m,{name,geometry,rotation:!geometry});
+  toggle(row,key,name);appendFitCells(row,m,{name,geometry,rotation:!geometry,data});
   if(style)[...row.children].find(c=>c.dataset.column==='candidate').style.color=style.color;
   if(group){const cell=[...row.children].find(c=>c.dataset.column==='candidate');cell.title='Component of the combined fit above. Independently fitted orientation; the displayed rank and screen apply to this component alone.';}
   target.append(row);
@@ -1301,15 +1337,15 @@ function renderFitChoices(data,preserve=false){
   const row=document.createElement('tr');row.className='fit-combination';row.dataset.fitGroup=entry.kind;
   if(entry.kind==='related'){
    const model=data.beta_omega,active=betaOmegaComponents(model).filter(c=>c.active);
-   toggle(row,'related-combined',betaOmegaCombinedLabel(model),active.map(c=>'linked-'+c.id));
-   appendBetaOmegaFitCells(row,model);body.append(row);
+   toggle(row,'related-combined',candidateName(model.fit||{},data,model),active.map(c=>'linked-'+c.id));
+   appendBetaOmegaFitCells(row,model,null,data);body.append(row);
    for(const component of active){
     const child=document.createElement('tr');child.className='fit-component';child.dataset.fitGroup='related';
-    toggle(child,'linked-'+component.id,betaOmegaLabel(component.id,model));appendBetaOmegaFitCells(child,model,component);body.append(child);
+    toggle(child,'linked-'+component.id,betaOmegaLabel(component.id,model));appendBetaOmegaFitCells(child,model,component,data);body.append(child);
    }
   }else{
-   toggle(row,'independent-combined',candidateName(entry.m),[...componentKeys],componentKeys.size!==components.length);
-   appendFitCells(row,entry.m,{name:candidateName(entry.m)});body.append(row);
+   toggle(row,'independent-combined',candidateName(entry.m,data),[...componentKeys],componentKeys.size!==components.length);
+   appendFitCells(row,entry.m,{name:candidateName(entry.m,data),data});body.append(row);
    componentEntries.sort((a,b)=>compareRank(a.m,b.m)).forEach(({key,m})=>add(key,m,`${m.phase} ${zoneLabel(m)}`,{group:'independent'}));
   }
  }
@@ -1655,8 +1691,8 @@ function zoneSymbol(phase,key){
  }
  return zoneSymbols[phase].get(key);
 }
-function renderClassLegend(){
- const legend=$('class-legend'),shown=new Set(grid?.regions.filter(r=>r.leaf).map(r=>r.label)??[]);
+function renderClassLegend(regions=grid?.regions){
+ const legend=$('class-legend'),shown=new Set(regions?.filter(r=>r.leaf).map(r=>r.label)??[]);
  legend.hidden=!$('show-grid').checked||!shown.size;
  for(const item of legend.children)item.hidden=!shown.has(item.dataset.label);
 }
@@ -1718,6 +1754,19 @@ function ensurePassingStrength(job){
 }
 function supportMapView(view){return ['support','hex_support','strength','hex_strength'].includes(view)}
 function strengthMapView(view){return ['strength','hex_strength'].includes(view)}
+function mapSupportScale(aggregation,view,phases){
+ if(!$('map-normalize').checked||!supportMapView(view))return 1;
+ const cells=(view.startsWith('hex_')?aggregation?.hex?.cells:aggregation?.cells)||[],metric=strengthMapView(view)?'passing_strength':'support';
+ let maximum=0;
+ for(const cell of cells)for(const phase of phases){const value=cell.phases[phase]?.[metric];if(Number.isFinite(value))maximum=Math.max(maximum,value)}
+ return maximum;
+}
+function mapOpacityDescription(view,maximum){
+ const strength=strengthMapView(view),metric=strength?'average passing rank':'passing frequency';
+ if($('map-normalize').checked&&maximum<=0)return 'No positive passing support is available; measured areas retain only the faint baseline.';
+ return $('map-normalize').checked?`Opacity is normalised to the strongest displayed ${metric} (${strength?maximum.toFixed(3):(100*maximum).toFixed(1)+'%'}), using one factor across phases. The intensity slider sets its maximum opacity; values and colour proportions are unchanged. Turn off Normalise opacity for comparisons between images.`:
+  `Opacity uses a fixed 0–1 ${metric} scale${strength?', capped at 1':''}, multiplied by the intensity slider.`;
+}
 function selectedMapView(){
  const mode=$('map-mode').value;
  return mode==='top'?'hex':supportMapView(mode)&&$('map-display').value==='hex'?'hex_'+mode:mode;
@@ -1732,9 +1781,9 @@ function syncMapDisplay(){
 const savedMapMode=readPreference('tem-map-mode','support');
 if(['support','strength','spread','separate','samples','top','raw'].includes(savedMapMode))$('map-mode').value=savedMapMode;
 syncMapDisplay();
-function supportTriangleLegend(phases,palette,compact=false,strength=false){
+function supportTriangleLegend(phases,palette,compact=false,strength=false,opacityHelp=''){
  const svg=el('svg',{viewBox:compact?'0 0 180 120':'0 0 300 220',width:compact?180:300,height:compact?120:220,class:'support-triangle',role:'img','aria-label':'Three-phase relative support colour key: '+phases.map(p=>phaseLabel(p)).join(', ')});
- svg.append(el('title',{},'Corners show one phase; edges mix two; the centre mixes all three equally. Relative display weights, not phase fractions. Opacity shows the strongest '+(strength?'average passing strength (capped at 1).':'passing frequency.')));
+ svg.append(el('title',{},'Corners show one phase; edges mix two; the centre mixes all three equally. Relative display weights, not phase fractions. '+(opacityHelp||'Opacity shows the strongest '+(strength?'average passing strength (capped at 1).':'passing frequency.'))));
  svg.append(el('image',{x:compact?45:60,y:compact?19:24,width:compact?90:180,height:compact?78:156,href:supportTriangleImage(phases.map(p=>palette[p]))}));
  const labels=compact?[[90,13],[45,114],[135,114]]:[[150,15],[60,198],[240,198]];
  for(const [i,[x,y]]of labels.entries())svg.append(el('text',{x,y,fill:palette[phases[i]],'text-anchor':'middle','font-size':compact?11:12},phaseLabel(phases[i])));
@@ -1753,13 +1802,17 @@ function drawOverlapMap(){
  select.replaceChildren(...choices.map(phase=>{const o=document.createElement('option');o.value=phase;o.textContent=phase==='all'?`All phases (${phases.map(p=>phaseLabel(p)).join(' + ')})`:phaseLabel(phase);return o}));if(choices.includes(previous))select.value=previous;
  const phase=select.value,a=grid.aggregation,opacity=Number($('grid-opacity').value)/100,combined=supportView&&phase==='all';
  if(strength)ensurePassingStrength(grid);
+ const opacityMaximum=mapSupportScale(a,view,combined?phases:[phase]),opacityScale=opacityMaximum||1,opacityHelp=supportView?mapOpacityDescription(view,opacityMaximum):'';
  const metricName=strength?'average passing strength':'passing frequency',formatted=value=>strength?value.toFixed(3):(100*value).toFixed(1)+'%';
  $('map-mode').querySelector('option[value=spread]').disabled=grid.grid.passes<2;
  if(view==='spread'&&grid.grid.passes<2){$('map-mode').value='support';syncMapDisplay();drawOverlapMap();return}
  $('map-phase-label').hidden=['raw','samples','separate','hex'].includes(view);
  const symbolStyle=$('map-symbol').value;$('map-symbol-label').hidden=Boolean(a)&&view!=='raw';
- $('overlap-key').textContent=view==='hex'?'Hex winner by averaged rank · faded = less passing support · click inspects a contributing FFT window':view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':strength?'Average best passing rank per phase, weighted within each FFT footprint then averaged equally across placement passes. Failed/missing fits count as zero. Colour blends relative strength; opacity follows the strongest average (capped at 1). Not a phase fraction or probability; blank = unmeasured.':combined?`${phases.map(p=>phaseLabel(p)).join(' + ')} passing frequency · colour blends relative support · opacity = strongest passing frequency · not proof of coexisting structures · blank = unmeasured`:`${phaseLabel(phase)} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
+ $('map-rim-label').hidden=Boolean(a)&&view!=='raw';
+ $('map-show-rim').disabled=!grid.regions.some(r=>r.rim);
+ $('overlap-key').textContent=view==='hex'?'Hex winner by averaged rank · faded = less passing support · click inspects a contributing FFT window':view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sample coverage: darker to brighter = fewer to more windows':strength?'Average best passing rank per phase, weighted within each FFT footprint then averaged equally across placement passes. Failed/missing fits count as zero. Colour blends relative strength. Not a phase fraction or probability; blank = unmeasured.':combined?`${phases.map(p=>phaseLabel(p)).join(' + ')} passing frequency · colour blends relative support · not proof of coexisting structures · blank = unmeasured`:`${phaseLabel(phase)} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
  if(!a&&view!=='raw')$('overlap-key').textContent+=' · showing raw centres until aggregation';
+ if(supportView)$('overlap-key').textContent+=' '+opacityHelp;
  if($('show-grid').checked){
   if(a&&hexView){
    if(!a.hex){$('overlap-key').textContent='Rerun or reweight this map after restarting Workbench to generate averaged hex results.'}
@@ -1775,7 +1828,7 @@ function drawOverlapMap(){
      // differences otherwise leave hairline gaps even with crisp rendering.
      const points=Array.from({length:6},(_,i)=>{const angle=(30+i*60)*Math.PI/180;return `${(cell.cx+a.hex.radius_x*Math.cos(angle)).toFixed(6)},${(cell.cy+a.hex.radius_y*Math.sin(angle)).toFixed(6)}`}).join(' ');
      const label=supportView?(combined?phases:[phase]).map(p=>`${p}: ${formatted(cell.phases[p]?.[metric]??0)} ${metricName}`).join(' · ')+` · ${cell.samples} windows, ${cell.passes} passes`:winner?`${winner} · averaged rank ${fit.rank.toFixed(3)} · ${(fit.support*100).toFixed(1)}% passing · ${cell.samples} windows, ${cell.passes} passes`:'No candidate fits';
-     const node=el('polygon',{points,fill:colour,'fill-opacity':opacity*(.15+.85*clamp(value,0,1)),stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':cell.region_id,'aria-label':label,'data-hex-index':index,'data-support-view':supportView?'true':'false'});
+     const node=el('polygon',{points,fill:colour,'fill-opacity':opacity*(.15+.85*clamp(value/opacityScale,0,1)),stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':cell.region_id,'aria-label':label,'data-hex-index':index,'data-support-view':supportView?'true':'false'});
      tiles.append(node);
     }
    }
@@ -1784,17 +1837,18 @@ function drawOverlapMap(){
    for(const [cellIndex,cell] of a.cells.entries()){if(view==='spread'&&cell.passes<2)continue;
     if(combined){
      const blend=blendSupport(phases.map(p=>[phaseColors[p],cell.phases[p]?.[metric]??0]));
-     const node=el('rect',{x:cell.x*meta.width/a.width,y:cell.y*meta.height/a.height,width:meta.width/a.width,height:meta.height/a.height,fill:blend.colour,'fill-opacity':opacity*(.15+.85*clamp(blend.value,0,1)),stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':cell.region_id,'data-support-index':cellIndex});
+     const node=el('rect',{x:cell.x*meta.width/a.width,y:cell.y*meta.height/a.height,width:meta.width/a.width,height:meta.height/a.height,fill:blend.colour,'fill-opacity':opacity*(.15+.85*clamp(blend.value/opacityScale,0,1)),stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':cell.region_id,'data-support-index':cellIndex});
      node.setAttribute('aria-label',phases.map(p=>`${phaseLabel(p)}: ${formatted(cell.phases[p]?.[metric]??0)}`).join(' · ')+` ${metricName}; ${cell.samples} windows, ${cell.passes} passes`);group.append(node);
      continue;
     }
     const value=view==='separate'?cell.separate_support:view==='samples'?cell.samples/max:cell.phases[phase]?.[view==='spread'?'spread':metric]??0;
     const colour=view==='separate'?'#d692fa':view==='samples'?'#00d9e8':phaseColors[phase]||'#aaa';
-    const node=el('rect',{x:cell.x*meta.width/a.width,y:cell.y*meta.height/a.height,width:meta.width/a.width,height:meta.height/a.height,fill:value>0?colour:'#596778','fill-opacity':opacity*(.15+.85*clamp(value,0,1)),stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':cell.region_id,...(supportView?{'data-support-index':cellIndex}:{})});
+    const node=el('rect',{x:cell.x*meta.width/a.width,y:cell.y*meta.height/a.height,width:meta.width/a.width,height:meta.height/a.height,fill:value>0?colour:'#596778','fill-opacity':opacity*(.15+.85*clamp(value/opacityScale,0,1)),stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':cell.region_id,...(supportView?{'data-support-index':cellIndex}:{})});
     node.setAttribute('aria-label',`${phaseLabel(phase)}: ${formatted(value)}${strength?' average passing strength':''}; ${cell.samples} windows, ${cell.passes} passes`);group.append(node);
    }
   }else{
    for(const r of grid.regions){
+    if(r.rim&&!$('map-show-rim').checked)continue;
     const cx=r.roi.x+r.roi.w/2,cy=r.roi.y+r.roi.h/2,size=Math.max(5,grid.grid.spacing_nm/meta.pixel_x_nm*.28);
     const entries=analysisPhases(grid.settings).map(phase=>({phase,model:r.best_zones?.[phase]})).filter(e=>e.model).sort((a,b)=>compareRank(a.model,b.model)).slice(0,1);
     const node=el('circle',{cx,cy,r:size*.6,fill:symbolStyle==='zone'&&entries.length?'transparent':colors[r.label]||'#aaa','fill-opacity':opacity*(symbolStyle==='circle'?.85:.35),class:'grid-cell','data-id':r.id});group.append(node);
@@ -1807,7 +1861,7 @@ function drawOverlapMap(){
   }
  }
  if($('show-grid').checked){
-  if(!a||view==='raw'){renderClassLegend();renderZoneLegend(shown)}
+  if(!a||view==='raw'){renderClassLegend(grid.regions.filter(r=>!r.rim||$('map-show-rim').checked));renderZoneLegend(shown)}
   else{
    const legend=$('zone-legend');legend.replaceChildren();legend.hidden=false;
    const label=document.createElement('div');label.className='hint';label.textContent=strength?`${combined?'All phases':phaseLabel(phase)} · average passing strength`:$('overlap-key').textContent;legend.append(label);
@@ -1817,33 +1871,46 @@ function drawOverlapMap(){
     legend.hidden=true;
     const host=$('map-colour-key'),help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');
     help.className='settings-help';button.type='button';button.className='colour-key-button';button.setAttribute('aria-label','About map colours');
-    if(phases.length===3)button.append(supportTriangleLegend(phases,phaseColors,true,strength));
+    if(phases.length===3)button.append(supportTriangleLegend(phases,phaseColors,true,strength,opacityHelp));
     else{
      const key=document.createElement('span'),ramp=document.createElement('span');key.className='support-pair';ramp.className='support-pair-ramp';ramp.style.background=supportBlendGradient(phases,phaseColors);key.append(ramp);
      for(const p of phases){const label=document.createElement('span');label.textContent=phaseLabel(p);label.style.color=phaseColors[p];key.append(label)}button.append(key);
     }
     popup.className='settings-help-popup';popup.setAttribute('role','tooltip');
-    popup.textContent=(phases.length===3?'Corners show one phase; edges mix two; the centre mixes all three equally. ':'Each end shows one phase; the middle shows equal support. ')+(strength?'Colour uses relative average passing strength; opacity follows the strongest average, capped at 1. Failed/missing fits count as zero.':'Colour uses relative passing support and opacity follows the strongest passing frequency.')+' These are display weights, not phase fractions. Blank areas are unmeasured. Hover a map cell for its separate phase values.';
+    popup.textContent=(phases.length===3?'Corners show one phase; edges mix two; the centre mixes all three equally. ':'Each end shows one phase; the middle shows equal support. ')+(strength?'Colour uses relative average passing strength. Failed/missing fits count as zero.':'Colour uses relative passing support.')+' '+opacityHelp+' These are display weights, not phase fractions. Blank areas are unmeasured. Hover a map cell for its separate phase values.';
     help.append(button,popup);host.append(help);host.hidden=false;
    }
-   if(view!=='hex'&&!(combined&&[2,3].includes(phases.length)))for(const p of combined?phases:[phase]){
-    if(combined){const name=document.createElement('span');name.textContent=p;name.style.color=phaseColors[p];legend.append(name)}
-    const ramp=document.createElement('div');ramp.style.cssText='width:220px;height:10px;margin:6px 0;border-radius:3px';
-    const colour=view==='separate'?'#d692fa':view==='samples'?'#00d9e8':phaseColors[p];
-    ramp.style.background=`linear-gradient(to right,#596778,${colour})`;ramp.style.opacity=opacity;legend.append(ramp);
+   if(view!=='hex'&&!(combined&&[2,3].includes(phases.length))){
+    legend.hidden=true;
+    const host=$('map-colour-key'),help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');
+    help.className='settings-help';button.type='button';button.className='colour-key-button';button.setAttribute('aria-label','About map colours');
+    for(const p of combined?phases:[phase]){
+     const key=document.createElement('span'),name=document.createElement('span'),ramp=document.createElement('span');key.className='support-scalar';
+     const colour=view==='separate'?'#d692fa':view==='samples'?'#00d9e8':phaseColors[p];
+     name.textContent=view==='separate'?'Separate structures':view==='samples'?'Sample coverage':phaseLabel(p);name.style.color=colour;
+     ramp.className='support-pair-ramp';ramp.style.background=`linear-gradient(to right,#596778,${colour})`;
+     key.append(name,ramp);button.append(key);
+    }
+    popup.className='settings-help-popup';popup.setAttribute('role','tooltip');
+    popup.textContent=$('overlap-key').textContent+(view==='samples'?` Maximum: ${Math.max(1,...a.cells.map(c=>c.samples))} contributing windows.`:view==='spread'?' Range: 0–100 percentage points.':'');
+    help.append(button,popup);host.append(help);host.hidden=false;
    }
-   const ends=document.createElement('div');ends.className='hint';ends.textContent=view==='hex'?'Each hex combines overlapping readings; missing phase fits are excluded from its mean rank.':view==='samples'?`Few → ${Math.max(1,...a.cells.map(c=>c.samples))} contributing windows`:view==='spread'?'0 → 100 percentage points':strength?'Opacity: 0 → 1 average passing rank':combined&&phases.length===3?'Opacity: 0% → 100% strongest passing frequency':'0% → 100%';legend.append(ends);
+   if(view==='hex'){const ends=document.createElement('div');ends.className='hint';ends.textContent='Each hex combines overlapping readings; missing phase fits are excluded from its mean rank.';legend.append(ends)}
   }
  }
  renderGridSummary();updatePenaltyControls();
 }
 for(const id of ['map-mode','map-display','map-phase'])$(id).onchange=()=>{
- if(id==='map-mode'){writePreference('tem-map-mode',$('map-mode').value);syncMapDisplay()}
+ if(id==='map-mode'){writePreference('tem-map-mode',$('map-mode').value);if($('map-mode').value==='strength')$('map-phase').value='all';syncMapDisplay()}
  if(id==='map-display')writePreference('tem-map-display',$('map-display').value);
  if(grid?.grid.mode==='overlap')drawOverlapMap();
 };
 const savedMapSymbol=readPreference('tem-map-symbol','zone');if(['circle','both','zone'].includes(savedMapSymbol))$('map-symbol').value=savedMapSymbol;
 $('map-symbol').onchange=()=>{writePreference('tem-map-symbol',$('map-symbol').value);if(grid?.grid.mode==='overlap')drawOverlapMap()};
+$('map-show-rim').checked=readPreference('tem-map-show-rim',true)!==false;
+$('map-show-rim').onchange=()=>{writePreference('tem-map-show-rim',$('map-show-rim').checked);if(grid?.grid.mode==='overlap')drawOverlapMap()};
+$('map-normalize').checked=readPreference('tem-map-normalize',true)!==false;
+$('map-normalize').onchange=()=>{writePreference('tem-map-normalize',$('map-normalize').checked);if(grid?.grid.mode==='overlap')drawOverlapMap()};
 function syncZoneToggle(){
  // Display controls follow the existing map, or the selected mode before a run.
  $('show-zones').closest('label').hidden=(grid?.grid.mode??$('grid-mode').value)==='overlap';
@@ -1851,6 +1918,9 @@ function syncZoneToggle(){
 function syncMapOpacityControl(){
  const available=!isDiffraction()&&!overlapPlanning()&&$('show-grid').checked&&grid?.regions.some(r=>r.leaf);
  $('grid-opacity').disabled=!available;
+ const support=grid?.grid.mode==='overlap'&&supportMapView(selectedMapView());
+ $('map-normalize-label').hidden=!support;
+ $('map-normalize').disabled=!available||!grid?.aggregation;
 }
 function drawGrid(){
  syncMapOpacityControl();
@@ -2041,20 +2111,42 @@ function syncJobProgressHost(){
 }
 function clearJobProgress(kind){
  const card=jobProgressCards.get(kind);if(!card)return;
- clearTimeout(card.timer);card.button.remove();jobProgressCards.delete(kind);syncJobProgressHost();
+ clearTimeout(card.timer);clearTimeout(card.confirmTimer);card.container.remove();jobProgressCards.delete(kind);syncJobProgressHost();
+}
+function syncJobCancel(card){
+ card.cancel.hidden=card.data.state!=='running';
+ card.cancel.disabled=Boolean(card.cancelling||card.data.cancelling);
+ card.cancel.textContent=card.cancel.disabled?'Stopping…':card.confirming?'Confirm cancel':'Cancel';
+ card.cancel.title=card.confirming?'Click again to stop this job. Completed results are kept.':'Stop this job; a second click confirms.';
+}
+async function cancelProgressJob(kind){
+ const card=jobProgressCards.get(kind);if(!card||card.data.state!=='running'||card.cancelling||card.data.cancelling)return;
+ if(!card.confirming){
+  card.confirming=true;card.confirmTimer=setTimeout(()=>{card.confirming=false;syncJobCancel(card)},5000);syncJobCancel(card);return;
+ }
+ clearTimeout(card.confirmTimer);card.confirming=false;card.cancelling=true;syncJobCancel(card);
+ const id=card.data.id;
+ try{
+  if(kind==='grid'){await api('cancel',{job_id:id});if(jobId===id)$('cancel-grid').disabled=true}
+  else renderBatch(await api('batch/cancel',{}));
+ }catch(e){card.cancelling=false;syncJobCancel(card);message(e.message,true)}
 }
 function setJobProgress(kind,data){
  let card=jobProgressCards.get(kind);
  if(data.state!=='running'&&!card)return;
  if(!card){
-  const button=document.createElement('button'),title=document.createElement('strong'),name=document.createElement('span'),detail=document.createElement('span'),progress=document.createElement('progress');
-  button.type='button';button.className='job-progress-card';button.dataset.kind=kind;
+  const container=document.createElement('div'),button=document.createElement('button'),cancel=document.createElement('button'),title=document.createElement('strong'),name=document.createElement('span'),detail=document.createElement('span'),progress=document.createElement('progress');
+  container.className='job-progress-card';container.dataset.kind=kind;
+  button.type='button';button.className='job-progress-open';cancel.type='button';cancel.className='job-progress-cancel';cancel.onclick=()=>cancelProgressJob(kind);
   name.className='job-progress-name';detail.className='job-progress-detail';progress.max=1;
   button.append(title,name,detail,progress);button.onclick=()=>returnToJob(kind);
-  card={button,title,name,detail,progress,timer:null};jobProgressCards.set(kind,card);$('job-progress').append(button);
+  container.append(button,cancel);card={container,button,cancel,title,name,detail,progress,timer:null};jobProgressCards.set(kind,card);$('job-progress').append(container);
  }
+ if(card.data?.id!==data.id){card.cancelling=false;card.confirming=false;clearTimeout(card.confirmTimer)}
  const changed=card.data?.id!==data.id||card.data?.state!==data.state;
  card.data=data;card.title.textContent=data.title;card.name.textContent=data.name;card.detail.textContent=data.detail;
+ if(data.state!=='running'){card.confirming=false;clearTimeout(card.confirmTimer)}
+ syncJobCancel(card);
  card.button.title=data.tooltip+' Click to return to this image.';
  card.progress.setAttribute('aria-label',data.title+' progress');
  if(Number.isFinite(data.fraction))card.progress.value=clamp(data.fraction,0,1);else card.progress.removeAttribute('value');
@@ -2066,7 +2158,7 @@ function setJobProgress(kind,data){
 }
 function updateGridProgress(status){
  const count=Number(status.processed)||0,total=count+(Number(status.pending)||0),running=status.state==='running';
- setJobProgress('grid',{id:status.id,state:status.state,sourceId:status.source.id,name:status.source.name||status.source.id,
+ setJobProgress('grid',{id:status.id,state:status.state,cancelling:status.cancelling,sourceId:status.source.id,name:status.source.name||status.source.id,
   title:'Grid · '+(status.cancelling?'stopping':status.state),detail:`${count} analysed${running?' · '+(total-count)+' pending':''}`,
   fraction:total?count/total:running?null:1,tooltip:status.execution?`${status.execution.workers} workers · ${status.execution.elapsed_seconds.toFixed(1)} s.`:'Grid analysis continues while you browse.'});
 }
@@ -3321,7 +3413,7 @@ function mapSnapshot(){
   legendItem(strength?'Average passing strength · mean best passing rank per phase · failed/missing fits = 0':supportMapView(selectedMapView())&&$('map-phase').value==='all'?'All-phase passing support · colour = relative support · opacity = strongest frequency · not proof of coexistence':$('overlap-key').textContent,'#dce6ef');
   x=20;y+=28;legendItem(`${grid.grid.window_nm} nm windows · ${grid.grid.spacing_nm} nm spacing · ${grid.grid.passes} passes · ${grid.grid.layout} centres`,'#94a5b8');x=20;y+=28;
  }
- if(!$('class-legend').hidden)for(const node of $('class-legend').children)if(!node.hidden)legendItem('● '+node.textContent,colors[node.dataset.label]);
+ if(!$('class-legend').hidden)for(const node of $('class-legend').children)if(!node.hidden)legendItem('● '+(node.dataset.caption||node.textContent),colors[node.dataset.label]);
  if(x!==20){x=20;y+=28}
  if(!$('zone-legend').hidden)for(const group of $('zone-legend').querySelectorAll('.zone-legend-group')){
   const phase=group.dataset.phase;legendItem(group.querySelector('strong').textContent,phaseColors[phase]);
@@ -3330,15 +3422,17 @@ function mapSnapshot(){
  }
  if(grid.grid.mode==='overlap'&&supportMapView(selectedMapView())){
   const phases=analysisPhases(grid.settings),all=$('map-phase').value==='all';
+  const opacityScale=mapSupportScale(grid.aggregation,selectedMapView(),all?phases:[$('map-phase').value]);
+  const opacityCaption=$('map-normalize').checked?`Opacity: normalised to ${strength?opacityScale.toFixed(3):(100*opacityScale).toFixed(1)+'%'} maximum displayed ${strength?'passing rank':'passing frequency'}`:strength?'Opacity: fixed 0–1 average passing rank, capped at 1':'Opacity: fixed 0–100% passing frequency';
   if(all&&phases.length===2){
    legendItem(`${phases[0]} only → equal support → ${phases[1]} only`,'#dce6ef');x=20;y+=12;
    for(let i=0;i<300;i++)svg.append(el('rect',{x:20+i,y,width:1,height:12,fill:blendSupport([[phaseColors[phases[0]],1-i/299],[phaseColors[phases[1]],i/299]]).colour}));
    y+=35;
   }
   if(all&&phases.length===3){
-   const triangle=supportTriangleLegend(phases,phaseColors,false,strength);triangle.setAttribute('x',20);triangle.setAttribute('y',y);svg.append(triangle);y+=240;
+   const triangle=supportTriangleLegend(phases,phaseColors,false,strength,opacityCaption);triangle.setAttribute('x',20);triangle.setAttribute('y',y);svg.append(triangle);y+=240;
   }else for(const phase of all?phases:[$('map-phase').value])legendItem(phase,phaseColors[phase]);
-  x=20;y+=28;legendItem(strength?'Colour = relative strength · opacity = strongest average passing rank, 0 → 1 (capped)':'Opacity: 0% → 100% passing frequency','#94a5b8');x=20;y+=28;
+  x=20;y+=28;legendItem(opacityCaption,'#94a5b8');x=20;y+=28;
  }
  svg.append(el('text',{x:20,y:y+4,fill:'#94a5b8','font-size':12},grid.grid.mode==='overlap'?'Overlapping support map, not phase fraction. Blank = no samples; nearby windows are correlated.':'Candidate map, not confirmed phase fractions. Faded zone symbols are below threshold.'));
  const height=y+28;svg.setAttribute('viewBox',`0 0 1200 ${height}`);svg.setAttribute('height',height);
@@ -4030,8 +4124,9 @@ $('batch-cancel').onclick=async()=>{try{renderBatch(await api('batch/cancel',{})
 renderBatchFiles();
 pollBatch();
 
-function positionScaleTooltips(){
- for(const help of document.querySelectorAll('.scale-settings .settings-help')){
+function positionSettingsTooltips(event){
+ if(['pointerover','focusin'].includes(event?.type)&&!event.target.closest('.settings-help,.penalty-field'))return;
+ for(const help of document.querySelectorAll('.settings-help')){
   const popup=help.querySelector('.settings-help-popup');if(!popup||getComputedStyle(popup).display==='none')continue;
   const anchor=help.getBoundingClientRect();popup.style.position='fixed';popup.style.right='auto';
   const width=popup.getBoundingClientRect().width,height=popup.getBoundingClientRect().height;
@@ -4039,8 +4134,8 @@ function positionScaleTooltips(){
   popup.style.top=(anchor.bottom+height+8<=window.innerHeight?anchor.bottom+6:Math.max(12,anchor.top-height-6))+'px';
  }
 }
-for(const name of ['pointerover','focusin'])document.querySelector('.scale-settings').addEventListener(name,positionScaleTooltips);
-window.addEventListener('scroll',positionScaleTooltips,true);window.addEventListener('resize',positionScaleTooltips);
+for(const name of ['pointerover','focusin'])document.addEventListener(name,positionSettingsTooltips);
+window.addEventListener('scroll',positionSettingsTooltips,true);window.addEventListener('resize',positionSettingsTooltips);
 
 $('raster-relative').onclick=async()=>{
  const context=rasterContext;if(!context)return;$('raster-relative').disabled=true;
