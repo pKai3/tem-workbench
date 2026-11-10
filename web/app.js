@@ -1974,7 +1974,7 @@ function drawActiveGridWindows(group,job){
   const spinner=$('fft-loading').querySelector('.tem-diffraction-loader').cloneNode(true);
   const size=Math.min(roi.w*.65,roi.h*.65,job.source.width*.045);
   spinner.classList.add('grid-window-spinner');
-  spinner.prepend(el('circle',{cx:60,cy:60,r:57,fill:'#05090e','fill-opacity':.85}));
+  spinner.prepend(el('circle',{cx:60,cy:60,r:57,fill:'#05090e','fill-opacity':.2}));
   spinner.setAttribute('x',roi.x+(roi.w-size)/2);spinner.setAttribute('y',roi.y+(roi.h-size)/2);
   spinner.setAttribute('width',size);spinner.setAttribute('height',size);
   spinner.style.width=size+'px';spinner.style.height=size+'px';
