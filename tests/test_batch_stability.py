@@ -85,6 +85,22 @@ class StabilityBatch(unittest.TestCase):
                     hashes.append(path.read_bytes())
             self.assertEqual(len(set(hashes)),len(products))
 
+    def test_three_phase_png_uses_same_blend_and_triangle_key(self):
+        job=self.job();job['settings']['enabled_phases']=['HCP','BCC','OMEGA']
+        for region in job['regions']:
+            region['models'].append(dict(phase='OMEGA',valid=True,score=.6,zone_3index=[1,0,0]))
+        preview=BytesIO();Image.new('L',(100,100),120).save(preview,format='PNG')
+        colors=dict(hcp_compatible='#ff0000',bcc_compatible='#00ff00',omega_compatible='#0000ff')
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'three-phase.png'
+            map_png(dict(preview=preview.getvalue()),job,path,colors,1)
+            with Image.open(path) as result:
+                self.assertEqual(result.size,(1880,2360))
+                self.assertEqual(result.getpixel((200,300)),(156,156,156))
+                self.assertEqual(result.getpixel((1700,900)),(120,120,120))
+                centre=result.getpixel((190,1800+155+128))
+                self.assertTrue(all(abs(c-156)<=2 for c in centre),centre)
+
     def test_real_two_image_batch_exports_and_live_map(self):
         app=parallel_tests.CoordinatorChecks().app()
         rows=[dict(id=i,name='1MX_OneView_'+i,sample='ST' if i=='a' else 'STA') for i in ['a','bad','b']]
@@ -103,7 +119,7 @@ class StabilityBatch(unittest.TestCase):
                 with patch('batch_grids.Engine',LocalEngine):
                     app.batch.start(dict(file_ids=['a','bad','b'],workers=2,export_png=True,png_views=['support_all','hex','support_phases'],
                         settings=dict(enabled_phases=['HCP','BCC']),
-                        overlap=dict(size_mode='image_percent',window_percent=50,spacing_mode='fixed_nm',spacing_nm=2,layout='hex',passes=3)))
+                        overlap=dict(size_mode='image_percent',window_percent=50,spacing_mode='fixed_nm',spacing_nm=2,layout='hex',passes=3,sample_edges=True)))
                     app.batch.thread.join(60)
                     self.assertFalse(app.batch.running())
                 status=app.batch.status()
@@ -120,12 +136,14 @@ class StabilityBatch(unittest.TestCase):
                     self.assertEqual(job['grid']['mode'],'overlap')
                     self.assertEqual(job['grid']['size_mode'],'image_percent')
                     self.assertEqual(job['grid']['spacing_nm'],2)
+                    self.assertTrue(job['grid']['sample_edges'])
+                    self.assertGreater(job['grid']['rim_sample_count'],0)
                     self.assertEqual(set(summary['png_files']),{'support_all','hex','support_hcp','support_bcc'})
                     for name in summary['png_files'].values():self.assertTrue((folder/name).is_file())
                     self.assertAlmostEqual(job['grid']['window_nm'],min(job['source']['width']*job['source']['pixel_x_nm'],job['source']['height']*job['source']['pixel_y_nm'])/2)
                     self.assertEqual({r['pass_id'] for r in job['regions']},{0,1,2})
                     self.assertEqual(summary['windows'],summary['planned_windows'])
-                    self.assertLessEqual(summary['coverage_percent'],100)
+                    self.assertEqual(summary['coverage_percent'],100)
                 with (folder/'images.csv').open() as f:
                     rows=list(csv.DictReader(f))
                     self.assertEqual(len(rows),4)

@@ -7,8 +7,43 @@ passing support; rank is averaged only where a candidate exists.
 import math
 import numpy as np
 
-VERSION = 'overlap-v4'
+VERSION = 'overlap-v5'
 MAX_WINDOWS = 10000
+
+
+def _add_rim(samples, info, w, h, passes):
+    """Append full-size, border-anchored windows without moving interior samples."""
+    def positions(values, limit, length):
+        ordered = sorted({0, limit, *values})
+        result = set(ordered)
+        # Fill any end gap longer than a window, including pixel-rounding gaps.
+        for a, b in zip(ordered, ordered[1:]):
+            count = math.ceil((b-a)/length)
+            result.update(round(a+(b-a)*i/count) for i in range(1, count))
+        return sorted(result)
+
+    counts = []
+    for pass_id in range(passes):
+        rois = [s['roi'] for s in samples if s['pass_id'] == pass_id]
+        seen = {(r['x'], r['y']) for r in rois}
+        top, bottom = min(r['y'] for r in rois), max(r['y'] for r in rois)
+        xmax, ymax = info['width']-w, info['height']-h
+        border = []
+        for row, y in ((top, 0), (bottom, ymax)):
+            border.extend((x, y) for x in positions([r['x'] for r in rois if r['y'] == row], xmax, w))
+        for x in (0, xmax):
+            border.extend((x, y) for y in positions([r['y'] for r in rois], ymax, h))
+        count = 0
+        for x, y in border:
+            if (x, y) in seen:
+                continue
+            seen.add((x, y))
+            samples.append(dict(roi=dict(x=x, y=y, w=w, h=h), pass_id=pass_id, rim=True))
+            count += 1
+            if len(samples) > MAX_WINDOWS:
+                raise ValueError(f'Map exceeds {MAX_WINDOWS} windows including the rim. Increase spacing, reduce passes or use a larger window.')
+        counts.append(count)
+    return counts
 
 
 def sampling(info, options):
@@ -42,6 +77,9 @@ def sampling(info, options):
         spacing = float(options.get('spacing_nm', 2.5))
     layout = options.get('layout', 'hex')
     passes = options.get('passes', 1)
+    sample_edges = options.get('sample_edges', False)
+    if type(sample_edges) is not bool:
+        raise ValueError('Sample image rim must be on or off.')
     if not all(math.isfinite(v) and v > 0 for v in (width, spacing)):
         raise ValueError('Window width and centre spacing must be positive finite values.')
     if layout not in ('hex', 'square') or type(passes) is not int or passes not in (1, 3, 7, 9):
@@ -86,10 +124,13 @@ def sampling(info, options):
         shift.append(delta)
         for sample in samples:
             sample['roi'][axis] += delta
+    rim_counts = _add_rim(samples, info, w, h, passes) if sample_edges else [0]*passes
     return samples, dict(mode='overlap', version=VERSION, **sizing, layout=layout, window_nm=width,
                         spacing_nm=spacing, passes=passes, offsets_basis=offsets,
                         actual_window_px=[w,h], actual_window_nm=[w*info['pixel_x_nm'], h*info['pixel_y_nm']],
-                        sample_count=len(samples), edge_policy='full_windows_only',
+                        sample_count=len(samples), sample_edges=sample_edges, rim_sample_count=sum(rim_counts),
+                        rim_samples_per_pass=rim_counts,
+                        edge_policy='full_windows_with_boundary_rim' if sample_edges else 'full_windows_only',
                         placement_origin='centred_sample_bounds', centering_shift_px=shift, adaptive=False)
 
 
@@ -117,15 +158,30 @@ def aggregate(job, resolution=64):
     points = [(col*sx+(row%2)*sx/2, row*sy) for row in range(rows) for col in range(cols)]
     ox = (source['width']-max(x for x,y in points))/2
     oy = (source['height']-max(y for x,y in points))/2
-    points = [(x+ox,y+oy) for x,y in points]
+    if options.get('sample_edges', False):
+        # Continue the same display lattice across the border. Its outer tiles
+        # are evaluated at the nearest in-image pixel centre and still clipped
+        # by both renderers to the footprints of actually completed windows.
+        points = [(col*sx+(row%2)*sx/2+ox, row*sy+oy)
+                  for row in range(-1, rows+1) for col in range(-1, cols+1)]
+        points = [(x,y) for x,y in points if -sx/2 < x < source['width']+sx/2
+                  and -sy*2/3 < y < source['height']+sy*2/3]
+    else:
+        points = [(x+ox,y+oy) for x,y in points]
     hx = np.array([[x for x,y in points]]); hy = np.array([[y for x,y in points]])
+    if options.get('sample_edges', False):
+        hx = np.clip(hx, .5, source['width']-.5)
+        hy = np.clip(hy, .5, source['height']-.5)
     hex_result = _aggregate_points(job, hx, hy)
     for cell in hex_result['cells']:
         cell['cx'], cell['cy'] = points[cell['x']]
+        if options.get('sample_edges', False):
+            cell['sample_x'], cell['sample_y'] = float(hx[0, cell['x']]), float(hy[0, cell['x']])
         candidates = [(p,f) for p,f in cell['phases'].items() if f['fit_presence']>0]
         cell['winner'] = max(candidates, key=lambda pf:pf[1]['rank'])[0] if candidates else None
     result['hex'] = dict(cells=hex_result['cells'], spacing_nm=spacing,
                          radius_x=sx/math.sqrt(3), radius_y=spacing/source['pixel_y_nm']/math.sqrt(3),
+                         edge_sampling='nearest_in_image_pixel' if options.get('sample_edges', False) else 'tile_centre',
                          interpretation='Highest averaged rank among available phase fits. Fading shows winning phase passing frequency; not phase identity or fraction.')
     return result
 

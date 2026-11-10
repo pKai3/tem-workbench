@@ -103,7 +103,8 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     w = round(1800*source['width']/max(source['width'],source['height']))
     h = round(1800*source['height']/max(source['width'],source['height']))
     blend_key=view in ('support','hex_support') and phase is None and len(phases)==2
-    canvas = Image.new('RGB',(w+80,h+320+(60 if blend_key else 0)),'#0c121a')
+    triangle_key=view in ('support','hex_support') and phase is None and len(phases)==3
+    canvas = Image.new('RGB',(w+80,h+320+(60 if blend_key else 240 if triangle_key else 0)),'#0c121a')
     with Image.open(BytesIO(item['preview'])) as preview:
         background = preview.convert('RGBA').resize((w,h))
     layer = Image.new('RGBA',(w,h)); draw = ImageDraw.Draw(layer)
@@ -162,7 +163,22 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     if view=='separate': legend=[('Separate structures','#d692fa')]
     if view=='raw': legend=[(key.replace('_',' '),colors[key]) for key in dict.fromkeys(r['classification']['label'] for r in job['regions'])]
     x,y=40,h+155
-    for label,c in legend:
+    if triangle_key:
+        triangle=Image.new('RGBA',(180,156)); pixels=triangle.load()
+        for ty in range(triangle.height):
+            for tx in range(triangle.width):
+                a0=1-(ty+.5)/triangle.height
+                a2=(ty+.5)/(2*triangle.height)+(tx+.5)/triangle.width-.5
+                weights=[a0,1-a0-a2,a2]
+                if min(weights)<0:continue
+                c,_=blend_support([(color(p),weight) for p,weight in zip(phases,weights)])
+                pixels[tx,ty]=(*tuple(int(c[i:i+2],16) for i in (1,3,5)),255)
+        canvas.paste(triangle,(x+60,y+24),triangle)
+        for p,(tx,ty) in zip(phases,[(150,7),(60,198),(240,198)]):
+            draw.text((x+tx,y+ty),p,font=font,fill=color(p),anchor='mm')
+        draw.text((x+150,y+225),'Relative support · colour only',font=font,fill='#a4adba',anchor='mm')
+        y+=240
+    for label,c in ([] if triangle_key else legend):
         length=max(220 if view!='raw' else 0,draw.textlength(label,font=font)+30)
         if x+length>w+40:x=40;y+=54 if view!='raw' else 28
         draw.text((x,y),label,font=font,fill=c)
@@ -181,8 +197,8 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
             t=j/max(1,min(300,w)-1)
             c,_=blend_support([(color(phases[0]),1-t),(color(phases[1]),t)])
             draw.line((40+j,y+25,40+j,y+36),fill=c)
-    notes=dict(support='Hue = relative phase support; opacity = strongest passing frequency. Blending does not prove coexistence.',
-        hex_support='Hue = relative phase support; opacity = strongest passing frequency. Blending does not prove coexistence.',
+    notes=dict(support='Colour = relative phase support; opacity = strongest passing frequency. Blending does not prove coexistence.',
+        hex_support='Colour = relative phase support; opacity = strongest passing frequency. Blending does not prove coexistence.',
         hex='Highest mean rank; brightness = winner passing frequency. Rejected winners can appear.',
         spread='Brightness = range of per-pass support, 0–100%; not an uncertainty estimate.',
         samples='Darker to brighter = fewer to more contributing windows; counts are correlated.',

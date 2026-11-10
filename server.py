@@ -152,7 +152,7 @@ class Workbench:
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
                 'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
-                'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(),
+                'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(), 'overlap_rim_sampling': True,
                 'peak_evidence': peak_evidence.VERSION, 'separate_peak_penalties': True, 'double_diffraction_scoring': True, 'brightness_grouping': True, 'fft_brightness_grouping': True, 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
     def set_folders(self, data, output):
@@ -367,6 +367,8 @@ class Workbench:
                                        'leaf': probe_id is None, 'trial_only': probe_id is not None})
                         if samples is not None:
                             result['pass_id'] = samples[len(job['regions'])]['pass_id']
+                            if samples[len(job['regions'])].get('rim'):
+                                result['rim'] = True
                         job['regions'].append(result)
                         job['processed'] += 1
                         if probe_id is not None:
@@ -487,7 +489,7 @@ class Workbench:
             result['regions'] = ([{k: v for k, v in r.items() if not k.startswith('_')} for r in regions] if full else
                                  [{'id': r['id'], 'roi': r['roi'], 'label': r['classification']['label'],
                                    'leaf': r['leaf'], 'depth': r['depth'], 'elapsed_ms': r['elapsed_ms'],
-                                   'best_zones': self.best_zones(r), 'pass_id': r.get('pass_id')} for r in regions])
+                                   'best_zones': self.best_zones(r), 'pass_id': r.get('pass_id'), 'rim': r.get('rim', False)} for r in regions])
             return result
 
     def rescore(self, job_id, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None, missing_weight=None, brightness_weight=None, dd_weight=None):

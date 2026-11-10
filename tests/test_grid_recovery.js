@@ -59,10 +59,14 @@ async function main(){
  assert.equal(restarted.context.jobId,null);assert.equal(restarted.storage.get('tem-grid-session:project'),null);
 
  const overlapping=job();overlapping.grid={mode:'overlap',size_mode:'image_percent',window_percent:15,window_nm:1.152,
-  spacing_mode:'window_percent',spacing_percent:50,spacing_nm:.576,layout:'square',passes:9};
+  spacing_mode:'window_percent',spacing_percent:50,spacing_nm:.576,layout:'square',passes:9,sample_edges:true};
  const overlap=setup(overlapping);await overlap.run('openInitialImage()');
  for(const [id,value]of [['grid-mode','overlap'],['map-size-mode','image_percent'],['map-window-percent',15],
   ['map-spacing-mode','window_percent'],['map-spacing-percent',50],['map-layout','square'],['map-passes',9]])assert.equal(overlap.$(id).value,value);
+ assert.equal(overlap.$('map-sample-edges').checked,true);
+ const legacyOverlap=setup({...overlapping,grid:{...overlapping.grid,sample_edges:undefined}});
+ legacyOverlap.$('map-sample-edges').checked=true;await legacyOverlap.run('openInitialImage()');
+ assert.equal(legacyOverlap.$('map-sample-edges').checked,false);
 
  // An older image-open reply must not reclaim the page after the user switches image.
  const switched=setup();let openReply;

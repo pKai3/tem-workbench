@@ -12,6 +12,7 @@ const appSource=fs.readFileSync('web/app.js','utf8');
 vm.runInContext(appSource.slice(appSource.indexOf('function materialPhaseSymbol('),appSource.indexOf('const PHASE_DEFAULT_COLORS=')),context);
 context.planeLabel=(m,hkl,sign=1)=>'('+hkl.map(v=>v*sign).join(' ')+')';
 context.indexLabel=v=>'['+v.join(' ')+']';
+context.zoneLabel=m=>context.indexLabel(m.zone_3index);
 vm.runInContext(appSource.slice(appSource.indexOf('function markerMotionOffset('),appSource.indexOf('function weakMarker(')),context);
 vm.runInContext('syncRelativeUnits=()=>{}',context);
 context.setPhaseSelection=phases=>{context.enabledPhases=phases};
@@ -192,16 +193,16 @@ console.log('Aliases and custom overlays: consecutive display labels, stable IDs
 
 // Every phase's independent orientations share the same colour policy. Shared
 // assignments use split phase symbols, even when fitted positions differ slightly.
-const bccFits=[0,1].map(i=>({phase:'BCC',rotation_deg:i*70.5,score:.6-i*.01,valid:true,
+const bccFits=[0,1].map(i=>({phase:'BCC',zone_3index:[0,1,1],rotation_deg:i*70.5,score:.6-i*.01,valid:true,
  predicted_nodes:[{q:[1+i*.01,0],hkl:[1,1,0]}],matches:[{node_index:0,profile_id:1,observed_q:[1,0]}]}));
 context.compareRank=(a,b)=>b.score-a.score;
 context.planeLabel=(m,hkl,sign=1)=>'('+hkl.map(v=>v*sign).join(' ')+')';
 context.result={models:bccFits,spectrum:{peaks:[]}};$('omega-color-by').value='variant';
 const colours=bccFits.map(m=>context.independentFitStyle(m));
-assert.deepEqual(colours.map(s=>s.name),['BCC 1','BCC 2']);
+assert.deepEqual(colours.map(s=>s.name),['BCC','BCC'],'Internal colour-slot numbers stay out of fit names');
 assert.notEqual(colours[0].color,colours[1].color);
 context.chosenFits=new Set(['phase-1']);
-assert.equal(context.independentFitStyle(bccFits[1]).name,'BCC 2','Hiding BCC 1 does not renumber BCC 2');
+assert.equal(context.independentFitStyle(bccFits[1]).colorTarget,'orientation:BCC:2','Hiding another fit does not change its colour identity');
 context.editLegendColor({target:{dataset:{legendColorTarget:'orientation:BCC:2'},value:'#1234ab'}});
 assert.equal(saved.get('tem-fit-variant-colors')['BCC:2'],'#1234ab');
 assert.equal(context.independentFitStyle(bccFits[1]).color,'#1234ab');
@@ -214,6 +215,7 @@ assert.equal(host.children.length,2,'Opposite positions get separate shared symb
 assert.equal(layers(host.children[0]).length,1,'Two BCC orientations share their phase shape');
 assert.equal(segments(host.children[0]).length,2);
 assert.equal(new Set(segments(host.children[0]).map(n=>n.attrs.stroke)).size,2);
+assert.ok(segments(host.children[0]).every(n=>n.attrs['data-legend-label']==='BCC [0 1 1]'));
 assert.ok(segments(host.children[0]).some(n=>n.attrs['data-legend-color-target']==='orientation:BCC:2'));
 $('bcc-marker').value='off';host.children=[];
 context.drawFitPredictions(bccFits.map(model=>({model,...context.independentFitStyle(model)})),qp);

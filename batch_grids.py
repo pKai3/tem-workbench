@@ -144,7 +144,7 @@ def map_png(item, job, target, colors=None, opacity=.2, view='support', phase=No
         if not r['leaf']:continue
         roi=r['roi'];box=(roi['x']*sx,roi['y']*sy,(roi['x']+roi['w'])*sx,(roi['y']+roi['h'])*sy)
         c=colors[r['classification']['label']];rgb=tuple(int(c[i:i+2],16) for i in (1,3,5))
-        draw.rectangle(box,fill=(*rgb,int(255*opacity)),outline=(*rgb,210),width=2)
+        draw.rectangle(box,fill=(*rgb,int(255*opacity)))
         lines=[]
         for phase in ('HCP','BCC','FCC','ORT','OMEGA'):
             fits=[m for m in r['models'] if m['phase']==phase and m['valid']]

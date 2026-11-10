@@ -24,4 +24,18 @@ class PhaseBlendTests(unittest.TestCase):
             self.assertEqual((js['colour'],js['value']),(color,value))
             self.assertEqual(blend_support(list(reversed(case))),(color,value))
 
+    def test_three_phase_blend_edges_centre_continuity_and_strength(self):
+        colors=['#ff0000','#00ff00','#0000ff']
+        mix=lambda weights:blend_support(list(zip(colors,weights)))
+        for i,color in enumerate(colors):
+            self.assertEqual(mix([.7 if j==i else 0 for j in range(3)]),(color,.7))
+        self.assertEqual(mix([1,1,1]),('#9c9c9c',1))
+        self.assertEqual(mix([1,1,0]),('#bcbc00',1))
+        self.assertEqual(mix([.2,.2,.2]),('#9c9c9c',.2))
+        # A vanishing third contribution or a change of strongest phase cannot
+        # jump to a different hue branch. Zero keeps the three-phase edge rule.
+        self.assertEqual(mix([1,1,0])[0],mix([1,1,1e-9])[0])
+        self.assertEqual(mix([1,1-1e-9,.5])[0],mix([1-1e-9,1,.5])[0])
+        self.assertEqual(mix([0,0,0]),('#596778',0))
+
 if __name__=='__main__':unittest.main()

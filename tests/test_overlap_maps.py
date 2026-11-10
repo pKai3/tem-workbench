@@ -2,6 +2,7 @@ import copy
 import json
 import threading
 import unittest
+import numpy as np
 from concurrent.futures import Future
 from unittest.mock import patch
 import overlap_maps as maps
@@ -20,6 +21,64 @@ def job(regions,passes=1):
     return dict(source=INFO,settings=dict(enabled_phases=['HCP','BCC']),grid=dict(passes=passes),regions=regions)
 
 class OverlapTests(unittest.TestCase):
+    def test_optional_rim_preserves_interior_and_covers_each_border_per_pass(self):
+        for layout in ('hex', 'square'):
+            for passes in (1, 3, 9):
+                for info in (INFO, dict(INFO, width=337, height=229, pixel_y_nm=.05)):
+                    with self.subTest(layout=layout, passes=passes, dimensions=(info['width'], info['height'])):
+                        options=dict(window_nm=2, spacing_nm=1.8, layout=layout, passes=passes)
+                        interior,_=maps.sampling(info,options)
+                        samples,options=maps.sampling(info,{**options,'sample_edges':True})
+                        self.assertEqual(samples[:len(interior)],interior)
+                        self.assertEqual((samples,options),maps.sampling(info,options))
+                        self.assertEqual(options['rim_sample_count'],len(samples)-len(interior))
+                        for k in range(passes):
+                            mask=np.zeros((info['height'],info['width']),dtype=bool)
+                            rois=[s['roi'] for s in samples if s['pass_id']==k]
+                            self.assertEqual(len(rois),len({tuple(r.values()) for r in rois}))
+                            for r in rois:
+                                self.assertGreaterEqual(min(r['x'],r['y']),0)
+                                self.assertLessEqual(r['x']+r['w'],info['width'])
+                                self.assertLessEqual(r['y']+r['h'],info['height'])
+                                self.assertEqual([r['w'],r['h']],options['actual_window_px'])
+                                mask[r['y']:r['y']+r['h'],r['x']:r['x']+r['w']]=True
+                            self.assertTrue(all(edge.all() for edge in (mask[0],mask[-1],mask[:,0],mask[:,-1])))
+
+    def test_rim_validation_and_window_limit_include_added_samples(self):
+        options=dict(window_nm=2, spacing_nm=1, passes=1)
+        original,_=maps.sampling(INFO,options)
+        self.assertEqual(original,maps.sampling(INFO,{**options,'sample_edges':False})[0])
+        for value in ('true',1,None):
+            with self.assertRaises(ValueError):maps.sampling(INFO,{**options,'sample_edges':value})
+        with patch.object(maps,'MAX_WINDOWS',len(original)):
+            with self.assertRaisesRegex(ValueError,'including the rim'):
+                maps.sampling(INFO,{**options,'sample_edges':True})
+
+    def test_rim_hex_tiles_cover_borders_and_only_use_measured_pixels(self):
+        from PIL import Image, ImageDraw
+        import math
+        for info in (INFO, dict(INFO, width=337, height=229, pixel_y_nm=.05)):
+            samples,options=maps.sampling(info,dict(window_nm=2, spacing_nm=1.8, sample_edges=True))
+            regions=[dict(region(i,s['pass_id']),roi=s['roi']) for i,s in enumerate(samples)]
+            data=dict(job(regions),source=info,grid=options)
+            aggregate=maps.aggregate(data)
+            self.assertEqual(aggregate['coverage_percent'],100)
+            hexes=aggregate['hex']
+            mask=Image.new('1',(info['width'],info['height']));draw=ImageDraw.Draw(mask)
+            for cell in hexes['cells']:
+                roi=regions[int(cell['region_id'])]['roi']
+                self.assertTrue(roi['x']<cell['sample_x']<roi['x']+roi['w'])
+                self.assertTrue(roi['y']<cell['sample_y']<roi['y']+roi['h'])
+                draw.polygon([(cell['cx']+hexes['radius_x']*math.cos(math.radians(30+i*60)),
+                               cell['cy']+hexes['radius_y']*math.sin(math.radians(30+i*60))) for i in range(6)],fill=1)
+            pixels=np.asarray(mask)
+            self.assertTrue(pixels.all(), 'Extra hex tiles must close the display rim as well as sampling it')
+            data['regions']=regions[:1]
+            partial=maps.aggregate(data)
+            self.assertLess(partial['coverage_percent'],100)
+            self.assertTrue(all(c['region_id']==regions[0]['id'] for c in partial['hex']['cells']))
+            self.assertFalse(any(c['sample_x']>=info['width']-.5 for c in partial['hex']['cells']))
+
     def test_sampling_is_deterministic_full_windows_and_staggered(self):
         options=dict(window_nm=2,spacing_nm=1,layout='hex',passes=3)
         samples,config=maps.sampling(INFO,options)
@@ -161,12 +220,14 @@ class OverlapTests(unittest.TestCase):
             def close(self):pass
         with patch('server.RegionPool',Pool):
             id=app.grid(dict(info=INFO),dict(enabled_phases=['HCP','BCC']),2,True,1,workers=1,
-                        overlap=dict(window_nm=4,spacing_nm=2,passes=3))['id']
+                        overlap=dict(window_nm=4,spacing_nm=2,passes=3,sample_edges=True))['id']
             app.grid_thread.join(10)
         full=app.status(id,full=True);compact=app.status(id)
         self.assertEqual(full['state'],'complete');self.assertFalse(full['grid']['adaptive'])
         self.assertEqual(full['processed'],full['grid']['sample_count'])
         self.assertEqual({r['pass_id'] for r in compact['regions']},{0,1,2})
+        self.assertEqual(sum(r['rim'] for r in compact['regions']),full['grid']['rim_sample_count'])
+        self.assertEqual(sum(bool(r.get('rim')) for r in full['regions']),full['grid']['rim_sample_count'])
         self.assertEqual(compact['aggregation'],full['aggregation'])
         self.assertTrue(all(r['leaf'] for r in full['regions']))
         json.dumps(full,allow_nan=False)

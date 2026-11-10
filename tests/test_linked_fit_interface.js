@@ -137,9 +137,10 @@ assert.equal(cells($('models').children[0]).rank,'0.795');
 assert.deepEqual(Array.from(context.overlayModels(twoBCC,'winner')),[bccA,bccB]);
 assert.deepEqual(Array.from(context.overlayModels(twoBCC,'winner',{vectors:true})),[bccA,bccB]);
 const unionBox=boxes().find(b=>b.dataset.fit==='independent-combined');assert.ok(unionBox.checked);
-assert.deepEqual(boxes().map(b=>b.dataset.fit),['independent-combined','phase-0','phase-1','related-combined','linked-beta','linked-omega3','linked-omega4'],
- 'Combined groups follow rank, with children immediately below and no duplicate standalone rows');
-assert.ok(boxes().filter(b=>b.dataset.fit.startsWith('phase-')||b.dataset.fit.startsWith('linked-')).every(b=>b.parent.parent.className==='fit-component'));
+assert.deepEqual(boxes().map(b=>b.dataset.fit),['independent-combined','phase-0','phase-1','related-combined','linked-beta','linked-omega3','linked-omega4','phase-0','phase-1'],
+ 'Combinations and independent candidates follow rank, with linked component references under each group');
+assert.ok(boxes().slice(1,3).every(b=>b.parent.parent.className==='fit-component'));
+assert.ok(boxes().slice(-2).every(b=>b.parent.parent.className!=='fit-component'));
 assert.ok(boxes().filter(b=>b.dataset.fit.startsWith('phase-')).every(b=>b.checked));
 const firstBCC=boxes().find(b=>b.dataset.fit==='phase-0');firstBCC.checked=false;firstBCC.events.change();
 assert.equal(boxes()[0].indeterminate,true,'A child toggle updates its combined parent');
@@ -147,6 +148,20 @@ boxes()[0].checked=true;boxes()[0].events.change();
 assert.ok(boxes().filter(b=>b.dataset.fit.startsWith('phase-')).every(b=>b.checked));
 unionBox.checked=false;unionBox.events.change();
 assert.ok(boxes().filter(b=>b.dataset.fit.startsWith('phase-')).every(b=>!b.checked));
+// A lower-scoring union must not hide its better independent components.
+const beta={...bccA,score:.435},omega={...bccB,phase:'OMEGA',score:.301};
+const lowerUnion={...twoBCC,beta_omega:null,models:[beta,omega],classification:{primary_model:beta,secondary_model:omega,
+ combined_fit:{...pair,phase:'BCC+OMEGA',score:.262},combined_fit_selected:false}};
+const unchanged=JSON.stringify(lowerUnion);
+context.renderFitChoices(lowerUnion);
+assert.deepEqual(boxes().map(b=>b.dataset.fit),['phase-0','phase-1','independent-combined','phase-0','phase-1']);
+assert.deepEqual(boxes().filter(b=>b.parent.parent.className!=='fit-component').map(b=>cells(b.parent.parent).rank),['0.435','0.301','0.262']);
+boxes()[0].checked=true;boxes()[0].events.change();
+assert.ok(boxes().filter(b=>b.dataset.fit==='phase-0').every(b=>b.checked),'Standalone and component reference checkboxes stay synchronized');
+boxes().find(b=>b.dataset.fit==='independent-combined').checked=true;
+boxes().find(b=>b.dataset.fit==='independent-combined').events.change();
+assert.ok(boxes().every(b=>b.checked),'The group toggle also updates standalone rows');
+assert.equal(JSON.stringify(lowerUnion),unchanged,'Display order does not change candidate scores or fits');
 vm.runInContext(app.slice(app.indexOf('function relatedDDEvidence('),app.indexOf('function scaleSummary(')),context);
 assert.match(context.patternExplanation(twoBCC),/2 BCC orientations.*BCC \+ related ω/);
 twoBCC.classification.combined_fit_selected=false;$('overlay').value='winner';
