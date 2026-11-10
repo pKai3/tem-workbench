@@ -1,4 +1,4 @@
-# TEM Workbench next release
+# TEM Workbench 1.0.29
 
 - Speed up repeated map scoring-weight updates by reusing geometric diagnostics. Keep navigation responsive during recalculation and publish map changes together, with stale requests safely ignored. Fits and numerical results are unchanged.
 - Add Continuous map to Best match alongside Hex grid. Keep phase colours, contributing-window inspection and exported map keys consistent.
