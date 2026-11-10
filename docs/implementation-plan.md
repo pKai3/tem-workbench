@@ -2,6 +2,14 @@
 
 Last updated: 10 November 2026
 
+## Smaller-screen layout follow-up — completed 10 November 2026
+
+Approved: correct the cramped and uneven formatting visible on a smaller screen. Keep the established header coordinates, left-hand map selectors, right-hand appearance controls and Individual windows legend exception. Make wrapping follow the available panel width, keep related grid settings together, and align the image display controls and comparison tables. Verify representative laptop widths as well as narrow and wide layouts in both Real + FFT and FFT Only. This is presentation work; map values, fitting and saved settings are unchanged. No new release requested.
+
+Implemented: map selectors use deliberate three/two/one-column layouts; the phase selector spans the narrow row, while centre markers and the rim checkbox share space. Overlay intensity and Normalise share a compact heading above the slider, beside the colour key. Wide panels retain selectors and appearance on one line. Window size and spacing each keep their units, value and resolved size together; centres, passes and rim sampling form an aligned row. FFT display controls fill consistent rows, and preview headers/buttons wrap within their panel. The workspace stacks below 1150 px instead of squeezing two panels. Comparison tables give numeric columns more room and keep all columns above an 800 px panel width; narrower panels retain labelled secondary rows. Rank help stays with its heading.
+
+Validation: all 22 JavaScript suites pass, with unique HTML control IDs and clean whitespace checks. Live ST1203 checks cover 480, 600, 900, 1024, 1152, 1280, 1440, 1767 and 2400 px widths in paired/FFT-only views: no overlapping visible controls or horizontal page/table overflow. All seven map modes, two/three-phase keys, single-phase keys, Individual windows legends and the expanded fit list fit their panels; opacity help remains within the viewport. At the screenshot's 1767 px width the map-control block shrinks from 152 to 118 px, and the table keeps its main columns together. Regrouped percentage settings run the expected 216-window map; a 25-window, three-pass map verifies the sensitivity view and ternary key. Fitting calculations and exports are unchanged.
+
 ## Release after map and drag follow-ups — completed 10 November 2026
 
 The user approved publishing a version when this work is done. Include the map reweighting improvements (`d1e7cdf`), continuous best-match maps (`bc1c9dd`), map names/legend placement and redundant-drag-fit fix (`23a9273`). Approved final UI cleanup: move the raw-window legend explanation into inline hover/focus/tap help beside its symbols, keeping the phase keys and counts visible. Publish through the manual Publish Workbench release workflow with all analysis, Windows and macOS gates intact; do not change the version locally or skip verification. Implementation commits: `ca43698` and `771e98b`.
