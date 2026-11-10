@@ -54,6 +54,39 @@ def data_url(data):
     return 'data:image/png;base64,' + base64.b64encode(data).decode()
 
 
+def spectrum_images(log, detector_signal, crop=None, limits=None):
+    """Encode the same display fields for quick previews and completed fits."""
+    lo, hi = float(log.min()), float(log.max())
+    display = Image.fromarray(np.uint8(np.clip((log-lo)/max(hi-lo,1e-12),0,1)*255))
+    display.thumbnail((768,768), Image.Resampling.NEAREST)
+    stream=BytesIO(); display.save(stream,format='PNG')
+    encoded = {'fft': data_url(stream.getvalue())}
+    if crop is not None:
+        encoded['crop'] = data_url(png(crop, limits, 768))
+    # Carry a precise log field for reversible display curves. The original
+    # FFT and peak fitting above are unchanged. RGB stores high/low bytes.
+    precise = Image.fromarray(np.uint16(np.clip((log-lo)/max(hi-lo, 1e-12), 0, 1)*65535))
+    precise.thumbnail((768, 768), Image.Resampling.NEAREST)
+    values = np.asarray(precise, dtype=np.uint16)
+    packed = np.zeros((*values.shape, 3), dtype=np.uint8)
+    packed[..., 0] = values >> 8
+    packed[..., 1] = values & 255
+    stream = BytesIO(); Image.fromarray(packed).save(stream, format='PNG')
+    encoded.update({'fft_log16': data_url(stream.getvalue()), 'fft_log_limits': [lo, hi]})
+    if detector_signal is not None:
+        signal_lo, signal_hi = float(detector_signal.min()), float(detector_signal.max())
+        signal = Image.fromarray(np.uint16(np.clip(
+            (detector_signal-signal_lo)/max(signal_hi-signal_lo, 1e-12), 0, 1)*65535))
+        signal.thumbnail((768, 768), Image.Resampling.NEAREST)
+        values = np.asarray(signal, dtype=np.uint16)
+        packed = np.zeros((*values.shape, 3), dtype=np.uint8)
+        packed[..., 0] = values >> 8; packed[..., 1] = values & 255
+        stream = BytesIO(); Image.fromarray(packed).save(stream, format='PNG')
+        encoded.update(detector_signal16=data_url(stream.getvalue()),
+                       detector_signal_limits=[signal_lo, signal_hi])
+    return encoded
+
+
 class Engine:
     def __init__(self, settings):
         self.settings = settings
@@ -165,8 +198,12 @@ class Engine:
                 except Exception:
                     row['image_kind'] = 'other'
             old = self.file_rows.get(row['id'])
-            if old and any(old.get(k) != row.get(k) for k in ('path','name','source_id','source_name','folder')):
+            if old and any(old.get(k) != row.get(k) for k in ('path','name','source_id')):
                 self.loaded.pop(row['id'], None)
+            elif row['id'] in self.loaded:
+                # Project labels do not invalidate source pixels, current regions
+                # or the arrays held by background analyses.
+                self.loaded[row['id']]['info'].update({k: row[k] for k in ('source_name', 'folder')})
         self.catalogue.save_metadata(metadata_updates, METADATA_VERSION)
         self.file_rows = {row['id']: row for row in tracked}
         self.loaded = {k:v for k,v in self.loaded.items() if k in self.files or k in demo_data.DEMOS}
@@ -354,6 +391,25 @@ class Engine:
         if min(w, h) < 1 or x < 0 or y < 0 or x+w > iw or y+h > ih:
             raise ValueError('Preview region must lie within the source image.')
         return png(item['array'][y:y+h, x:x+w], item['limits'], max_size)
+
+    def spectrum_preview(self, item, roi, settings):
+        """Refresh image fields without templates, fitting or phase assignment."""
+        if item['info'].get('image_kind') == 'diffraction':
+            raise ValueError('Live region previews apply to real-space images.')
+        roi, settings = self.validate(item, roi, settings)
+        started = time.perf_counter()
+        x, y, w, h = [roi[k] for k in ('x', 'y', 'w', 'h')]
+        crop, info = item['array'][y:y+h, x:x+w], item['info']
+        spectrum = core.spectrum(crop, info['pixel_x_nm'], info['pixel_y_nm'],
+            profile_fraction=settings['threshold'], window=settings['fft_window'],
+            remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'],
+            smoothing_sigma=settings['fft_smoothing_sigma'], threshold_floor=settings['fft_threshold_floor'],
+            minimum_enrichment=settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
+            max_peaks=settings['fft_max_peaks'])
+        return dict(roi=roi, image_kind='real_space', settings=settings,
+            spectrum={key:spectrum[key] for key in ('extent', 'df', 'profile_threshold', 'minimum_peak_enrichment')},
+            images=spectrum_images(spectrum['log'], spectrum['detector_signal'], crop, item['limits']),
+            elapsed_ms=round((time.perf_counter()-started)*1000, 1))
 
     def native_preview(self, item):
         """Lazy native-pixel display for the centre-placement magnifier."""
@@ -585,38 +641,7 @@ class Engine:
             classification['flags'].append('Relative geometry: selected phases are searched without absolute lattice calibration. Cell dimensions are not measured. Related omega orientations are tested when BCC and omega are both selected.')
         log = s.pop('log')
         detector_signal = s.pop('detector_signal', None)
-        # Return an encoded log-power field; display contrast is adjusted in the browser only.
-        if images:
-            lo, hi = float(log.min()), float(log.max())
-            display = Image.fromarray(np.uint8(np.clip((log-lo)/max(hi-lo,1e-12),0,1)*255))
-            display.thumbnail((768,768), Image.Resampling.NEAREST)
-            stream=BytesIO(); display.save(stream,format='PNG')
-            encoded = {'fft': data_url(stream.getvalue())}
-            if not direct:
-                encoded['crop'] = data_url(png(crop, item['limits'], 768))
-            # Carry a precise log field for reversible display curves. The original
-            # FFT and peak fitting above are unchanged. RGB stores high/low bytes.
-            precise = Image.fromarray(np.uint16(np.clip((log-lo)/max(hi-lo, 1e-12), 0, 1)*65535))
-            precise.thumbnail((768, 768), Image.Resampling.NEAREST)
-            values = np.asarray(precise, dtype=np.uint16)
-            packed = np.zeros((*values.shape, 3), dtype=np.uint8)
-            packed[..., 0] = values >> 8
-            packed[..., 1] = values & 255
-            stream = BytesIO(); Image.fromarray(packed).save(stream, format='PNG')
-            encoded.update({'fft_log16': data_url(stream.getvalue()), 'fft_log_limits': [lo, hi]})
-            if detector_signal is not None:
-                signal_lo, signal_hi = float(detector_signal.min()), float(detector_signal.max())
-                signal = Image.fromarray(np.uint16(np.clip(
-                    (detector_signal-signal_lo)/max(signal_hi-signal_lo, 1e-12), 0, 1)*65535))
-                signal.thumbnail((768, 768), Image.Resampling.NEAREST)
-                values = np.asarray(signal, dtype=np.uint16)
-                packed = np.zeros((*values.shape, 3), dtype=np.uint8)
-                packed[..., 0] = values >> 8; packed[..., 1] = values & 255
-                stream = BytesIO(); Image.fromarray(packed).save(stream, format='PNG')
-                encoded.update(detector_signal16=data_url(stream.getvalue()),
-                               detector_signal_limits=[signal_lo, signal_hi])
-        else:
-            encoded = {}
+        encoded = spectrum_images(log, detector_signal, crop if not direct else None, item['limits']) if images else {}
         result = {'roi': roi, 'image_kind': info.get('image_kind', 'real_space'),
                 'width_nm': width_nm, 'height_nm': height_nm, 'settings': settings,
                 'spectrum': s, 'models': models, 'classification': classification,

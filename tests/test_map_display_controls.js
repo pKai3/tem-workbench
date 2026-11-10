@@ -70,6 +70,14 @@ assert.equal(control('grid-map').querySelectorAll('circle').length,2);
 control('map-show-rim').checked=false;control('map-show-rim').onchange();
 assert.equal(control('grid-map').querySelectorAll('circle').length,1);
 assert.equal(control('grid-map').children[0].attrs['data-id'],'inside');assert.equal(preferences.get('tem-map-show-rim'),false);
+mapData.state='running';mapContext.drawOverlapMap();
+assert.equal(control('grid-map').querySelectorAll('circle').length,2,'Rim points stay visible while this grid runs');
+assert.equal(control('map-show-rim').checked,false,'The saved display preference is preserved');
+for(const state of ['complete','cancelled','error']){
+ mapData.state=state;mapContext.drawOverlapMap();
+ assert.equal(control('grid-map').querySelectorAll('circle').length,1,'Stopped grids restore the chosen rim display');
+}
+delete mapData.state;
 control('map-mode').value='strength';control('map-display').value='continuous';control('map-phase').value='all';mapContext.drawOverlapMap();
 const normalized=control('grid-map').querySelectorAll('rect').map(n=>({...n.attrs}));
 assert.equal(normalized[0]['fill-opacity'],.8,'Maximum displayed strength reaches the slider opacity');

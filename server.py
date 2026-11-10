@@ -120,6 +120,16 @@ class Workbench:
             self.jobs.clear()
             return self.config_info()
 
+    def rename_source(self, source_id, name):
+        with self.lock:
+            saved = folder_paths.rename_source(self.config_path, self.config, self.engine.sources, source_id, name)
+            self.config = saved
+            self.engine.settings = saved
+            self.engine.sources = saved['sources']
+            self.engine.catalog()
+            status = self.catalogue_status()
+            return {**status, 'sources': self.engine.sources}
+
     def analyze_interactive(self, body):
         # Snapshot mutable caches while retaining immutable source arrays. Matching
         # must not hold the catalogue lock and block opening a different image.
@@ -145,13 +155,13 @@ class Workbench:
         files = self.engine.catalog()
         return {'sources': self.engine.sources, 'file_tracking': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
-                'project_path': str(self.project.path), 'folder_picker': True, 'saved_regions': True,
+                'project_path': str(self.project.path), 'folder_picker': True, 'source_name_autosave': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'diffraction_processed_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
                 'files': files, 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
-                'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
+                'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'live_spectrum_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(), 'overlap_rim_sampling': True, 'overlap_passing_strength': True,
                 'peak_evidence': peak_evidence.VERSION, 'separate_peak_penalties': True, 'double_diffraction_scoring': True, 'brightness_grouping': True, 'fft_brightness_grouping': True, 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -738,7 +748,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/live-preview.js': ROOT/'web/live-preview.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
@@ -760,6 +770,8 @@ def make_handler(app):
                     self.send(folder_paths.browse(body.get('path'), app.root))
                 elif self.path == '/api/sources':
                     self.send(app.set_sources(body['sources'], body['output_root']))
+                elif self.path == '/api/sources/rename':
+                    self.send(app.rename_source(body['source_id'], body['name']))
                 elif self.path == '/api/refresh-files':
                     with app.lock:
                         if app.batch.running() or (app.grid_thread and app.grid_thread.is_alive()) or app.window_probe.running():
@@ -799,6 +811,13 @@ def make_handler(app):
                         item=app.engine.load(body['file_id'])
                     LOG.info('Opened image: %s (%s×%s)', item['info']['name'], item['info']['width'], item['info']['height'])
                     self.send(item['info'])
+                elif self.path == '/api/spectrum-preview':
+                    with app.lock:
+                        engine = app.engine
+                        item = engine.loaded.get(body['file_id'])
+                        if item is None:
+                            raise ValueError('That source is no longer open.')
+                    self.send(engine.spectrum_preview(item, body['roi'], body.get('settings', {})))
                 elif self.path == '/api/analyze':
                     item, result = app.analyze_interactive(body)
                     if time.monotonic()-app.last_preview_log >= 1:

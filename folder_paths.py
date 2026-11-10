@@ -146,6 +146,21 @@ def save_locations(config_path, root, config, data, output):
     return saved
 
 
+def rename_source(config_path, config, sources, source_id, name):
+    """Persist a label edit without reconfiguring folders or their identities."""
+    name = str(name).strip()
+    if name in ('', '.', '..') or '/' in name or '\\' in name:
+        raise ValueError('Give the project a name without slashes.')
+    if not any(source['id'] == source_id for source in sources):
+        raise ValueError('Save this source folder before renaming its project.')
+    if any(source['id'] != source_id and source['name'] == name for source in sources):
+        raise ValueError('Another project already uses that name.')
+    renamed = [{**source, 'name': name} if source['id'] == source_id else dict(source) for source in sources]
+    saved = {**config, 'sources': renamed}
+    atomic_json(config_path, saved)
+    return saved
+
+
 def save_sources(config_path, root, config, sources, output):
     if not isinstance(sources, list) or not sources:
         raise ValueError('Add at least one source folder.')

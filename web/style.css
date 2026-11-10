@@ -792,3 +792,17 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 @media(max-width:1000px){.fft-only .image-panel .image-wrap{max-width:calc(100% * 420 / 464);margin-inline:auto}}
 
 .class-legend-key{border:0;background:transparent;color:inherit;font:inherit;padding:0;min-height:0}
+
+/* Immediate source crop and compact real-space loupe while moving an FFT-only ROI. */
+#crop-live{display:block;width:100%;aspect-ratio:1;background:#05090e;image-rendering:pixelated;grid-column:1;grid-row:2;margin-top:var(--spectrum-image-top-gap,0px)}
+#crop[hidden],#crop-live[hidden]{display:none}
+#region-hover.drag-crop{width:min(250px,calc(100vw - 16px))}
+#region-hover.drag-crop :is(#region-hover-title,#region-hover-name,#region-hover-models),#region-hover.drag-crop .region-hover-images>figure+figure{display:none}
+#region-hover.drag-crop .region-hover-images{grid-template-columns:1fr}
+
+.source-actions{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+.source-row{margin-bottom:28px}.source-row label{position:relative}
+.source-name-status{position:absolute;top:100%;margin-top:3px;font-size:11px;color:var(--muted);line-height:1.2}
+.source-name-status.error{color:#ff8d9e;position:static;order:3}
+
+#crop-live-view{display:block;width:100%;height:100%}

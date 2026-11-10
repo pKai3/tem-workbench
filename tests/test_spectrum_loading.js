@@ -14,6 +14,7 @@ function node(id){
 function advance(ms){now+=ms;for(const [id,t] of [...timers])if(t.at<=now){timers.delete(id);t.fn()}}
 let hoverHides=0,detectorHides=0;
 const context=vm.createContext({assert,$:node,document:{querySelector:()=>node('previews')},hideSpectrumHover(){hoverHides++},hideCentreLoupe(){detectorHides++},
+ liveSpectrumPreview:null,isDiffraction:()=>false,resetLiveRegionPreview(){},
  setTimeout(fn,ms){const id=++next;timers.set(id,{fn,at:now+ms});return id},clearTimeout:id=>timers.delete(id)});
 vm.runInContext(`let spectrumLoadingTimer=null,spectrumLoading=false,fftRaw={},pending=true,editing=false;const peakEditing=()=>editing;`+
  source.slice(source.indexOf('function clearSpectrumDisplay(){'),source.indexOf('\nfunction syncLargeSpectrumSize()')),context);

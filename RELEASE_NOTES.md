@@ -1,14 +1,12 @@
-# TEM Workbench 1.0.27
+# TEM Workbench — next release
 
-- Reconnect running grids and overlapping maps after page refresh, with the original source, settings, progress and cancellation controls. Completed and partial results remain available while the backend stays running.
-- Search for omega and parent-related BCC + omega variants through the ordinary phase controls. Compare independent and linked candidates using common scoring, with one addition cost for a constrained omega family.
-- Improve displaced-peak matching in direct diffraction while retaining penalties for unsupported predictions. A detected peak assigned to a prediction is no longer also counted as missing.
-- Integrate peak brightness, add adjustable soft brightness grouping in diffraction and FFT, and number measured profiles from brightest to faintest.
-- Preserve search opportunities for weaker orientations instead of spending supplementary starts on subsets of an already explored pattern.
-- Identify possible double-diffraction pathways for selected phases, with an adjustable score contribution and inspectable supporting reflections. These are geometric candidates, not confirmation of dynamical scattering.
-- Unify linked-fit tables and overlays, show related variant counts, support all passing fits, and offer phase/variant colours with editable legends and concentric shared-spot markers.
-- Add a master analysis-overlay switch, compact fitted-vector display, responsive result tables and clearer material-dependent phase labels.
-- Improve direct-diffraction centre refinement, processed image display, peak-edit feedback, hover previews, tooltips and panel spacing.
-- Open the acquisition map at the current analysis image and add a Current image button to return to it.
+- Update the selected real-space crop immediately while moving or resizing the region. Refresh raw/processed FFT previews independently of phase fitting, and show a compact crop preview while dragging in FFT-only view. Old fit overlays cannot attach to a newer region.
+- Autosave project names on leaving the field or pressing Enter, with visible save/error feedback. Keep the open image and background grids intact; place Save source changes above the source list for folder edits.
+- Add average passing strength maps alongside passing frequency, with continuous/hex displays, optional opacity normalization, compact colour keys and three-phase colour blending. Map controls sit beneath the source image.
+- Add optional image-rim sampling. Rim-point visibility can be customized after a run; points always remain visible while their grid is running. Remove finished-map gridlines.
+- Reopen the last image after reload, retain grids while browsing other images, and show persistent clickable grid/batch progress cards with two-click cancellation.
+- Use selected phase/variant colours throughout combined-fit labels, add DD counts and DD-inclusive coverage, label fitted cell axes, and use compact omega subscripts.
+- Align crop/FFT image areas, streamline overlay legends and tooltips, move saved regions beneath image details, and add scale-fitting reset and parameter help.
+- Allow fitting-limit handles to move in radius and angle, with 15° angle snapping and per-image persistence in direct diffraction. All FFT colour palettes now share a near-black zero.
 
-Use **Check for updates → Install update and restart**. Export unsaved grid results before restarting. Diffraction ranks remain exploratory comparisons, not phase probabilities or confirmed phase identities.
+Use **Check for updates → Install update and restart**. Export unsaved grid results before restarting. Display changes do not alter measured map values or fitting scores.

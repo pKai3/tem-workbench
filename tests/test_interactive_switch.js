@@ -10,7 +10,7 @@ async function scenario(failure){
  let calls=[],renders=[],spinnerStops=0,errors=[];
  const settings=()=>({}),requestBody=()=>({file_id:fileId,settings:{}});
  const api=(path,body,signal)=>new Promise((resolve,reject)=>calls.push({resolve,reject,signal}));
- const renderResult=async data=>renders.push(data);
+ const renderResult=async data=>{result=data;renders.push(data)};
  const syncPeakEditControls=()=>{},syncSpectrumExportControls=()=>{};
  const isDiffraction=()=>false;
  const finishSpectrumLoading=()=>spinnerStops++;
