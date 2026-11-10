@@ -8,7 +8,7 @@ Requested: faint white window outlines and a small existing TEM diffraction load
 
 Visibility follow-up: enlarged the active-window motif, made its spots solid white and added a faint dark circular backing (20% opacity) for contrast against bright/noisy images. Overlapping square outlines remain the true FFT window boundaries. All active-window spinners render in a separate foreground layer above every window outline. Fixed missing SVG factory arguments in that layering change; the regression check now exercises the actual factory to catch this failure.
 
-Validation: 23 JavaScript suites, 10 worker/coordinator checks and 20 batch/manual-edit checks pass. A controlled out-of-order completion verifies that finished windows lose their indicators before their results can be committed. Browser rendering verifies small nested SVG spinners at multiple window sizes and existing reduced-motion styling is retained. No version bump or release requested.
+Validation: 23 JavaScript suites, 10 worker/coordinator checks and 20 batch/manual-edit checks pass. A controlled out-of-order completion verifies that finished windows lose their indicators before their results can be committed. Browser rendering verifies small nested SVG spinners at multiple window sizes and existing reduced-motion styling is retained. Release approved 11 November 2026; publishing with the manual release workflow and its full verification gates.
 
 ## Smaller-screen layout follow-up — completed 10 November 2026
 
