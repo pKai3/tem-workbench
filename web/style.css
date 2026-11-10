@@ -854,4 +854,6 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #crop-live-view{display:block;width:100%;height:100%}
 
 /* Temporary worker indicators; window contents remain visible and clickable. */
-.grid-window-spinner{opacity:.8;pointer-events:none}
+.grid-window-spinner{opacity:1;pointer-events:none;filter:drop-shadow(0 0 2px #000)}
+.grid-window-spinner .reciprocal-lattice circle{fill:#fff;opacity:1}
+.grid-window-spinner .reciprocal-lattice path{stroke:#c8ffff;stroke-opacity:.6}

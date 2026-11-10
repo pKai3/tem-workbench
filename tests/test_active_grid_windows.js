@@ -3,7 +3,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const source=fs.readFileSync('web/app.js','utf8');
 function element(tag,attrs={}){
  const node={tag,attrs:{...attrs},children:[],dataset:{},style:{},classList:{add(){}},
-  setAttribute(k,v){this.attrs[k]=v},append(child){child.parent=this;this.children.push(child)},
+  prepend(child){child.parent=this;this.children.unshift(child)},setAttribute(k,v){this.attrs[k]=v},append(child){child.parent=this;this.children.push(child)},
   remove(){this.parent.children=this.parent.children.filter(n=>n!==this)},cloneNode(){return element(tag,attrs)}};
  if(attrs['data-window'])node.dataset.window=attrs['data-window'];return node;
 }
@@ -13,8 +13,8 @@ const group=element('g'),job={id:'one',state:'running',source:{width:4096},activ
 context.drawActiveGridWindows(group,job);assert.equal(group.children.length,2);
 const original=group.children[0];context.drawActiveGridWindows(group,job);assert.equal(group.children[0],original);
 assert.equal(original.children[0].attrs.stroke,'#fff');assert.equal(original.children[0].attrs.fill,'none');
-assert.equal(original.children[1].style.width,'45px');
-assert.equal(original.children[1].attrs.width,45);assert.equal(original.children[1].attrs.height,45);
+assert.equal(original.children[1].style.width,'65px');
+assert.equal(original.children[1].attrs.width,65);assert.equal(original.children[1].attrs.height,65);
 job.active_windows.pop();context.drawActiveGridWindows(group,job);assert.equal(group.children.length,1);
 for(const state of ['complete','cancelled','error']){context.drawActiveGridWindows(group,{...job,state});assert.equal(group.children.length,0)}
 context.drawActiveGridWindows(group,job);context.drawActiveGridWindows(group,{...job,cancelling:true});assert.equal(group.children.length,0);
