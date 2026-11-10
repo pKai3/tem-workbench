@@ -55,7 +55,7 @@ class StabilityBatch(unittest.TestCase):
             path=Path(tmp)/'map.png'
             map_png(dict(preview=preview.getvalue()),job,path,dict(hcp_compatible='#ff0000',bcc_compatible='#00ff00'),1)
             with Image.open(path) as result:
-                self.assertEqual(result.size,(980,2180))
+                self.assertEqual(result.size,(980,2093))  # Legend retained; explanatory footer removed.
                 colors=result.getcolors(result.width*result.height)
                 self.assertEqual(result.getpixel((200,300)),(255,255,0))
                 self.assertEqual(result.getpixel((200,350)),(255,255,0))
@@ -79,7 +79,7 @@ class StabilityBatch(unittest.TestCase):
                 path=Path(tmp)/(name+'.png')
                 map_png(dict(preview=preview.getvalue()),job,path,opacity=1,view=view,phase=phase)
                 with Image.open(path) as result:
-                    result.load();self.assertEqual(result.size,(1880,2180 if view in ('support','strength','hex_support','hex_strength') and phase is None else 2120))
+                    result.load();self.assertEqual(result.size,(1880,2093 if view in ('support','strength','hex_support','hex_strength') and phase is None else 2017 if view=='raw' else 2033))
                     # All views must leave unsampled right half unchanged.
                     self.assertEqual(result.getpixel((1700,900)),(120,120,120))
                     hashes.append(path.read_bytes())
@@ -118,7 +118,7 @@ class StabilityBatch(unittest.TestCase):
             path=Path(tmp)/'three-phase.png'
             map_png(dict(preview=preview.getvalue()),job,path,colors,1)
             with Image.open(path) as result:
-                self.assertEqual(result.size,(1880,2360))
+                self.assertEqual(result.size,(1880,2235))
                 self.assertEqual(result.getpixel((200,300)),(156,156,156))
                 self.assertEqual(result.getpixel((1700,900)),(120,120,120))
                 centre=result.getpixel((190,1800+155+128))

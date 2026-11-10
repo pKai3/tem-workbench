@@ -320,7 +320,7 @@ function calibrationView(){
 function restoreCalibration(){
  const saved=readPreference('tem-scale-last',readPreference('tem-scale:'+meta.sha256_pixels,{}));
  const valid=saved&&['1','custom','auto_uniform','auto_hcp_ac','auto_hcp_ratio'].includes(saved.mode)&&(!saved.mode.startsWith('auto_')||config.scale_modes?.includes(saved.mode))&&Number.isFinite(saved.scale)&&saved.scale>=.85&&saved.scale<=1.15;
- const defaultMode=config.scale_modes?.includes('auto_hcp_ac')?'auto_hcp_ac':'1';
+ const defaultMode=config.scale_modes?.includes('auto_hcp_ratio')?'auto_hcp_ratio':config.scale_modes?.includes('auto_hcp_ac')?'auto_hcp_ac':'1';
  $('scenario').value=valid?saved.mode:defaultMode;$('model-scale').value=valid?saved.scale:1;
  calibrationView();rememberCalibration();
 }
@@ -1716,12 +1716,12 @@ function renderClassLegend(regions=grid?.regions){
 function renderZoneLegend(found){
  const legend=$('zone-legend');legend.replaceChildren();legend.hidden=PHASES.every(phase=>!found[phase].size);
  if(legend.hidden)return;
- const hint=document.createElement('p'),help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');
- hint.className='hint';help.className='settings-help';button.type='button';button.className='settings-help-button';button.textContent='ⓘ';button.setAttribute('aria-label','About zone symbols');
+ const help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');
+ help.className='settings-help';button.type='button';button.className='settings-help-button';button.textContent='ⓘ';button.setAttribute('aria-label','About zone symbols');
  popup.className='settings-help-popup';popup.setAttribute('role','tooltip');
  popup.textContent='Best candidates for '+analysisPhases(grid?.settings).map(phase=>phaseLabel(phase,grid?.settings?.material)).join(', ')+' are stacked by rank, highest at the top. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Legend counts and areas include passing fits only, largest area first.';
  if(grid?.grid.mode==='overlap')popup.textContent='Raw window centres show only the highest-ranked candidate. Faded symbols are below threshold. Counts include passing winners only; overlapping windows are not independent and counts are not image area.';
- help.append(button,popup);hint.append('Zone symbols ',help);legend.append(hint);
+ help.append(button,popup);
  for(const phase of PHASES){
   if(!found[phase].size)continue;
   const group=document.createElement('div');group.className='zone-legend-group';group.style.color=phaseColors[phase];
@@ -1734,6 +1734,7 @@ function renderZoneLegend(found){
    item.append(symbol,document.createTextNode(zoneLabel(entry.model)),count);
    item.title=grid?.grid.mode==='overlap'?`${entry.count} passing windows`:`${entry.count} passing cells · ${(100*entry.area/(grid.source.width*grid.source.height)).toFixed(1)}% image area`;group.append(item);
   }
+  if(!legend.children.length)group.append(help);
   legend.append(group);
  }
 }
@@ -2296,7 +2297,7 @@ function queuePenaltyUpdate(){
 }
 function resetScaleControls(){
  if(isGridRunning()||rescoreBusy||rescorePending)return;
- const mode=config?.scale_modes?.includes('auto_hcp_ac')?'auto_hcp_ac':'1';
+ const mode=config?.scale_modes?.includes('auto_hcp_ratio')?'auto_hcp_ratio':config?.scale_modes?.includes('auto_hcp_ac')?'auto_hcp_ac':'1';
  const refit=$('scenario').value!==mode||Number($('model-scale').value)!==1;
  $('scenario').value=mode;$('model-scale').value='1.000';
  scalePenalty=caPenalty=peakEvidenceWeight=missingPeakWeight=brightnessGroupingWeight=.10;ddWeight=0;peakFalloff=8;
@@ -3459,9 +3460,12 @@ $('export-crop').onclick=async()=>{
 $('export-png').onclick=()=>exportSpectrum('png');$('export-gif').onclick=()=>exportSpectrum('gif');
 
 function syncMapExportControls(){
- const button=$('export-map'),mismatch=grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||peakEvidenceWeight!==grid.settings.peak_evidence_weight||(config?.separate_peak_penalties&&missingPeakWeight!==(grid.settings.missing_peak_weight??grid.settings.peak_evidence_weight))||(config?.fft_brightness_grouping&&brightnessGroupingWeight!==(grid.settings.brightness_grouping_weight??.1))||(config?.double_diffraction_scoring&&ddWeight!==(grid.settings.double_diffraction_weight??0))||(config?.peak_evidence_falloff&&peakFalloff!==(grid.settings.peak_evidence_half_weight_nm_inv??0)));
- button.disabled=!config?.map_exports||!meta||isDiffraction()||grid?.state!=='complete'||Boolean(grid?.error)||grid?.source?.sha256_pixels!==meta?.sha256_pixels||rescoreBusy||rescorePending||mismatch||mapExportBusy||spectrumExportBusy;
- button.title=!config?.map_exports?'Restart TEM Workbench, then reload to enable map exports':button.disabled?'Complete a grid and finish reweighting before exporting':'Save the visible map, colours and zone legend as PNG';
+ const mismatch=grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||peakEvidenceWeight!==grid.settings.peak_evidence_weight||(config?.separate_peak_penalties&&missingPeakWeight!==(grid.settings.missing_peak_weight??grid.settings.peak_evidence_weight))||(config?.fft_brightness_grouping&&brightnessGroupingWeight!==(grid.settings.brightness_grouping_weight??.1))||(config?.double_diffraction_scoring&&ddWeight!==(grid.settings.double_diffraction_weight??0))||(config?.peak_evidence_falloff&&peakFalloff!==(grid.settings.peak_evidence_half_weight_nm_inv??0)));
+ for(const id of ['export-map','export-map-grid']){
+  const button=$(id);
+  button.disabled=!config?.map_exports||!meta||isDiffraction()||grid?.state!=='complete'||Boolean(grid?.error)||grid?.source?.sha256_pixels!==meta?.sha256_pixels||rescoreBusy||rescorePending||mismatch||mapExportBusy||spectrumExportBusy;
+  button.title=!config?.map_exports?'Restart TEM Workbench, then reload to enable map exports':button.disabled?'Complete a grid and finish reweighting before exporting':'Save the visible map, colours and zone legend as PNG';
+ }
 }
 function blobDataURL(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read the image.'));reader.readAsDataURL(blob)})}
 function mapSnapshot(){
@@ -3480,8 +3484,7 @@ function mapSnapshot(){
  const legendItem=(text,color)=>{const width=measure.measureText(text).width+27;if(x+width>1180){x=20;y+=25}svg.append(el('text',{x,y,fill:color,'font-size':14},text));x+=width};
  const strength=strengthMapView(selectedMapView());
  if(grid.grid.mode==='overlap'){
-  legendItem(strength?'Match score · mean best passing rank per phase · failed/missing fits = 0':['hex','top'].includes(selectedMapView())?'Best match · highest mean rank · opacity = winning phase’s match frequency':supportMapView(selectedMapView())&&$('map-phase').value==='all'?'All-phase passing support · colour = relative support · opacity = strongest frequency · not proof of coexistence':$('overlap-key').textContent,'#dce6ef');
-  x=20;y+=28;legendItem(`${grid.grid.window_nm} nm windows · ${grid.grid.spacing_nm} nm spacing · ${grid.grid.passes} passes · ${grid.grid.layout} centres`,'#94a5b8');x=20;y+=28;
+  legendItem(`${grid.grid.window_nm.toFixed(2)} nm windows · ${grid.grid.spacing_nm.toFixed(2)} nm spacing · ${grid.grid.passes} pass${grid.grid.passes===1?'':'es'} · ${grid.grid.layout} centres`,'#94a5b8');x=20;y+=28;
  }
  if(!$('class-legend').hidden)for(const node of $('class-legend').children)if(!node.hidden)legendItem('● '+(node.dataset.caption||node.textContent),colors[node.dataset.label]);
  if(x!==20){x=20;y+=28}
@@ -3508,13 +3511,12 @@ function mapSnapshot(){
   }else for(const phase of all?phases:[$('map-phase').value])legendItem(phase,phaseColors[phase]);
   x=20;y+=28;legendItem(opacityCaption,'#94a5b8');x=20;y+=28;
  }
- svg.append(el('text',{x:20,y:y+4,fill:'#94a5b8','font-size':12},grid.grid.mode==='overlap'?'Overlapping support map, not phase fraction. Blank = no samples; nearby windows are correlated.':'Candidate map, not confirmed phase fractions. Faded zone symbols are below threshold.'));
- const height=y+28;svg.setAttribute('viewBox',`0 0 1200 ${height}`);svg.setAttribute('height',height);
+ const height=y+8;svg.setAttribute('viewBox',`0 0 1200 ${height}`);svg.setAttribute('height',height);
  return {svg,source,height,file_id:fileId};
 }
-async function exportMap(){
- if($('export-map').disabled)return;
- mapExportBusy=true;syncSpectrumExportControls();beginExport('export-map','Exporting map PNG…');
+async function exportMap(buttonId='export-map'){
+ if($(buttonId).disabled)return;
+ mapExportBusy=true;syncSpectrumExportControls();beginExport(buttonId,'Exporting map PNG…');
  try{
   const snapshot=mapSnapshot();
   const response=await fetch(snapshot.source.getAttribute('href'));if(!response.ok)throw new Error('Source preview unavailable.');
@@ -3524,11 +3526,11 @@ async function exportMap(){
   const image=new Image();image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(snapshot.svg));await image.decode();
   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;canvas.getContext('2d').drawImage(image,0,0);
   exportNotice('Saving map PNG…','Writing to the output folder');
-  const data=await api('export-spectrum',{file_id:snapshot.file_id,image_kind:'real_space_map',format:'png',frames:[canvas.toDataURL('image/png')]});finishExport('export-map',data.path);
- }catch(error){finishExport('export-map',null,'Map export failed: '+error.message)}
+  const data=await api('export-spectrum',{file_id:snapshot.file_id,image_kind:'real_space_map',format:'png',frames:[canvas.toDataURL('image/png')]});finishExport(buttonId,data.path);
+ }catch(error){finishExport(buttonId,null,'Map export failed: '+error.message)}
  finally{mapExportBusy=false;syncSpectrumExportControls()}
 }
-$('export-map').onclick=exportMap;
+for(const id of ['export-map','export-map-grid'])$(id).onclick=()=>exportMap(id);
 
 function vectorCellRatio(model){
  if(!['HCP','OMEGA'].includes(model.phase))return '';

@@ -162,7 +162,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
         spread='Placement sensitivity · '+str(phase),samples='Sampling density',separate='Multiple-structure support',raw='Individual windows · classification circles')
     draw.text((40,h+85),titles[view],font=title,fill='white')
     g=job['grid']
-    draw.text((40,h+120),f"{g['layout']} · {g['window_nm']:.3g} nm windows / {g['spacing_nm']:.3g} nm spacing · {g['passes']} passes",font=font,fill='#a4adba')
+    draw.text((40,h+120),f"{g['window_nm']:.2f} nm windows · {g['spacing_nm']:.2f} nm spacing · {g['passes']} {'pass' if g['passes']==1 else 'passes'} · {g['layout']} centres",font=font,fill='#a4adba')
     legend=[(p,color(p)) for p in ([phase] if phase else phases)]
     if view=='samples': legend=[(f"1–{max_samples} windows",'#00d9e8')]
     if view=='separate': legend=[('Separate structures','#d692fa')]
@@ -202,18 +202,5 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
             t=j/max(1,min(300,w)-1)
             c,_=blend_support([(color(phases[0]),1-t),(color(phases[1]),t)])
             draw.line((40+j,y+25,40+j,y+36),fill=c)
-    notes=dict(support='Colour = relative phase support; opacity = strongest passing frequency. Blending does not prove coexistence.',
-        strength='Mean best passing rank per phase; failed/missing fits = 0. Colour = relative strength; opacity = strongest strength, capped at 1.',
-        hex_strength='Mean best passing rank per phase; failed/missing fits = 0. Colour = relative strength; opacity = strongest strength, capped at 1.',
-        hex_support='Colour = relative phase support; opacity = strongest passing frequency. Blending does not prove coexistence.',
-        hex='Highest mean rank; brightness = winner passing frequency. Rejected winners can appear.',
-        spread='Brightness = range of per-pass support, 0–100%; not an uncertainty estimate.',
-        samples='Darker to brighter = fewer to more contributing windows; counts are correlated.',
-        separate='Brightness = frequency of separately supported structures in one window, 0–100%.',
-        raw='One circle per analysed window; colour = window classification.')
-    # Wrap footer for portrait sources rather than clipping explanatory text.
-    import textwrap
-    text=f"Coverage {a['coverage_percent']:.1f}%. "+notes[view]+' Not phase fractions; uncovered edges remain unmeasured.'
-    lines=textwrap.wrap(text,width=max(30,int(w/10)))
-    draw.multiline_text((40,max(y+(32 if view=='raw' else 52),h+215)),'\n'.join(lines),font=font,fill='#a4adba',spacing=4)
-    canvas.save(target)
+    bottom=y+(40 if triangle_key else 62 if view=='raw' else 78)
+    canvas.crop((0,0,w+80,bottom)).save(target)
