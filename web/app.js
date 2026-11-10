@@ -1716,10 +1716,12 @@ function renderClassLegend(regions=grid?.regions){
 function renderZoneLegend(found){
  const legend=$('zone-legend');legend.replaceChildren();legend.hidden=PHASES.every(phase=>!found[phase].size);
  if(legend.hidden)return;
- const hint=document.createElement('p');hint.className='hint';
- hint.textContent='Best candidates for '+analysisPhases(grid?.settings).map(phase=>phaseLabel(phase,grid?.settings?.material)).join(', ')+' are stacked by rank, highest at the top. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Legend counts and areas include passing fits only, largest area first.';
- if(grid?.grid.mode==='overlap')hint.textContent='Raw window centres show only the highest-ranked candidate. Faded symbols are below threshold. Counts include passing winners only; overlapping windows are not independent and counts are not image area.';
- legend.append(hint);
+ const hint=document.createElement('p'),help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');
+ hint.className='hint';help.className='settings-help';button.type='button';button.className='settings-help-button';button.textContent='ⓘ';button.setAttribute('aria-label','About zone symbols');
+ popup.className='settings-help-popup';popup.setAttribute('role','tooltip');
+ popup.textContent='Best candidates for '+analysisPhases(grid?.settings).map(phase=>phaseLabel(phase,grid?.settings?.material)).join(', ')+' are stacked by rank, highest at the top. Faded symbols are below the screen threshold. These are alternative fits, not proof that multiple phases are present. Legend counts and areas include passing fits only, largest area first.';
+ if(grid?.grid.mode==='overlap')popup.textContent='Raw window centres show only the highest-ranked candidate. Faded symbols are below threshold. Counts include passing winners only; overlapping windows are not independent and counts are not image area.';
+ help.append(button,popup);hint.append('Zone symbols ',help);legend.append(hint);
  for(const phase of PHASES){
   if(!found[phase].size)continue;
   const group=document.createElement('div');group.className='zone-legend-group';group.style.color=phaseColors[phase];

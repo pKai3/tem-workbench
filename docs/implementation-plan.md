@@ -2,7 +2,15 @@
 
 Last updated: 10 November 2026
 
+## Release after map and drag follow-ups — approved 10 November 2026
+
+The user approved publishing a version when this work is done. Include the map reweighting improvements (`d1e7cdf`), continuous best-match maps (`bc1c9dd`), map names/legend placement and redundant-drag-fit fix (`23a9273`). Approved final UI cleanup: move the raw-window legend explanation into hover/focus/tap help beside “Zone symbols”, keeping the phase keys and counts visible. Publish through the manual Publish Workbench release workflow with all analysis, Windows and macOS gates intact; do not change the version locally or skip verification. Publication is pending.
+
+Tooltip cleanup is implemented. Live verification confirms the paragraph is absent from the normal legend and appears in the info popup with its full text; zone symbols and counts remain visible. Focused map/drag regressions and syntax/whitespace checks pass. Release notes cover the accumulated changes since v1.0.28.
+
 ## Map legends, names and region dragging — completed 10 November 2026
+
+Implementation commit: `23a9273`.
 
 Approved: move the best-match phase legend into the existing right-hand colour-key area beside the overlay controls, for both continuous and hex displays. Keep phase colours, help and PNG keys intact. Rename the mode choices and order them as requested: Individual windows, Best match, Match score, Match frequency, Multiple-structure support, Placement sensitivity, Sampling density. Several modes aggregate overlapping windows, so “Average” is removed from the score label; help retains the distinct averaging rules. Preserve stored mode values, calculations and the user's current selection.
 
