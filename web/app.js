@@ -1961,13 +1961,16 @@ function syncMapOpacityControl(){
 function drawActiveGridWindows(group,job){
  const active=job?.state==='running'&&!job.cancelling?job.active_windows||[]:[];
  const keys=new Set();
+ // Separate paint layers keep every spinner above every overlapping outline.
+ let outlines=group.children[0],spinners=group.children[1];
+ if(!outlines){outlines=el('g');spinners=el('g');group.append(outlines);group.append(spinners)}
  for(const roi of active){
   if(![roi.x,roi.y,roi.w,roi.h].every(Number.isFinite)||roi.w<=0||roi.h<=0)continue;
   const key=`${job.id}:${roi.x},${roi.y},${roi.w},${roi.h}`;keys.add(key);
   // Retain each spinner between polls so its animation never restarts.
-  if([...group.children].some(node=>node.dataset.window===key))continue;
+  if([...spinners.children].some(node=>node.dataset.window===key))continue;
   const node=el('g',{'data-window':key});
-  node.append(el('rect',{x:roi.x,y:roi.y,width:roi.w,height:roi.h,fill:'none',stroke:'#fff','stroke-opacity':.4,'stroke-width':1,'vector-effect':'non-scaling-stroke'}));
+  outlines.append(el('rect',{'data-window':key,x:roi.x,y:roi.y,width:roi.w,height:roi.h,fill:'none',stroke:'#fff','stroke-opacity':.4,'stroke-width':1,'vector-effect':'non-scaling-stroke'}));
   const spinner=$('fft-loading').querySelector('.tem-diffraction-loader').cloneNode(true);
   const size=Math.min(roi.w*.65,roi.h*.65,job.source.width*.045);
   spinner.classList.add('grid-window-spinner');
@@ -1975,9 +1978,10 @@ function drawActiveGridWindows(group,job){
   spinner.setAttribute('x',roi.x+(roi.w-size)/2);spinner.setAttribute('y',roi.y+(roi.h-size)/2);
   spinner.setAttribute('width',size);spinner.setAttribute('height',size);
   spinner.style.width=size+'px';spinner.style.height=size+'px';
-  node.append(spinner);group.append(node);
+  node.append(spinner);spinners.append(node);
  }
- for(const node of [...group.children])if(!keys.has(node.dataset.window))node.remove();
+ for(const layer of [outlines,spinners])for(const node of [...layer.children])if(!keys.has(node.dataset.window))node.remove();
+ if(!keys.size){outlines.remove();spinners.remove()}
 }
 function drawGrid(){
  drawActiveGridWindows($('grid-active-windows'),grid&&gridMatchesSource(grid)?grid:null);

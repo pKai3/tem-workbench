@@ -11,11 +11,20 @@ const context=vm.createContext({el:element,$:()=>({querySelector:()=>element('sv
 vm.runInContext(source.slice(source.indexOf('function drawActiveGridWindows('),source.indexOf('function drawGrid(){')),context);
 const group=element('g'),job={id:'one',state:'running',source:{width:4096},active_windows:[{x:10,y:20,w:100,h:100},{x:110,y:20,w:100,h:100}]};
 context.drawActiveGridWindows(group,job);assert.equal(group.children.length,2);
-const original=group.children[0];context.drawActiveGridWindows(group,job);assert.equal(group.children[0],original);
-assert.equal(original.children[0].attrs.stroke,'#fff');assert.equal(original.children[0].attrs.fill,'none');
-assert.equal(original.children[1].style.width,'65px');
-assert.equal(original.children[1].attrs.width,65);assert.equal(original.children[1].attrs.height,65);
-job.active_windows.pop();context.drawActiveGridWindows(group,job);assert.equal(group.children.length,1);
+const [outlines,spinners]=group.children;
+assert.equal(outlines.children.length,2);assert.equal(spinners.children.length,2);
+const original=spinners.children[0];context.drawActiveGridWindows(group,job);assert.equal(spinners.children[0],original);
+assert.equal(outlines.children[0].attrs.stroke,'#fff');assert.equal(outlines.children[0].attrs.fill,'none');
+assert.equal(original.children[0].style.width,'65px');
+assert.equal(original.children[0].attrs.width,65);assert.equal(original.children[0].attrs.height,65);
+// A new overlapping window must remain behind ALL spinners, including existing ones.
+job.active_windows.push({x:60,y:20,w:100,h:100});context.drawActiveGridWindows(group,job);
+assert.equal(group.children[0],outlines);assert.equal(group.children[1],spinners);
+assert.ok(outlines.children.every(n=>n.tag==='rect'));
+assert.ok(spinners.children.every(n=>n.children[0].tag==='svg'));
+assert.equal(spinners.children[0],original);
+job.active_windows.splice(1);context.drawActiveGridWindows(group,job);
+assert.equal(outlines.children.length,1);assert.equal(spinners.children.length,1);
 for(const state of ['complete','cancelled','error']){context.drawActiveGridWindows(group,{...job,state});assert.equal(group.children.length,0)}
 context.drawActiveGridWindows(group,job);context.drawActiveGridWindows(group,{...job,cancelling:true});assert.equal(group.children.length,0);
 context.drawActiveGridWindows(group,job);context.drawActiveGridWindows(group,null);assert.equal(group.children.length,0);
