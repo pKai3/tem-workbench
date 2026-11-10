@@ -2,6 +2,12 @@
 
 Last updated: 10 November 2026
 
+## Active grid window indicators — completed 11 November 2026
+
+Requested: faint white window outlines and a small existing TEM diffraction loading animation over windows currently being processed. Implemented for the main grid (uniform, adaptive and overlapping windows) and the batch live viewer. Worker diagnostics identify genuinely active ROIs; queued work and completed futures waiting for deterministic commit order are excluded. Indicators retain their animation between polls, clear on cancellation/completion/error or source change, and do not intercept map interaction. PNG map exports omit these temporary indicators. Analysis, scheduling and numerical results are unchanged.
+
+Validation: 23 JavaScript suites, 10 worker/coordinator checks and 20 batch/manual-edit checks pass. A controlled out-of-order completion verifies that finished windows lose their indicators before their results can be committed. Browser rendering verifies small nested SVG spinners at multiple window sizes and existing reduced-motion styling is retained. No version bump or release requested.
+
 ## Smaller-screen layout follow-up — completed 10 November 2026
 
 Approved: correct the cramped and uneven formatting visible on a smaller screen. Keep the established header coordinates, left-hand map selectors, right-hand appearance controls and Individual windows legend exception. Make wrapping follow the available panel width, keep related grid settings together, and align the image display controls and comparison tables. Verify representative laptop widths as well as narrow and wide layouts in both Real + FFT and FFT Only. This is presentation work; map values, fitting and saved settings are unchanged. No new release requested.

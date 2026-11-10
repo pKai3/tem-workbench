@@ -1958,7 +1958,28 @@ function syncMapOpacityControl(){
  $('map-normalize-label').hidden=!support;
  $('map-normalize').disabled=!available||!grid?.aggregation;
 }
+function drawActiveGridWindows(group,job){
+ const active=job?.state==='running'&&!job.cancelling?job.active_windows||[]:[];
+ const keys=new Set();
+ for(const roi of active){
+  if(![roi.x,roi.y,roi.w,roi.h].every(Number.isFinite)||roi.w<=0||roi.h<=0)continue;
+  const key=`${job.id}:${roi.x},${roi.y},${roi.w},${roi.h}`;keys.add(key);
+  // Retain each spinner between polls so its animation never restarts.
+  if([...group.children].some(node=>node.dataset.window===key))continue;
+  const node=el('g',{'data-window':key});
+  node.append(el('rect',{x:roi.x,y:roi.y,width:roi.w,height:roi.h,fill:'none',stroke:'#fff','stroke-opacity':.4,'stroke-width':1,'vector-effect':'non-scaling-stroke'}));
+  const spinner=$('fft-loading').querySelector('.tem-diffraction-loader').cloneNode(true);
+  const size=Math.min(roi.w*.45,roi.h*.45,job.source.width*.032);
+  spinner.classList.add('grid-window-spinner');
+  spinner.setAttribute('x',roi.x+(roi.w-size)/2);spinner.setAttribute('y',roi.y+(roi.h-size)/2);
+  spinner.setAttribute('width',size);spinner.setAttribute('height',size);
+  spinner.style.width=size+'px';spinner.style.height=size+'px';
+  node.append(spinner);group.append(node);
+ }
+ for(const node of [...group.children])if(!keys.has(node.dataset.window))node.remove();
+}
 function drawGrid(){
+ drawActiveGridWindows($('grid-active-windows'),grid&&gridMatchesSource(grid)?grid:null);
  syncMapOpacityControl();
  $('map-colour-key').hidden=true;
  $('overlap-display').hidden=grid?.grid.mode!=='overlap';
@@ -3472,7 +3493,7 @@ function mapSnapshot(){
  const original=$('overview'),copy=original.cloneNode(true),nodes=[original,...original.querySelectorAll('*')],copies=[copy,...copy.querySelectorAll('*')];
  const properties=['fill','fill-opacity','stroke','stroke-width','stroke-opacity','stroke-dasharray','stroke-linejoin','opacity','vector-effect','paint-order','font-family','font-size','font-weight','text-anchor','dominant-baseline'];
  nodes.forEach((node,i)=>{const style=getComputedStyle(node);for(const property of properties)copies[i].setAttribute(property,style.getPropertyValue(property))});
- for(const node of copy.querySelectorAll('#roi-box,#roi-handle,#detector-overlay,#overlap-preview,title'))node.remove();
+ for(const node of copy.querySelectorAll('#roi-box,#roi-handle,#detector-overlay,#overlap-preview,#grid-active-windows,title'))node.remove();
  const source=copy.querySelector('#source-image');
  for(const node of [copy,...copy.querySelectorAll('*')])for(const attribute of ['id','class','style','role','tabindex'])if(attribute!=='id'||node.tagName!=='clipPath')node.removeAttribute(attribute);
  copy.setAttribute('x',20);copy.setAttribute('y',78);copy.setAttribute('width',1160);copy.setAttribute('height',1160);
@@ -4148,6 +4169,7 @@ function renderBatch(data){
 }
 function renderBatchMap(data){
  const live=data.live_grid,host=$('batch-live');host.hidden=!live;
+ drawActiveGridWindows($('batch-active-windows'),live?{...live,id:live.job_id}:null);
  if(!live)return;
  const source=live.source,svg=$('batch-live-map'),img=$('batch-live-image'),group=$('batch-live-regions');
  $('batch-live-title').textContent=source.name;

@@ -285,7 +285,7 @@ class Workbench:
                                              'check_passing': check_passing,
                                              'refinement_policy': adaptive_refinement.VERSION if check_passing else 'unresolved_or_multiple_patterns' if adaptive else 'uniform'},
                'lookahead': {'checked': 0, 'refined': 0, 'retained': 0},
-               'regions': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False,
+               'regions': [], 'active_windows': [], 'processed': 0, 'pending': count*count, 'error': None, 'cancel': False,
                'execution': {'backend': 'processes', 'workers': workers, 'requested_workers': requested_workers, 'elapsed_seconds': 0.}}
         if samples is not None:
             job['grid'] = overlap_options
@@ -350,7 +350,14 @@ class Workbench:
                         in_flight.append((task, pool.submit(task[0])))
                     if job['cancel']:
                         break
+                    states = pool.diagnostics() if hasattr(pool, 'diagnostics') else []
+                    # Only workers actually analysing, not queued work or completed
+                    # futures awaiting their deterministic commit order.
+                    unfinished = [task[0] for task, f in in_flight if not f.done()]
+                    active = [dict(s['detail']) for s in states
+                              if s['stage'] == 'analyzing' and s['detail'] in unfinished]
                     with self.job_lock:
+                        job['active_windows'] = active
                         job['pending'] = len(queue) + len(in_flight)
                         job['execution']['elapsed_seconds'] = round(time.monotonic()-started, 2)
                     (roi, depth, parent, probe_id), future = in_flight[0]
@@ -417,6 +424,8 @@ class Workbench:
                     job['error'] = str(exc)
                 LOG.exception('Grid analysis failed')
             finally:
+                with self.job_lock:
+                    job['active_windows'] = []
                 if pool is not None:
                     try:
                         pool.close()

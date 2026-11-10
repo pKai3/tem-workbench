@@ -181,6 +181,7 @@ class BatchGrids:
                 try:
                     job=self.app.status(live['job_id'])
                     live.update({k:job[k] for k in ('state','processed','pending')})
+                    live['active_windows']=job.get('active_windows',[]) if not job.get('cancelling') else []
                     live['grid']=job.get('grid',{})
                     live['aggregation']=job.get('aggregation')
                     live['regions']=[{k:r[k] for k in ('roi','label')} for r in job['regions'] if r['leaf']]

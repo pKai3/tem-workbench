@@ -98,6 +98,37 @@ class CoordinatorChecks(unittest.TestCase):
         app.lock=threading.RLock();app.job_lock=threading.RLock()
         return app
 
+    def test_active_windows_follow_workers_not_queued_or_completed_futures(self):
+        app=self.app();item=image();pools=[]
+        class ControlledPool:
+            def __init__(self,*args):self.tasks=[];self.states=[];pools.append(self)
+            def submit(self,roi):
+                future=Future();self.tasks.append((roi,future));return future
+            def diagnostics(self):return list(self.states)
+            def close(self):pass
+        def wait_for(predicate):
+            deadline=time.monotonic()+3
+            while not predicate() and time.monotonic()<deadline:time.sleep(.02)
+            self.assertTrue(predicate())
+        with patch('server.RegionPool',ControlledPool):
+            job_id=app.grid(item,{},2,False,1,workers=2)['id']
+            try:
+                wait_for(lambda: pools and len(pools[0].tasks)==2)
+                pool=pools[0];first,second=[r for r,f in pool.tasks]
+                self.assertEqual(app.status(job_id)['active_windows'],[])
+                pool.states=[dict(stage='analyzing',detail=r) for r in (first,second)]
+                wait_for(lambda: len(app.status(job_id)['active_windows'])==2)
+                # Later result is done, but cannot yet be committed. A stale
+                # worker event must not leave a spinner over that finished ROI.
+                pool.tasks[1][1].set_result({})
+                wait_for(lambda: app.status(job_id)['active_windows']==[first])
+                self.assertEqual(app.status(job_id)['processed'],0)
+            finally:
+                app.cancel_grid(job_id);app.grid_thread.join(3)
+        self.assertEqual(app.status(job_id)['active_windows'],[])
+        self.assertEqual(app.status(job_id)['state'],'cancelled')
+        app.close()
+
     def test_page_reconnect_discovers_job_without_starting_or_cancelling_it(self):
         app=self.app();item=image();item['info'].update(id='source',sha256_pixels='pixels')
         class StalledPool:
