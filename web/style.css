@@ -320,7 +320,6 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .scale-settings .parameter-label{display:flex;align-items:center;gap:5px;min-width:0}
 .scale-settings .parameter-label .settings-help{position:static}
 .scale-settings .parameter-label .settings-help-popup{left:auto;right:0;width:min(360px,calc(100vw - 48px));max-width:none}
-.scale-settings .penalty-field:focus-within .parameter-label .settings-help-popup{display:block}
 
 #raster-dialog{width:min(1000px,94vw);max-height:94vh;overflow:auto}
 #raster-canvas{display:block;width:100%;height:min(42vh,650px);background:#05090e;touch-action:none;cursor:crosshair}

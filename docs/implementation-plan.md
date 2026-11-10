@@ -26,7 +26,7 @@ Approved follow-up: rim-window markers remain visible while their grid is runnin
 
 Validation: all 21 JavaScript suites pass, including immediate crop movement, coalesced preview requests, source changes during decoding, older-region rejection, fit freshness, the FFT-only loupe, queued rename edits and error/draft preservation. Python checks verify identical raw/processed display fields between previews and complete analysis, no preview fitting, unchanged loaded arrays/IDs/output paths/running jobs after rename, persistence and failed-save rollback. Live ST1203 checks confirm the crop changes before fitting, fit overlays clear immediately, project-name edits survive reload without reopening the image, and invalid names show inline errors. The user confirmed both FFT-only hover and Real + FFT live updates. Running/complete/cancelled/error checks verify the rim-visibility override and restoration without changing the preference or sampled data. Full local Python run: 389 discovered, 14 platform-specific skips; the native process-inspection check passes when rerun with access to inspect running processes. All 21 JavaScript suites pass. No browser warnings/errors.
 
-Release approved by the user on 10 November 2026; publish through the manual workflow with its full analysis and native update gates.
+Implementation commit: `83248a3`. Follow-up: scale-fitting help opens from its info icon (hover/focus/tap), never from slider or numeric-input focus. Release approved by the user on 10 November 2026; the first workflow was stopped before publication to include this follow-up, then rerun with its full analysis and native update gates.
 
 ## Reload, background progress and fitting controls — completed 10 November 2026
 

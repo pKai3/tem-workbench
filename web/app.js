@@ -2219,11 +2219,11 @@ function updatePenaltyControls(){
  $('ca-penalty-field').hidden=!ratioMode;
  $('ca-penalty').disabled=disabled||!ratioMode;$('ca-penalty-slider').disabled=$('ca-penalty').disabled;
  document.querySelector('label[for=scale-penalty]').textContent=ratioMode?'Overall scale penalty per 5%':'Scale penalty per 5%';
- $('scale-penalty').title=ratioMode?'Squared log change, normalized to log(1.05). A ×1.05 or ÷1.05 overall reciprocal scale change costs this weight. Zero disables it.':'Automatic fitting only. A uniform 5% adjustment costs this weight; 10% costs four times as much. Zero disables it.';
+ $('scale-penalty').ariaDescription=ratioMode?'Squared log change, normalized to log(1.05). A ×1.05 or ÷1.05 overall reciprocal scale change costs this weight. Zero disables it.':'Automatic fitting only. A uniform 5% adjustment costs this weight; 10% costs four times as much. Zero disables it.';
  const unknown=$('material').value==='unknown';
  if(unknown||document.activeElement!==$('scale-penalty'))$('scale-penalty').value=effectiveScalePenalty().toFixed(2);$('scale-penalty-slider').value=effectiveScalePenalty();
  $('scale-penalty').disabled=disabled||unknown;$('scale-penalty-slider').disabled=disabled||unknown;
- if(unknown)$('scale-penalty').title='Disabled for Unknown material; HCP/ω c/a penalty remains separate.';
+ if(unknown)$('scale-penalty').ariaDescription='Disabled for Unknown material; HCP/ω c/a penalty remains separate.';
  $('peak-falloff-label').textContent='Missing half-weight, '+reciprocalUnit();
  $('peak-falloff').disabled=!config?.peak_evidence_falloff||running;$('peak-falloff-slider').disabled=$('peak-falloff').disabled;
  $('peak-evidence-weight').disabled=!config?.peak_evidence||!config?.grid_rescore||running;$('peak-evidence-slider').disabled=$('peak-evidence-weight').disabled;
@@ -4156,7 +4156,7 @@ renderBatchFiles();
 pollBatch();
 
 function positionSettingsTooltips(event){
- if(['pointerover','focusin'].includes(event?.type)&&!event.target.closest('.settings-help,.penalty-field'))return;
+ if(['pointerover','focusin'].includes(event?.type)&&!event.target.closest('.settings-help'))return;
  for(const help of document.querySelectorAll('.settings-help')){
   const popup=help.querySelector('.settings-help-popup');if(!popup||getComputedStyle(popup).display==='none')continue;
   const anchor=help.getBoundingClientRect();popup.style.position='fixed';popup.style.right='auto';
