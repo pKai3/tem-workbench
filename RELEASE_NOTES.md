@@ -1,4 +1,4 @@
-# TEM Workbench — next release
+# TEM Workbench 1.0.28
 
 - Update the selected real-space crop immediately while moving or resizing the region. Refresh raw/processed FFT previews independently of phase fitting, and show a compact crop preview while dragging in FFT-only view. Old fit overlays cannot attach to a newer region.
 - Autosave project names on leaving the field or pressing Enter, with visible save/error feedback. Keep the open image and background grids intact; place Save source changes above the source list for folder edits.
