@@ -176,10 +176,14 @@ def inspect(model, peaks, tolerance, g_min, g_max):
     return inspect_components([component], assignments, peaks, tolerance, g_min, g_max)
 
 
-def annotate(models, spectrum, tolerance, g_min, g_max):
+def annotate(models, spectrum, tolerance, g_min, g_max, *, reuse_report=False):
     for model in models:
-        model['double_diffraction'] = inspect(model, spectrum['peaks'], tolerance, g_min, g_max)
-        model['double_diffraction']['observation_kind'] = 'diffraction' if spectrum.get('kind') == 'diffraction' else 'image_fft'
+        report = dict(model['double_diffraction']) if reuse_report and 'double_diffraction' in model else inspect(model, spectrum['peaks'], tolerance, g_min, g_max)
+        # The display report contains geometry; ranking terms remain on the fit.
+        report.pop('scoring_version', None)
+        report.pop('scoring_factor', None)
+        report['observation_kind'] = 'diffraction' if spectrum.get('kind') == 'diffraction' else 'image_fft'
+        model['double_diffraction'] = report
 
 
 def inspect_joint(model, peaks, tolerance, g_min, g_max, reciprocal_bases):
@@ -245,9 +249,16 @@ def apply(model, weight):
     return model
 
 
-def evaluate(model, peaks, tolerance, g_min, g_max, weight=DEFAULT_WEIGHT, *, components=None, owners=None, reuse_report=False):
+def evaluate(model, peaks, tolerance, g_min, g_max, weight=DEFAULT_WEIGHT, *, components=None, owners=None, reuse_report=False, defer_report=False):
     weight = validate_weight(weight)
     if weight:
+        if defer_report and components is None and model.get('phase') in ('BCC', 'FCC', 'ORT'):
+            # These allowed single-crystal index sets are closed under addition:
+            # no two-step sum can reach a nominally forbidden site. The rank
+            # contribution is exactly zero. Retained fits still get the complete
+            # report in annotate(); cross-component paths must always be tested.
+            model['double_diffraction_factor'] = 0.
+            return apply(model, weight)
         report = (inspect_union(model, components, owners, peaks, tolerance, g_min, g_max)
                   if components is not None else (model.get('double_diffraction') if reuse_report else None) or inspect(model, peaks, tolerance, g_min, g_max))
         model['double_diffraction'] = report

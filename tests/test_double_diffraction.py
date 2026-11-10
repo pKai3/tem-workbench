@@ -3,6 +3,7 @@ import json
 import zlib
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 import numpy as np
 import double_diffraction as dd
 import beta_omega
@@ -103,6 +104,27 @@ class DoubleDiffractionTests(unittest.TestCase):
         self.assertTrue(all(x['double_diffraction']['profile_count']==0 for x in [m,n]))
         for x in [m,n]:x.pop('double_diffraction')
         self.assertEqual([m,n],before)
+
+    def test_closed_index_sets_defer_only_single_fit_reports(self):
+        for phase, indices in [('BCC', [[1,1,0], [1,-1,0], [2,0,0]]),
+                               ('FCC', [[2,0,0], [0,2,0], [2,2,0]]),
+                               ('ORT', [[1,0,0], [0,1,0], [1,1,0]])]:
+            m, r, axes = model(phase, [0,0,1], indices)
+            peaks = [dict(peak(h, phase, r, axes), profile_id=i) for i, h in enumerate(indices)]
+            m.update(score=.4, position_score=.4, position_valid=True, valid=True,
+                matches=[dict(profile_id=i, hkl=n['hkl'], predicted_q=n['q']) for i, n in enumerate(m['predicted_nodes'])])
+            expected = dd.evaluate(copy.deepcopy(m), peaks, .1, .1, 20, .5)
+            with patch.object(dd, 'inspect', side_effect=AssertionError('No DD score is possible')):
+                fast = dd.evaluate(copy.deepcopy(m), peaks, .1, .1, 20, .5, defer_report=True)
+            spectrum = dict(peaks=peaks)
+            dd.annotate([fast, expected], spectrum, .1, .1, 20, reuse_report=True)
+            self.assertEqual(fast, expected)
+            # Two crystals can produce cross-component paths even when both
+            # individual structures have closed allowed-index sets.
+            with patch.object(dd, 'inspect_union', return_value={}) as inspect:
+                dd.evaluate(copy.deepcopy(m), peaks, .1, .1, 20, .5,
+                            components=[m, m], owners=[], defer_report=True)
+                inspect.assert_called_once()
 
     def test_weighted_bonus_is_bounded_idempotent_and_preserves_assignments(self):
         m, peaks = example()

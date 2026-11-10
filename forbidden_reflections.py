@@ -74,6 +74,7 @@ def inspect(model, peaks, tolerance, g_min, g_max):
     return report
 
 
-def annotate(models, spectrum, tolerance, g_min, g_max):
+def annotate(models, spectrum, tolerance, g_min, g_max, *, reuse_report=False):
     for model in models:
-        model['forbidden_reflections'] = inspect(model, spectrum['peaks'], tolerance, g_min, g_max)
+        if not reuse_report or 'forbidden_reflections' not in model:
+            model['forbidden_reflections'] = inspect(model, spectrum['peaks'], tolerance, g_min, g_max)

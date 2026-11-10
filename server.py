@@ -526,18 +526,46 @@ class Workbench:
             half_weight_nm_inv = float(job['settings'].get('peak_evidence_half_weight_nm_inv', 0.) if half_weight_nm_inv is None else half_weight_nm_inv)
             if not np.isfinite(half_weight_nm_inv) or not 0 <= half_weight_nm_inv <= 30:
                 raise ValueError('Missing-peak half-weight radius must be between 0 and 30 nm⁻¹.')
-            started = time.perf_counter()
+            token = job['_rescore_token'] = object()
+            snapshot, engine = dict(job), self.engine
+
+        def check_current():
+            # Also called before publishing: a source change or newer request
+            # must not restore a discarded job or overwrite newer weights.
+            with self.job_lock:
+                if self.jobs.get(job_id) is not job:
+                    raise ValueError('This grid is no longer in memory.')
+                if job.get('_rescore_token') is not token:
+                    raise ValueError('A newer map update has replaced this request.')
+
+        started = time.perf_counter()
+        try:
+            # Do the expensive work outside the shared job lock so navigation,
+            # progress/status and another grid remain responsive during updates.
             # Build a replacement before publishing, so a failure cannot leave
             # half the map at the new penalty. Parent/child boundaries stay fixed.
-            regions = [self.engine.rescore(region, strength, evidence_weight, ca_penalty_strength, half_weight_nm_inv, missing_weight, brightness_weight, dd_weight) for region in job['regions']]
-            job.update(regions=regions, settings={**job['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight, 'missing_peak_weight': missing_weight, 'double_diffraction_weight': dd_weight, 'brightness_grouping_weight': brightness_weight, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_half_weight_nm_inv': half_weight_nm_inv},
-                       rescore={'strength': strength, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_weight': evidence_weight, 'missing_peak_weight': missing_weight, 'double_diffraction_weight': dd_weight, 'brightness_grouping_weight': brightness_weight, 'peak_evidence_half_weight_nm_inv': half_weight_nm_inv, 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
-                                'region_count': len(regions), 'reused_fits': True, 'boundaries_unchanged': True,
-                                'at': datetime.now().astimezone().isoformat()})
-            if job['grid'].get('mode') == 'overlap':
-                job['aggregation'] = overlap_maps.aggregate(job)
-            LOG.info('Grid %s reweighted: scale penalty %.3f; weak bonus %.3f; missing penalty %.3f', job_id[:8], strength, evidence_weight, missing_weight)
-            return self.status(job_id)
+            regions = []
+            for region in snapshot['regions']:
+                check_current()
+                regions.append(engine.rescore(region, strength, evidence_weight, ca_penalty_strength, half_weight_nm_inv, missing_weight, brightness_weight, dd_weight))
+            updated = dict(regions=regions, settings={**snapshot['settings'], 'scale_penalty_strength': strength, 'peak_evidence_weight': evidence_weight, 'missing_peak_weight': missing_weight, 'double_diffraction_weight': dd_weight, 'brightness_grouping_weight': brightness_weight, 'ca_penalty_strength': ca_penalty_strength, 'peak_evidence_half_weight_nm_inv': half_weight_nm_inv})
+            check_current()
+            if snapshot['grid'].get('mode') == 'overlap':
+                updated['aggregation'] = overlap_maps.aggregate({**snapshot, **updated})
+            updated['rescore'] = dict(strength=strength, ca_penalty_strength=ca_penalty_strength,
+                peak_evidence_weight=evidence_weight, missing_peak_weight=missing_weight, double_diffraction_weight=dd_weight,
+                brightness_grouping_weight=brightness_weight, peak_evidence_half_weight_nm_inv=half_weight_nm_inv,
+                elapsed_ms=round((time.perf_counter()-started)*1000, 1), region_count=len(regions),
+                reused_fits=True, boundaries_unchanged=True, at=datetime.now().astimezone().isoformat())
+            with self.job_lock:
+                check_current()
+                job.update(updated)
+                LOG.info('Grid %s reweighted: scale penalty %.3f; weak bonus %.3f; missing penalty %.3f', job_id[:8], strength, evidence_weight, missing_weight)
+                return self.status(job_id)
+        finally:
+            with self.job_lock:
+                if job.get('_rescore_token') is token:
+                    job.pop('_rescore_token')
 
     def export_crop(self, body):
         with self.lock:

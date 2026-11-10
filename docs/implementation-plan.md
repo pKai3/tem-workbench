@@ -2,6 +2,22 @@
 
 Last updated: 10 November 2026
 
+## Map reweighting responsiveness — completed 10 November 2026
+
+Approved: profile and speed up “Updating map…” after scoring-weight changes, using ST1203 as the working example. Preserve fitted candidates, scoring, classifications, sampling and map values. Measure the actual bottleneck before choosing caching or scheduling changes; validate numerical equivalence and stale-request handling. No new release is approved by this follow-up.
+
+Profiling found repeated double-diffraction geometry across the compressed candidate pool, especially when a map originally ran with DD weight zero. Weight updates now keep newly computed DD/forbidden-position reports in a separate compressed private cache. Original fits, scores and observations remain immutable; each request copies only mutable evidence records and recalculates all ranking terms. Retained diagnostics reuse fixed geometry. Single BCC/FCC/ORT fits defer their full DD report because their allowed index sets are closed under addition, giving exactly zero same-crystal forbidden-site DD credit; retained fits still get complete reports and cross-component paths are always tested. Direct-diffraction searches continue to reconsider geometry and discard stale cached diagnostics.
+
+Map updates compute outside the shared job lock, keeping status/navigation responsive. Regions, settings and aggregation publish together only if the job and request are still current. Newer requests supersede older work between windows; failures leave the previous entire map intact. Update timing now includes aggregation.
+
+Validation: the 216-window ST1203 hex/rim map produced byte-identical public results and aggregate fields for four weight combinations, including DD on/off, brightness off and changes to scale, c/a, weak/missing weights and radial falloff. Repeated DD-enabled updates fell from 10.50–12.44 s to 2.54–2.83 s on this machine; DD-off updates were 2.58 s before and 2.14 s after. First DD activation remains approximately 10 s (9.81 s before, 9.68 s after) because previously unused geometric evidence must be computed once. No candidate pruning, lower-resolution maps, changed thresholds or approximate scoring. All 395 Python checks completed with 14 platform skips; the one process-inspection check requiring OS access passed on its permitted rerun. All 21 JavaScript suites pass, including stale-weight/image response guards. Regressions cover cache immutability/equivalence, no repeated single-fit diagnostics, cross-component DD, concurrent status, supersession, removed jobs and atomic failure handling.
+
+## Map display follow-ups — in progress 10 November 2026
+
+Approved display follow-up: align the first phase label with the left end of its colour-reference bar; keep the second phase label at the right end. Single-phase labels also align with the bar's left edge.
+
+Requested Top match follow-up: offer Continuous map as well as Hex grid. Both use the highest averaged rank among available phase fits at their existing sample locations, with opacity from the winning phase's passing frequency. Retain hover inspection and visible-map PNG export; no resampling or analysis changes.
+
 ## Combined-fit colours and map presentation — completed 10 November 2026
 
 Implementation commit: `93a1151`.

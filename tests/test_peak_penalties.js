@@ -104,6 +104,19 @@ assert.equal($('save-grid').disabled,true,'Changed missing cost makes old grid s
  assert.equal($('missing-peak-weight').value,'1','A running scan blocks reset just like its ranking controls');
  context.isGridRunning=()=>false;context.grid={can_rescore:true,settings:{scale_mode:'auto_hcp_ac'}};context.jobId='example';
  run('resetScaleControls()');assert.equal(context.invalidations,1);assert.equal(context.rescorePending,true,'Same-mode grid is reweighted from cached fits');
+ // Slow responses cannot repaint an older weight or another image's map.
+ let reply,draws=0;
+ context.api=()=>new Promise(resolve=>{reply=resolve});context.drawGrid=()=>{draws++};
+ const originalGrid=context.grid,older=context.rescoreGrid();
+ $('missing-peak-weight').value='.4';run('penaltyChanged($("missing-peak-weight"))');
+ reply({id:'example',settings:{missing_peak_weight:.1}});await older;
+ assert.equal(context.grid,originalGrid);assert.equal(draws,0);assert.equal(context.rescorePending,true);
+ const latest=context.rescoreGrid();reply({id:'example',settings:{missing_peak_weight:.4},can_rescore:true});await latest;
+ assert.equal(context.grid.settings.missing_peak_weight,.4);assert.equal(draws,1);
+ run('queuePenaltyUpdate()');const switched=context.rescoreGrid();
+ context.jobId='other-image-grid';context.grid=null;
+ reply({id:'example',settings:{missing_peak_weight:.4}});await switched;
+ assert.equal(context.grid,null);assert.equal(draws,1);assert.equal(context.rescoreBusy,false);
  console.log('Scale reset: default mode/weights, persistence, source settings preserved, busy guard and cached rescoring passed.');
  console.log('DD weight: zero default, range, independent persistence, saved settings and FFT/grid rescoring passed.');
  console.log('Independent peak penalties: legacy/new settings, persistence, range, zero, stale grids and request propagation passed.');

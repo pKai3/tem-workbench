@@ -730,11 +730,32 @@ class Engine:
             classification['flags'].append('Hann window is off: crop-edge streaks and side lobes can produce extra detected peaks.')
         return classification
 
-    def cached_models(self, result, settings):
+    @staticmethod
+    def cached_fit_pool(result):
         if '_fit_cache' not in result:
             raise ValueError('Run a grid on the current engine to enable cached rescoring.')
-        candidates = json.loads(zlib.decompress(result['_fit_cache']))
-        candidates = [model for model in candidates if model['phase'] in settings.get('enabled_phases', PHASES)]
+        pool = json.loads(zlib.decompress(result['_fit_cache']))
+        reports = json.loads(zlib.decompress(result['_fit_diagnostics'])) if '_fit_diagnostics' in result else {}
+        for index, model in enumerate(pool):
+            model.update(reports.get(str(index), {}))
+        return pool, reports
+
+    def cached_models(self, result, settings, *, pool=None):
+        if pool is None:
+            pool, _ = self.cached_fit_pool(result)
+        # Copy only the records changed by reweighting. Geometry and source
+        # score terms stay immutable, including nested prediction-site evidence.
+        candidates = []
+        for original in pool:
+            if original['phase'] not in settings.get('enabled_phases', PHASES):
+                continue
+            model = dict(original)
+            evidence = model['peak_evidence'] = dict(original.get('peak_evidence', {}))
+            if 'nodes' in evidence:
+                evidence['nodes'] = [dict(node) for node in evidence['nodes']]
+            if 'double_diffraction' in model:
+                model['double_diffraction'] = dict(model['double_diffraction'])
+            candidates.append(model)
         for model in candidates:
             diffraction_fitting.rescore_scale(model, settings)
             peak_evidence.apply(model, settings.get('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT), settings.get('peak_evidence_half_weight_nm_inv', 0.), peak_evidence.missing_weight(settings))
@@ -742,7 +763,7 @@ class Engine:
                 brightness_grouping.apply(model, settings.get('brightness_grouping_weight', brightness_grouping.DEFAULT_WEIGHT))
             if settings.get('double_diffraction_weight', 0.) or 'double_diffraction_bonus' in model:
                 spectrum = result['spectrum']
-                double_diffraction.evaluate(model, spectrum['peaks'], max(.10, core.peak_width(spectrum)), settings['g_min'], settings['g_max'], settings.get('double_diffraction_weight', 0.), reuse_report=True)
+                double_diffraction.evaluate(model, spectrum['peaks'], max(.10, core.peak_width(spectrum)), settings['g_min'], settings['g_max'], settings.get('double_diffraction_weight', 0.), reuse_report=True, defer_report=True)
         return candidates
 
     def rescore(self, result, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None, missing_weight=None, brightness_weight=None, dd_weight=None):
@@ -781,10 +802,11 @@ class Engine:
             models, candidates, related = diffraction_fitting.search(self, spectrum, settings, context,
                 spectrum.get('coordinate_units') == 'relative', self.diffraction_anchors(spectrum, settings))
         else:
-            candidates = self.cached_models(result, settings)
+            pool, reports = self.cached_fit_pool(result)
+            candidates = self.cached_models(result, settings, pool=pool)
             models = (core.retain if settings['scale_mode'] == 'fixed' else scale_fitting.retain)(candidates)
-        forbidden_reflections.annotate(models, spectrum, max(.10, core.peak_width(spectrum)), settings['g_min'], settings['g_max'])
-        double_diffraction.annotate(models, spectrum, max(.10, core.peak_width(spectrum)), settings['g_min'], settings['g_max'])
+        forbidden_reflections.annotate(models, spectrum, max(.10, core.peak_width(spectrum)), settings['g_min'], settings['g_max'], reuse_report=not direct)
+        double_diffraction.annotate(models, spectrum, max(.10, core.peak_width(spectrum)), settings['g_min'], settings['g_max'], reuse_report=not direct)
         classification = self.classify(spectrum, models, settings, result['width_nm'], result['height_nm'])
         extra = {}
         if not direct and spectrum.get('prediction_evidence_context'):
@@ -797,6 +819,21 @@ class Engine:
                 extra['beta_omega'] = related
             if '_fit_cache' in result:
                 extra['_fit_cache'] = zlib.compress(json.dumps(candidates).encode())
-        # Do not retain a stale linked winner when the new search has none.
-        result = {k: v for k, v in result.items() if k != 'beta_omega'}
+        else:
+            # A grid started with DD weight zero has reports only for its retained
+            # fits. Populate the remaining reports once when DD is first enabled,
+            # then reuse them for every weight change. Compress only new reports,
+            # avoiding a rewrite of the much larger immutable candidate pool.
+            changed = False
+            selected = [(i, model) for i, model in enumerate(pool) if model['phase'] in settings.get('enabled_phases', PHASES)]
+            for (index, original), ranked in zip(selected, candidates):
+                for key in ('double_diffraction', 'forbidden_reflections'):
+                    if key in ranked and key not in original:
+                        reports.setdefault(str(index), {})[key] = ranked[key]
+                        changed = True
+            if changed:
+                extra['_fit_diagnostics'] = zlib.compress(json.dumps(reports, separators=(',', ':'), allow_nan=False).encode(), 1)
+        # A direct-image search refits geometry; its old diagnostics cannot carry
+        # across. Do not retain a stale linked winner when the search has none.
+        result = {k: v for k, v in result.items() if k != 'beta_omega' and not (direct and k == '_fit_diagnostics')}
         return {**result, **extra, 'settings': settings, 'models': models, 'classification': classification}
