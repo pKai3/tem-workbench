@@ -64,10 +64,10 @@ class StabilityBatch(unittest.TestCase):
 
     def test_png_choices_and_all_stability_views(self):
         job=self.job();job['regions'][0]['models'][1]['valid']=False
-        choices=['support_all','support_phases','spread_phases','hex','hex_support','samples','separate','raw']
+        choices=['support_all','support_phases','strength_all','strength_phases','spread_phases','hex','hex_support','hex_strength','samples','separate','raw']
         options=dict(export_png=True,png_views=choices,overlap=dict(passes=3))
         products=png_exports(options,['HCP','BCC'])
-        self.assertEqual(len(products),10)
+        self.assertEqual(len(products),14)
         self.assertFalse(any('fcc' in name for name,_,_ in products))
         self.assertEqual(png_exports({**options,'export_png':False},['HCP']),[])
         for bad in [dict(png_views=['bogus']),dict(png_views=[]),dict(overlap=None),dict(overlap=dict(passes=1))]:
@@ -79,11 +79,34 @@ class StabilityBatch(unittest.TestCase):
                 path=Path(tmp)/(name+'.png')
                 map_png(dict(preview=preview.getvalue()),job,path,opacity=1,view=view,phase=phase)
                 with Image.open(path) as result:
-                    result.load();self.assertEqual(result.size,(1880,2180 if view in ('support','hex_support') and phase is None else 2120))
+                    result.load();self.assertEqual(result.size,(1880,2180 if view in ('support','strength','hex_support','hex_strength') and phase is None else 2120))
                     # All views must leave unsampled right half unchanged.
                     self.assertEqual(result.getpixel((1700,900)),(120,120,120))
                     hashes.append(path.read_bytes())
             self.assertEqual(len(set(hashes)),len(products))
+
+    def test_strength_png_uses_scores_and_reconstructs_legacy_fields(self):
+        import overlap_maps
+        from phase_blend import blend_support
+        job=self.job()
+        for r in job['regions']:
+            r['models'][0]['score']=.8;r['models'][1]['score']=.4
+        job['regions'][0]['models'][1]['valid']=False
+        job['aggregation']=overlap_maps.aggregate(job)
+        # Emulate an existing frequency-only export.
+        for cell in job['aggregation']['cells']+job['aggregation']['hex']['cells']:
+            for f in cell['phases'].values():del f['passing_strength']
+        preview=BytesIO();Image.new('L',(100,100),120).save(preview,format='PNG')
+        colors=dict(hcp_compatible='#ff0000',bcc_compatible='#00ff00')
+        c,value=blend_support([('#ff0000',.8),('#00ff00',round(.8/3,6))])
+        alpha=round(255*(.15+.85*value))/255
+        expected=tuple(round(120*(1-alpha)+int(c[i:i+2],16)*alpha) for i in (1,3,5))
+        with tempfile.TemporaryDirectory() as tmp:
+            for view in ('strength','hex_strength'):
+                path=Path(tmp)/(view+'.png');map_png(dict(preview=preview.getvalue()),job,path,colors,1,view)
+                with Image.open(path) as result:
+                    self.assertEqual(result.getpixel((400,900)),expected)
+                    self.assertEqual(result.getpixel((1700,900)),(120,120,120))
 
     def test_three_phase_png_uses_same_blend_and_triangle_key(self):
         job=self.job();job['settings']['enabled_phases']=['HCP','BCC','OMEGA']

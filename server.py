@@ -152,7 +152,7 @@ class Workbench:
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
                 'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
-                'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(), 'overlap_rim_sampling': True,
+                'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(), 'overlap_rim_sampling': True, 'overlap_passing_strength': True,
                 'peak_evidence': peak_evidence.VERSION, 'separate_peak_penalties': True, 'double_diffraction_scoring': True, 'brightness_grouping': True, 'fft_brightness_grouping': True, 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
     def set_folders(self, data, output):

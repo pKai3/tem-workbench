@@ -12,6 +12,7 @@ const report={applied:true,status:'refined',starting_center_px:[540,450],fitted_
 const result={image_kind:'diffraction',settings:{diffraction:returned},spectrum:{center_refinement:report}};
 const context={$ ,result,diffractionSettings:settings,config:{diffraction_translation:true},meta:{width:1080,height:912},
  isDiffraction:()=>true,busy:false,pending:false,maskDrag:null,el:element,clamp:(v,a,b)=>Math.min(b,Math.max(a,v)),
+ fittingHandleAngles:{inner:Math.PI/2,outer:Math.PI/4},
  syncPeakEditControls(){},fittingLimitHandle(){},editableObservations:()=>[],drawSnapOverlays(){},reciprocalUnit:()=> 'rel.'};
 vm.createContext(context);
 vm.runInContext(source.slice(source.indexOf('const DETECTOR_FIELDS='),source.indexOf('function withTranslationDefaults(')),context);

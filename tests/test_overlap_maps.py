@@ -1,5 +1,7 @@
 import copy
 import json
+from pathlib import Path
+import subprocess
 import threading
 import unittest
 import numpy as np
@@ -164,22 +166,66 @@ class OverlapTests(unittest.TestCase):
         self.assertTrue(all(c['phases']['HCP']['support']==.5 for c in a['cells']))
         self.assertTrue(all(c['phases']['HCP']['spread']==1 for c in a['cells']))
         self.assertTrue(all(c['phases']['HCP']['rank']==.2 for c in a['cells']))
+        self.assertTrue(all(c['phases']['HCP']['passing_strength']==.3 for c in a['cells']))
         regions[-1]['models']=[]
         a=maps.aggregate(job(regions,2),8)
         self.assertEqual(a['phases']['HCP']['mean_support'],.5)
         self.assertEqual(a['phases']['HCP']['mean_fit_presence'],.5)
+        self.assertEqual(a['phases']['HCP']['mean_passing_strength'],.3)
         self.assertTrue(all(c['phases']['HCP']['rank']==.6 for c in a['cells']))
 
     def test_weaker_phase_kept_without_winner_normalization(self):
         a=maps.aggregate(job([region(0,0,bcc=True)]),8)
         self.assertEqual(a['phases']['HCP']['mean_support'],1)
         self.assertEqual(a['phases']['BCC']['mean_support'],1)
+        self.assertEqual(a['phases']['HCP']['mean_passing_strength'],.6)
+        self.assertEqual(a['phases']['BCC']['mean_passing_strength'],.3)
         self.assertTrue(all(c['separate_support']==1 for c in a['cells']))
         json.dumps(a,allow_nan=False)
         empty=maps.aggregate(job([]),8)
         self.assertEqual(empty['coverage_percent'],0)
         self.assertEqual(empty['cells'],[])
         json.dumps(empty,allow_nan=False)
+
+    def test_passing_strength_uses_best_passing_fit_and_preserves_raw_rank_scale(self):
+        r=region(0,0,bcc=True)
+        r['models'].extend([dict(phase='HCP',valid=True,score=.8),dict(phase='HCP',valid=False,score=.95)])
+        missing=region(1,1);missing['models']=[]
+        data=maps.aggregate(job([r,missing],3),8)  # Third pass has no sampled window.
+        for cells in (data['cells'],data['hex']['cells']):
+            for cell in cells:
+                self.assertEqual(cell['phases']['HCP']['passing_strength'],.4)
+                self.assertEqual(cell['phases']['BCC']['passing_strength'],.15)
+                self.assertEqual(cell['phases']['HCP']['support'],.5)
+        r['models']=[dict(phase='HCP',valid=True,score=1.2)]
+        self.assertEqual(maps.aggregate(job([r]),8)['phases']['HCP']['mean_passing_strength'],1.2)
+
+    def test_existing_map_browser_strength_matches_python_without_refitting(self):
+        # Cover compact/full records, unequal pass counts, absent candidates and
+        # anisotropic rim hex sampling; existing frequency/rank fields stay intact.
+        samples,options=maps.sampling(dict(INFO,pixel_y_nm=.05),dict(window_nm=2,spacing_nm=1.8,passes=3,sample_edges=True))
+        regions=[dict(region(i,s['pass_id'],i%3!=0,i%4==0),roi=s['roi']) for i,s in enumerate(samples)]
+        for i,r in enumerate(regions):
+            if i%7==0:r['models']=[]
+        cases=[job([region(i,0) for i in range(4)]+[region(4,1,False)],2),
+               dict(job(regions),source=dict(INFO,pixel_y_nm=.05),grid=options)]
+        expected=[]
+        for data in cases:
+            data['aggregation']=maps.aggregate(data,8);expected.append(copy.deepcopy(data['aggregation']))
+            for cell in data['aggregation']['cells']+data['aggregation']['hex']['cells']:
+                for f in cell['phases'].values():del f['passing_strength']
+            for f in data['aggregation']['phases'].values():del f['mean_passing_strength']
+        cases += copy.deepcopy(cases)
+        for data in cases[2:]:
+            for r in data['regions']:r['best_zones']={m['phase']:m for m in r.pop('models')}
+        code=Path('web/app.js').read_text().split('function ensurePassingStrength(job){',1)[1].split('function supportMapView(',1)[0]
+        script='function ensurePassingStrength(job){'+code+"\nconst jobs=JSON.parse(require('fs').readFileSync(0,'utf8'));jobs.forEach(ensurePassingStrength);console.log(JSON.stringify(jobs.map(j=>j.aggregation)));"
+        actual=json.loads(subprocess.check_output(['node','-e',script],input=json.dumps(cases),text=True))
+        for reference,rebuilt in zip(expected*2,actual):
+            self.assertEqual(reference['cells'],rebuilt['cells'])
+            self.assertEqual(reference['hex'],rebuilt['hex'])
+            for phase in reference['phases']:
+                self.assertAlmostEqual(reference['phases'][phase]['mean_passing_strength'],rebuilt['phases'][phase]['mean_passing_strength'],delta=1e-6)
 
     def test_hex_winner_uses_mean_rank_not_window_winners(self):
         # HCP wins two windows, but BCC has the higher mean rank.

@@ -95,6 +95,46 @@ for(const direct of [false,true]){
 }
 console.log('Fitting limits: quantization, bounds, release-only analysis, cancellation, image isolation and override removal passed.');
 
+// Direct-image handle placement remembers radius and angle, but angle never changes the fit.
+context.direct=true;context.meta={sha256_pixels:'polar-image',name:'Polar'};context.fileId='polar';
+context.diffractionSettings={center_x:500,center_y:400,pixel_x_nm_inv:.02,pixel_y_nm_inv:.04,exclude_radius_nm_inv:2.5};
+context.effectiveDetector=()=>context.diffractionSettings;
+run('restoreFittingLimits()');
+const detector=$('overview'),innerHandle={dataset:{fittingHandle:'inner'}};
+function polarEvent(radius,degrees){const theta=degrees*Math.PI/180;return {...event(500+radius*Math.cos(theta)/.02),clientY:400-radius*Math.sin(theta)/.04,target:{closest:()=>innerHandle}}}
+const polarInvalidations=context.invalidations;
+detector.events.pointerdown(polarEvent(2.5,90));detector.events.pointermove(polarEvent(2.5,127));
+assert.equal(run('Math.round(fittingHandleAngles.inner*180/Math.PI)'),120,'Theta snaps to absolute 15-degree increments');
+assert.equal(storage.has('tem-fitting-limits:polar-image'),false,'Do not save unfinished drags');
+detector.events.pointerup(polarEvent(2.5,127));
+assert.equal(context.invalidations,polarInvalidations,'Angle-only drag does not invalidate fits');
+let saved=storage.get('tem-fitting-limits:polar-image');
+assert.equal(saved.inner,2.5);assert.equal(saved.outer,10);assert.equal(Math.round(saved.handle_angles.inner*180/Math.PI),120);
+detector.events.pointerdown(polarEvent(2.5,120));detector.events.pointermove(polarEvent(3.24,182));detector.events.pointerup(polarEvent(3.24,182));
+saved=storage.get('tem-fitting-limits:polar-image');assert.equal(saved.inner,3.2);assert.equal(Math.round(saved.handle_angles.inner*180/Math.PI),180);
+assert.equal(context.invalidations,polarInvalidations+1,'Radial drag recalculates once on release');
+detector.events.pointerdown(polarEvent(3.2,180));detector.events.pointermove(polarEvent(4,273));detector.events.pointercancel(polarEvent(4,273));
+assert.equal(run('currentFittingLimits().inner'),3.2);assert.equal(run('Math.round(fittingHandleAngles.inner*180/Math.PI)'),180);
+assert.equal(storage.get('tem-fitting-limits:polar-image'),saved,'Cancellation leaves storage unchanged');
+// Cross the 360/0 seam and use keyboard angle steps without changing radius.
+detector.querySelector=()=>({focus(){}});
+detector.events.keydown({...polarEvent(3.2,180),key:'ArrowRight',shiftKey:true});
+assert.equal(run('Math.round(fittingHandleAngles.inner*180/Math.PI)'),195);
+assert.equal(context.invalidations,polarInvalidations+1);
+assert.equal(run('snappedFittingAngle(-Math.PI/36)'),0);
+assert.equal(run('snappedFittingAngle(2*Math.PI-Math.PI/36)'),0);
+context.meta={sha256_pixels:'different-image'};run('restoreFittingLimits()');
+assert.equal(run('fittingHandleAngles.inner'),Math.PI/2);assert.equal(run('currentFittingLimits().inner'),2.5);
+context.meta={sha256_pixels:'polar-image'};run('restoreFittingLimits()');
+assert.equal(run('Math.round(fittingHandleAngles.inner*180/Math.PI)'),195);assert.equal(run('currentFittingLimits().inner'),3.2);
+context.direct=false;run('restoreFittingLimits()');assert.equal(run('fittingHandleAngles.inner'),Math.PI/2,'Direct handle angles do not leak into FFT');
+context.direct=true;run('restoreFittingLimits()');$('remove-fitting-override').onclick();
+assert.equal(run('fittingHandleAngles.inner'),Math.PI/2);assert.equal(run('currentFittingLimits().inner'),2.5);
+storage.set('tem-fitting-limits:polar-image',{inner:1,outer:9,handle_angles:{inner:'bad',outer:Infinity}});run('restoreFittingLimits()');
+assert.equal(run('fittingHandleAngles.inner'),Math.PI/2);assert.equal(run('fittingHandleAngles.outer'),Math.PI/4);
+assert.equal(run('currentFittingLimits().inner'),1,'Malformed display angles do not discard a valid radius override');
+console.log('Polar handles: anisotropic coordinates, 15-degree snapping, automatic image persistence, angle-only display updates and cancellation passed.');
+
 // Live peak-overlay refresh must preserve radius handles on both images.
 // Export cleanup deliberately removes them, but must not be reused for live UI.
 const liveNodes=new Map();

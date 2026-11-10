@@ -7,7 +7,7 @@ passing support; rank is averaged only where a candidate exists.
 import math
 import numpy as np
 
-VERSION = 'overlap-v5'
+VERSION = 'overlap-v6'
 MAX_WINDOWS = 10000
 
 
@@ -195,6 +195,7 @@ def _aggregate_points(job, xx, yy):
     weights = np.zeros(shape); counts = np.zeros((ny,nx), dtype=int)
     best_weight = np.zeros((ny,nx)); representative = np.full((ny,nx), '', dtype=object)
     supported = {p:np.zeros(shape) for p in phases}
+    passing_ranks = {p:np.zeros(shape) for p in phases}
     ranks = {p:np.zeros(shape) for p in phases}
     present = {p:np.zeros(shape) for p in phases}
     separate = np.zeros(shape)
@@ -214,6 +215,7 @@ def _aggregate_points(job, xx, yy):
             passing = [m for m in models if m['valid']]
             if passing:
                 supported[phase][k] += weight
+                passing_ranks[phase][k] += weight*max(m['score'] for m in passing)
             if models:
                 # Same passing-first selection as grid best_zones; otherwise best rejected.
                 model = max(passing or models, key=lambda m:m['score'])
@@ -230,7 +232,7 @@ def _aggregate_points(job, xx, yy):
         spread = np.where(available, frequency, -np.inf).max(axis=0)-np.where(available, frequency, np.inf).min(axis=0)
         spread[pass_counts<2] = 0
         rank_available = present[phase]>0
-        fields[phase] = dict(support=mean_pass(frequency), spread=spread,
+        fields[phase] = dict(support=mean_pass(frequency), passing_strength=mean_pass(per_pass(passing_ranks[phase])), spread=spread,
                             rank=mean_pass(per_pass(ranks[phase],present[phase]),rank_available),
                             fit_presence=mean_pass(per_pass(present[phase])))
     separate_mean = mean_pass(per_pass(separate))
@@ -243,8 +245,9 @@ def _aggregate_points(job, xx, yy):
                               phases={p:{key:round(float(value[y,x]),6) for key,value in f.items()} for p,f in fields.items()},
                               separate_support=round(float(separate_mean[y,x]),6)))
     summaries = {p:dict(mean_support=round(float(f['support'][pass_counts>0].mean()),6),
+                       mean_passing_strength=round(float(f['passing_strength'][pass_counts>0].mean()),6),
                        mean_fit_presence=round(float(f['fit_presence'][pass_counts>0].mean()),6)) for p,f in fields.items()} if cells else {}
     return dict(version=VERSION, width=nx, height=ny, cells=cells, phases=summaries,
                 coverage_percent=100*len(cells)/(nx*ny),
                 method='Gaussian centre weight exp(-8*(dx²+dy²)) within footprint; normalize each pass, then equal-pass mean',
-                interpretation='Passing-fit frequency, not phase fraction. Missing fits count as no passing support. Rank excludes missing fits. Spread is max-minus-min pass support, not statistical uncertainty. Raster-centre coverage is approximate.')
+                interpretation='Passing frequency counts each passing window equally. Passing strength averages the best passing rank per phase, counting failed/missing fits as zero. Rank excludes missing fits. Neither is a phase fraction or probability. Spread is max-minus-min pass support, not statistical uncertainty. Raster-centre coverage is approximate.')

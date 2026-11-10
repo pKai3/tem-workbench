@@ -263,23 +263,37 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .roi-control-help{position:static}
 .roi-control-help .settings-help-popup{left:0;right:auto;max-width:100%}
 #roi-controls{position:relative;margin-top:10px}
-#roi-controls:has(#map-colour-key:not([hidden])){display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto 24px 140px;align-items:center}
-#roi-controls:has(#map-colour-key:not([hidden])) input{width:100%;min-width:0}
-@media(max-width:600px){
- #roi-controls:has(#map-colour-key:not([hidden])){grid-template-columns:repeat(3,minmax(0,1fr)) auto}
- #map-colour-key{grid-row:2;grid-column:1/-1;justify-self:end}
- #roi-controls .roi-control-help{grid-row:2;grid-column:1;justify-self:start}
-}
+.roi-position-controls{position:relative;display:flex;flex-wrap:wrap;align-items:end;gap:8px}
+#roi-controls{align-items:center;gap:10px 16px}
+#roi-controls .roi-position-controls input{width:80px;min-width:0;padding:8px;font-variant-numeric:tabular-nums}
+#roi-controls .roi-control-help{position:static;align-self:end;height:36px}
+#roi-controls .roi-control-help .settings-help-popup{width:min(360px,calc(100vw - 48px));max-width:none;left:0}
+.map-appearance-controls{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-left:auto;min-width:0;max-width:100%}
+#roi-controls .map-display{display:grid;grid-template-columns:minmax(80px,1fr) 34px;gap:6px;width:180px;margin:0;flex:0 1 180px;min-width:130px}
+#roi-controls .map-display label{grid-column:1/-1;font-size:12px}
+#roi-controls .map-display input{width:100%;min-width:0;margin:0;height:36px}
+#roi-controls .map-display:has(input:disabled){opacity:.4}
+#roi-controls .map-display input:disabled{cursor:default}
+#map-colour-key .settings-help-popup{width:min(360px,calc(100vw - 48px));max-width:none}
+.support-pair{display:grid;grid-template-columns:1fr 1fr;gap:5px 8px;width:160px;font-size:11px}
+.support-pair>span:last-child{text-align:right}
+.support-pair-ramp{grid-column:1/-1;height:10px;border-radius:3px}
 .spectrum-legend-row{display:flex;flex-wrap:wrap;gap:1px 10px}.spectrum-legend-item{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}.spectrum-legend-item svg{width:24px;height:21px;flex:none}
 .spectrum-colour-swatch{position:relative;display:inline-flex;border-radius:4px;cursor:pointer}.spectrum-colour-swatch:hover,.spectrum-colour-swatch:focus-within{outline:1px solid var(--accent,#59d4cb);background:#203044}.spectrum-colour-swatch input[type=color]{position:absolute;inset:0;width:100%;height:100%;min-height:0;padding:0;border:0;opacity:0;cursor:pointer}
 #fft-zoom{overflow:auto}#fft-zoom-legend{font-size:11px}
 
 /* Collapsible map controls must stay hidden despite row flex layout. */
-#overlap-controls[hidden], #overlap-display[hidden], #map-phase-label[hidden] {display:none}
+#overlap-controls[hidden], #overlap-display[hidden], #map-phase-label[hidden], #map-symbol-label[hidden] {display:none}
 #overlap-controls input {width:7rem}
+#overlap-controls input[type=checkbox]{width:auto}
 
 .grid-controls label[hidden], #batch-panel[hidden] {display:none}
 #overlap-controls, #overlap-display {margin:10px 0}
+#overlap-display{position:relative;align-items:end}
+#overlap-display>label{flex:1 1 180px;min-width:0;max-width:300px}
+#overlap-display select{width:100%;min-width:0}
+#overlap-display>.settings-help{position:static;align-self:end;height:36px}
+#overlap-display .settings-help-popup{left:0;right:auto;max-width:100%}
 
 #raster-dialog{width:min(1000px,94vw);max-height:94vh;overflow:auto}
 #raster-canvas{display:block;width:100%;height:min(42vh,650px);background:#05090e;touch-action:none;cursor:crosshair}
@@ -727,11 +741,11 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .previews{grid-template-columns:minmax(0,420fr) minmax(0,464fr);row-gap:0}
 .previews>figure{display:contents}
 .previews figcaption{position:relative;z-index:1}
-#fft{background:transparent}
+#fft{background:transparent;margin-top:-2.586206897%}
 #crop-figure>figcaption{grid-column:1;grid-row:1}
 #spectrum-figure>figcaption{grid-column:2;grid-row:1}
 #crop{grid-column:1;grid-row:2;margin-top:var(--spectrum-image-top-gap,0px)}
-#fft-stage{grid-column:2;grid-row:2;margin-top:var(--spectrum-image-top-gap,0px);transform:translateY(-2.654867257%)}
+#fft-stage{display:flow-root;grid-column:2;grid-row:2;margin-top:var(--spectrum-image-top-gap,0px)}
 .image-panel>.image-wrap{margin-top:var(--source-image-top-gap,0px)}
 #fft-legend{grid-column:2;grid-row:3}
 .fft-only .previews,.diffraction .previews{grid-template-columns:minmax(0,1fr);width:100%;max-width:none}

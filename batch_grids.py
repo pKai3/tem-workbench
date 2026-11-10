@@ -111,7 +111,7 @@ def png_exports(options, phases):
     """Validate selected products and expand per-phase views, preserving old callers."""
     overlap = options.get('overlap') is not None
     choices = options.get('png_views', ['support_all'] if overlap else ['classification'])
-    allowed = {'support_all','support_phases','hex','hex_support','spread_phases','samples','separate','raw'} if overlap else {'classification'}
+    allowed = {'support_all','support_phases','strength_all','strength_phases','hex','hex_support','hex_strength','spread_phases','samples','separate','raw'} if overlap else {'classification'}
     if not isinstance(choices,list) or any(not isinstance(v,str) or v not in allowed for v in choices):
         raise ValueError('Choose PNG map views supported by the selected grid mode.')
     if not options.get('export_png'):return []
@@ -120,10 +120,10 @@ def png_exports(options, phases):
         raise ValueError('Placement disagreement PNGs require multiple passes.')
     products=[]
     for choice in dict.fromkeys(choices):
-        if choice in ('support_phases','spread_phases'):
+        if choice in ('support_phases','strength_phases','spread_phases'):
             view=choice.split('_')[0]
             products.extend((view+'_'+p.lower(),view,p) for p in phases)
-        else:products.append((choice,'support' if choice=='support_all' else choice,None))
+        else:products.append((choice,choice.removesuffix('_all'),None))
     return products
 
 
