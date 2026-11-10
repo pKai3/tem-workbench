@@ -180,9 +180,9 @@ console.log('Legend edits: separate persistence, custom phase option, validation
 
 // Compact aliases use support, never visibility; old cached results are supported.
 const aliases={components:[{id:'beta',active:true},{id:'omega1',active:false},{id:'omega2',active:false},{id:'omega3',active:true},{id:'omega4',active:true}]};
-assert.equal(context.betaOmegaLabel('omega3',aliases),'ω variant 1');assert.equal(context.betaOmegaLabel('omega4',aliases),'ω variant 2');
+assert.equal(context.betaOmegaLabel('omega3',aliases),'ω₁');assert.equal(context.betaOmegaLabel('omega4',aliases),'ω₂');
 vm.runInContext("betaOmegaHidden.add('omega3')",context);
-assert.equal(context.betaOmegaLabel('omega4',aliases),'ω variant 2');
+assert.equal(context.betaOmegaLabel('omega4',aliases),'ω₂');
 assert.deepEqual(Array.from(context.betaOmegaComponents(aliases),c=>c.id),['beta','omega3','omega4','omega1','omega2']);
 assert.match(context.betaOmegaIdentity({...aliases.components[3],c_axis_beta:[-1,1,-1]},aliases),/orientation ID omega3/);
 context.chosenFits=new Set(['linked-omega4']);$('overlay').value='custom';

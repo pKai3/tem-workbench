@@ -2,7 +2,19 @@
 
 Last updated: 10 November 2026
 
+## Reload, background progress and fitting controls — completed 10 November 2026
+
+Approved: refresh/reload reopens the last successfully opened image from the full catalogue, even when a remembered project filter or a grid's source differs. A running interactive grid continues when browsing other images. Persistent bottom-right progress cards track interactive and batch grids, reconnect after refresh, and return to the relevant image when clicked. Completed/cancelled cards clear after five seconds; unavailable status retries without losing the running job. A recovered map is drawn only on its matching image. This supersedes the grid-source-first startup and image-switch cancellation described in the 9 November recovery work.
+
+Split overlapping-map controls into **Mode** and **Display**, using **Continuous map** and **Hex grid** for passing frequency/strength. Other existing modes retain their supported representation, including window centres. These controls affect presentation, not sampling or scoring. Add a Scale fitting reset icon for the fitting mode, custom scale and ranking weights, plus individual hover/focus/tap help. Use compact subscript omega variant labels (ω₁, ω₂, …) throughout the interface and exports; stable orientation IDs remain unchanged.
+
+Approved follow-ups: show DD profile counts on the same line as the Peaks readout (for example `14+0w/14 +6DD`), retaining allowed prediction positions as the denominator. Coverage displays **Allowed | +DD** using the same measured-profile weights in both percentages, deduplicating shared/alternative DD paths. DD remains candidate geometric evidence and does not change allowed coverage or acceptance. Unavailable checks show a dash; linked components refer to their joint DD assessment. Individual parameter help explains direction, zero and units; tooltips stay within the viewport. Reset preserves material, phases, image edits and beta anchors, reweights a cached grid when its fitting mode is unchanged, and requires a new grid if the mode changes.
+
+Validation: all 19 JavaScript suites and 13 focused Python checks pass, including the archived Unknown 3 DD check and the beta–omega variant/export-label check. New browser regressions cover remembered-image priority across running/terminal jobs, filtered/missing sources, persistent independent cards, current batch targets, HTTP reconnect retries, five-second completion cleanup, mode/display independence, reset persistence and cached rescoring, and weighted DD coverage with deduplicated profiles. Live ST1203/ST1221 runs verify image switching without cancellation, refresh on another image, click-to-return and batch recovery. Image 1390 verifies direct-image restoration, subscript labels and the updated tables. At 480 and 1280 px the table has no horizontal overflow; Peaks stays on one line and per-parameter tooltips stay within the viewport. No scoring changes or version bump.
+
 ## Movable fitting handles and passing-strength maps — completed 10 November 2026
+
+Pushed as `d5c8e1f`; hosted analysis/JavaScript and native Windows/macOS update checks passed.
 
 Fitting-limit handles now move in radius and angle, snapping to 0.1 reciprocal units and 15° respectively. Direct-diffraction handle changes save both coordinates per image automatically; angle-only changes affect presentation without rerunning fitting. Arrow keys adjust radius; Shift + arrows adjust angle. Legacy radius overrides, cancellation, calibrated anisotropic coordinates and image isolation are preserved. The FFT's top inset is removed from layout height as well as visible position, tightening the gap above the legend divider while retaining bitmap alignment.
 

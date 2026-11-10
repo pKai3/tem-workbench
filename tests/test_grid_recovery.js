@@ -8,12 +8,12 @@ function job(state='running'){
   grid:{count:4,adaptive:true,minimum_nm:1.5,check_passing:true},execution:{workers:4,requested_workers:0,elapsed_seconds:10},
   regions:[{id:'cell',leaf:true}],processed:1,pending:15,cancelling:false};
 }
-function setup(current=job(),remembered=null){
- const controls=new Map(),storage=new Map([['tem-grid-session:project',remembered],['last-image','other-image']]),timers=new Map(),calls=[];
+function setup(current=job(),remembered=null,last=image.id){
+ const controls=new Map(),storage=new Map([['tem-grid-session:project',remembered],['last-image',last]]),timers=new Map(),calls=[];
  const $=id=>{if(!controls.has(id))controls.set(id,{value:'',checked:false,disabled:false,textContent:''});return controls.get(id)};
  $('source-filter').value='other-project';
  const context=vm.createContext({assert,$,config:{state_namespace:'project',files:[{id:'other-image'},image],grid_job:current},
-  meta:null,fileId:null,grid:null,jobId:null,sourceRequest:0,rescoreRevision:0,rescorePending:false,rescoreTimer:null,
+  meta:null,fileId:null,grid:null,jobId:null,trackedGrid:null,gridStarting:false,batchRunning:false,sourceRequest:0,rescoreRevision:0,rescorePending:false,rescoreTimer:null,
   readPreference:(key,fallback)=>storage.get(key)??fallback,writePreference:(key,value)=>storage.set(key,value),lastImageKey:()=> 'last-image',
   clearFileSearch(){ $('source-filter').value='';context.filtersCleared=true; },
   projectFiles:()=>context.config.files.filter(f=>!$('source-filter').value||f.id==='other-image'),
@@ -21,6 +21,7 @@ function setup(current=job(),remembered=null){
   applyRegionSettings(settings){context.restored=settings},rememberBasicControls(){},updateGridSizeNote(){},
   schedule(){},message(text){context.notice=text},reportJobError(){},updatePenaltyControls(){},
   drawGrid(){context.drawn=context.grid},isDiffraction:()=>false,hideRegionPreview(){},
+  updateGridProgress(status){context.progress=status},clearJobProgress(){context.progress=null},reconnectJobProgress(){context.reconnecting=true},
   setTimeout(callback,delay){const token={};timers.set(token,{callback,delay});return token},clearTimeout(token){timers.delete(token)},
   async api(path,body){calls.push({path,body});if(path.startsWith('job?'))return current;return {}},
  });
@@ -52,9 +53,24 @@ async function main(){
  const finished=setup();finished.context.api=async()=>job('complete');await finished.run('openInitialImage()');
  assert.equal(finished.context.grid.state,'complete');assert.equal(finished.timers.size,0);
  for(const state of ['complete','cancelled']){
-  const cleared=setup(job(state));await cleared.run('openInitialImage()');
+  const cleared=setup(job(state),null,'other-image');await cleared.run('openInitialImage()');
   assert.equal(cleared.context.grid,null);assert.equal(cleared.context.fileId,'other-image');assert.equal(cleared.calls.length,0);
  }
+ // The remembered image wins over a running/finished grid on a different source.
+ for(const state of ['running','complete','cancelled','error']){
+  const other=setup(job(state),'same-job','other-image');await other.run('openInitialImage()');
+  assert.equal(other.context.fileId,'other-image');assert.equal(other.context.grid,null);
+  assert.equal(other.context.restored,undefined);assert.equal(other.context.jobId,'same-job');
+  assert.equal(other.context.progress.state,state);assert.equal(other.$('cancel-grid').disabled,state!=='running');
+  assert.equal(other.run('isGridRunning()'),state==='running');
+ }
+ // A stored project filter must not hide the remembered image at startup.
+ const plain=setup(null);await plain.run('openInitialImage()');
+ assert.equal(plain.context.fileId,image.id);assert.equal(plain.context.filtersCleared,true);assert.equal(plain.calls.length,0);
+ const forgotten=setup(null,null,'removed-image');await forgotten.run('openInitialImage()');
+ assert.equal(forgotten.context.fileId,'other-image');
+ const empty=setup(null);empty.context.config.files=[];await empty.run('openInitialImage()');
+ assert.equal(empty.context.fileId,null);assert.match(empty.context.notice,/Choose a data folder/);
  const restarted=setup(null,'old-job');await restarted.run('openInitialImage()');
  assert.equal(restarted.context.jobId,null);assert.equal(restarted.storage.get('tem-grid-session:project'),null);
 

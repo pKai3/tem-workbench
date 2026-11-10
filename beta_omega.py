@@ -346,7 +346,7 @@ def fit(peaks, tolerance, g_min, g_max, visible=None, anchors=None, *, parents=N
     components = []
     for c in range(5):
         q, h = best['parts'][c]
-        components.append(dict(id='beta' if c == 0 else f'omega{c}', label='β parent' if c == 0 else f'ω{c}',
+        components.append(dict(id='beta' if c == 0 else f'omega{c}', label='β parent' if c == 0 else 'ω'+str(c).translate(str.maketrans('0123456789','₀₁₂₃₄₅₆₇₈₉')),
                                color=COLORS[c], active=c in best['selected'], c_axis_beta=None if c == 0 else list(AXES[c-1]),
                                predicted_nodes=[dict(q=(p*unit).tolist(), hkl=idx.tolist()) for p, idx in zip(q, h)],
                                assigned_profile_ids=[], shared_profile_ids=[], nominal_absence_profile_ids=[], residuals=[], geometry_residuals=[]))
@@ -432,7 +432,7 @@ def fit(peaks, tolerance, g_min, g_max, visible=None, anchors=None, *, parents=N
     # Compact presentation aliases; stable orientation IDs and axes remain intact.
     active_variants = [c for c in components if c['active'] and c['id'] != 'beta']
     for number, component in enumerate(active_variants, 1):
-        component['display_label'] = f'ω{number}'
+        component['display_label'] = 'ω'+str(number).translate(str.maketrans('0123456789','₀₁₂₃₄₅₆₇₈₉'))
     result['double_diffraction'] = double_diffraction.inspect_joint(result, peaks, tol*unit, g_min, g_max, bases)
     result['fit'] = best['model']
     for component in components:

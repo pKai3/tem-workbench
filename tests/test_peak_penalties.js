@@ -89,6 +89,22 @@ assert.equal($('save-grid').disabled,true,'Changed missing cost makes old grid s
  await context.rescoreGrid();assert.equal(context.request.body.double_diffraction_weight,.25);
  context.config.double_diffraction_scoring=false;run('updatePenaltyControls()');
  assert.equal($('dd-weight').disabled,true);assert.equal('double_diffraction_weight' in run('settings()'),false);
+ // Reset the panel atomically; retain image/material edits and reweight only when the model family is unchanged.
+ context.config.scale_modes=['auto_hcp_ac'];context.grid=null;context.jobId=null;context.rescorePending=false;
+ context.invalidations=0;context.invalidateAnalysisSettings=()=>{context.invalidations++};
+ context.rememberCalibration=()=>storage.set('tem-scale-last',{mode:$('scenario').value,scale:Number($('model-scale').value)});
+ $('scenario').value='custom';$('model-scale').value='1.12';$('material').value='iron';
+ run('resetScaleControls()');
+ assert.equal($('scenario').value,'auto_hcp_ac');assert.equal(Number($('model-scale').value),1);assert.equal(context.invalidations,1);
+ assert.equal($('material').value,'iron','Scale reset does not reset material or phases');
+ for(const key of ['tem-scale-penalty','tem-ca-penalty','tem-peak-evidence-weight','tem-missing-peak-weight','tem-brightness-grouping-weight'])assert.equal(storage.get(key),.1);
+ assert.equal(storage.get('tem-dd-weight'),0);assert.equal(storage.get('tem-peak-falloff'),8);
+ assert.equal(storage.get('tem-scale-last').mode,'auto_hcp_ac');
+ context.isGridRunning=()=>true;$('missing-peak-weight').value='1';run('resetScaleControls()');
+ assert.equal($('missing-peak-weight').value,'1','A running scan blocks reset just like its ranking controls');
+ context.isGridRunning=()=>false;context.grid={can_rescore:true,settings:{scale_mode:'auto_hcp_ac'}};context.jobId='example';
+ run('resetScaleControls()');assert.equal(context.invalidations,1);assert.equal(context.rescorePending,true,'Same-mode grid is reweighted from cached fits');
+ console.log('Scale reset: default mode/weights, persistence, source settings preserved, busy guard and cached rescoring passed.');
  console.log('DD weight: zero default, range, independent persistence, saved settings and FFT/grid rescoring passed.');
  console.log('Independent peak penalties: legacy/new settings, persistence, range, zero, stale grids and request propagation passed.');
  console.log('Brightness grouping: separate persistence, zero, saved settings and FFT/direct controls and cached-map requests passed.');

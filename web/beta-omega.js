@@ -5,10 +5,11 @@ const omegaVariantColors={...OMEGA_VARIANT_COLORS};
 function betaOmegaComponents(model){
  return [...(model?.components||[])].sort((a,b)=>(a.id==='beta'?-1:b.id==='beta'?1:0)||Number(b.active)-Number(a.active)||a.id.localeCompare(b.id));
 }
+function omegaVariantLabel(number){return 'ω'+String(number).replace(/\d/g,digit=>'₀₁₂₃₄₅₆₇₈₉'[Number(digit)])}
 function betaOmegaLabel(id,model){
  if(id==='beta')return phaseLabel('BCC')+' parent';
  const variants=betaOmegaComponents(model).filter(c=>c.active&&c.id!=='beta'),index=variants.findIndex(c=>c.id===id);
- return index>=0?`ω variant ${index+1}`:/^omega/.test(id)?`ω · ID ${id}`:id;
+ return index>=0?omegaVariantLabel(index+1):/^omega/.test(id)?`ω · ID ${id}`:id;
 }
 function betaOmegaCandidateLabel(component,model){
  const view=component.id==='beta'?{phase:'BCC',zone_3index:model.parent.zone_3index}:component.vector_model;
@@ -37,12 +38,12 @@ function refreshBetaOmegaDisplay(){
  renderModels(result);renderFitChoices(result,true);renderBetaOmega(result);
 }
 function appendBetaOmegaFitCells(row,model,component=null){
- if(!component&&model.fit){appendFitCells(row,model.fit,{name:betaOmegaCombinedLabel(model)});row.dataset.linkedFit='combined';return}
+ if(!component&&model.fit){appendFitCells(row,{...model.fit,double_diffraction:model.fit.double_diffraction??model.double_diffraction},{name:betaOmegaCombinedLabel(model)});row.dataset.linkedFit='combined';return}
  const summary=model.combined,source=component||summary,relative=source?.rms_relative;
  const predicted=component?component.predicted_nodes.length:new Set(model.components.filter(c=>c.active).flatMap(c=>c.predicted_nodes.map(n=>n.q.map(v=>Math.round(v*1e7)).join(',')))).size;
  const values={candidate:component?betaOmegaCandidateLabel(component,model):betaOmegaCombinedLabel(model),
   rank:component?'—':summary.score.toFixed(3),screen:model.status==='unresolved'?'Below':component?'Linked':model.status==='beta_omega_ambiguous'?'Ambiguous':'Candidate',
-  peaks:`${component?component.matched_profiles:summary.matched_profiles} + — / ${predicted}`,coverage:`${(100*source.coverage).toFixed(1)}%`,
+  peaks:`${component?component.matched_profiles:summary.matched_profiles}+—/${predicted} ${component?'':doubleDiffractionCount(model.double_diffraction)}`,coverage:`${(100*source.coverage).toFixed(1)}%`,
   rms:relative==null?'—':(relative*model.parent.fundamental_spacing).toFixed(3),position:'—',cost:'—',dimensions:'—',scale:'—'};
  row.dataset.linkedFit=component?.id||'combined';
  for(const [key,label] of FIT_COLUMNS){
@@ -50,7 +51,7 @@ function appendBetaOmegaFitCells(row,model,component=null){
   cell.title=key==='candidate'?(component?betaOmegaIdentity(component,model):'BCC parent plus crystallographically related ω variants fitted jointly.'):
    key==='rank'?'Components share one combined score using the ordinary candidate evidence checks; they have no independent rank.':
    key==='screen'?'Linked support is assessed jointly; shared reflections alone cannot establish an omega variant.':
-   key==='peaks'?'Component assignments / predicted positions. Weak-profile evidence is assessed on the combined prediction set. Shared positions count once.':
+   key==='peaks'?'Component assignments / allowed prediction positions. Weak and DD evidence is assessed on the combined fit; DD counts appear on its row. Shared positions count once.':
    key==='coverage'?'Unweighted share of all observed profiles assigned to allowed reflections. Shared profiles count once in the combined row.':
    key==='rms'?`RMS in the image reciprocal units${relative==null?'':`; ${(relative*100).toFixed(2)}% of the parent’s shortest reflection`}.`:
    'Not independently fitted for linked components. The combined fit uses the common candidate score and prediction-site evidence.';

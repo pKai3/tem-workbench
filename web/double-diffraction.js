@@ -1,6 +1,6 @@
 /* Candidate two-step scattering paths. Optional bounded score evidence; paths remain distinct from allowed reflections. */
 function doubleDiffractionPathLabel(path,linked=null){
- const name=id=>{if(linked)return betaOmegaLabel(id,linked);const match=id.match(/^(HCP|BCC|FCC|ORT|OMEGA)(\d+)?$/);return match?phaseLabel(match[1])+(match[2]?' '+match[2]:''):id.replace(/^omega/,'ω variant ').replace(/^beta$/,phaseLabel('BCC')+' parent')};
+ const name=id=>{if(linked)return betaOmegaLabel(id,linked);const match=id.match(/^(HCP|BCC|FCC|ORT|OMEGA)(\d+)?$/);return match?(match[1]==='OMEGA'&&match[2]?omegaVariantLabel(match[2]):phaseLabel(match[1])+(match[2]?' '+match[2]:'')):/^omega\d+$/.test(id)?omegaVariantLabel(id.slice(5)):id.replace(/^beta$/,phaseLabel('BCC')+' parent')};
  const steps=path.steps.map(s=>`${name(s.component)} ${planeLabel({phase:s.phase},s.hkl)} [peak ${s.profile_id}]`).join(' + ');
  return steps+(path.sum_hkl?` → ${name(path.steps[0].component)} ${planeLabel({phase:path.steps[0].phase},path.sum_hkl)}`:'');
 }

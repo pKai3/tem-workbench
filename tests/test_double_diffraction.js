@@ -34,7 +34,7 @@ $('overlay').value='custom';context.chosenFits=new Set(['linked-beta','linked-om
 const mixedShapes=draw([{geometry:false,model:hcp}]);
 assert.equal(mixedShapes.length,2,'Custom view keeps independent and linked DD reports separate and both visible');
 assert.deepEqual(mixedShapes.map(s=>s.attrs.stroke).sort(),['#0000ff','#79bafa']);
-assert.match(context.doubleDiffractionPathLabel(path,linked),/ω variant 1/,'Linked paths use the same variant label as the overlay');
+assert.match(context.doubleDiffractionPathLabel(path,linked),/ω₁/,'Linked paths use the same variant label as the overlay');
 $('overlay').value='all';
 draw([{geometry:false,model:{phase:'BCC'}}]);assert.match(text($('double-diffraction-list')),/Reanalyse/,'Older results remain readable');
 draw([]);assert.equal($('double-diffraction-details').hidden,true);

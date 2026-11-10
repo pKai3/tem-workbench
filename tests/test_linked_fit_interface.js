@@ -11,7 +11,7 @@ const controls=new Map();function $(id){if(!controls.has(id))controls.set(id,nod
 const table=node('table'),panel=node('div');panel.className='candidate-table';table.append($('model-head'),$('models'));panel.append(table);
 const context={$ ,document:{createElement:node},COVERAGE_HELP:'Weighted coverage',phaseColors:{BCC:'#f4b75e',OMEGA:'#b49aff'},chosenFits:new Set(),result:null,
  indexLabel:v=>'['+v.join(' ')+']',geometryFits:d=>d.geometry||[],analysisPhases:s=>s.enabled_phases,bestModel:(d,p)=>d.models.find(m=>m.phase===p),compareRank:(a,b)=>(b?.score||0)-(a?.score||0),
- scaleSummary:()=>'',zoneLabel:m=>'['+m.zone_3index.join(' ')+']',screenLabel:()=> 'Pass',predictionCounts:()=> '3 + 0 / 3',fittedDimensions:()=> 'a 0.330',scalePercentages:()=> 'a 0%',rankDescription:()=>'',evidenceDescription:()=>'',scaleDetails:()=>'',drawFFT:()=>{}};
+ scaleSummary:()=>'',zoneLabel:m=>'['+m.zone_3index.join(' ')+']',screenLabel:()=> 'Pass',predictionCounts:()=> '3 + 0 / 3',fittedDimensions:()=> 'a 0.330',scalePercentages:()=> 'a 0%',rankDescription:()=>'',evidenceDescription:()=>'',doubleDiffractionCountHelp:()=>'',coverageCounts:m=>(100*m.coverage).toFixed(0)+'% | —',scaleDetails:()=>'',drawFFT:()=>{}};
 vm.createContext(context);vm.runInContext(fs.readFileSync('web/beta-omega.js','utf8'),context);
 const app=fs.readFileSync('web/app.js','utf8');
 vm.runInContext(app.slice(app.indexOf('function materialPhaseSymbol('),app.indexOf('const PHASE_DEFAULT_COLORS=')),context);
@@ -34,7 +34,7 @@ assert.equal(cells($('models').children[0]).rms,'0.050','Relative residual is co
 assert.equal($('model-head').children[0].children.find(c=>c.dataset.column==='rms').textContent,'RMS\nrel.');
 assert.equal(table.className.includes('linked-only'),false,'The same columns show comparable scores for all candidates');
 const descendants=n=>n.children.flatMap(c=>[c,...descendants(c)]),boxes=()=>descendants($('fit-list')).filter(n=>n.tag==='input');
-assert.deepEqual(boxes().map(b=>b.attrs['aria-label']),['Overlay BCC [0 1 1] + 2×ω','Overlay BCC parent','Overlay ω variant 1','Overlay ω variant 2']);
+assert.deepEqual(boxes().map(b=>b.attrs['aria-label']),['Overlay BCC [0 1 1] + 2×ω','Overlay BCC parent','Overlay ω₁','Overlay ω₂']);
 assert.equal(cells(boxes()[1].parent.parent).candidate,'BCC parent [0 1 1]\n0.6°','Parent shows its recorded in-plane rotation');
 assert.ok(boxes().slice(1).every(b=>b.parent.parent.className==='fit-component'));
 assert.ok(boxes().every(b=>b.checked));
@@ -42,7 +42,7 @@ boxes()[0].checked=false;boxes()[0].events.change();assert.ok(boxes().every(b=>!
 const firstOmega=boxes()[2];firstOmega.checked=false;firstOmega.events.change();
 assert.equal($('overlay').value,'custom');assert.equal(context.betaOmegaComponentHidden('omega3'),true);assert.equal(context.betaOmegaComponentHidden('omega4'),false);
 context.renderFitChoices(data,true);assert.deepEqual(boxes().map(b=>b.checked),[false,true,false,true]);
-assert.equal(context.betaOmegaLabel('omega4',joint),'ω variant 2','Hiding the first displayed variant never renumbers the second');
+assert.equal(context.betaOmegaLabel('omega4',joint),'ω₂','Hiding the first displayed variant never renumbers the second');
 assert.equal(JSON.stringify(data),before,'All table and overlay changes leave the fit untouched');
 // Calibrated and relative results both compare ordinary and related candidates.
 const independent={phase:'BCC',zone_3index:[0,0,1],rotation_deg:0,score:.8,coverage:.5,rms_nm_inv:.1,valid:true};
@@ -77,9 +77,9 @@ assert.equal(context.betaOmegaCandidateLabel(components[0],{...noAngle,fit:{...f
 vm.runInContext(app.slice(app.indexOf('function indexGcd('),app.indexOf('// Presentation preference only:')),context);
 const variant={...components[3],vector_model:{phase:'OMEGA',zone_3index:[0,-1,0],rotation_deg:.5939380505874459}};
 $('hcp-notation').value='3';
-assert.equal(context.betaOmegaCandidateLabel(variant,joint),'ω variant 1 [0 1\u0305 0]','Variants show their own zone but do not repeat the stored parent rotation');
+assert.equal(context.betaOmegaCandidateLabel(variant,joint),'ω₁ [0 1\u0305 0]','Variants show their own zone but do not repeat the stored parent rotation');
 $('hcp-notation').value='4';
-assert.equal(context.betaOmegaCandidateLabel(variant,joint),'ω variant 1 [1 2\u0305 1 0]','Linked zones follow the same hexagonal notation control');
+assert.equal(context.betaOmegaCandidateLabel(variant,joint),'ω₁ [1 2\u0305 1 0]','Linked zones follow the same hexagonal notation control');
 $('hcp-notation').value='3';
 console.log('Material notation: preset aliases, parent zone/angle, linked hexagonal zones and unchanged numerical identities passed.');
 

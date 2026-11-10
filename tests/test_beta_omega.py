@@ -69,7 +69,7 @@ class BetaOmegaTests(unittest.TestCase):
         self.assertTrue(all(c['exclusive_profiles']>=2 for c in r['components'][1:] if c['active']))
         self.assertIsNone(r['parent']['absolute_cell_nm'])
         active = [c for c in r['components'] if c['active'] and c['id'] != 'beta']
-        self.assertEqual([c['display_label'] for c in active], ['ω1', 'ω2'])
+        self.assertEqual([c['display_label'] for c in active], ['ω₁', 'ω₂'])
         for c in active:
             self.assertEqual(c['c_axis_beta'], list(joint.AXES[int(c['id'][5:])-1]))
         self.assertTrue(all('display_label' not in c for c in r['components'] if not c['active']))

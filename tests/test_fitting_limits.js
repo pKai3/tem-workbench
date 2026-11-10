@@ -201,7 +201,7 @@ Object.assign(context,{
  config:{files:[{id:'override-fft'},{id:'plain-fft'},{id:'override-direct'},{id:'plain-direct'}]},
  sourceRequest:0,generation:0,rescoreRevision:0,rescoreTimer:null,jobId:null,preferredRegionNm:7,
  hoverCache:new Map(),clearTimeout(){},document:{body:{classList:{remove(){}}}},
- rememberGrid(){},lastImageKey:()=> 'last-image',isGridRunning:()=>false,reciprocalUnit:()=> 'nm⁻¹',renderFileList(){},
+ reconnectGridToImage(){},rememberGrid(){},lastImageKey:()=> 'last-image',isGridRunning:()=>false,reciprocalUnit:()=> 'nm⁻¹',renderFileList(){},
  api:async(path,{file_id:id})=>({sha256_pixels:id,name:id,width:100,height:100,pixel_x_nm:.1,pixel_x_nm_inv:.01,pixel_y_nm_inv:.01,device:'test'}),
  setupImageKind(){context.direct=context.meta.name.endsWith('direct');context.diffractionSettings={exclude_radius_nm_inv:1.1}},
  schedule(){context.submittedLimits=JSON.parse(JSON.stringify(run('currentFittingLimits()')))}
@@ -216,5 +216,10 @@ for(const id of ['overview','source-image'])$(id).setAttribute=()=>{};
   const override=id.startsWith('override');
   assert.deepEqual(context.submittedLimits,{inner:override?1.1:2.5,outer:override?6:10},'Analysis receives the correct limits after opening '+id);
  }
+ context.jobId='background-grid';context.isGridRunning=()=>true;
+ const originalApi=context.api,calls=[];context.api=async(path,body)=>{calls.push(path);return originalApi(path,body)};
+ $('file').value='plain-fft';await run('openFile()');
+ assert.equal(context.jobId,'background-grid');assert.equal(calls.includes('cancel'),false,'Opening a different image never cancels a background grid');
+ assert.equal(storage.get('last-image'),'plain-fft','Only a successfully opened image is remembered');
  console.log('Asynchronous image switching ignores contaminated legacy settings in FFT and diffraction, including cross-mode switches.');
 })().catch(error=>{console.error(error);process.exitCode=1});
