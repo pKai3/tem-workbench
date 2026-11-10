@@ -15,12 +15,15 @@ assert.equal(context.selectedMapView(),'hex_strength');assert.equal($('map-phase
 assert.equal(storage.get('tem-map-mode'),'strength');assert.equal(storage.get('tem-map-display'),'hex');
 for(const [mode,view,display]of [['top','hex','hex'],['raw','raw','centres'],['samples','samples','continuous'],['spread','spread','continuous'],['separate','separate','continuous']]){
  $('map-mode').value=mode;$('map-mode').onchange();
- assert.equal(context.selectedMapView(),view);assert.equal($('map-display').value,display);assert.equal($('map-display').disabled,true);
+ assert.equal(context.selectedMapView(),view);assert.equal($('map-display').value,display);assert.equal($('map-display').disabled,mode!=='top');
 }
 $('map-phase').value='BCC';$('map-mode').value='support';$('map-mode').onchange();
 assert.equal(context.selectedMapView(),'hex_support','Returning to a compatible metric restores the preferred representation');
 $('map-display').value='continuous';$('map-display').onchange();
 assert.equal(context.selectedMapView(),'support');assert.equal($('map-display').disabled,false);
+$('map-mode').value='top';$('map-mode').onchange();
+assert.equal(context.selectedMapView(),'top');assert.equal($('map-display').value,'continuous');
+assert.equal($('map-display').disabled,false,'Top match supports the same two display choices');
 assert.equal(JSON.stringify(context.grid),JSON.stringify({grid:{mode:'overlap'},settings:{},regions:[]}));
 
 // DD has its own count, never changes the single-scattering denominator or coverage.
@@ -47,7 +50,7 @@ console.log('Map mode/display independence, preference restoration, phase preser
 // and opacity normalisation uses one factor without changing phase colours.
 const {element}=require('./svg_fixture'),mapControls=new Map(),preferences=new Map();
 const control=id=>{if(!mapControls.has(id)){const n=element('div');n.dataset={};n.querySelector=()=>({disabled:false});mapControls.set(id,n)}return mapControls.get(id)};
-const cell=(x,k)=>({x,y:0,cx:x+.5,cy:.5,samples:2,passes:1,region_id:'r'+x,phases:{BCC:{support:.8*k,passing_strength:.4*k},OMEGA:{support:.2*k,passing_strength:.1*k}}});
+const cell=(x,k)=>({x,y:0,cx:x+.5,cy:.5,samples:2,passes:1,region_id:'r'+x,winner:k>.75?'BCC':'OMEGA',phases:{BCC:{support:.8*k,passing_strength:.4*k,fit_presence:1,rank:.4*k},OMEGA:{support:.2*k,passing_strength:.1*k,fit_presence:1,rank:.3}}});
 const mapData={id:'map1',grid:{mode:'overlap',spacing_nm:2,passes:1},settings:{},regions:[
  {id:'inside',roi:{x:2,y:2,w:4,h:4},label:'bcc_compatible'},
  {id:'rim',rim:true,roi:{x:0,y:2,w:4,h:4},label:'bcc_compatible'}],
@@ -95,5 +98,23 @@ control('map-phase').value='BCC';mapContext.drawOverlapMap();
 assert.equal(control('zone-legend').hidden,true);assert.equal(control('map-colour-key').hidden,false,'Scalar keys use the same host as the triangle');
 assert.equal(mapContext.mapSupportScale({cells:[{phases:{BCC:{support:0}}}]},'support',['BCC']),0);
 assert.match(mapContext.mapOpacityDescription('support',0),/No positive passing support/);
+control('map-mode').value='top';control('map-display').value='continuous';mapContext.drawOverlapMap();
+const top=control('grid-map').querySelectorAll('rect').map(n=>({...n.attrs}));
+assert.deepEqual(top.map(n=>n.fill),['#39ff5a','#b49aff']);
+assert.equal(top[0]['fill-opacity'],.8*(.15+.85*.8),'Top match opacity uses the winner’s passing frequency');
+assert.equal(top[1]['data-top-index'],1);assert.equal(top[1]['data-id'],'r1');
+assert.match(top[1]['aria-label'],/OMEGA · averaged rank 0.300 · 10.0% passing/);
+assert.equal(control('map-phase-label').hidden,true);assert.equal(control('map-colour-key').hidden,true);
+assert.equal(control('zone-legend').hidden,false);
+assert.deepEqual(control('zone-legend').querySelectorAll('div').filter(n=>n.className==='zone-legend-group').map(n=>n.dataset.phase),['BCC','OMEGA'],'Exportable legend uses the winning phase colours');
+control('map-display').value='hex';mapContext.drawOverlapMap();
+assert.deepEqual(control('grid-map').querySelectorAll('polygon').map(n=>n.attrs.fill),top.map(n=>n.fill),'Identical aggregate values give identical top-match colours in both displays');
+assert.equal(mapContext.topMapCell({phases:{BCC:{fit_presence:0,rank:100},OMEGA:{fit_presence:1,rank:-.1}}}).winner,'OMEGA','An absent fit never wins, including against negative ranks');
+assert.equal(mapContext.topMapCell({phases:{BCC:{fit_presence:0,rank:0}}}).winner,null);
+assert.equal(mapContext.topMapCell({phases:{BCC:{fit_presence:1,rank:.3},OMEGA:{fit_presence:1,rank:.3}}}).winner,'BCC','Ties follow phase order, like the existing hex aggregator');
+vm.runInContext(source.slice(source.indexOf('function renderRegionPreviewDetails('),source.indexOf('function positionRegionPreview(')),mapContext);
+mapContext.renderRegionPreviewDetails({top:mapContext.topMapCell(mapData.aggregation.cells[1])});
+assert.equal(control('region-hover-title').textContent,'OMEGA · highest averaged rank');
+assert.match(control('region-hover-name').textContent,/2 windows · 1 passes/);
 assert.equal(JSON.stringify(mapData),original,'Visibility and opacity changes preserve every sampled window and measured value');
 console.log('Map rendering: rim-only hiding, scalar keys, shared opacity normalisation, fixed-scale restoration, zero support and unchanged data passed.');
