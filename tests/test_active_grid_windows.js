@@ -3,11 +3,13 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const source=fs.readFileSync('web/app.js','utf8');
 function element(tag,attrs={}){
  const node={tag,attrs:{...attrs},children:[],dataset:{},style:{},classList:{add(){}},
-  prepend(child){child.parent=this;this.children.unshift(child)},setAttribute(k,v){this.attrs[k]=v},append(child){child.parent=this;this.children.push(child)},
+  prepend(child){child.parent=this;this.children.unshift(child)},setAttribute(k,v){this.attrs[k]=v;if(k==='data-window')this.dataset.window=v},append(child){child.parent=this;this.children.push(child)},
   remove(){this.parent.children=this.parent.children.filter(n=>n!==this)},cloneNode(){return element(tag,attrs)}};
  if(attrs['data-window'])node.dataset.window=attrs['data-window'];return node;
 }
-const context=vm.createContext({el:element,$:()=>({querySelector:()=>element('svg')})});
+const context=vm.createContext({NS:'http://www.w3.org/2000/svg',document:{createElementNS:(_,tag)=>element(tag)},$:()=>({querySelector:()=>element('svg')})});
+// Use the real SVG factory: a permissive stub hid missing attribute arguments.
+vm.runInContext(source.split('\n').find(line=>line.startsWith('function el(')),context);
 vm.runInContext(source.slice(source.indexOf('function drawActiveGridWindows('),source.indexOf('function drawGrid(){')),context);
 const group=element('g'),job={id:'one',state:'running',source:{width:4096},active_windows:[{x:10,y:20,w:100,h:100},{x:110,y:20,w:100,h:100}]};
 context.drawActiveGridWindows(group,job);assert.equal(group.children.length,2);

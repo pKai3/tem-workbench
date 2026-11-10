@@ -1963,7 +1963,7 @@ function drawActiveGridWindows(group,job){
  const keys=new Set();
  // Separate paint layers keep every spinner above every overlapping outline.
  let outlines=group.children[0],spinners=group.children[1];
- if(!outlines){outlines=el('g');spinners=el('g');group.append(outlines);group.append(spinners)}
+ if(!outlines){outlines=el('g',{});spinners=el('g',{});group.append(outlines);group.append(spinners)}
  for(const roi of active){
   if(![roi.x,roi.y,roi.w,roi.h].every(Number.isFinite)||roi.w<=0||roi.h<=0)continue;
   const key=`${job.id}:${roi.x},${roi.y},${roi.w},${roi.h}`;keys.add(key);
