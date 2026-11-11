@@ -10,6 +10,17 @@ const PcaView={
   const t=Math.max(-1,Math.min(1,value/Math.max(scale,1e-20)));
   return signed?[Math.round(30+225*Math.max(t,0)),Math.round(30+115*Math.abs(t)),Math.round(30+225*Math.max(-t,0))]:[Math.round(255*Math.max(t,0)),Math.round(215*Math.sqrt(Math.max(t,0))),Math.round(165*t*t)];
  },
+ mapRange(values,enhanced){
+  const sorted=values.flat().filter(Number.isFinite).sort((a,b)=>a-b),max=sorted.at(-1)||0;
+  const percentile=q=>{const x=(sorted.length-1)*q,i=Math.floor(x);return sorted[i]+(sorted[Math.min(i+1,sorted.length-1)]-sorted[i])*(x-i)};
+  const low=percentile(.02),high=percentile(.98),uniform=max-(sorted[0]||0)<=Math.max(Math.abs(max)*1e-6,1e-20);
+  return {low:enhanced&&!uniform?low:0,high:enhanced&&!uniform&&high>low?high:max,uniform};
+ },
+ mapColour(value,low,high){
+  const t=Math.max(0,Math.min(1,(value-low)/Math.max(high-low,1e-20)));
+  const stops=[[25,20,85],[35,90,180],[15,185,195],[150,220,90],[255,240,90]],x=t*4,i=Math.min(3,Math.floor(x));
+  return stops[i].map((v,c)=>Math.round(v+(stops[i+1][c]-v)*(x-i)));
+ },
  nearest(plan,x,y){
   const [w,h]=plan.window_pixels;
   const closest=(values,v)=>values.reduce((best,a,i)=>Math.abs(a-v)<Math.abs(values[best]-v)?i:best,0);
@@ -40,17 +51,18 @@ if(typeof document!=='undefined'){
    ctx.fillStyle='#050a0f';ctx.fillRect(0,0,canvas.width,canvas.height);
    if(sourceImage?.complete&&sourceImage.naturalWidth)ctx.drawImage(sourceImage,ox,oy,width*scale,height*scale);
    const mode=$('pca-map-mode').value,component=Number($('pca-component').value),ids=[...selected],values=PcaView.values(data,mode,component,ids),signed=mode==='component'&&data.decomposition!=='nmf';
-   const high=Math.max(...values.flat().map(Math.abs),1e-20),[w,h]=p.window_pixels,[dx,dy]=[p.spacing_nm[0]/p.pixel_nm[0],p.spacing_nm[1]/p.pixel_nm[1]];
+   const high=Math.max(...values.flat().map(Math.abs),1e-20),range=PcaView.mapRange(values,$('pca-contrast').value==='variation'),[w,h]=p.window_pixels,[dx,dy]=[p.spacing_nm[0]/p.pixel_nm[0],p.spacing_nm[1]/p.pixel_nm[1]];
    ctx.globalAlpha=Number($('pca-opacity').value);
    for(let y=0;y<p.ys.length;y++)for(let x=0;x<p.xs.length;x++){
-    const colour=PcaView.colour(values[y][x],high,signed),cx=p.xs[x]+w/2,cy=p.ys[y]+h/2;
+    const colour=signed?PcaView.colour(values[y][x],high,true):PcaView.mapColour(values[y][x],range.low,range.high),cx=p.xs[x]+w/2,cy=p.ys[y]+h/2;
     const left=Math.max(0,cx-dx/2),top=Math.max(0,cy-dy/2),right=Math.min(width,cx+dx/2),bottom=Math.min(height,cy+dy/2);
     ctx.fillStyle=`rgb(${colour.join(',')})`;ctx.fillRect(ox+left*scale,oy+top*scale,(right-left)*scale+.2,(bottom-top)*scale+.2);
    }
    ctx.globalAlpha=1;
    const iy=Math.floor(index/p.xs.length),ix=index%p.xs.length;
    ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+p.xs[ix]*scale,oy+p.ys[iy]*scale,w*scale,h*scale);
-   $('pca-map-key').textContent=signed?`Blue −${high.toPrecision(3)} · dark 0 · red +${high.toPrecision(3)} · score`:`Dark 0 → gold ${high.toPrecision(3)} · ${mode==='group'?'group activity':mode==='component'?'component contribution':'residual norm'}`;
+   $('pca-map-key').textContent=signed?`Blue −${high.toPrecision(3)} · dark 0 · red +${high.toPrecision(3)} · score`:`Blue ${range.low.toPrecision(3)} → cyan → yellow ${range.high.toPrecision(3)} · ${mode==='group'?'group activity':mode==='component'?'component contribution':'residual norm'}${range.uniform?' · uniform across windows':$('pca-contrast').value==='variation'?' · enhanced 2–98% range; extremes clipped':''}`;
+   $('pca-contrast').disabled=signed;
    $('pca-spectrum').src=data.components[component].spectrum.image;
    $('pca-spectrum-label').textContent=data.decomposition==='nmf'?`NMF ${component+1} spectrum · nonnegative`:`PC ${component+1} spectrum · blue − / red +`;
    for(const b of $('pca-scree').children)b.setAttribute('aria-pressed',String(Number(b.dataset.index)===component));
@@ -118,7 +130,7 @@ if(typeof document!=='undefined'){
   $('pca-method').onchange=()=>{$('pca-run').textContent='Run '+$('pca-method').value.toUpperCase()};
   $('pca-cancel').onclick=async()=>{if(!job?.id)return;try{await api('pca/cancel',{id:job.id});notify('Cancelling after the current FFT, matrix step or template fit…')}catch(e){notify(e.message,true)}};
   $('pca-close').onclick=()=>dialog.close();dialog.addEventListener('close',()=>document.documentElement.classList.remove('pca-open'));
-  for(const id of ['pca-map-mode','pca-component','pca-opacity'])$(id).addEventListener('input',drawMap);
+  for(const id of ['pca-map-mode','pca-component','pca-opacity','pca-contrast'])$(id).addEventListener('input',drawMap);
   $('pca-map').onclick=event=>{
    if(!data||running())return;const canvas=event.currentTarget,box=canvas.getBoundingClientRect(),p=data.plan,[h,w]=p.image_shape;
    const scale=Math.min(box.width/w,box.height/h),ox=(box.width-w*scale)/2,oy=(box.height-h*scale)/2;

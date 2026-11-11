@@ -518,6 +518,8 @@ User explicitly requested exhaustive availability: **Fit all combinations** test
 
 Validation: five new numerical/integration tests cover nonnegative reconstruction, reproducibility, factor-rescaling invariance, non-co-occurrence, all 127 seven-factor subsets, partial cancellation, a known BCC pattern split across factors, and export round-trips. Full Python run: 445 tests, 14 skipped; the existing process-list permission check passed in a permitted rerun of all 38 updater tests (one skipped). All JavaScript suites pass. Browser checks cover exhaustive progress, group inspection, maps, export, cancellation and narrow layout. ST 1203 smoke run: 324 windows, four factors, 2.36 s decomposition and 0.43 s for all 15 combinations across 46 HCP/BCC templates; relative reconstruction error 6.97%. Local timings and integrity checks only, not validated phase identification.
 
+Map display follow-up: blue–cyan–yellow sequential colours for NMF activity/residual maps, with selectable 2–98% contrast enhancement or a full range from zero. The legend states the actual range and clipping; uniform fields remain uniform. Diffraction-spectrum colours and numerical analysis are unchanged. PCA signed maps retain their diverging colours.
+
 The normal checkout is `/Users/bcsinger/Documents/GitHub/tem-workbench` on `feature/local-fft-pca`. The clean obsolete temporary worktree was removed at the user's request. No release or merge is requested for this change.
 
 ## Window-size check and blended support — 3 November 2026

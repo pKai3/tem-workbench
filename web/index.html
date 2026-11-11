@@ -171,7 +171,7 @@
  <div id="pca-results" hidden>
   <div id="pca-scree" aria-label="Explained variance by component"></div>
   <div class="pca-controls"><label>Map<select id="pca-map-mode"><option value="component">Selected component</option><option value="group">Selected group activity</option><option value="residual">Unexplained variation</option></select></label>
-   <label>Component<select id="pca-component"></select></label><label>Map opacity<input id="pca-opacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+   <label>Component<select id="pca-component"></select></label><label title="Display only. Enhance variation stretches the 2nd–98th percentile within the current map; even small differences become visible. Colours are relative contributions, not phase identities or confidence.">Map contrast<select id="pca-contrast"><option value="variation">Enhance variation</option><option value="full">Full range from zero</option></select></label><label>Map opacity<input id="pca-opacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
    <span title="NMF group activity adds contributions; PCA uses sqrt(sum of squared scores). Neither is phase abundance. Selected components also determine the reconstruction below.">Reconstruction / group:</span><span id="pca-group"></span>
   </div>
   <div class="pca-views">

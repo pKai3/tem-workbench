@@ -13,3 +13,11 @@ assert.equal(pca.nearest(plan,50,50),0);
 console.log('PCA view: signed maps, grouped activity, residuals and calibrated window selection passed.');
 
 assert.deepEqual(pca.values({...data,decomposition:'nmf'},'group',0,[0,1]),[[1,-1],[1,2]]);
+
+// A uniform field must remain uniform rather than inventing a contrast range.
+assert.deepEqual(pca.mapRange([[5,5],[5,5]],true),{low:0,high:5,uniform:true});
+const range=pca.mapRange([[5,5.1],[5.2,5.3]],true);
+assert.ok(range.low>=5 && range.high<=5.3 && range.high>range.low);
+assert.equal(pca.mapRange([[5,5.1],[5.2,5.3]],false).low,0);
+assert.deepEqual(pca.mapColour(-1,0,1),pca.mapColour(0,0,1));
+assert.deepEqual(pca.mapColour(2,0,1),pca.mapColour(1,0,1));
