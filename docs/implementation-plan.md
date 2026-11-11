@@ -2,6 +2,10 @@
 
 Last updated: 11 November 2026
 
+## Window-default verification — 11 November 2026
+
+Fixed two CI fixtures after the Tukey default change: the synthetic brightness/grouping experiment explicitly retains its designed Hann aperture, while the detector-display test derives the expected signal using the actual saved window settings. No analysis behaviour changed.
+
 ## Saved regions panel — completed 11 November 2026
 
 Saved regions now shares the bordered, rounded collapsible panel styling and heading spacing used by Material settings and Processing settings. Existing region controls and behaviour are unchanged.

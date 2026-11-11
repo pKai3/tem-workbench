@@ -51,7 +51,8 @@ class FFTBrightnessTests(unittest.TestCase):
                 image+=amplitude*np.cos(2*np.pi*pixel*(qx*x-qy*y))
         item=dict(array=image.astype(np.float32),info=dict(image_kind='real_space',pixel_x_nm=pixel,pixel_y_nm=pixel),limits=[-40,40])
         roi=dict(x=0,y=0,w=n,h=n)
-        settings=dict(enabled_phases=['FCC','HCP'],scale_mode='fixed',g_min=2.5,g_max=10,
+        # This photometry fixture was constructed for a Hann aperture.
+        settings=dict(fft_window='hann',enabled_phases=['FCC','HCP'],scale_mode='fixed',g_min=2.5,g_max=10,
                       fft_minimum_separation=.2,fft_minimum_enrichment=1.8,threshold=.15,brightness_grouping_weight=.1)
         result=engine.analyze(item,roi,settings,images=False,cache_candidates=True)
         combined=result['classification']['combined_fit']

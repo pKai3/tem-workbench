@@ -70,7 +70,9 @@ class FFTDetectionChecks(unittest.TestCase):
         roi=dict(x=0,y=0,w=256,h=256)
         settings=dict(enabled_phases=[],fft_smoothing_sigma=1.5)
         result=engine.analyze(item,roi,settings,images=True)
-        expected=core.spectrum(self.image,self.pixel,self.pixel,smoothing_sigma=1.5)['detector_signal']
+        expected=core.spectrum(self.image,self.pixel,self.pixel,smoothing_sigma=1.5,
+                               window=result['settings']['fft_window'],
+                               tukey_alpha=result['settings']['fft_tukey_alpha'])['detector_signal']
         lo,hi=result['images']['detector_signal_limits']
         self.assertLess(lo,0)
         self.assertEqual([lo,hi],[float(expected.min()),float(expected.max())])
