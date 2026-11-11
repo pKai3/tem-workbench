@@ -42,3 +42,10 @@ assert.ok(Math.abs(Math.max(...coords.map(p=>p[1]))-70)<.01);
 assert.equal(run('polygonFadeContour({w:100,h:80,polygon:[[0,0],[100,0],[100,80],[0,80]],edge_fade_nm:100},.1,.2)'), '');
 assert.equal(run('polygonFadeContour({w:100,h:80,polygon:[[0,0],[100,0],[100,80],[0,80]],edge_fade_nm:0},.1,.2)'), '');
 console.log('Calibrated fade inset, zero fade and fully faded selection passed.');
+
+// Geometric area uses both physical pixel scales, independent of fading/origin.
+assert.equal(run('polygonAreaNm2({polygon:[[0,0],[100,0],[100,80],[0,80]]},{pixel_x_nm:.1,pixel_y_nm:.2})'),160);
+assert.equal(run('polygonAreaNm2({polygon:[[0,0],[0,80],[100,0]],edge_fade_nm:100},{pixel_x_nm:.1})'),40);
+assert.equal(run('polygonAreaNm2({polygon:[[0,0],[100,0],[100,40],[50,40],[50,80],[0,80]]},{pixel_x_nm:.1,pixel_y_nm:.2})'),120);
+assert.equal(run('polygonAreaNm2({},{pixel_x_nm:.1})'),null);
+console.log('Polygon area: unequal calibration, winding, concavity and no-polygon fallback passed.');

@@ -2,6 +2,25 @@
 
 Last updated: 11 November 2026
 
+## Current follow-ups — reconciled 11 November 2026
+
+This summary supersedes historical “not released” and pending-status notes below; dated entries remain an implementation history. FFT linked β/ω, polygon selections, omega falloff and combined hover cards shipped in **v1.0.31**, implementation `0932a44`, release `f94af79`. Full analysis/browser and Windows/macOS release gates passed. The managed-network Windows failure still needs confirmation on the affected machine; retries and diagnostics are not proof that its cause is resolved.
+
+Retain the agreed analysis order: HCP scaling validation/optimizer review, weaker-pattern-aware automatic strength, then remaining batch/reporting work. Reciprocal masks/iFFT was explicitly queued after FFT β/ω and remains the next requested feature in that sequence. This audit does not authorize starting additional features.
+
+- **Weaker-pattern automatic strength:** dominant-rank auto can still drop minority evidence. Geometry-auto and FFT linked β/ω now exist; a separately supported multi-pattern objective is still open. Validate β-only versus β+ω and β+two-ω without tuning solely to obtain expected labels.
+- **FFT masking and inverse FFT:** queued; scope and complex-coefficient requirements are recorded below. FFT manual peak editing is a separate deferred item.
+- **Automatic smoothing:** user discussed a coarse search in 0.25-bin increments, not exhaustive optimization. The window-size probe can hold physical width or bins fixed but does not search smoothing. Record this as a requested follow-up with objective, bounds, runtime budget and weak-pattern controls still to agree; it is not delivered.
+- **Reopen exported grid/batch JSON:** explicit follow-up from the request to reconstruct exported analysis in the app. Existing refresh recovery reconnects to an in-memory backend job, not a general export importer. Add a version-aware import/view workflow preserving source identity, settings, raw windows, linked variants, aggregation and provenance; display old results without silently recalculating. Audit older exports for missing data and report limitations. Not implemented.
+- **Incremental placement passes:** retain completed matching windows when extending passes; stable placement origins and exact source/settings reuse remain prerequisites. Pending.
+- **Shared-spectrum PCA/NMF:** proposed, not approved for immediate implementation; independent-window matching remains current. Compare minority recovery and boundary preservation before adoption.
+- **Image-assisted acquisition alignment:** planned; suggest verified image-content alignment without silently replacing manual placements. ADF and Hitachi offsets are to be compared against nearby images, not merely against one another.
+- **Validation/reporting:** native Windows managed-folder retest; Mac/Windows numerical review; independent β/ω and known-phase controls; update the paper's methods/results after validation. The in-app size recommendation probe exists, while the full crop-size diagnostic panel and broader controlled study remain separate open work. No automatic architecture refresh.
+
+### Polygon area readout — completed locally 11 November 2026
+
+Show geometric polygon area in nm² beside X/Y/W/H, updated with vertex edits, scaling and restored selections. Use the polygon vertices and both calibrated pixel dimensions; exclude bounding-box exterior. The readout is explicitly before edge-fade weighting and does not change the FFT or its normalization. Hide it for square/rectangle modes and unfinished drawings. Focus/hover help explains the distinction. Checks cover unequal pixel calibration, reversed winding, concave shapes and absent polygons. No new release requested.
+
 ## Active grid window indicators — completed 11 November 2026
 
 Requested: faint white window outlines and a small existing TEM diffraction loading animation over windows currently being processed. Implemented for the main grid (uniform, adaptive and overlapping windows) and the batch live viewer. Worker diagnostics identify genuinely active ROIs; queued work and completed futures waiting for deterministic commit order are excluded. Indicators retain their animation between polls, clear on cancellation/completion/error or source change, and do not intercept map interaction. PNG map exports omit these temporary indicators. Analysis, scheduling and numerical results are unchanged.
@@ -944,7 +963,7 @@ Added a distinct OMEGA phase with an ideal monatomic P6/mmm three-atom basis at 
 Validation: 307 Python tests passed (14 platform-specific skips), including independent structure-factor checks, all ω zone metrics, edited references, synthetic cell recovery, FFT/direct diffraction pipelines, rescoring and absence diagnostics. JavaScript suites passed, including measured/fitted ω vector dimensions. Browser checks cover Titanium/Iron switching, disabled controls, editable references and persistence. This validates implementation against synthetic patterns; experimental ω identification remains to be validated with known data.
 
 
-## Applied locally — awaiting distribution (11 November 2026)
+## FFT linked search and Windows folders — released in v1.0.31 (11 November 2026)
 
 - Windows source/output picker: expose available drive roots through a Drive selector; retain typed absolute paths and UNC paths. No restriction to C: in source validation. Enumerate drive roots without probing disconnected drives. Prepared in isolation, then applied to the local checkout at the user’s request on 11 November; not released.
 - FFT beta + related omega: implemented and tested in isolation, then applied to the local checkout on 11 November. Calibrated BCC candidates seed the existing constrained omega-variant search, including parents that do not independently pass. Independent FFT fits remain available. Linked fits participate in manual and auto-rank selection; geometry-auto runs linked matching only after choosing its peak set. Cached penalty changes regenerate linked candidates from saved observations without repeating the FFT. Detector-only parent anchors are not reused for FFT regions. Maps and batch summaries retain linked phase support; component displays explicitly identify the shared joint rank, and full exports retain variants and exclusive/shared assignments. This does not change auto-rank's dominant-pattern objective: it may still prefer a cleaner beta-only subset over weaker omega evidence. A secondary-pattern-sensitive objective remains separate planned work.

@@ -892,3 +892,6 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .selection-toolbar [hidden],#roi-height-control[hidden]{display:none}
 
 .polygon-fade-outline{fill:none;stroke:#fff;stroke-opacity:.45;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none;stroke-linecap:round}
+
+.roi-position-controls #roi-area{font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+#roi-area[hidden]{display:none}

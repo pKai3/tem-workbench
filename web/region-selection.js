@@ -7,12 +7,21 @@ function clipPolygonPreview(svg,image,r,id){
  clip.replaceChildren(el('polygon',{points:r.polygon.map(([x,y])=>`${x+r.x},${y+r.y}`).join(' ')}));
  image.setAttribute('clip-path',`url(#${id})`);
 }
+function polygonAreaNm2(r,calibration){
+ const points=r.polygon;if(!points||points.length<3)return null;
+ let twiceArea=0;
+ for(let i=0,j=points.length-1;i<points.length;j=i++)twiceArea+=points[j][0]*points[i][1]-points[i][0]*points[j][1];
+ return Math.abs(twiceArea)*.5*calibration.pixel_x_nm*(calibration.pixel_y_nm||calibration.pixel_x_nm);
+}
 function syncRegionSelection(){
  const polygon=Boolean(roi.polygon),mode=polygon?'polygon':Math.abs(roi.w-roi.h)>1?'rectangle':$('region-selection').value==='rectangle'?'rectangle':'square';
  if(!polygonDrawing)$('region-selection').value=mode;
  $('roi-box').style.display=polygon||polygonDrawing?'none':'';
  $('roi-handle').style.display=polygon||polygonDrawing?'none':'';
  $('roi-height-control').hidden=mode==='square';$('roi-height-nm').value=(roi.h*(meta.pixel_y_nm||meta.pixel_x_nm)).toFixed(2);
+ const area=polygonAreaNm2(roi,meta);
+ $('roi-area').hidden=!polygon||Boolean(polygonDrawing)||!Number.isFinite(area);
+ $('roi-area').textContent=Number.isFinite(area)?`Area ${area.toFixed(2)} nm²`:'';
  $('draw-polygon').hidden=mode!=='polygon'||Boolean(polygonDrawing);
  $('polygon-fade-control').hidden=mode!=='polygon'&&!polygonDrawing;
  if(polygon&&!polygonDrawing)$('polygon-fade').value=roi.edge_fade_nm??1;
