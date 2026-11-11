@@ -189,7 +189,7 @@ assert.ok($('overlay').options.some(o=>o.value==='passing'&&o.textContent==='All
 assert.ok($('reflection-vectors').options.some(o=>o.value==='planes_passing'));
 assert.ok(!$('reflection-vectors').options.some(o=>o.textContent.startsWith('Measured')));
 context.syncOverlayMenus('passing','BCC');assert.equal($('reflection-vectors').value,'planes_BCC');
-context.direct=false;context.syncOverlayMenus();assert.ok(!$('overlay').options.some(o=>o.value==='related'));
+context.direct=false;context.syncOverlayMenus();assert.ok($('overlay').options.some(o=>o.value==='related'),'Linked overlay is available for FFTs');
 context.direct=true;context.enabledPhases=['BCC'];context.syncOverlayMenus();assert.ok(!$('overlay').options.some(o=>o.value==='related'));
 console.log('Combined-fit display: same-phase score row, both winning orientations, joint toggles, legacy results and explicit related overlay passed.');
 
@@ -236,3 +236,22 @@ assert.equal(context.fittedDimensions({phase:'HCP',fitted_a_nm:.2922,scale_mode:
 assert.equal(context.fittedDimensions({phase:'ORT',fitted_a_nm:.4,fitted_c_nm:.6}),'a 0.4000 / b unconstrained / c 0.6000');
 assert.equal(context.fittedDimensions({...fit,coordinate_units:'relative'}),'—');
 console.log('Combined labels: selected phase/variant colours, neutral joins, repeated orientations, current-result identity and explicit cell axes passed.');
+
+// Hover cards retain combined solutions, including same-phase orientations.
+context.PHASES=['BCC','OMEGA'];context.labels={ambiguous:'Phase ambiguous'};context.colors={};
+vm.runInContext(app.slice(app.indexOf('function analysisPreview('),app.indexOf('function cacheRegionPreview(')),context);
+vm.runInContext(app.slice(app.indexOf('function renderRegionPreviewDetails('),app.indexOf('function positionRegionPreview(')),context);
+const hoverData={...data,classification:{label:'ambiguous',combined_fit:bccPair,combined_fit_components:[bccA,bccB]},roi:{x:0,y:0,w:100,h:100},images:{crop:'crop'},spectrum:{extent:[-10,10,-10,10]}};
+const preview=context.analysisPreview(hoverData);
+assert.equal(preview.candidates.length,hoverData.settings.enabled_phases.length+2);
+context.renderRegionPreviewDetails(preview);
+const hoverRows=$('region-hover-models').children;
+assert.ok(hoverRows.some(r=>r.children[0].textContent==='BCC [0 1 1] + 2×ω'&&r.children[1].textContent==='Rank 0.700'&&r.children[2].textContent==='Pass'));
+assert.ok(hoverRows.some(r=>r.children[0].textContent==='2 × BCC [0 0 1]'));
+const order=preview.candidates.map(c=>c.model);
+context.renderRegionPreviewDetails(preview);
+assert.deepEqual(preview.candidates.map(c=>c.model),order,'Rendering never mutates the cached candidate order');
+const legacyPreview={...preview};delete legacyPreview.candidates;
+context.renderRegionPreviewDetails(legacyPreview);
+assert.equal($('region-hover-models').children.length,hoverData.settings.enabled_phases.length,'Older grid summaries remain usable');
+console.log('Hover candidates: linked variants, repeated-phase unions, rank/status, cache stability and legacy summaries passed.');

@@ -1,6 +1,6 @@
 // Image previews have their own coalesced request. They never become fit results.
 let liveSpectrumPreview=null, livePreviewRequest=null, livePreviewQueued=null, livePreviewTimer=null, livePreviewEpoch=0;
-const sameRegion=(a,b)=>['x','y','w','h'].every(k=>a[k]===b[k]);
+const sameRegion=(a,b)=>['x','y','w','h'].every(k=>a[k]===b[k])&&JSON.stringify(a.polygon||null)===JSON.stringify(b.polygon||null)&&(a.edge_fade_nm??null)===(b.edge_fade_nm??null);
 function livePreviewKey(body){return JSON.stringify([body.file_id,meta?.sha256_pixels,body.roi,body.settings])}
 function resetLiveRegionPreview(){
  livePreviewEpoch++;clearTimeout(livePreviewTimer);livePreviewTimer=null;livePreviewQueued=null;
@@ -13,6 +13,7 @@ function showLiveRegionCrop(){
  $('crop-live-view').setAttribute('viewBox',`${roi.x} ${roi.y} ${roi.w} ${roi.h}`);
  image.setAttribute('width',meta.width);image.setAttribute('height',meta.height);
  image.setAttribute('href',$('source-image').getAttribute('href'));
+ if(typeof clipPolygonPreview==='function')clipPolygonPreview($('crop-live-view'),image,roi,'live-polygon-clip');
  $('crop-live').hidden=false;$('crop').hidden=true;
 }
 function queueLiveRegionPreview(){

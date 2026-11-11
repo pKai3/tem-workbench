@@ -235,8 +235,11 @@ def anchored_parent(anchors, peaks, observed, weights, tolerance):
 
 
 def fit(peaks, tolerance, g_min, g_max, visible=None, anchors=None, *, parents=None,
-        context=None, settings=None, candidate_sink=None, include_omega=True):
+        context=None, settings=None, candidate_sink=None, include_omega=True, cancel_event=None):
     """Fit in arbitrary common reciprocal units; never infer an absolute cell size."""
+    if cancel_event is not None and cancel_event.is_set():
+        from concurrent.futures import CancelledError
+        raise CancelledError('Grid cancelled')
     empty = dict(version=VERSION, mode='relative_geometry', status='insufficient_parent', components=[],
                  assignments=[dict(profile_id=p['profile_id'], observed_q=[p['qx'],p['qy']], observed_spots=p.get('observed_spots', [[p['qx'],p['qy']]]),
                                    component='unexplained', compatible_components=[], indices=[], residual=None) for p in peaks],
@@ -264,6 +267,9 @@ def fit(peaks, tolerance, g_min, g_max, visible=None, anchors=None, *, parents=N
                               x_limit=g_max, y_limit=g_max, **({'visible': visible} if visible else {}))
     evaluated = []
     for parent in parents:
+        if cancel_event is not None and cancel_event.is_set():
+            from concurrent.futures import CancelledError
+            raise CancelledError('Grid cancelled')
         if high/abs(parent['factor'])*np.sqrt(2) > 32:
             continue
         parts = [predictions(parent['zone'], parent['mirror'], parent['factor'], c, low, high, visibility) for c in range(5)]
@@ -271,7 +277,8 @@ def fit(peaks, tolerance, g_min, g_max, visible=None, anchors=None, *, parents=N
             selected = [0]+[c+1 for c in range(4) if mask & (1 << c)]
             nodes = union_nodes(parts, selected)
             points = np.array([n['q'] for n in nodes])
-            pairs, residuals, signs = assign(observed, points, weights, tol)
+            widths = core.omega_node_scales(nodes, tol, settings.get('omega_falloff_multiplier', 1.))
+            pairs, residuals, signs = assign(observed, points, weights, widths)
             unique = {c: [] for c in selected}
             parent_hits = []
             for i, j in pairs:
@@ -288,7 +295,7 @@ def fit(peaks, tolerance, g_min, g_max, visible=None, anchors=None, *, parents=N
             # prediction-site evidence. A union owns each shared position once.
             model_nodes = [dict(q=(np.array(n['q'])*unit).tolist(), hkl=n['components'][0]['hkl'],
                                 components=n['components']) for n in nodes]
-            model = core.score_prediction_nodes(peaks, model_nodes, tol*unit)
+            model = core.score_prediction_nodes(peaks, model_nodes, tol*unit, widths*unit)
             if model is None:
                 continue
             quality = model['quality_coverage']
@@ -324,7 +331,7 @@ def fit(peaks, tolerance, g_min, g_max, visible=None, anchors=None, *, parents=N
                                             components=dd_components, owners=dd_owners)
             score = model['score']
             evaluated.append(dict(parent=parent, parts=parts, selected=selected, nodes=nodes, pairs=pairs,
-                                  residuals=residuals, signs=signs, quality=quality, prediction_support=support,
+                                  residuals=residuals, signs=signs, widths=widths, quality=quality, prediction_support=support,
                                   complexity=complexity, score=score, model=model))
     if not evaluated:
         return empty
@@ -359,7 +366,7 @@ def fit(peaks, tolerance, g_min, g_max, visible=None, anchors=None, *, parents=N
             ids = [components[v['component']]['id'] for v in owners]
             owner = 'beta' if 'beta' in ids else ids[0] if len(ids) == 1 else 'shared'
             row.update(component=owner, compatible_components=ids, residual=float(residual*unit),
-                       quality=float(core.positional_quality(residual, tol)),
+                       quality=float(core.positional_quality(residual, best['widths'][j])),
                        residual_relative=float(residual*unit/fundamental), predicted_q=(np.array(best['nodes'][j]['q'])*unit*sign).tolist(),
                        indices=[dict(component=components[v['component']]['id'], hkl=(np.array(v['hkl'])*sign).tolist()) for v in owners])
             for v in owners:
@@ -438,7 +445,11 @@ def fit(peaks, tolerance, g_min, g_max, visible=None, anchors=None, *, parents=N
     for component in components:
         if not component['active']:
             continue
-        vector_model = core.score_prediction_nodes(peaks, component['predicted_nodes'], tol*unit)
+        # Component views inherit the union's widths, including tight shared spots.
+        union_widths = {tuple(np.round(n['q'], 7)): width*unit for n,width in zip(best['nodes'], best['widths'])}
+        widths = [union_widths.get(tuple(np.round(np.array(n['q'])/unit, 7)), tol*unit)
+                  for n in component['predicted_nodes']]
+        vector_model = core.score_prediction_nodes(peaks, component['predicted_nodes'], tol*unit, widths)
         if vector_model is None:
             continue
         hkl = [np.array(n['hkl']) for n in component['predicted_nodes']]

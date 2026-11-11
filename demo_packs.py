@@ -1,5 +1,6 @@
 """Explicitly requested demo downloads, verified and installed without ZIP extraction."""
 from pathlib import Path
+from folder_paths import retry_sharing_violation
 import hashlib
 import logging
 import ssl
@@ -104,7 +105,8 @@ def install_archive(archive, directory, progress=None):
             generate_missing_previews(target)
         else:
             generate_missing_previews(Path(temp))
-            Path(temp).rename(target)
+            retry_sharing_violation(lambda: Path(temp).rename(target),
+                                    f"Install demo folder: {target}")
         return len(sources)
 
 
@@ -161,7 +163,7 @@ class DemoDownload:
                 self.update(state='complete', message=f'{count} demo images installed.')
                 LOG.info('Installed demo pack: %s images', count)
         except Exception as exc:
-            LOG.warning('Demo download failed: %s', exc)
+            LOG.exception('Demo download/install failed in %s: %s', self.directory, exc)
             reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
             if isinstance(reason, ssl.SSLCertVerificationError):
                 message = ('The demo download certificate could not be verified. '

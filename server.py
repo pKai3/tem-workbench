@@ -1,4 +1,5 @@
 """Local-only TEM workbench. Start with: python server.py --open"""
+import phase_support
 from parallel_execution import RegionPool, worker_count, worker_limit, configure_numeric_threads
 configure_numeric_threads()
 from concurrent.futures import TimeoutError, CancelledError
@@ -163,7 +164,7 @@ class Workbench:
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
                 'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'live_spectrum_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(), 'overlap_rim_sampling': True, 'overlap_passing_strength': True,
-                'peak_evidence': peak_evidence.VERSION, 'separate_peak_penalties': True, 'double_diffraction_scoring': True, 'brightness_grouping': True, 'fft_brightness_grouping': True, 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
+                'peak_evidence': peak_evidence.VERSION, 'separate_peak_penalties': True, 'double_diffraction_scoring': True, 'brightness_grouping': True, 'fft_brightness_grouping': True, 'omega_positional_falloff': True, 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
     def set_folders(self, data, output):
         with self.lock, self.job_lock:
@@ -478,13 +479,7 @@ class Workbench:
 
     @staticmethod
     def best_zones(region):
-        zones = {}
-        for phase in PHASES:
-            options = [m for m in region['models'] if m['phase'] == phase]
-            model = next((m for m in options if m['valid']), options[0] if options else None)
-            if model:
-                zones[phase] = {key: model[key] for key in ('phase', 'zone_3index', 'valid', 'score', 'coverage')}
-        return zones
+        return phase_support.best_zones(region, PHASES)
 
     def grid_summary(self):
         """Reconnect a page to the latest interactive job without copying its fits."""
@@ -508,7 +503,7 @@ class Workbench:
             result['regions'] = ([{k: v for k, v in r.items() if not k.startswith('_')} for r in regions] if full else
                                  [{'id': r['id'], 'roi': r['roi'], 'label': r['classification']['label'],
                                    'leaf': r['leaf'], 'depth': r['depth'], 'elapsed_ms': r['elapsed_ms'],
-                                   'best_zones': self.best_zones(r), 'pass_id': r.get('pass_id'), 'rim': r.get('rim', False)} for r in regions])
+                                   'best_zones': self.best_zones(r), 'linked_support': phase_support.linked_summary(r), 'pass_id': r.get('pass_id'), 'rim': r.get('rim', False)} for r in regions])
             return result
 
     def rescore(self, job_id, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None, missing_weight=None, brightness_weight=None, dd_weight=None):
@@ -579,7 +574,7 @@ class Workbench:
     def export_crop(self, body):
         with self.lock:
             item = self.engine.load(body['file_id'])
-            roi = {key: int(body['roi'][key]) for key in ('x', 'y', 'w', 'h')}
+            roi = dict(body['roi'])
             raw = self.engine.region_preview(item, roi, max_size=None)
             name = safe_name(item['info']['name'])
             output = self.engine.output_for(body['file_id'])
@@ -785,12 +780,13 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/live-preview.js': ROOT/'web/live-preview.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/region-selection.js': ROOT/'web/region-selection.js', '/live-preview.js': ROOT/'web/live-preview.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
             except Exception as exc:
-                LOG.warning('Request %s failed: %s', self.path.split('?')[0], exc)
+                LOG.warning('Request %s failed: %s', self.path.split('?')[0], exc,
+                            exc_info=isinstance(exc, OSError))
                 self.send({'error': str(exc)}, status=400)
 
         def do_POST(self):
@@ -923,7 +919,7 @@ def make_handler(app):
                 LOG.warning('Request %s failed: %s', self.path, exc)
                 self.send({'error': str(exc)}, status=400)
             except Exception as exc:
-                traceback.print_exc()
+                LOG.exception('Request %s failed: %s', self.path.split('?')[0], exc)
                 self.send({'error': str(exc)}, status=500)
     return Handler
 

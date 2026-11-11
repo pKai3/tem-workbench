@@ -203,7 +203,12 @@ function drawBetaOmega(data,qp){
   const showDD=dd&&$('double-diffraction-marker').value!=='off'&&dd.paths.some(p=>p.steps.every(s=>!betaOmegaComponentHidden(s.component)));
   const showAbsence=diagnostic&&!showDD&&$('show-forbidden').checked&&owners.some(id=>!betaOmegaComponentHidden(id)),measuredMode=$('peak-marker').value;
   if(measuredMode==='off'&&!showAbsence)continue;
-  for(const q of assignment.observed_spots){
+  // FFT profiles represent both conjugate positions; direct diffraction keeps
+  // only observed spots. Older linked exports may store just one FFT side.
+  const fft=data.image_kind==='image_fft'||model.observation_kind==='image_fft';
+  const q0=peak?[peak.qx,peak.qy]:assignment.observed_q||assignment.observed_spots?.[0];
+  const observations=peak?.observed_spots||(fft&&q0?[q0,q0.map(v=>-v)]:assignment.observed_spots||[]);
+  for(const q of observations){
    const [x,y]=qp(...q);if(x<0||x>420||y<0||y>420)continue;
    const manual=(peak?.manual_observed_spots||[]).some(p=>Math.hypot(p[0]-q[0],p[1]-q[1])<1e-8),color=manual?'#ff8ac3':'#ffffff';
    const description=`Profile ${assignment.profile_id}: ${dd?'candidate double diffraction · '+doubleDiffractionPathLabel(dd.paths[0],model):diagnostic?'nominally absent '+owners.map(id=>betaOmegaLabel(id,model)).join(' / ')+' reflection; geometry only':shared?'shared '+owners.map(id=>betaOmegaLabel(id,model)).join(' / '):betaOmegaLabel(assignment.component,model)}`;
@@ -233,7 +238,7 @@ function syncRelativeUnits(){
  for(const th of headers){if(!reciprocalLabels.has(th))reciprocalLabels.set(th,th.textContent);th.textContent=relative?reciprocalLabels.get(th).replaceAll('nm⁻¹','rel.').replace('d, nm','d (uncalibrated)'):reciprocalLabels.get(th)}
  syncSignalToggle();
 }
-function relatedPhasesSelected(){return isDiffraction()&&enabledPhases.includes('BCC')&&enabledPhases.includes('OMEGA')}
+function relatedPhasesSelected(){return enabledPhases.includes('BCC')&&enabledPhases.includes('OMEGA')}
 function phaseSearchDescription(){
  if(!enabledPhases.length)return 'Phase search disabled. Peak and geometry checks remain available.';
  return 'Searching '+enabledPhases.map(phase=>phaseLabel(phase)).join(' + ')+'. '+(meta?.reciprocal_calibrated===false?'Relative geometry; no absolute cell dimensions. ':'')+(relatedPhasesSelected()?'Related omega orientations are also tested against a BCC parent. Greek names follow the material preset; the fit tests the stated structure, not phase stability.':'Disabled skips matching.');

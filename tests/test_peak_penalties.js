@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync('web/app.js','utf8'),controls=new Map(),storage=new Map([['tem-peak-evidence-weight',.3]]);
 function $(id){if(!controls.has(id))controls.set(id,{id,value:'',dataset:{},classList:{toggle(){}},disabled:false});return controls.get(id)}
-const context={$,config:{grid_rescore:true,peak_evidence:true,separate_peak_penalties:true,peak_evidence_falloff:true},
+const context={$,clamp:(v,lo,hi)=>Math.max(lo,Math.min(hi,v)),config:{grid_rescore:true,peak_evidence:true,separate_peak_penalties:true,peak_evidence_falloff:true},
  document:{activeElement:null,querySelector:()=>$('scale-label')},grid:null,jobId:null,meta:{},
  rescorePending:false,rescoreBusy:false,rescoreJobId:null,rescoreTimer:null,rescoreRevision:0,
  scalePenalty:.1,caPenalty:.1,peakEvidenceWeight:.1,missingPeakWeight:.1,peakFalloff:8,

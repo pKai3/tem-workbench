@@ -302,7 +302,7 @@ $('favorite-toggle').onclick=()=>{
 };
 $('favorites').onchange=()=>{const id=$('favorites').value;if(id){clearFileSearch();$('file').value=id;openFile()}};
 function effectiveScalePenalty(){return $('material').value==='unknown'?0:scalePenalty}
-function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),omega_a:Number($('omega-a').value),omega_c:Number($('omega-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),ort_a:Number($('ort-a').value),ort_b:Number($('ort-b').value),ort_c:Number($('ort-c').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value!=='manual'),fft_auto_objective:$('fft-strength-mode').value==='geometry'?'geometry':'rank',...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?effectiveScalePenalty():0,ca_penalty_strength:caPenalty,...((isDiffraction()?config?.brightness_grouping:config?.fft_brightness_grouping)?{brightness_grouping_weight:brightnessGroupingWeight}:{}),...(config?.double_diffraction_scoring?{double_diffraction_weight:ddWeight}:{}),peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,...(config?.separate_peak_penalties?{missing_peak_weight:missingPeakWeight}:{}),peak_evidence_half_weight_nm_inv:config?.peak_evidence_falloff?peakFalloff:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{phase_search_version:2,beta_parent_anchors:diffractionSettings.beta_parent_anchors||[],diffraction:{...JSON.parse(JSON.stringify(diffractionSettings)),smoothing_workers:Number($('diff-workers').value)}}:{})}}
+function settings(){const mode=$('scenario').value;return {material:$('material').value,enabled_phases:[...enabledPhases],hcp_a:Number($('hcp-a').value),hcp_c:Number($('hcp-c').value),omega_a:Number($('omega-a').value),omega_c:Number($('omega-c').value),g_min:isDiffraction()?diffractionSettings.exclude_radius_nm_inv:Number($('fft-g-min').value),scale:Number($('model-scale').value),bcc_a:Number($('bcc-a').value),fcc_a:Number($('fcc-a').value),ort_a:Number($('ort-a').value),ort_b:Number($('ort-b').value),ort_c:Number($('ort-c').value),g_max:Number($('g-max').value),threshold:Number($('threshold').value),fft_auto_strength:Boolean(config?.fft_auto_strength&&$('fft-strength-mode').value!=='manual'),fft_auto_objective:$('fft-strength-mode').value==='geometry'?'geometry':'rank',...Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,defaultValue]])=>[key,config?.fft_detection_controls?Number($(id).value):defaultValue])),scale_penalty_strength:config?.scale_penalty?effectiveScalePenalty():0,ca_penalty_strength:caPenalty,...(config?.omega_positional_falloff?{omega_falloff_multiplier:Number($('omega-falloff').value)}:{}),...((isDiffraction()?config?.brightness_grouping:config?.fft_brightness_grouping)?{brightness_grouping_weight:brightnessGroupingWeight}:{}),...(config?.double_diffraction_scoring?{double_diffraction_weight:ddWeight}:{}),peak_evidence_weight:config?.peak_evidence?peakEvidenceWeight:0,...(config?.separate_peak_penalties?{missing_peak_weight:missingPeakWeight}:{}),peak_evidence_half_weight_nm_inv:config?.peak_evidence_falloff?peakFalloff:0,scale_mode:mode.startsWith('auto_')?mode:'fixed',fft_window:config?.fft_processing&&!$('fft-hann').checked?'none':'hann',remove_mean:config?.fft_processing?$('fft-mean').checked:true,...(isDiffraction()?{phase_search_version:2,beta_parent_anchors:diffractionSettings.beta_parent_anchors||[],diffraction:{...JSON.parse(JSON.stringify(diffractionSettings)),smoothing_workers:Number($('diff-workers').value)}}:{})}}
 function calibrationView(){
  const v=$('scenario').value,field=$('model-scale'),automatic=v.startsWith('auto_');
  updatePenaltyControls();
@@ -498,7 +498,7 @@ for(const id of ['fft','overview','fft-zoom-view']){
 }
 
 function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
-function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi={x:0,y:0,w:meta.width,h:meta.height};$('region-size').textContent=`${meta.width} × ${meta.height} px · full detector`;drawDetector();return;}const min=32,max=Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=preserveHeight?roi.h:roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`;rememberRegionSize();showLiveRegionCrop()}
+function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi={x:0,y:0,w:meta.width,h:meta.height};$('region-size').textContent=`${meta.width} × ${meta.height} px · full detector`;drawDetector();return;}const min=32,max=(preserveHeight||roi.polygon||$('region-selection')?.value==='rectangle')?meta.width:Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=(preserveHeight||roi.polygon||$('region-selection')?.value==='rectangle')?clamp(Math.round(roi.h),min,meta.height):roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`;rememberRegionSize();if(typeof syncRegionSelection==='function')syncRegionSelection();showLiveRegionCrop()}
 // Invalidate the old result immediately; never attach it to a newly moved region.
 function schedule(delay=120){generation++;pending=true;result=null;updateStrengthMode();hideRegionPreview();if(!isDiffraction()){$('fft-overlay').replaceChildren();$('fft-legend').hidden=true;queueLiveRegionPreview()}beginSpectrumLoading();syncSpectrumExportControls();if(isDiffraction()){drawDetector();renderTranslation()}$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
 function abandonAnalysis(){
@@ -630,7 +630,8 @@ $('overview').addEventListener('pointermove',e=>{
  if(isDiffraction()){detectorPointerMove(e);return}
  if(!drag){hoverComputedRegion(e);return}
  const p=point(e),previous={...roi};
- if(drag.mode==='resize')roi.w=clamp(drag.roi.w+Math.max(p.x-drag.x,p.y-drag.y),32,Math.min(meta.width-drag.roi.x,meta.height-drag.roi.y));
+ if(drag.mode==='resize'&&typeof resizeRegionSelection==='function')resizeRegionSelection(drag,p);
+ else if(drag.mode==='resize')roi.w=clamp(drag.roi.w+Math.max(p.x-drag.x,p.y-drag.y),32,Math.min(meta.width-drag.roi.x,meta.height-drag.roi.y));
  else{roi.x=drag.roi.x+p.x-drag.x;roi.y=drag.roi.y+p.y-drag.y}
  updateBox();
  if(!sameRegion(previous,roi))schedule(90);
@@ -645,7 +646,7 @@ for(const name of ['pointerup','pointercancel'])$('overview').addEventListener(n
  if(pending){clearTimeout(timer);timer=null;analyze()}
 });
 $('overview').addEventListener('keydown',e=>{if(overlapPlanning())return;const saved=e.target.closest('.saved-region-overlay');if(saved&&(e.key==='Enter'||e.key===' ')){e.preventDefault();openSavedRegion(saved.dataset.regionId);return}if(!meta||isDiffraction()||e.altKey||e.ctrlKey||e.metaKey)return;const offsets={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};if(!offsets[e.key])return;const n=e.shiftKey?50:10;roi.x+=offsets[e.key][0]*n;roi.y+=offsets[e.key][1]*n;updateBox(true);schedule();e.preventDefault()});
-for(const [id,key]of [['roi-x','x'],['roi-y','y'],['roi-nm','w']])$(id).addEventListener('change',()=>{if(!meta)return;const n=Number($(id).value);if(!Number.isFinite(n))return;roi[key]=key==='w'?n/meta.pixel_x_nm:n;updateBox();schedule(0)});
+for(const [id,key]of [['roi-x','x'],['roi-y','y'],['roi-nm','w']])$(id).addEventListener('change',()=>{if(!meta)return;const n=Number($(id).value);if(!Number.isFinite(n))return;if(key==='w'&&roi.polygon){const w=clamp(Math.round(n/meta.pixel_x_nm),32,Math.min(meta.width-roi.x,(meta.height-roi.y)*roi.w/roi.h)),scale=w/roi.w;roi.polygon=roi.polygon.map(([x,y])=>[x*scale,y*scale]);roi.h=Math.round(roi.h*scale);roi.w=w}else roi[key]=key==='w'?n/meta.pixel_x_nm:n;updateBox();schedule(0)});
 $('centre').onclick=()=>{if(!meta)return;roi.x=(meta.width-roi.w)/2;roi.y=(meta.height-roi.h)/2;updateBox();schedule(0)};
 function relatedDDEvidence(data){
  const model=data.beta_omega,dd=model?.double_diffraction;
@@ -1001,7 +1002,7 @@ function peakNumberLabel(x,y,id,scale=1,attrs={}){
  return el('text',{x:x+5*scale,y:y-5*scale,fill:'#ffffff','font-size':7*scale,stroke:'#05090e','stroke-width':1.8*scale,'paint-order':'stroke','data-profile-number':id,...attrs},String(id));
 }
 function syncPhaseMarkerControls(){
- const linked=isDiffraction()&&relatedPhasesSelected();
+ const linked=relatedPhasesSelected();
  for(const phase of PHASES)$(phase.toLowerCase()+'-marker').closest('label').hidden=!(enabledPhases.includes(phase)||(linked&&['BCC','OMEGA'].includes(phase)));
  $('omega-color-by').closest('label').hidden=!enabledPhases.length;
 }
@@ -1742,7 +1743,7 @@ function renderOverlapSummary(container){
  const a=grid.aggregation;
  const title=document.createElement('h3');title.textContent='Overlapping map results';container.append(title);
  const text=document.createElement('p');text.className='hint';
- text.textContent=`${grid.processed} / ${grid.grid.sample_count} windows · ${grid.grid.passes} placement pass(es) · ${grid.state}. `+(a?`${a.coverage_percent.toFixed(1)}% approximate sampled image coverage. `:'Aggregation appears when the run stops. ')+ 'Match frequency includes weaker passing phases; phases can overlap. It is not a phase fraction or a probability. Failed and missing fits count as no passing support.';
+ text.textContent=`${grid.processed} / ${grid.grid.sample_count} windows · ${grid.grid.passes} placement pass(es) · ${grid.state}. `+(a?`${a.coverage_percent.toFixed(1)}% approximate sampled image coverage. `:'Aggregation appears when the run stops. ')+ 'Match frequency includes weaker passing phases and components supported by a passing β + ω fit; linked components share one joint rank. Phases can overlap. It is not a phase fraction or a probability. Failed and missing fits count as no passing support.';
  container.append(text);
  if(!a)return;
  const table=document.createElement('table'),head=document.createElement('tr');
@@ -2000,7 +2001,7 @@ function drawGrid(){
   if(!r.leaf)continue;
   const e=el('rect',{x:r.roi.x,y:r.roi.y,width:r.roi.w,height:r.roi.h,fill:colors[r.label]||'#aaa',stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':r.id,'fill-opacity':showGrid?Number($('grid-opacity').value)/100:0});
   const descriptions=[labels[r.label]];
-  for(const phase of PHASES){const m=r.best_zones?.[phase];if(m)descriptions.push(`${phaseLabel(phase)} ${zoneLabel(m)} · ${m.valid?'passes screen':'below threshold'}`)}
+  for(const phase of PHASES){const m=r.best_zones?.[phase];if(m)descriptions.push(`${phaseLabel(phase)} ${zoneLabel(m)} · ${m.score_basis==='joint_rank'?'supported by β + ω joint fit':m.valid?'passes screen':'below threshold'}`)}
   e.setAttribute('role','img');e.setAttribute('aria-label',descriptions.join(' · '));group.append(e);
   const rankedZones=analysisPhases(grid.settings).map(phase=>({phase,model:r.best_zones?.[phase]}))
    .filter(entry=>entry.model).sort((a,b)=>compareRank(a.model,b.model));
@@ -2274,6 +2275,8 @@ function syncMapLoading(){
 }
 function updatePenaltyControls(){
  const automatic=$('scenario').value.startsWith('auto_'),running=isGridRunning();
+ $('omega-falloff-field').hidden=!enabledPhases.includes('OMEGA');
+ $('omega-falloff').disabled=$('omega-falloff-slider').disabled=running||!config?.omega_positional_falloff;
  $('reset-scale').disabled=running||rescoreBusy||rescorePending;
  const disabled=!config?.grid_rescore||!automatic||running;
  const ratioMode=$('scenario').value==='auto_hcp_ratio';
@@ -2324,7 +2327,8 @@ function queuePenaltyUpdate(){
 function resetScaleControls(){
  if(isGridRunning()||rescoreBusy||rescorePending)return;
  const mode=config?.scale_modes?.includes('auto_hcp_ratio')?'auto_hcp_ratio':config?.scale_modes?.includes('auto_hcp_ac')?'auto_hcp_ac':'1';
- const refit=$('scenario').value!==mode||Number($('model-scale').value)!==1;
+ const refit=$('scenario').value!==mode||Number($('model-scale').value)!==1||Number($('omega-falloff').value)!==1;
+ $('omega-falloff').value=$('omega-falloff-slider').value=1;writePreference('tem-omega-falloff',1);
  $('scenario').value=mode;$('model-scale').value='1.000';
  scalePenalty=caPenalty=peakEvidenceWeight=missingPeakWeight=brightnessGroupingWeight=.10;ddWeight=0;peakFalloff=8;
  for(const [field,slider,key,value]of [
@@ -2353,6 +2357,13 @@ async function rescoreGrid(){
   if(rescorePending){clearTimeout(rescoreTimer);rescoreTimer=setTimeout(rescoreGrid,0)}
  }
 }
+const savedOmegaFalloff=Number(readPreference('tem-omega-falloff',1));
+$('omega-falloff').value=$('omega-falloff-slider').value=Number.isFinite(savedOmegaFalloff)?clamp(savedOmegaFalloff,1,5):1;
+for(const id of ['omega-falloff','omega-falloff-slider'])$(id).oninput=()=>{
+ const value=Number($(id).value);if(!$(id).value||!Number.isFinite(value)||value<1||value>5)return;
+ $('omega-falloff').value=$('omega-falloff-slider').value=value;writePreference('tem-omega-falloff',value);
+ invalidateAnalysisSettings();updatePenaltyControls();
+};
 const savedFalloff=readPreference('tem-peak-falloff',8);
 if(Number.isFinite(savedFalloff)&&savedFalloff>=0&&savedFalloff<=30)peakFalloff=savedFalloff;
 $('peak-falloff').value=peakFalloff;$('peak-falloff-slider').value=peakFalloff;
@@ -2409,6 +2420,7 @@ function invalidateAnalysisSettings(){
  $('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(0);
 }
 function updateStrengthMode(){
+ $('fft-effective-cutoff').hidden=true;
  $('fft-strength-mode').querySelector('option[value=geometry]').disabled=!config?.fft_auto_geometry;
  if(config&&!config.fft_auto_geometry&&$('fft-strength-mode').value==='geometry')$('fft-strength-mode').value='auto';
  const automatic=$('fft-strength-mode').value!=='manual';
@@ -2423,7 +2435,25 @@ function updateStrengthMode(){
  $('fft-auto-strength-status').hidden=!automatic||isDiffraction();
  $('fft-auto-strength-status').textContent=automatic?'Auto chooses the strength for each region; the manual value is ignored.':'';
 }
+function renderEffectiveCutoff(data){
+ const output=$('fft-effective-cutoff'),s=data.spectrum;
+ const cutoff=s?.profile_threshold,strength=s?.minimum_peak_enrichment,floor=s?.detection_threshold_floor,fraction=s?.fraction_threshold;
+ output.hidden=data.image_kind==='diffraction'||!Number.isFinite(cutoff)||!Number.isFinite(strength);
+ if(output.hidden)return;
+ const effective=Math.max(cutoff,strength),close=(a,b)=>Math.abs(a-b)<1e-9;
+ const sources=[];
+ if(close(strength,effective))sources.push('Strength');
+ if(close(cutoff,effective)){
+  if(Number.isFinite(floor)&&close(floor,cutoff))sources.push('Floor');
+  if(Number.isFinite(fraction)?close(fraction,cutoff):Number.isFinite(floor)&&cutoff>floor)sources.push('Fraction');
+  if(!sources.length)sources.push('Detector');
+ }
+ output.textContent=`${sources.join(' + ')} → ${effective.toFixed(3)}`;
+ const fractionText=Number.isFinite(fraction)?fraction.toFixed(3):Number.isFinite(floor)&&cutoff>floor?cutoff.toFixed(3):'not recorded';
+ output.title=`Cutoff set by ${sources.join(' and ').toLowerCase()}. Fraction cutoff: ${fractionText}; floor: ${Number.isFinite(floor)?floor.toFixed(3):'not recorded'}; minimum strength: ${strength.toFixed(3)}. All use the smoothed, background-subtracted log-power signal. The highest value controls admission; peaks must exceed the detector cutoff. Lowering a non-limiting value will not admit more peaks. Separation and maximum profiles also apply.${s.auto_peak_strength?' Auto selected the strength; the manual value is ignored.':''}`;
+}
 function renderAutoStrength(data){
+ renderEffectiveCutoff(data);
  const info=data.spectrum.auto_peak_strength,output=$('fft-auto-strength-status');
  output.hidden=!info||data.image_kind==='diffraction';
  if(!info)return;
@@ -2671,7 +2701,7 @@ function applyCatalogue(data){
  if(matchingFiles().some(f=>f.id===selected))$('file').value=selected;
  else if(selected){$('file').value='';exportNotice('Image unavailable','The open result is retained. Reconnect its source folder or choose another image.','saved')}
  if($('image-browser').open)renderImageBrowser();
- if(meta){const row=config.files.find(f=>f.id===meta.id);if(row)meta.name=row.name}
+ if(meta){const row=config.files.find(f=>f.id===meta.id);if(row){meta.name=row.name;$('source-title').textContent=meta.name}}
 }
 setInterval(async()=>{
  if(!config?.file_tracking||document.hidden||cataloguePolling)return;
@@ -2783,14 +2813,14 @@ async function browseFolder(path){
  try{
   const listing=await api('browse-folders',{path});
   if(version!==folderBrowseVersion)return;
-  folderListing=listing;$('folder-path').value=listing.path;$('folder-list').replaceChildren();
+  folderListing=listing;const drives=$('folder-drive');drives.replaceChildren(new Option('Drive…',''));for(const drive of listing.drives||[])drives.add(new Option(drive,drive));drives.hidden=!(listing.drives||[]).length;$('folder-path').value=listing.path;$('folder-list').replaceChildren();
   for(const folder of listing.directories){
    const button=document.createElement('button');button.type='button';button.textContent='▸ '+folder.name;button.title=folder.path;
    button.onclick=()=>browseFolder(folder.path);$('folder-list').append(button);
   }
   $('folder-up').disabled=listing.path===listing.parent;$('folder-use').disabled=false;
   $('folder-status').textContent=listing.directories.length?listing.directories.length+' subfolders':'No subfolders. You can select this folder.';
- }catch(e){if(version===folderBrowseVersion)$('folder-status').textContent=e.message}
+ }catch(e){if(version===folderBrowseVersion){folderListing=null;$('folder-status').textContent=e.message}}
 }
 function chooseFolder(target){
  if(!config?.folder_picker)return;
@@ -2801,6 +2831,7 @@ $('browse-data').onclick=()=>chooseFolder('folder-data');$('browse-output').oncl
 for(const id of ['folder-close','folder-cancel'])$(id).onclick=()=>{$('folder-picker').close();folderBrowseVersion++};
 $('folder-up').onclick=()=>browseFolder(folderListing?.parent);
 $('folder-home').onclick=()=>browseFolder(folderListing?.home);
+$('folder-drive').onchange=()=>{if($('folder-drive').value)browseFolder($('folder-drive').value)};
 $('folder-go').onclick=()=>browseFolder($('folder-path').value);
 $('folder-path').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();browseFolder($('folder-path').value)}};
 $('folder-use').onclick=()=>{if(folderListing&&folderTarget){$(folderTarget).value=folderListing.path;$(folderTarget).dispatchEvent(new Event('change'));$('folder-picker').close();folderBrowseVersion++}};
@@ -2828,7 +2859,8 @@ function renderSavedRegionOverlays(){
   if(!r||!['x','y','w','h'].every(k=>Number.isFinite(r[k]))||r.w<=0||r.h<=0)continue;
   const group=el('g',{'class':'saved-region-overlay','data-region-id':region.id,role:'button',tabindex:0,'aria-label':'Open saved region: '+region.name});
   const bounds={x:r.x,y:r.y,width:r.w,height:r.h};
-  group.append(el('rect',{...bounds,class:'saved-region-hit'}),el('rect',{...bounds,class:'saved-region-outline'}));
+  const shape=r.polygon?'polygon':'rect',attrs=r.polygon?{points:r.polygon.map(([x,y])=>`${x+r.x},${y+r.y}`).join(' ')}:bounds;
+  group.append(el(shape,{...attrs,class:'saved-region-hit'}),el(shape,{...attrs,class:'saved-region-outline'}));
   layer.append(group);
  }
 }
@@ -2868,6 +2900,7 @@ function applyRegionSettings(saved){
  $('fft-strength-mode').value=saved.fft_auto_strength?(saved.fft_auto_objective==='geometry'?'geometry':'auto'):'manual';updateStrengthMode();
  $('fft-hann').checked=(saved.fft_window??'hann')==='hann';$('fft-mean').checked=saved.remove_mean!==false;
  caPenalty=saved.ca_penalty_strength??.10;$('ca-penalty').value=caPenalty;$('ca-penalty-slider').value=caPenalty;writePreference('tem-ca-penalty',caPenalty);
+ $('omega-falloff').value=$('omega-falloff-slider').value=saved.omega_falloff_multiplier??1;writePreference('tem-omega-falloff',Number($('omega-falloff').value));
  peakFalloff=saved.peak_evidence_half_weight_nm_inv??0;$('peak-falloff').value=peakFalloff;$('peak-falloff-slider').value=peakFalloff;writePreference('tem-peak-falloff',peakFalloff);
  scalePenalty=saved.scale_penalty_strength??.1;peakEvidenceWeight=saved.peak_evidence_weight??.1;
  ddWeight=saved.double_diffraction_weight??0;$('dd-weight').value=ddWeight;$('dd-slider').value=ddWeight;writePreference('tem-dd-weight',ddWeight);
@@ -2938,11 +2971,12 @@ function validDiffraction(d){
  return Array.isArray(d.masks)&&d.masks.length<=20&&d.masks.every(r=>['x','y','w','h'].every(k=>Number.isFinite(r[k]))&&r.x>=0&&r.y>=0&&r.w>0&&r.h>0&&r.x+r.w<=meta.width&&r.y+r.h<=meta.height);
 }
 function setupImageKind(){
+ if(typeof cancelPolygonDrawing==='function')cancelPolygonDrawing(false);
  const limits=document.querySelector('.fitting-limits');
  const limitHost=isDiffraction()?document.querySelector('.diffraction-main'):$('fft-entry-second');
  if(isDiffraction())limitHost.insertBefore(limits,limitHost.querySelector('.diffraction-detection'));else limitHost.appendChild(limits);
  const direct=isDiffraction();syncSignalToggle();applyInspectorLayout();hideRegionPreview();document.body.classList.toggle('diffraction',direct);$('diffraction-controls').hidden=!direct;
- $('source-title').textContent=direct?'Diffraction detector':'Real space';$('inspector-title').textContent=direct?'Pattern analysis':'Selected region';
+ $('source-title').textContent=meta?.name||(direct?'Diffraction detector':'Real space');$('inspector-title').textContent=direct?'Pattern analysis':'Selected region';
  $('source-caption').textContent=direct?'Diffraction space':'Real space';$('spectrum-title').textContent=direct?'Diffraction space':'FFT space';$('brightness-title').textContent=direct?'Brightness':'FFT brightness';
  $('fft-zoom-title').textContent=(direct?'Diffraction space':'FFT space')+' · nm⁻¹';
  $('fft').setAttribute('aria-label',direct?'Diffraction pattern with detected spots and crystal predictions':'Region FFT with measured peaks and candidate crystal predictions');
@@ -3266,11 +3300,18 @@ function hideRegionPreview(){clearTimeout(hoverTimer);hoverTimer=null;hoverKey=n
 function regionContains(r,p){return p.x>=r.x&&p.x<r.x+r.w&&p.y>=r.y&&p.y<r.y+r.h}
 function previewKey(r,values){
  const ordered=Object.keys(values).sort().map(k=>[k,values[k]]);
- return JSON.stringify([fileId,meta.sha256_pixels,meta.pixel_x_nm,meta.pixel_y_nm,config.engine,...['x','y','w','h'].map(k=>r[k]),ordered]);
+ return JSON.stringify([fileId,meta.sha256_pixels,meta.pixel_x_nm,meta.pixel_y_nm,config.engine,...['x','y','w','h'].map(k=>r[k]),r.polygon||null,r.edge_fade_nm??null,ordered]);
 }
 function analysisPreview(data){
+ const candidates=analysisPhases(data.settings).map(phase=>({phase,model:bestModel(data,phase)}));
+ if(data.beta_omega?.fit)candidates.push({model:data.beta_omega.fit,linked:data.beta_omega});
+ if(data.classification?.combined_fit)candidates.push({model:data.classification.combined_fit});
+ // Keep the same labels as the main candidate table, including repeated phases
+ // and linked omega variants, without retaining the full analysis in the cache.
+ const previewCandidates=candidates.map(({phase,model,linked})=>({phase,model,
+  parts:model?candidateLabelParts(model,data,linked):[{text:phaseLabel(phase),color:phaseColors[phase]}]}));
  return {roi:data.roi,settings:data.settings,label:data.classification.label,
-  models:Object.fromEntries(PHASES.map(phase=>[phase,bestModel(data,phase)])),
+  models:Object.fromEntries(PHASES.map(phase=>[phase,bestModel(data,phase)])),candidates:previewCandidates,
   crop:data.images.crop,images:data.images,extent:data.spectrum.extent};
 }
 function cacheRegionPreview(key,preview){
@@ -3312,13 +3353,15 @@ function renderRegionPreviewDetails(region){
  const name=$('region-hover-name');name.textContent=region.name||'';name.hidden=!region.name;
  const rows=$('region-hover-models');rows.replaceChildren();
  if(!region.label){rows.textContent='Loading saved analysis…';return}
- const candidates=analysisPhases(region.settings).map(phase=>({phase,model:region.models[phase]}));
+ const candidates=[...(region.candidates||analysisPhases(region.settings).map(phase=>({phase,model:region.models[phase]})))];
  candidates.sort((a,b)=>Number(Boolean(b.model?.valid))-Number(Boolean(a.model?.valid))||compareRank(a.model,b.model));
- for(const {phase,model}of candidates){
+ for(const {phase,model,parts}of candidates){
   const row=document.createElement('div'),name=document.createElement('span'),rank=document.createElement('span'),status=document.createElement('span');
-  name.textContent=phaseLabel(phase)+(model?' '+zoneLabel(model):'');name.style.color=phaseColors[phase];
-  rank.textContent=Number.isFinite(model?.score)?'Rank '+model.score.toFixed(3):'—';rank.className='preview-rank';
-  status.textContent=model?(model.valid?'Pass':'Below threshold'):'No fit';status.className='muted';
+  if(parts){for(const part of parts){const span=document.createElement('span');span.textContent=part.text;if(part.color)span.style.color=part.color;name.append(span)}}
+  else{name.textContent=phaseLabel(phase)+(model?' '+zoneLabel(model):'');name.style.color=phaseColors[phase]}
+  rank.textContent=Number.isFinite(model?.score)?(model.score_basis==='joint_rank'?'Joint rank ':'Rank ')+model.score.toFixed(3):'—';rank.className='preview-rank';
+  status.textContent=model?(model.score_basis==='joint_rank'?'Linked':model.valid?'Pass':'Below threshold'):'No fit';
+  if(model?.score_basis==='joint_rank')row.title='Supported component of a passing β + ω joint fit; this rank belongs to the whole combination.';status.className='muted';
   row.append(name,rank,status);rows.append(row);
  }
 }
@@ -3331,6 +3374,7 @@ function setRegionPreviewImage(region,src,cropped){
  const r=region.roi,img=$('region-hover-image');
  $('region-hover-view').setAttribute('viewBox',cropped?`0 0 ${r.w} ${r.h}`:`${r.x} ${r.y} ${r.w} ${r.h}`);
  img.setAttribute('width',cropped?r.w:meta.width);img.setAttribute('height',cropped?r.h:meta.height);img.setAttribute('href',src);
+ if(typeof clipPolygonPreview==='function')clipPolygonPreview($('region-hover-view'),img,cropped?{...r,x:0,y:0}:r,'hover-polygon-clip');
 }
 async function setRegionPreviewFFT(region,version){
  const raw=await decodeSpectrumImage(region.images);if(version!==hoverVersion)return;

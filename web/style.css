@@ -672,7 +672,7 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 /* Both FFT rows share column widths and respond to their own panel width. */
 #fft-entry-second{grid-template-columns:repeat(5,minmax(0,1fr))}
 #fft-entry-second .fitting-override-actions{grid-column:auto}
-@container fft-controls (max-width:1100px){
+@container fft-controls (max-width:850px){
  .fft-entry-row,#fft-entry-second{grid-template-columns:repeat(3,minmax(0,1fr))}
  #fft-entry-second .fitting-override-actions{grid-column:span 2}
 }
@@ -857,3 +857,38 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .grid-window-spinner{opacity:1;pointer-events:none;filter:drop-shadow(0 0 2px #000)}
 .grid-window-spinner .reciprocal-lattice circle{fill:#fff;opacity:1}
 .grid-window-spinner .reciprocal-lattice path{stroke:#c8ffff;stroke-opacity:.6}
+
+.strength-heading{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+#fft-effective-cutoff{color:var(--muted);font-size:11px;font-weight:normal;font-variant-numeric:tabular-nums;white-space:nowrap;cursor:help}
+#fft-effective-cutoff[hidden]{display:none}
+
+/* Keep labels and input baselines aligned, with a compact cutoff hint. */
+.fft-entry-row{align-items:end}
+.fft-entry-row>label,.fft-entry-row .fitting-limits>label:not(.diffraction-fitting-limit){display:grid;grid-template-rows:minmax(16px,auto) 32px;align-items:end}
+.fft-entry-row input[type=number],.fft-entry-row select{min-height:32px;padding:5px 8px}
+.fft-entry-row .strength-controls{height:32px;align-self:end}
+.fft-entry-row .strength-controls select{flex:1 1 120px;min-width:90px}
+.strength-heading{min-height:16px}
+#fft-effective-cutoff{margin-left:auto;min-width:0}
+#source-title{min-width:0;overflow-wrap:anywhere;line-height:1.35}
+.workspace>.panel:first-child>.panel-head{flex-wrap:wrap}
+@container fft-controls (max-width:850px){
+ .fft-processing-heading+.fft-entry-row>label:last-child{grid-column:1/-1}
+ .fft-entry-row .strength-controls select{flex:0 1 260px}
+ .fft-entry-row .strength-controls input[type=range]{flex:1 1 90px;max-width:180px}
+ #fft-effective-cutoff{margin-left:0}
+}
+
+/* Region selection tools wrap as a group before map export. */
+.selection-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.selection-toolbar label{display:flex;flex-direction:row;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
+.selection-toolbar input{width:65px}.selection-toolbar select,.selection-toolbar button,.selection-toolbar input{min-height:28px;padding:4px 7px}
+.polygon-outline{fill:#69ffeb;fill-opacity:.05;stroke:#69ffeb;stroke-width:1.5;vector-effect:non-scaling-stroke;cursor:move}
+.polygon-vertex{fill:#69ffeb;stroke:#10202a;stroke-width:1;vector-effect:non-scaling-stroke;cursor:grab}
+.diffraction .selection-toolbar,.diffraction #polygon-selection,.diffraction #roi-height-control,.overlap-planning #polygon-selection{display:none}
+#polygon-help .settings-help-popup{left:auto;right:0}
+.selection-toolbar .settings-help-button{padding:0;min-height:24px}
+
+.selection-toolbar [hidden],#roi-height-control[hidden]{display:none}
+
+.polygon-fade-outline{fill:none;stroke:#fff;stroke-opacity:.45;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none;stroke-linecap:round}

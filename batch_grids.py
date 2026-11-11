@@ -1,4 +1,5 @@
 """Sequential-image batch coordinator using the existing parallel region grid engine."""
+import phase_support
 import copy
 import csv
 from datetime import datetime
@@ -72,7 +73,7 @@ def summarize(job, sample):
         label=region['classification']['label'];areas[label]=areas.get(label,0.)+area
         # One best passing fit per phase per leaf, consistent with the grid legend.
         for phase in ('HCP','BCC','FCC','ORT','OMEGA'):
-            fits=[m for m in region['models'] if m['phase']==phase and m['valid']]
+            fits=[m for m in phase_support.models(region) if m['phase']==phase and m['valid']]
             if not fits:continue
             model=max(fits,key=lambda m:m['score']);zone=' '.join(map(str,model['zone_3index']))
             key=phase+' ['+zone+']'
@@ -83,7 +84,8 @@ def summarize(job, sample):
     return dict(file_id=source['id'],image=source['name'],sample=sample,state=job['state'],leaf_regions=len(leaves),
                 total_image_area_nm2=total,analyzed_area_nm2=analyzed,coverage_percent=100*analyzed/total,
                 classification_area_nm2=areas,classification_image_percent={k:100*v/total for k,v in areas.items()},
-                passing_zones=list(zones.values()))
+                passing_zones=list(zones.values()), linked_beta_omega_regions=sum(phase_support.linked_summary(r) is not None for r in leaves),
+                support_interpretation='Passing zones include components of passing beta + omega unions. Linked components share one joint rank; counts are not phase fractions.')
 
 def sample_summaries(images):
     if images and images[0].get('mode')=='overlap':
@@ -104,7 +106,7 @@ def sample_summaries(images):
             coverage_percent=100*sum(r['analyzed_area_nm2'] for r in rows)/total,
             classification_area_nm2=areas,pooled_image_percent={k:100*v/total for k,v in areas.items()},
             mean_image_percent={k:sum(r['classification_image_percent'].get(k,0) for r in rows)/len(rows) for k in LABELS},
-            passing_zones=list(zones.values())))
+            passing_zones=list(zones.values()), linked_beta_omega_regions=sum(r.get('linked_beta_omega_regions',0) for r in rows)))
     return output
 
 def png_exports(options, phases):
@@ -147,7 +149,7 @@ def map_png(item, job, target, colors=None, opacity=.2, view='support', phase=No
         draw.rectangle(box,fill=(*rgb,int(255*opacity)))
         lines=[]
         for phase in ('HCP','BCC','FCC','ORT','OMEGA'):
-            fits=[m for m in r['models'] if m['phase']==phase and m['valid']]
+            fits=[m for m in phase_support.models(r) if m['phase']==phase and m['valid']]
             if fits:
                 m=max(fits,key=lambda m:m['score']);lines.append(phase+' ['+' '.join(map(str,m['zone_3index']))+']')
         if box[2]-box[0]>100 and lines:

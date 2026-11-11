@@ -26,7 +26,8 @@ assert.equal($('omega-marker').closest('label').hidden,false);
 context.meta.reciprocal_calibrated=true;context.setupBetaOmegaSearch();assert.equal(context.relatedPhasesSelected(),true);
 context.enabledPhases=['BCC'];context.diffractionSettings={phase_search_version:2,search_beta_omega:true};context.setupBetaOmegaSearch();
 assert.equal(context.relatedPhasesSelected(),false,'Explicit current phase selection wins over legacy preferences');
-context.direct=false;context.setupBetaOmegaSearch();assert.equal(anchorPanel.hidden,true);
+context.direct=false;context.enabledPhases=['BCC','OMEGA'];context.setupBetaOmegaSearch();assert.equal(anchorPanel.hidden,true);
+assert.equal(context.relatedPhasesSelected(),true,'FFT supports linked beta/omega without detector anchors');
 context.enabledPhases=['HCP'];context.syncPhaseMarkerControls();
 assert.equal($('hcp-marker').closest('label').hidden,false);assert.equal($('bcc-marker').closest('label').hidden,true);
 assert.equal($('omega-color-by').closest('label').hidden,false,'Colour by applies to FFT and non-omega phases');
@@ -91,6 +92,20 @@ assert.equal(nodes.filter(n=>n.attrs['data-measured-profile']).length,4,'Hiding 
 assert.equal(nodes.filter(n=>n.attrs['data-profile-number']).length,0,'Peak numbers default off');
 $('show-peak-numbers').checked=true;nodes=draw();assert.equal(nodes.filter(n=>n.attrs['data-profile-number']).length,4);
 $('show-peak-numbers').checked=false;nodes=draw();assert.equal(nodes.filter(n=>n.attrs['data-profile-number']).length,0);
+// Linked FFT exports can carry one position per profile, whereas the normal
+// FFT renderer shows both conjugates. Direct diffraction must not invent spots.
+model.beta_omega.observation_kind='image_fft';
+$('show-peak-numbers').checked=true;
+nodes=draw();
+assert.equal(nodes.filter(n=>n.attrs['data-measured-profile']).length,8,'Linked FFT retains both measured peak markers per profile');
+assert.equal(nodes.filter(n=>n.attrs['data-profile-number']).length,8);
+model.spectrum={peaks:[{profile_id:1,qx:1,qy:0,observed_spots:[[1,0]],manual_observed_spots:[[1,0]]}]};
+nodes=draw();
+assert.equal(nodes.filter(n=>n.attrs['data-measured-profile']).length,7,'Explicit observed positions retain their own display contract');
+assert.ok(nodes.some(n=>n.attrs['data-measured-profile']===1&&n.attrs.stroke==='#ff8ac3'));
+delete model.spectrum;delete model.beta_omega.observation_kind;
+assert.equal(draw().filter(n=>n.attrs['data-measured-profile']).length,4,'Direct diffraction shows only observed spots');
+$('show-peak-numbers').checked=false;
 console.log('Linked markers: all shapes, Off, measured styles, absence toggle and variant visibility passed.');
 
 // Coincident positions retain one independently animated shape per phase.

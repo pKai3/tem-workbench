@@ -4,6 +4,7 @@ Independent of the web server; no file access or output at import time.
 """
 import itertools
 import spot_intensity
+import region_masks
 import numpy as np
 from scipy.fft import fft2, fftshift, fftfreq
 from scipy.ndimage import gaussian_filter, label
@@ -20,18 +21,30 @@ def peak_width(spectrum):
  return spectrum.get('peak_width_nm_inv', spectrum.get('hann_power_fwhm_nm_inv', 1.44*spectrum['df']))
 
 def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True,g_max=10.,g_min=3.,
-             smoothing_sigma=.65,threshold_floor=1.8,minimum_separation=.5,max_peaks=70):
+             smoothing_sigma=.65,threshold_floor=1.8,minimum_separation=.5,max_peaks=70,selection_mask=None):
  if window not in ('hann','none') or not isinstance(remove_mean,bool):
   raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
  if not all(np.isfinite(v) for v in (smoothing_sigma,threshold_floor,minimum_enrichment,minimum_separation,max_peaks)) or not (0<=smoothing_sigma<=3 and 0<=threshold_floor<=20 and 0<=minimum_enrichment<=20 and 0<=minimum_separation<=3 and 4<=max_peaks<=200 and int(max_peaks)==max_peaks):
   raise ValueError('FFT detection settings are outside the supported range.')
  h,w=a.shape
  z=a.astype('float32')
- if remove_mean:z=z-float(z.mean())
- if window=='hann':z=z*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:]
+ mask_widths=None
+ if selection_mask is not None:
+  mask=np.asarray(selection_mask,dtype='float32')
+  if mask.shape!=z.shape or not np.isfinite(mask).all() or mask.min()<0 or mask.max()>1 or mask.sum()<=0:
+   raise ValueError('The selection mask must contain finite weights between zero and one.')
+  if remove_mean:z=z-float(np.sum(z*mask,dtype='float64')/mask.sum(dtype='float64'))
+  z=z*mask/np.sqrt(np.mean(mask*mask))
+  mask_widths=region_masks.response_widths(mask,sx,sy)
+ elif window=='hann':
+  if remove_mean:z=z-float(z.mean())
+  z=z*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:]
+ elif remove_mean:z=z-float(z.mean())
  power=np.abs(fftshift(fft2(z,workers=FFT_WORKERS)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],smoothing_sigma);valid=(g>0)&(g>=g_min)&(g<=g_max)
- window_width=(1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
- threshold=max(threshold_floor,profile_fraction*float(np.max(wh[valid]))) if np.any(valid) else threshold_floor
+ dfx,dfy=1/(w*sx),1/(h*sy)
+ window_width=max(mask_widths) if mask_widths else (1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
+ fraction_threshold=profile_fraction*float(np.max(wh[valid])) if np.any(valid) else 0.
+ threshold=max(threshold_floor,fraction_threshold)
  components,nc=label(valid&(wh>threshold));peaks=[]
  for ci in range(1,nc+1):
   ys,xs=np.where(components==ci)
@@ -44,7 +57,7 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
     f0=wh[y,x];fl=wh[y,x-1] if axis==0 else wh[y-1,x];fr=wh[y,x+1] if axis==0 else wh[y+1,x];den=fl-2*f0+fr;off=float(np.clip(.5*(fl-fr)/den,-.5,.5)) if den<0 else 0
     if axis==0:dx=off
     else:dy=off
-  q=canonical(np.array([[float(xx[y,x]+dx*df),float(yy[y,x]-dy*df)]]))[0].tolist();weights=np.maximum(wh[ys,xs]-threshold,0);area=int(len(ys));width=float(np.sqrt(max(area,1)/np.pi)*2*df)
+  q=canonical(np.array([[float(xx[y,x]+dx*dfx),float(yy[y,x]-dy*dfy)]]))[0].tolist();weights=np.maximum(wh[ys,xs]-threshold,0);area=int(len(ys));width=float(np.sqrt(max(area,1)*dfx*dfy/np.pi)*2)
   if not g_min <= np.linalg.norm(q) <= g_max or np.linalg.norm(q)==0:continue
   peaks.append({'_fft_position_px':[float(ix[x]+dx),float(iy[y]+dy)],'profile_id':0,'qx':q[0],'qy':q[1],'g_nm_inv':float(np.linalg.norm(q)),'log_radial_enrichment':en,'weight':float(np.clip(en-2,1,6)),'profile_area_bins':area,'equivalent_profile_diameter_nm_inv':width,'radius_nm_inv':width/2,'intensity':float(np.expm1(lg[y,x]))})
  peaks.sort(key=lambda p:p['log_radial_enrichment'],reverse=True)
@@ -55,10 +68,10 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
   if any(min(np.hypot(p['qx']-v['qx'],p['qy']-v['qy']),np.hypot(p['qx']+v['qx'],p['qy']+v['qy']))<max(minimum_separation,window_width) for v in clean):continue
   p['profile_id']=len(clean)+1;clean.append(p)
   if len(clean)>=max_peaks:break
- photometry=spot_intensity.measure_fft(power,fx,fy,clean,1.44 if window=='hann' else .886,neighbours=peaks)
+ photometry=spot_intensity.measure_fft(power,fx,fy,clean,window_width/min(dfx,dfy) if mask_widths else (1.44 if window=='hann' else .886),neighbours=peaks)
  clean=[p for p in clean if p['log_radial_enrichment']>=minimum_enrichment]
  spot_intensity.number_profiles(clean)
- return {'kind':'fft','photometry':photometry,'profile_numbering':'integrated_intensity_descending','g_min':float(g_min),'g_max':float(g_max),'log':lg,'detector_signal':wh,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' else {})}
+ return {**({'selection_window':'polygon_cosine_fade','mask_power_normalization':'mean_square','window_fwhm_xy_nm_inv':mask_widths} if mask_widths else {}),'kind':'fft','photometry':photometry,'profile_numbering':'integrated_intensity_descending','g_min':float(g_min),'g_max':float(g_max),'log':lg,'detector_signal':wh,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,'fraction_threshold':float(fraction_threshold),'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' and not mask_widths else {})}
 
 def rotation(q,ang):
  c=np.cos(ang);s=np.sin(ang);return q@np.array([[c,s],[-s,c]])
@@ -120,20 +133,31 @@ def positional_chance(observed_radii,predicted_radii,width):
  chance=(2/np.pi)*(integral-angle/17.)/(16./17.)
  return np.clip(np.maximum(chance,0.).sum(axis=1),0.,1.)
 
-def score_prediction_nodes(peaks,nodes,tol):
+def omega_node_scales(nodes, base, multiplier=1., phase=None):
+ """Broaden omega-only positions; shared beta/omega positions keep base width."""
+ def omega_only(node):
+  if 'components' in node:
+   owners=[c['component'] for c in node['components']]
+   return bool(owners) and 0 not in owners and 'beta' not in owners
+  return set(node.get('phases', [phase])) == {'OMEGA'}
+ return np.array([base*(multiplier if omega_only(n) else 1.) for n in nodes])
+
+
+def score_prediction_nodes(peaks,nodes,tol,node_scales=None):
  # Common assignment/score for independent lattices and constrained unions.
  if not peaks or not nodes:return None
+ widths=tol if node_scales is None else np.asarray(node_scales,dtype=float)
  O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);P=np.array([n['q'] for n in nodes]);hi=np.array([n['hkl'] for n in nodes])
- d=np.linalg.norm(O[:,None]-P[None,:],axis=2);d=np.minimum(d,np.linalg.norm(O[:,None]+P[None,:],axis=2));qual=positional_quality(d,tol);cost=np.c_[-w[:,None]*qual,np.zeros((len(O),len(O)))];ii,jj=linear_sum_assignment(cost);matches=[]
+ d=np.linalg.norm(O[:,None]-P[None,:],axis=2);d=np.minimum(d,np.linalg.norm(O[:,None]+P[None,:],axis=2));qual=positional_quality(d,widths);cost=np.c_[-w[:,None]*qual,np.zeros((len(O),len(O)))];ii,jj=linear_sum_assignment(cost);matches=[]
  for i,j in zip(ii,jj):
   if j>=len(P) or qual[i,j]<=0:continue
   matches.append({'profile_id':peaks[i]['profile_id'],'hkl':hi[j].tolist(),'predicted_q':P[j].tolist(),'observed_q':O[i].tolist(),'residual_nm_inv':float(d[i,j]),'quality':float(qual[i,j]),'weight':float(w[i]),'node_index':int(j)})
  if not matches:return None
  coverage=sum(x['weight'] for x in matches)/w.sum();quality=sum(x['weight']*x['quality'] for x in matches)/w.sum();og=np.linalg.norm(O,axis=1);pg=np.linalg.norm(P,axis=1)
  # Angular chance support conditional on measured radii corrects node density without declaring absent reflections forbidden.
- chance=positional_chance(og,pg,tol);penalty=float(w@chance/w.sum());score=quality-penalty
+ chance=positional_chance(og,pg,widths);penalty=float(w@chance/w.sum());score=quality-penalty
  angles=np.array([np.arctan2(x['observed_q'][1],x['observed_q'][0]) for x in matches]);spread=float(np.max(abs(np.sin(angles[:,None]-angles[None,:])))) if len(angles)>1 else 0
- return {'score':float(score),'coverage':float(coverage),'quality_coverage':float(quality),'chance_density_penalty':penalty,'matched_profile_count':len(matches),'predicted_visible_band_node_count':len(P),'nonparallel_spread_sine':spread,'rms_nm_inv':float(np.sqrt(np.mean([x['residual_nm_inv']**2 for x in matches]))),'matches':matches,'predicted_nodes':nodes,'position_matching':dict(method='soft-cauchy-v1',distance_scale_nm_inv=float(tol),search_radius_nm_inv=float(matching_radius(tol))),'valid':bool(len(matches)>=4 and spread>.5 and score>.20 and coverage>.30)}
+ return {'score':float(score),'coverage':float(coverage),'quality_coverage':float(quality),'chance_density_penalty':penalty,'matched_profile_count':len(matches),'predicted_visible_band_node_count':len(P),'nonparallel_spread_sine':spread,'rms_nm_inv':float(np.sqrt(np.mean([x['residual_nm_inv']**2 for x in matches]))),'matches':matches,'predicted_nodes':nodes,'position_matching':dict(method='soft-cauchy-v1',distance_scale_nm_inv=float(tol),search_radius_nm_inv=float(matching_radius(tol)),**({'node_distance_scales_nm_inv':widths.tolist()} if node_scales is not None else {})),'valid':bool(len(matches)>=4 and spread>.5 and score>.20 and coverage>.30)}
 
 
 def score_hypothesis(peaks,T,q,scale,ang,tol,g_max=10.,g_min=3.):
@@ -166,10 +190,12 @@ def additional_orientation_seeds(angles, scores, support, initial, limit=2):
   if len(extra)>=limit:break
  return extra
 
-def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a=.417,g_max=10.,g_min=3.):
+def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a=.417,g_max=10.,g_min=3.,omega_falloff_multiplier=1.):
  if len(peaks)<4:return []
  O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);og=np.linalg.norm(O,axis=1);oa=np.arctan2(O[:,1],O[:,0]);tree=cKDTree(np.r_[O,-O]);candidates=[]
+ base_tol=tol
  for T in templates:
+  tol=base_tol*(omega_falloff_multiplier if T['phase']=='OMEGA' else 1.)
   qs=T['q']*({'BCC':.330/bcc_a,'FCC':.417/fcc_a}.get(T['phase'],1));g=np.linalg.norm(qs,axis=1)*scale;ta=np.arctan2(qs[:,1],qs[:,0]);pairs=np.argwhere(abs(og[:min(16,len(og)),None]-g[None,:])<matching_radius(tol))
   if not len(pairs):continue
   angles=np.unique(np.round(((oa[pairs[:,0]]-ta[pairs[:,1]])%np.pi)/np.radians(.5))*np.radians(.5));cs=np.cos(angles);sn=np.sin(angles);P=np.empty((len(angles),len(qs),2));P[:,:,0]=scale*(cs[:,None]*qs[None,:,0]-sn[:,None]*qs[None,:,1]);P[:,:,1]=scale*(sn[:,None]*qs[None,:,0]+cs[:,None]*qs[None,:,1]);dist,ind=tree.query(P.reshape(-1,2));dist=dist.reshape(len(angles),-1);ind=ind.reshape(len(angles),-1)%len(O);vals=positional_quality(dist,tol);vals[:,(g<g_min)|(g>g_max)]=0;support=np.zeros((len(angles),len(O)));np.maximum.at(support,(np.repeat(np.arange(len(angles)),len(qs)),ind.ravel()),vals.ravel());quick=support@w/w.sum()

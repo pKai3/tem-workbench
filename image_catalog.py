@@ -56,6 +56,7 @@ class ImageCatalog:
                         last_progress = time.monotonic()
                     cache[location] = {'stat': signature, 'digest': digest}
                 except OSError:
+                    LOG.warning('Cannot index image %s; skipping this scan', path, exc_info=True)
                     continue  # Missing/offline source is retained in history.
                 if digest not in records:
                     identity = row['id']

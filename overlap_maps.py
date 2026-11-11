@@ -4,6 +4,7 @@ These are spatial support frequencies, never physical phase fractions. Each pass
 is normalized separately before equal-pass averaging. Missing fits count as no
 passing support; rank is averaged only where a candidate exists.
 """
+import phase_support
 import math
 import numpy as np
 
@@ -211,7 +212,7 @@ def _aggregate_points(job, xx, yy):
         if region['classification']['label'] == 'coexisting_candidates':
             separate[k] += weight
         for phase in phases:
-            models = [m for m in region['models'] if m['phase']==phase]
+            models = [m for m in phase_support.models(region) if m['phase']==phase]
             passing = [m for m in models if m['valid']]
             if passing:
                 supported[phase][k] += weight
@@ -250,4 +251,4 @@ def _aggregate_points(job, xx, yy):
     return dict(version=VERSION, width=nx, height=ny, cells=cells, phases=summaries,
                 coverage_percent=100*len(cells)/(nx*ny),
                 method='Gaussian centre weight exp(-8*(dx²+dy²)) within footprint; normalize each pass, then equal-pass mean',
-                interpretation='Passing frequency counts each passing window equally. Passing strength averages the best passing rank per phase, counting failed/missing fits as zero. Rank excludes missing fits. Neither is a phase fraction or probability. Spread is max-minus-min pass support, not statistical uncertainty. Raster-centre coverage is approximate.')
+                interpretation='Passing frequency counts each passing window equally, including components supported by a passing beta + omega union. A linked component uses the shared joint rank, not an independent phase rank. Passing strength averages the best passing rank per phase, counting failed/missing fits as zero. Rank excludes missing fits. Neither is a phase fraction or probability. Spread is max-minus-min pass support, not statistical uncertainty. Raster-centre coverage is approximate.')

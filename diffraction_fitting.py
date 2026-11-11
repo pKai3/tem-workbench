@@ -33,7 +33,9 @@ def rescore_scale(model, settings):
 
 def evidence(model, peaks, context, settings, dd_components=None):
     nodes = [n for n in model['predicted_nodes'] if 'visible' not in context or context['visible'](np.array([n['q']]))[0]]
-    score = core.score_prediction_nodes(peaks, nodes, context.get('position_scale', context['radius']))
+    width = context.get('position_scale', context['radius'])
+    widths = core.omega_node_scales(nodes, width, settings.get('omega_falloff_multiplier', 1.), model.get('phase'))
+    score = core.score_prediction_nodes(peaks, nodes, width, widths)
     if score is None:
         return None
     model.update(score)
@@ -73,6 +75,47 @@ def calibrated_parent(model, unit):
                 scale_metadata={k:model[k] for k in SCALE_FIELDS if k in model})
 
 
+def fft_related(spectrum, settings, context, candidates, cancel_event=None):
+    """Add parent-linked variants without replacing independent FFT candidates."""
+    if context is None or not {'BCC', 'OMEGA'}.issubset(settings['enabled_phases']):
+        return None
+    peaks = spectrum.get('peaks', [])
+    if len(peaks) < 4:
+        return None
+    unit = float(np.median([np.hypot(p['qx'], p['qy']) for p in peaks]))
+    parents, seen = [], set()
+    for model in candidates:
+        if model.get('phase') != 'BCC' or not model.get('predicted_nodes'):
+            continue
+        parent = calibrated_parent(model, unit)
+        # Identical geometry can recur through the independent scale seeds.
+        key = (tuple(parent['zone']), parent['mirror'], parent['factor'])
+        if key in seen:
+            continue
+        seen.add(key)
+        parents.append(parent)
+    if not parents:
+        return None
+    context = core.matching_context(spectrum, context)
+    visible = lambda q: ((np.abs(q[:, 0]) <= context['x_limit']) &
+                         (np.abs(q[:, 1]) <= context['y_limit']))
+    result = beta_omega.fit(peaks, context['position_scale'], settings['g_min'], settings['g_max'],
+        visible, parents=parents, context=context, settings=settings, cancel_event=cancel_event)
+    if not result.get('fit', {}).get('related_pattern'):
+        return None
+    result['observation_kind'] = 'image_fft'
+    result['parent']['absolute_cell_nm'] = 1/result['parent']['reciprocal_scale']
+    result['fit']['coordinate_units'] = 'nm^-1'
+    # Vector views inherit the calibrated parent metric, not a second free fit.
+    for component in result['components']:
+        model = component.get('vector_model')
+        if model is not None:
+            a = result['parent']['absolute_cell_nm']
+            model.update(coordinate_units='nm^-1', fitted_a_nm=a if component['id']=='beta' else np.sqrt(2)*a,
+                         fitted_c_nm=None if component['id']=='beta' else np.sqrt(3)*a/2)
+    return result
+
+
 def search(engine, spectrum, settings, context, relative, anchors=()):
     peaks = spectrum['peaks']; phases = settings['enabled_phases']
     if not peaks or not phases:
@@ -95,7 +138,8 @@ def search(engine, spectrum, settings, context, relative, anchors=()):
         templates = engine.templates_for(options)
         scale_fitting.search(normalized, templates, tolerance/normalization, mode,
             bcc_a=settings['bcc_a'], fcc_a=settings['fcc_a'], g_min=options['g_min'], g_max=options['g_max'],
-            scale_penalty_strength=0., ca_penalty_strength=settings['ca_penalty_strength'], candidate_sink=candidates)
+            scale_penalty_strength=0., ca_penalty_strength=settings['ca_penalty_strength'], candidate_sink=candidates,
+            omega_falloff_multiplier=settings.get('omega_falloff_multiplier', 1.))
         for model in candidates:
             model['relative_scale_fit'] = dict(mode=mode, scale_a=model['scale_a'],
                 scale_c=model.get('scale_c') if model.get('scale_parameter_count') == 2 else None)

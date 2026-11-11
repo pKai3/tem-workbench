@@ -32,6 +32,7 @@ import diffraction_fitting
 import brightness_grouping
 import spot_intensity
 import raster_images
+import region_masks
 from materials import scale_bounds, PHASES, reference_settings
 from crystal_templates import fcc_templates, orthorhombic_templates, omega_templates, HEX_PHASES
 
@@ -48,6 +49,15 @@ def png(array, limits=None, max_size=None):
     stream = BytesIO()
     image.save(stream, format='PNG')
     return stream.getvalue()
+
+
+def polygon_preview(raw, roi, info):
+    if 'polygon' not in roi: return raw
+    image=Image.open(BytesIO(raw)).convert('RGBA')
+    weights=region_masks.mask(roi,info['pixel_x_nm'],info['pixel_y_nm'])
+    alpha=Image.fromarray(np.uint8(weights*255)).resize(image.size,Image.Resampling.LANCZOS)
+    image.putalpha(alpha)
+    stream=BytesIO();image.save(stream,format='PNG');return stream.getvalue()
 
 
 def data_url(data):
@@ -105,7 +115,7 @@ class Engine:
         self.auto_templates = self.templates
         self._template_cache = {(10., 3., .295, .468, .330, .417, .3, .4, .5, .4614, .2832, .85, 1.15): self.templates}
         self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['analysis_core.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'beta_omega.py', 'diffraction_fitting.py', 'spot_intensity.py', 'brightness_grouping.py', 'double_diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'forbidden_reflections.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'orthorhombic.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
+            ['analysis_core.py', 'region_masks.py', 'materials.py', 'crystal_templates.py', 'diffraction.py', 'beta_omega.py', 'diffraction_fitting.py', 'spot_intensity.py', 'brightness_grouping.py', 'double_diffraction.py', 'scale_fitting.py', 'phase_comparison.py', 'peak_evidence.py', 'forbidden_reflections.py', 'adaptive_refinement.py', 'demo_data.py', 'raster_images.py', 'engine.py', 'orthorhombic.py', 'parallel_execution.py', 'templates.json'])).hexdigest()
         self.files = {}
         self.loaded = {}
         self.acquisition_index = MetadataIndex()
@@ -390,7 +400,9 @@ class Engine:
         ih, iw = item['array'].shape
         if min(w, h) < 1 or x < 0 or y < 0 or x+w > iw or y+h > ih:
             raise ValueError('Preview region must lie within the source image.')
-        return png(item['array'][y:y+h, x:x+w], item['limits'], max_size)
+        roi=region_masks.validate(roi)
+        raw=png(item['array'][y:y+h, x:x+w], item['limits'], max_size)
+        return polygon_preview(raw, roi, item['info'])
 
     def spectrum_preview(self, item, roi, settings):
         """Refresh image fields without templates, fitting or phase assignment."""
@@ -405,10 +417,10 @@ class Engine:
             remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'],
             smoothing_sigma=settings['fft_smoothing_sigma'], threshold_floor=settings['fft_threshold_floor'],
             minimum_enrichment=settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
-            max_peaks=settings['fft_max_peaks'])
+            max_peaks=settings['fft_max_peaks'], selection_mask=region_masks.mask(roi, info['pixel_x_nm'], info['pixel_y_nm']))
         return dict(roi=roi, image_kind='real_space', settings=settings,
             spectrum={key:spectrum[key] for key in ('extent', 'df', 'profile_threshold', 'minimum_peak_enrichment')},
-            images=spectrum_images(spectrum['log'], spectrum['detector_signal'], crop, item['limits']),
+            images={**spectrum_images(spectrum['log'], spectrum['detector_signal'], crop, item['limits']), **({'crop':data_url(self.region_preview(item,roi,768))} if roi.get('polygon') else {})},
             elapsed_ms=round((time.perf_counter()-started)*1000, 1))
 
     def native_preview(self, item):
@@ -428,13 +440,15 @@ class Engine:
         direct = item['info'].get('image_kind') == 'diffraction'
         if direct and (x, y, w, h) != (0, 0, iw, ih):
             raise ValueError('Direct diffraction analyses use the full detector image; use exclusion masks for unwanted areas.')
-        if min(w, h) < 32 or x < 0 or y < 0 or x+w > iw or y+h > ih or (not direct and abs(w-h) > 1):
-            raise ValueError('Choose a square region within the image, at least 32 pixels wide.')
-        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('g_min', 3.), ('g_max', 10.), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('ca_penalty_strength', scale_fitting.DEFAULT_CA_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT), ('peak_evidence_half_weight_nm_inv', 0.)]}
+        if min(w, h) < 32 or x < 0 or y < 0 or x+w > iw or y+h > ih:
+            raise ValueError('Choose a region within the image, at least 32 pixels in each direction.')
+        values = {k: float(settings.get(k, v)) for k, v in [('scale', 1.), ('g_min', 3.), ('g_max', 10.), ('threshold', .35), ('scale_penalty_strength', scale_fitting.DEFAULT_SCALE_PENALTY), ('ca_penalty_strength', scale_fitting.DEFAULT_CA_PENALTY), ('peak_evidence_weight', peak_evidence.DEFAULT_WEIGHT), ('peak_evidence_half_weight_nm_inv', 0.), ('omega_falloff_multiplier', 1.)]}
         if not all(np.isfinite(v) for v in values.values()):
             raise ValueError('Analysis settings must be finite numbers.')
         if not (.85 <= values['scale'] <= 1.15 and 0 <= values['g_min'] < 30 and 4 <= values['g_max'] <= 30 and .15 <= values['threshold'] <= .7 and 0 <= values['scale_penalty_strength'] <= .5 and 0 <= values['ca_penalty_strength'] <= .5 and 0 <= values['peak_evidence_weight'] <= .5):
             raise ValueError('Analysis settings are outside the supported range.')
+        if not 1 <= values['omega_falloff_multiplier'] <= 5:
+            raise ValueError('Omega positional falloff must be between 1 and 5.')
         peak_evidence.validate_falloff(values['peak_evidence_half_weight_nm_inv'])
         values['missing_peak_weight'] = peak_evidence.missing_weight(settings)
         values['double_diffraction_weight'] = double_diffraction.validate_weight(settings.get('double_diffraction_weight', 0.))
@@ -480,7 +494,9 @@ class Engine:
             values['g_min'] = values['diffraction']['exclude_radius_nm_inv']
         if values['g_min'] >= values['g_max']:
             raise ValueError('Central exclusion must be smaller than the outer fitting limit.')
-        return {'x': x, 'y': y, 'w': w, 'h': h}, values
+        if direct and 'polygon' in roi:
+            raise ValueError('Polygon selections apply to real-space FFT images only.')
+        return region_masks.validate(roi), values
 
     def _fit_spectrum(self, s, settings, templates, can_index, context, prediction_cache=None):
         """Compare one detected profile set; the FFT pixels are already prepared."""
@@ -491,7 +507,7 @@ class Engine:
         if not can_index:
             models = []
         elif settings['scale_mode'] == 'fixed':
-            models = core.search(s['peaks'], templates, settings['scale'], tol, bcc_a=settings['bcc_a'], candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'])
+            models = core.search(s['peaks'], templates, settings['scale'], tol, bcc_a=settings['bcc_a'], candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'], omega_falloff_multiplier=settings.get('omega_falloff_multiplier', 1.))
             for model in candidates:
                 model.update({'scale_mode': 'fixed', 'scale_a': settings['scale'],
                               'scale_c': settings['scale'] if model['phase'] in HEX_PHASES else None,
@@ -506,7 +522,7 @@ class Engine:
                                           settings['scale_mode'], bcc_a=settings['bcc_a'],
                                           scale_penalty_strength=settings['scale_penalty_strength'],
                                           ca_penalty_strength=settings['ca_penalty_strength'],
-                                          candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'], prediction_cache=prediction_cache)
+                                          candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'], prediction_cache=prediction_cache, omega_falloff_multiplier=settings.get('omega_falloff_multiplier', 1.))
         if can_index:
             s['weak_maxima'] = context['maxima']
             s['prediction_evidence_context'] = {k: context[k] for k in ('radius', 'position_scale', 'position_matching', 'g_min', 'g_max', 'x_limit', 'y_limit')}
@@ -558,7 +574,7 @@ class Engine:
                               window=settings['fft_window'], remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'],
                               smoothing_sigma=settings['fft_smoothing_sigma'], threshold_floor=settings['fft_threshold_floor'],
                               minimum_enrichment=0. if auto_strength else settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
-                              max_peaks=settings['fft_max_peaks'])
+                              max_peaks=settings['fft_max_peaks'], selection_mask=region_masks.mask(roi, info['pixel_x_nm'], info['pixel_y_nm']))
         joint = None
         relative = direct and not info.get('reciprocal_calibrated', True)
         templates = [] if relative else self.templates_for(settings)
@@ -599,13 +615,15 @@ class Engine:
                     merit = (evidence['pattern_count'] > 0, evidence['score'], len(peaks))
                     attempts.append({'strength': float(strength), 'profiles': len(peaks), **evidence})
                     if best is None or merit > best[0]:
-                        best = (merit, trial, None, None)
+                        best = (merit, trial, None, None, None)
                         selected_geometry = geometry
                     continue
                 context = peak_evidence.for_peaks(weak_candidates, peaks) if can_index else None
                 trial_models, trial_candidates = self._fit_spectrum(trial, settings, templates, can_index, context, prediction_cache)
-                passing = [m for m in trial_models if m['valid']]
-                leader = max(passing or trial_models, key=lambda m: m['score'], default=None)
+                trial_joint = diffraction_fitting.fft_related(trial, settings, context, trial_candidates, cancel_event)
+                ranked = trial_models + ([trial_joint['fit']] if trial_joint else [])
+                passing = [m for m in ranked if m['valid']]
+                leader = max(passing or ranked, key=lambda m: m['score'], default=None)
                 rank = leader['score'] if leader else None
                 # Prefer an accepted fit; if none passes anywhere, retain the best
                 # rejected fit honestly. Ties retain the larger detected profile set.
@@ -613,11 +631,12 @@ class Engine:
                 attempts.append({'strength': float(strength), 'profiles': len(peaks),
                                  'rank': rank, 'passing': bool(passing)})
                 if best is None or merit > best[0]:
-                    best = (merit, trial, trial_models, trial_candidates)
-            _, s, models, candidates = best
+                    best = (merit, trial, trial_models, trial_candidates, trial_joint)
+            _, s, models, candidates, joint = best
             context = peak_evidence.for_peaks(weak_candidates, s['peaks']) if can_index else None
             if geometry_auto:
                 models, candidates = self._fit_spectrum(s, settings, templates, can_index, context)
+                joint = diffraction_fitting.fft_related(s, settings, context, candidates, cancel_event)
             if settings['fft_auto_strength']:
                 s['auto_peak_strength'] = {
                     'status': 'optimized' if auto_strength else 'skipped',
@@ -648,6 +667,8 @@ class Engine:
                 'periodicity': periodicity, 'images': encoded,
                 'elapsed_ms': round((time.perf_counter()-started)*1000, 1),
                 'engine_sha256': self.version}
+        if images and not direct and 'polygon' in roi:
+            result['images']['crop']=data_url(self.region_preview(item,roi,768))
         if joint is not None:
             result['beta_omega'] = joint
         if cache_candidates:
@@ -722,11 +743,13 @@ class Engine:
             classification['flags'].append('Auto peak strength was skipped: enable a phase and ensure the image samples the fitting band.')
         window = settings.get('fft_window', 'hann')
         if s['df'] > .15:
-            window_name = 'Hann' if window == 'hann' else 'rectangular'
+            window_name = 'polygon' if s.get('selection_window') else 'Hann' if window == 'hann' else 'rectangular'
             classification['flags'].append(
                 f"This {min(width_nm, height_nm):.2f} nm region has an approximate {window_name}-window peak width of "
                 f"{core.peak_width(s):.3f} nm⁻¹; closely spaced candidate reflections may not be distinguishable.")
-        if window == 'none':
+        if s.get('selection_window'):
+            classification['flags'].append('Polygon edge fading replaces the rectangular Hann window. Peak width accounts for the selected mask; narrow selections broaden reflections.')
+        elif window == 'none':
             classification['flags'].append('Hann window is off: crop-edge streaks and side lobes can produce extra detected peaks.')
         return classification
 
@@ -811,6 +834,9 @@ class Engine:
         extra = {}
         if not direct and spectrum.get('prediction_evidence_context'):
             context = {**spectrum['prediction_evidence_context'], 'maxima': spectrum.get('weak_maxima', [])}
+            related = diffraction_fitting.fft_related(spectrum, settings, context, candidates)
+        if related is not None:
+            extra['beta_omega'] = related
         classification = diffraction_fitting.compare(classification, related, spectrum, context, settings, models)
         if direct:
             if spectrum.get('coordinate_units') == 'relative':

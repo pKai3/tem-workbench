@@ -282,7 +282,7 @@ def _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min):
     return result
 
 
-def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10., g_min=3., ca_penalty_strength=DEFAULT_CA_PENALTY, prediction_cache=None):
+def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10., g_min=3., ca_penalty_strength=DEFAULT_CA_PENALTY, prediction_cache=None, omega_falloff_multiplier=1.):
     if mode not in MODES[1:]:
         raise ValueError('Unknown automatic scale mode.')
     strength = float(scale_penalty_strength)
@@ -297,7 +297,9 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
     weights = np.array([p['weight'] for p in peaks])
     tree = cKDTree(np.r_[observed, -observed])
     candidates = []
+    base_tol = tol
     for template in templates:
+        tol = base_tol * (omega_falloff_multiplier if template['phase'] == 'OMEGA' else 1.)
         if template['phase'] == 'ORT' and mode != 'auto_uniform':
             from orthorhombic import fit as fit_orthorhombic
             for result in fit_orthorhombic(peaks, template, tol, g_min, g_max):

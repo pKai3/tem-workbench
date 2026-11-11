@@ -1,8 +1,11 @@
 """Local folder pointers and directory browsing; no research files are moved."""
 from pathlib import Path
 import json
+import logging
+import time
 import os
 import stat
+import sys
 import tempfile
 import uuid
 
@@ -28,6 +31,26 @@ def resolve_config(config, root):
     return result
 
 
+def retry_sharing_violation(operation, description):
+    """Retry only Windows sharing/lock violations; never retry permission denial."""
+    delays = (0.1, 0.2, 0.4, 0.8)
+    for attempt in range(len(delays) + 1):
+        try:
+            return operation()
+        except OSError as exc:
+            if getattr(exc, 'winerror', None) not in (32, 33):
+                raise
+            if attempt == len(delays):
+                logging.getLogger('tem_workbench').error(
+                    '%s failed: file remains locked after %d attempts: %s',
+                    description, attempt + 1, exc)
+                raise
+            logging.getLogger('tem_workbench').warning(
+                '%s: Windows file lock; retry %d/%d in %.1f s: %s',
+                description, attempt + 1, len(delays), delays[attempt], exc)
+            time.sleep(delays[attempt])
+
+
 def atomic_json(path, data):
     path = Path(path)
     raw = (json.dumps(data, indent=2, ensure_ascii=False, allow_nan=False)+'\n').encode('utf-8')
@@ -37,10 +60,23 @@ def atomic_json(path, data):
             stream.write(raw)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        retry_sharing_violation(lambda: os.replace(temporary, path),
+                                f"Save settings/registry: {path}")
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def available_drives():
+    """List Windows drive roots without probing disconnected network volumes."""
+    if sys.platform != 'win32':
+        return []
+    if hasattr(os, 'listdrives'):
+        return sorted(os.listdrives(), key=str.casefold)
+    # Python 3.10/3.11 do not expose os.listdrives.
+    import ctypes
+    mask = ctypes.windll.kernel32.GetLogicalDrives()
+    return [f'{chr(65+i)}:\\' for i in range(26) if mask & (1 << i)]
 
 
 def browse(value, root):
@@ -57,7 +93,7 @@ def browse(value, root):
         except OSError:
             continue
     return {'path': str(path), 'parent': str(path.parent), 'home': str(Path.home()),
-            'app_root': str(Path(root).resolve()), 'directories': sorted(children, key=lambda d: d['name'].casefold())}
+            'app_root': str(Path(root).resolve()), 'drives': available_drives(), 'directories': sorted(children, key=lambda d: d['name'].casefold())}
 
 
 def is_link(path):

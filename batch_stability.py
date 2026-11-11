@@ -1,11 +1,12 @@
 """Batch summaries for correlated overlapping windows, separate from area labels."""
+import phase_support as support_views
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from phase_blend import blend_support
 import overlap_maps
 
 INTERPRETATION = ('Passing frequencies over covered raster area, not phase fractions. '
-    'Each placement pass is normalized before equal-pass averaging. Phases are independent. '
+    'Each placement pass is normalized before equal-pass averaging. Phase support may overlap; linked beta/omega components share one passing union. '
     'Sample pooling weights covered acquired-image area; fields may overlap. '
     'Zone counts are correlated window counts, not image areas. Coverage is approximate.')
 
@@ -18,7 +19,7 @@ def summarize(job, sample):
     cells = a['cells']; zones = {}
     for r in job['regions']:
         for phase in phases:
-            fits = [m for m in r['models'] if m['phase']==phase and m['valid']]
+            fits = [m for m in support_views.models(r) if m['phase']==phase and m['valid']]
             if not fits:
                 continue
             m = max(fits, key=lambda m:m['score'])
@@ -37,7 +38,7 @@ def summarize(job, sample):
         state=job['state'], windows=n, planned_windows=job['grid']['sample_count'],
         grid=job['grid'], total_image_area_nm2=total,
         analyzed_area_nm2=total*a['coverage_percent']/100, coverage_percent=a['coverage_percent'],
-        phase_support=phase_support, passing_zones=list(zones.values()), interpretation=INTERPRETATION)
+        phase_support=phase_support, passing_zones=list(zones.values()), linked_beta_omega_windows=sum(bool(r.get('beta_omega',{}).get('fit',{}).get('valid') and r.get('beta_omega',{}).get('fit',{}).get('related_pattern')) for r in job['regions']), interpretation=INTERPRETATION)
 
 
 def sample_summaries(images):
@@ -66,7 +67,7 @@ def sample_summaries(images):
         output.append(dict(mode='overlap',sample=sample,images=len(rows),
             complete_images=sum(r['state']=='complete' for r in rows),windows=windows,
             total_image_area_nm2=total,analyzed_area_nm2=covered,coverage_percent=100*covered/total,
-            phase_support=support,passing_zones=list(zones.values())))
+            phase_support=support,passing_zones=list(zones.values()), linked_beta_omega_windows=sum(r.get('linked_beta_omega_windows',0) for r in rows), interpretation=INTERPRETATION))
     return output
 
 
