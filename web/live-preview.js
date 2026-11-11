@@ -24,9 +24,17 @@ function queueLiveRegionPreview(){
  livePreviewQueued={body,key,epoch:livePreviewEpoch,sourceHash:meta.sha256_pixels};
  if(!livePreviewTimer&&!livePreviewRequest)livePreviewTimer=setTimeout(runLiveRegionPreview,70);
 }
+function previewSettingsRelevant(previous){
+ const current=settings();
+ if(JSON.stringify(previous)===JSON.stringify(current))return true;
+ // During a taper gesture show completed intermediate frames, not just frames
+ // that happen to finish between input events. All other settings must match.
+ if(typeof fftTaperAdjusting==='undefined'||!fftTaperAdjusting||previous.fft_window!=='tukey'||current.fft_window!=='tukey')return false;
+ return JSON.stringify({...previous,fft_tukey_alpha:current.fft_tukey_alpha})===JSON.stringify(current);
+}
 function previewStillRelevant(request){
  return request.epoch===livePreviewEpoch&&request.body.file_id===fileId&&request.sourceHash===meta?.sha256_pixels&&
-  !result&&!isDiffraction()&&JSON.stringify(request.body.settings)===JSON.stringify(settings())&&
+  !result&&!isDiffraction()&&previewSettingsRelevant(request.body.settings)&&
   (sameRegion(request.body.roi,roi)||Boolean(drag));
 }
 async function runLiveRegionPreview(){

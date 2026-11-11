@@ -50,5 +50,11 @@ function flush(){const [id,fn]=timers.entries().next().value;timers.delete(id);r
  // Older replies also stay rejected after dragging ends, even without a new file.
  context.decodeSpectrumImage=async images=>images.fft;context.drag=null;context.queueLiveRegionPreview();const moved=flush();
  context.roi.x=50;reply(4);await moved;assert.equal(run('liveSpectrumPreview'),null);
+ // Taper gestures may show intermediate alpha values, never other changed settings.
+ context.settings=()=>({fft_window:'tukey',fft_tukey_alpha:1,threshold:.35});context.fftTaperAdjusting=true;
+ assert.equal(context.previewSettingsRelevant({fft_window:'tukey',fft_tukey_alpha:.6,threshold:.35}),true);
+ assert.equal(context.previewSettingsRelevant({fft_window:'tukey',fft_tukey_alpha:.6,threshold:.4}),false);
+ context.fftTaperAdjusting=false;
+ assert.equal(context.previewSettingsRelevant({fft_window:'tukey',fft_tukey_alpha:.6,threshold:.35}),false);
  console.log('Immediate crops, coalesced FFT previews, drag loupe and stale-response isolation passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});

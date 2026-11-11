@@ -944,5 +944,5 @@ html.ifft-open,html.ifft-open body{overflow:hidden}
 .fft-window-choice select{width:100px}
 .fft-window-checks .fft-tukey-control{display:flex;flex-direction:row;align-items:center;gap:6px}
 .fft-window-checks .fft-tukey-control[hidden]{display:none}
-.fft-tukey-control input[type=range]{width:100px;min-width:0}
+.fft-tukey-control input[type=range]{flex:0 0 100px;width:100px;min-width:0;padding:0;border:0;background:transparent}
 .fft-tukey-control output{min-width:3ch;color:var(--muted)}

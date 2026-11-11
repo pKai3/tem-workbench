@@ -58,8 +58,8 @@ class FFTWindowTests(unittest.TestCase):
     def test_validation_and_legacy_default(self):
         engine=Engine({'demo_only':True});item=dict(array=self.image,info=self.info)
         _,settings=engine.validate(item,self.roi,{})
-        self.assertEqual(settings['fft_window'],'hann')
-        self.assertEqual(settings['fft_tukey_alpha'],.2)
+        self.assertEqual(settings['fft_window'],'tukey')
+        self.assertEqual(settings['fft_tukey_alpha'],.5)
         for alpha in (-.1,1.1,float('nan'),float('inf')):
             with self.assertRaises(ValueError):engine.validate(item,self.roi,dict(fft_window='tukey',fft_tukey_alpha=alpha))
             with self.assertRaises(ValueError):core.prepare_fft_input(self.image,'tukey',tukey_alpha=alpha)

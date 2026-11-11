@@ -181,7 +181,7 @@ context.meta={sha256_pixels:'reset-band',name:'Reset'};
 storage.set('tem-fitting-limits:reset-band',{inner:1,outer:6});
 storage.set('tem-basic-settings',{'fft-g-min':1,'g-max':6});
 run('restoreFittingLimits()');$('threshold').value=.35;
-$('fft-window').value='hann';$('fft-tukey-alpha').value=.2;$('fft-mean').checked=true;
+$('fft-window').value='tukey';$('fft-tukey-alpha').value=.5;$('fft-mean').checked=true;
 $('fft-strength-mode').value='manual';
 const beforeReset=context.invalidations;run('resetFFTControls()');
 assert.equal(run('currentFittingLimits().outer'),10);assert.equal(run('currentFittingLimits().inner'),2.5);

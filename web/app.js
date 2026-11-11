@@ -2412,13 +2412,13 @@ function materialView(){
  $('material-note').textContent=note+'\nCubic: a = b = c; HCP/ω: a = b, γ = 120°. Dimensions in nm.';
  if(config)$('library-note').textContent=`Exploratory ${materialAvailablePhases().map(p=>phaseLabel(p)).join('/')} comparison from a finite library of ${config.template_count||46} zone-axis templates. Untested orientations and other structures can affect the result; candidate labels are not confirmed phase identities.`;
 }
-function invalidateAnalysisSettings(){
+function invalidateAnalysisSettings(delay=0){
  if(!meta)return;
  // A scan on another source keeps its captured settings while this image is edited.
- if(isGridRunning()&&(!trackedGrid||!gridMatchesSource(trackedGrid))){grid=null;drawGrid();schedule(0);return}
+ if(isGridRunning()&&(!trackedGrid||!gridMatchesSource(trackedGrid))){grid=null;drawGrid();schedule(delay);return}
  if(isGridRunning())api('cancel',{job_id:jobId}).catch(e=>message(e.message,true));
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);jobId=null;trackedGrid=null;rememberGrid(null);clearJobProgress('grid');grid=null;drawGrid();$('save-grid').disabled=true;$('run-grid').disabled=batchRunning||isDiffraction();$('cancel-grid').disabled=true;
- $('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(0);
+ $('grid-status').textContent='Settings changed. Run a new grid to use these settings.';schedule(delay);
 }
 function updateStrengthMode(){
  $('fft-effective-cutoff').hidden=true;
@@ -2470,14 +2470,22 @@ function updateFFTWindowControls(){
  $('fft-window').querySelector('option[value=tukey]').disabled=Boolean(config&&!config.fft_tukey);
  $('fft-tukey-alpha').disabled=polygon||Boolean(config&&!config.fft_tukey);
 }
-$('fft-tukey-alpha').oninput=updateFFTWindowControls;
+let fftTaperAdjusting=false;
+$('fft-tukey-alpha').oninput=()=>{
+ updateFFTWindowControls();
+ if($('fft-tukey-alpha').disabled)return;
+ fftTaperAdjusting=true;
+ // Keep FFT previews flowing, but wait for a pause before expensive matching.
+ clearTimeout(timer);timer=null;
+ invalidateAnalysisSettings(250);
+};
 function resetFFTControls(){
  let changed=false;
  for(const [id,value]of [['threshold',.35],['fft-g-min',2.5],['g-max',10],...Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value]])=>[id,value])]){
   changed||=$(id).value===''||Number($(id).value)!==value;$(id).value=value;
  }
- changed||=$('fft-window').value!=='hann'||Number($('fft-tukey-alpha').value)!==.2||!$('fft-mean').checked;
- $('fft-window').value='hann';$('fft-tukey-alpha').value=.2;$('fft-mean').checked=true;updateFFTWindowControls();
+ changed||=$('fft-window').value!=='tukey'||Number($('fft-tukey-alpha').value)!==.5||!$('fft-mean').checked;
+ $('fft-window').value='tukey';$('fft-tukey-alpha').value=.5;$('fft-mean').checked=true;updateFFTWindowControls();
  changed||=$('fft-strength-mode').value!=='manual';$('fft-strength-mode').value='manual';updateStrengthMode();
  fittingLimitsLocal=Boolean(savedFittingLimits());
  rememberBasicControls();
@@ -2503,7 +2511,7 @@ $('material').onchange=()=>{
  setPhaseSelection(config?.phase_selection?materialPhases():PHASES);materialView();rememberBasicControls();calibrationView();updatePenaltyControls();invalidateAnalysisSettings();
 };
 for(const id of ['scenario','model-scale',...Object.keys(REFERENCE_CONTROLS),'fft-g-min','g-max','threshold',...Object.keys(FFT_DETECTOR_CONTROLS),'fft-window','fft-tukey-alpha','fft-mean','fft-strength-mode'])$(id).onchange=()=>{
- if(id==='fft-window'||id==='fft-tukey-alpha')updateFFTWindowControls();
+ if(id==='fft-window'||id==='fft-tukey-alpha'){fftTaperAdjusting=false;clearTimeout(timer);timer=null;updateFFTWindowControls()}
  if(id==='fft-strength-mode'||id==='fft-min-strength')updateStrengthMode();
  if(id==='model-scale'&&(!$('model-scale').value||!Number.isFinite(Number($('model-scale').value))||Number($('model-scale').value)<.85||Number($('model-scale').value)>1.15)){
   if(meta)restoreCalibration();message('Use a model size between 0.850 and 1.150.',true);return;

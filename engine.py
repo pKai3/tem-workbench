@@ -471,11 +471,11 @@ class Engine:
         if mode not in scale_fitting.MODES:
             raise ValueError('Choose a supported scale fitting mode.')
         values['scale_mode'] = mode
-        window = settings.get('fft_window', 'hann')
+        window = settings.get('fft_window', 'tukey')
         remove_mean = settings.get('remove_mean', True)
         if window not in ('hann', 'tukey', 'none') or not isinstance(remove_mean, bool):
             raise ValueError('Choose Hann, Tukey or no window and a boolean mean-removal setting.')
-        tukey_alpha = float(settings.get('fft_tukey_alpha', .2))
+        tukey_alpha = float(settings.get('fft_tukey_alpha', .5))
         if not np.isfinite(tukey_alpha) or not 0 <= tukey_alpha <= 1:
             raise ValueError('Tukey taper must be between zero and one.')
         auto_strength = settings.get('fft_auto_strength', False)
@@ -744,7 +744,7 @@ class Engine:
                 'Cached reweighting keeps these profiles; rerun to optimize the cutoff again.')
         elif auto:
             classification['flags'].append('Auto peak strength was skipped: enable a phase and ensure the image samples the fitting band.')
-        window = settings.get('fft_window', 'hann')
+        window = settings.get('fft_window', 'tukey')
         if s['df'] > .15:
             window_name = 'polygon' if s.get('selection_window') else 'Hann' if window == 'hann' else 'Tukey' if window == 'tukey' else 'rectangular'
             classification['flags'].append(
