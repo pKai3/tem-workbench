@@ -919,7 +919,7 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 .ifft-view-toggle button[aria-pressed=true]{background:#28516c;border-color:#80b8dc}
 #ifft-reconstruction{position:relative;aspect-ratio:1;background:#060b10;overflow:hidden}
 #ifft-reconstruction img{position:absolute;inset:0;width:100%;height:100%;display:block}
-#ifft-reconstruction[data-view=filtered] #ifft-input{visibility:hidden}
+#ifft-reconstruction img:not([src]),#ifft-reconstruction[data-view=filtered] #ifft-input{visibility:hidden}
 #ifft-reconstruction[data-view=compare] #ifft-input{clip-path:inset(0 calc(100% - var(--wipe)) 0 0)}
 #ifft-wipe,.ifft-wipe-divider,.ifft-wipe-labels{display:none}
 #ifft-reconstruction[data-view=compare] #ifft-wipe{display:block;position:absolute;inset:0;margin:0;width:100%;height:100%;padding:0;opacity:0;cursor:ew-resize;z-index:3}
