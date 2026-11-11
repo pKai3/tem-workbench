@@ -2,6 +2,10 @@
 
 Last updated: 11 November 2026
 
+## iFFT computation indicator — completed 11 November 2026
+
+Reused the animated TEM diffraction motif over the reconstruction while iFFT requests or exports are computing, including live drag updates. Indicator sits above the comparison divider, does not intercept controls, and clears on completion, failure or closing the workspace. Existing reduced-motion support is retained.
+
 ## iFFT full-image detected spots — completed 11 November 2026
 
 Add detected spots now detects profiles on demand for the selected iFFT area when no matching selection analysis is available, including Full image. Uses the existing spectrum-preview detector without crystal fitting, caches observations while the source/settings stay unchanged, and discards responses after scope changes or closing the workspace. Paired masks and duplicate prevention remain unchanged.

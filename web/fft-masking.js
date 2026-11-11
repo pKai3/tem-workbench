@@ -10,6 +10,11 @@ let refreshIfftSource;
  let observationKey='',detecting=false,detectionRun=0;
  let spectrumRaw=null,spectrumProcessed=null,processedView=false,sourceLive=false;
  const storeKey='tem-ifft-masks-v1',clone=v=>JSON.parse(JSON.stringify(v));
+ $('ifft-loading-icon').append(document.querySelector('#fft-loading .tem-diffraction-loader').cloneNode(true));
+ function syncLoading(){
+  const active=$('ifft-dialog').open&&(inFlight||exporting);
+  $('ifft-loading').hidden=!active;$('ifft-reconstruction').setAttribute('aria-busy',String(active));
+ }
  // Keep both square panes equal while reserving space for controls and exports.
  let layoutFrame=0;
  function fitWorkspace(){
@@ -126,8 +131,8 @@ let refreshIfftSource;
   if(timer===null)timer=setTimeout(()=>{timer=null;wanted=true;pump()},100);
  }
  async function pump(){
-  if(inFlight||exporting||!snapshot||!$('ifft-dialog').open)return;
-  inFlight=true;
+  if(inFlight||exporting||!snapshot||!$('ifft-dialog').open){syncLoading();return}
+  inFlight=true;syncLoading();
   try{while(wanted&&$('ifft-dialog').open){
    wanted=false;const version=serial,body={...snapshot,masks:clone(masks)};
    try{const data=await api('ifft',body);if(version!==serial||!$('ifft-dialog').open)continue;
@@ -140,7 +145,7 @@ let refreshIfftSource;
     const blank=masks.mode==='keep'&&!masks.spots.length&&!masks.keep_dc;
     status(blank?'No frequencies selected. Click FFT spots to begin.':`${masks.spots.length} paired masks · RMS ${data.rms.toPrecision(4)} · separate display contrast`);
    }catch(e){if(version===serial)status(e.message,true)}
-  }}finally{inFlight=false}
+  }}finally{inFlight=false;syncLoading()}
  }
 
  let hover=null,hoverTimer=null,hoverFrame=null;
@@ -202,7 +207,7 @@ let refreshIfftSource;
   $('ifft-source').textContent=`${meta.name} · ${snapshot.roi.w} × ${snapshot.roi.h} px · ${snapshot.roi.polygon?'polygon fade':snapshot.settings.fft_window==='hann'?'Hann window':snapshot.settings.fft_window==='tukey'?`Tukey ${Math.round((snapshot.settings.fft_tukey_alpha??.2)*100)}% taper`:'no window'} · mean ${snapshot.settings.remove_mean?'removed':'retained'}`;
   $('ifft-scope').value='selection';setAdjusting(false);$('ifft-dialog').show();document.documentElement.classList.add('ifft-open');refreshSource();status('Preparing complex FFT…');pump();
  };
- $('ifft-close').onclick=()=>$('ifft-dialog').close();$('ifft-dialog').addEventListener('close',()=>{serial++;detectionRun++;detecting=false;wanted=false;dragging=null;sourceLive=false;hideHover();clearTimeout(timer);timer=null;document.documentElement.classList.remove('ifft-open');setAdjusting(false)});
+ $('ifft-close').onclick=()=>$('ifft-dialog').close();$('ifft-dialog').addEventListener('close',()=>{serial++;detectionRun++;detecting=false;wanted=false;dragging=null;sourceLive=false;hideHover();clearTimeout(timer);timer=null;document.documentElement.classList.remove('ifft-open');setAdjusting(false);syncLoading()});
  $('ifft-dialog').addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();$('ifft-dialog').close()}});
  $('ifft-editor').addEventListener('pointerdown',e=>{
   if(!extent||e.button!==0)return;e.preventDefault();
@@ -247,9 +252,9 @@ let refreshIfftSource;
   finally{if(current()){detecting=false;$('ifft-detected').disabled=false;$('ifft-detected').textContent='Add detected spots'}}
  };
  $('ifft-export').onclick=async()=>{
-  if(inFlight||exporting||wanted||timer||dragging||sourceLive)return;const version=serial;exporting=true;$('ifft-export').disabled=true;status('Saving PNG, numeric reconstruction and mask recipe…');
+  if(inFlight||exporting||wanted||timer||dragging||sourceLive)return;const version=serial;exporting=true;syncLoading();$('ifft-export').disabled=true;status('Saving PNG, numeric reconstruction and mask recipe…');
   try{const data=await api('ifft',{...snapshot,masks:clone(masks),export:true});if(version===serial&&$('ifft-dialog').open)status('Saved PNG + NPZ + JSON');exportNotice('Inverse FFT exported',data.paths.join(' · '),'saved')}
-  catch(e){status(e.message,true)}finally{exporting=false;$('ifft-export').disabled=wanted||version!==serial;if(wanted)pump()}
+  catch(e){status(e.message,true)}finally{exporting=false;syncLoading();$('ifft-export').disabled=wanted||version!==serial;if(wanted)pump()}
  };
  $('ifft-import').onclick=()=>$('ifft-import-file').click();
  $('ifft-import-file').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;try{

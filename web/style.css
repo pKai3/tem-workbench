@@ -948,3 +948,8 @@ html.ifft-open,html.ifft-open body{overflow:hidden}
 .fft-tukey-control output{min-width:3ch;color:var(--muted)}
 
 #material-controls .material-settings{margin-top:0}
+
+#ifft-loading{z-index:5}
+.ifft-loading-badge{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 14px;border-radius:12px;background:#060b1033}
+#ifft-loading-icon{display:flex}
+#ifft-loading .tem-diffraction-loader{width:80px;height:80px}
