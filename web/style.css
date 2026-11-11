@@ -897,14 +897,35 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #roi-area[hidden]{display:none}
 
 /* Reciprocal filtering is a separate, snapshot-based workspace. */
-#ifft-dialog{width:min(1480px,96vw);max-height:94vh;overflow:auto}
+#ifft-dialog{position:fixed;inset:1vh 1vw;margin:0;width:auto;max-width:none;height:98vh;max-height:none;box-sizing:border-box;overflow:auto;z-index:1000}
+#ifft-dialog.adjust-selection{left:49vw}
+#ifft-dialog.adjust-selection .ifft-views{gap:8px}
+#ifft-dialog .panel-head{margin-bottom:8px}
+#ifft-source{margin:6px 0 10px}
 #ifft-dialog h2{margin:0} .ifft-controls{display:flex;align-items:end;gap:8px;flex-wrap:wrap}
 .ifft-controls label{font-size:12px}.ifft-controls input[type=number]{width:100px}.ifft-controls button{min-height:32px}
 #ifft-pairs{display:flex;gap:5px;flex-wrap:wrap;margin:10px 0;max-height:85px;overflow:auto}
 #ifft-pairs button{padding:3px 9px;font-size:12px}#ifft-pairs button[aria-pressed=true]{border-color:var(--cyan);color:var(--cyan)}
-.ifft-views{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:14px}.ifft-views figure{margin:0;min-width:0}
+.ifft-views{margin-inline:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.ifft-views figure{margin:0;min-width:0}
 .ifft-views figcaption{margin:4px 0 8px}.ifft-views img{width:100%;aspect-ratio:1;object-fit:contain;background:#060b10}
 #ifft-editor{width:100%;display:block;background:#060b10;touch-action:none;cursor:crosshair;user-select:none}
-#ifft-editor ellipse{cursor:move}#ifft-output.pending{opacity:.35}.ifft-footer{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+#ifft-editor [data-mask]{cursor:move}#ifft-editor [data-mask-resize]{cursor:ew-resize}#ifft-output.pending{opacity:.35}.ifft-footer{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
 #ifft-status{flex:1;min-width:220px;font-size:13px}#ifft-status.error{color:#ff849c}
-@media(max-width:900px){.ifft-views{grid-template-columns:1fr 1fr}.ifft-views figure:first-child{grid-column:1/-1;max-width:600px;width:100%;justify-self:center}}
+@media(max-width:700px){#ifft-dialog.adjust-selection{inset:55vh 1vw 1vh;height:auto}.ifft-controls{gap:5px}}
+
+.ifft-views figcaption{min-height:36px;display:flex;align-items:center}
+.ifft-reconstruction-heading{justify-content:space-between;gap:8px}
+.ifft-view-toggle{display:inline-flex}.ifft-view-toggle button{padding:4px 8px;font-size:12px;border-radius:0}
+.ifft-view-toggle button:first-child{border-radius:5px 0 0 5px}.ifft-view-toggle button:last-child{border-radius:0 5px 5px 0}
+.ifft-view-toggle button[aria-pressed=true]{background:#28516c;border-color:#80b8dc}
+#ifft-reconstruction{position:relative;aspect-ratio:1;background:#060b10;overflow:hidden}
+#ifft-reconstruction img{position:absolute;inset:0;width:100%;height:100%;display:block}
+#ifft-reconstruction[data-view=filtered] #ifft-input{visibility:hidden}
+#ifft-reconstruction[data-view=compare] #ifft-input{clip-path:inset(0 calc(100% - var(--wipe)) 0 0)}
+#ifft-wipe,.ifft-wipe-divider,.ifft-wipe-labels{display:none}
+#ifft-reconstruction[data-view=compare] #ifft-wipe{display:block;position:absolute;inset:0;margin:0;width:100%;height:100%;padding:0;opacity:0;cursor:ew-resize;z-index:3}
+#ifft-reconstruction[data-view=compare] .ifft-wipe-divider{display:block;position:absolute;top:0;bottom:0;left:var(--wipe);width:2px;background:#fff;pointer-events:none;box-shadow:0 0 3px #000}
+.ifft-wipe-divider span{position:absolute;top:50%;left:0;transform:translate(-50%,-50%);background:#101925;border:1px solid #fff;border-radius:12px;padding:3px 6px;color:white}
+#ifft-reconstruction[data-view=compare] .ifft-wipe-labels{display:flex;position:absolute;inset:8px 8px auto;justify-content:space-between;pointer-events:none}
+.ifft-wipe-labels span{background:#101925bf;padding:3px 6px;border-radius:4px;font-size:12px}
+#ifft-reconstruction:focus-within{outline:2px solid var(--cyan);outline-offset:-2px}

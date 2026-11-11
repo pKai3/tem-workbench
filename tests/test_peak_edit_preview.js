@@ -42,7 +42,7 @@ context.displayed=snapshot;context.diffractionSettings={...snapshot.settings.dif
  {action:'add',x:100,y:100,snap_radius_nm_inv:.5},{action:'remove',x:200,y:200,radius_nm_inv:.4}]};
 context.radiusDrag=context.snapPointer=null;context.savedSnapRadius=edit=>edit.snap_radius_nm_inv;context.savedRemovalRadius=edit=>edit.radius_nm_inv;
 context.el=element;
-vm.runInContext(source.slice(source.indexOf('function drawSnapOverlays(){'),source.indexOf('async function finishRadiusDrag')),context);
+vm.runInContext(source.slice(source.indexOf('function appendRadiusEditControls('),source.indexOf('async function finishRadiusDrag')),context);
 for(const root of [$('overview'),$('fft'),zoom])root.append(element('fitting-handle',{'data-fitting-handle':'outer'}));
 for(const mode of ['view','add','remove','center','mask','view']){
  context.mode=mode;$('diff-tool').value=mode;context.drawSnapOverlays();

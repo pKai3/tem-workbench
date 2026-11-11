@@ -150,7 +150,7 @@ context.editSnapshot=()=>({settings:{diffraction:{pixel_x_nm_inv:.01,pixel_y_nm_
 context.peakEditing=()=>false;
 context.syncSpectrumHoverRadii=()=>{};context.syncCentreLoupeOverlays=()=>{};context.syncDetectorToolIndicators=()=>{};
 context.diffractionSettings={pixel_x_nm_inv:.01,pixel_y_nm_inv:.01,peak_edits:[]};
-vm.runInContext(source.slice(source.indexOf('function drawSnapOverlays(){'),source.indexOf('async function finishRadiusDrag')),context);
+vm.runInContext(source.slice(source.indexOf('function appendRadiusEditControls('),source.indexOf('async function finishRadiusDrag')),context);
 for(const direct of [false,true]){
  context.direct=direct;
  for(const nodes of liveNodes.values())for(const node of nodes)node.removed=false;
