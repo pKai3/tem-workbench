@@ -973,3 +973,17 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-scree button{flex:1;min-width:70px;padding:5px;font-size:12px;background:linear-gradient(to top,#315979 var(--bar),#182636 var(--bar));height:100%;white-space:normal}
 #pca-scree button[aria-pressed=true]{border-color:#61d7d1}#pca-status.error{color:#ff9cb0}#pca-status{min-height:1.5em}
 @media(max-width:750px){.pca-views{grid-template-columns:1fr}.pca-samples{grid-template-columns:1fr}#pca-dialog{inset:1vh 1vw;padding:10px}.pca-controls{gap:6px}}
+
+/* Shared spectral decomposition and exhaustive NMF fit progress. */
+#pca-progress {display:block;width:100%;height:14px;accent-color:#63ddd5;margin:8px 0 16px}
+#pca-progress[hidden] {display:none}
+.nmf-fit-results {overflow:auto;max-height:420px}
+.nmf-fit-results table {width:100%;font-size:12px}
+.nmf-fit-results th {position:sticky;top:0;background:#13212c;z-index:1}
+#nmf-group-detail {display:flex;gap:20px;align-items:center;margin-top:12px}
+#nmf-group-detail[hidden] {display:none}
+#nmf-group-detail figure {margin:0;max-width:320px;flex:1}
+#nmf-group-spectrum {width:100%}
+#nmf-support {flex:1}
+#nmf-support button {margin:4px}
+@media(max-width:750px){#nmf-group-detail{flex-direction:column}}

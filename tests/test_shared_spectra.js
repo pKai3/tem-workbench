@@ -11,3 +11,5 @@ const plan={window_pixels:[100,80],xs:[0,50,100],ys:[10,60]};
 assert.equal(pca.nearest(plan,148,98),5);
 assert.equal(pca.nearest(plan,50,50),0);
 console.log('PCA view: signed maps, grouped activity, residuals and calibrated window selection passed.');
+
+assert.deepEqual(pca.values({...data,decomposition:'nmf'},'group',0,[0,1]),[[1,-1],[1,2]]);

@@ -211,6 +211,14 @@ class Workbench:
             snapshot = {**item, 'info': copy.deepcopy(item['info'])}
             return self.pca.start(snapshot, settings, body.get('options', {}), self.engine.output_for(body['file_id']))
 
+    def fit_nmf(self, body):
+        with self.lock, self.job_lock:
+            if self.closing or self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running():
+                raise ValueError('Finish or cancel other analysis before fitting NMF groups.')
+            result=self.pca.completed(body['id'])
+            templates=copy.deepcopy(self.engine.templates_for(result['settings']))
+            return self.pca.fit(body['id'],templates,body.get('options',{}))
+
     def preview_status(self):
         return self.preview_batch.status() if self.preview_batch else None
 
@@ -905,6 +913,11 @@ def make_handler(app):
                         self.send(app.engine.calibrate_raster(body['file_id'], body))
                 elif self.path == '/api/pca':
                     self.send(app.start_pca(body))
+                elif self.path == '/api/pca/fit':
+                    self.send(app.fit_nmf(body))
+                elif self.path == '/api/pca/group':
+                    from nmf_fitting import group_detail
+                    self.send(group_detail(app.pca.completed(body['id']),body['components']))
                 elif self.path == '/api/pca/cancel':
                     with app.pca.lock:
                         app.pca.status(body['id'])

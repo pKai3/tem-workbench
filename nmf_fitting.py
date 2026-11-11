@@ -1,0 +1,118 @@
+"""Exploratory indexing of exhaustive NMF subsets, separate from grid evidence.
+
+Factor amplitudes are arbitrary. Detect relative maxima after radial baseline
+removal; do not reuse native FFT photometry thresholds or weak/missing costs.
+"""
+import numpy as np
+from scipy import ndimage
+import analysis_core as core
+import scale_fitting
+from shared_spectra import check_cancel, number, spectrum_image, RADIAL_BINS, ANGULAR_BINS
+
+
+def validate_options(result, options):
+    if result['plan'].get('method') != 'nmf':
+        raise ValueError('Crystal fitting requires nonnegative NMF components; rerun using NMF.')
+    return number(options,'peak_fraction',.2,.01,1)
+
+
+def group_spectrum(result, ids):
+    """Use actual reconstruction contributions, invariant to W/H rescaling.
+
+    Co-occurrence means each factor exceeds 20% of its own maximum at a window.
+    If none coexist, report that fact and use global mean contributions only as
+    an exploratory mathematical combination, not an observed single pattern.
+    """
+    scores=result['scores'][:,ids]
+    maximum=scores.max(axis=0)
+    active=(scores >= .2*maximum)&(maximum>1e-20)
+    common=active.all(axis=1)
+    coefficients=scores[common].mean(axis=0) if common.any() else scores.mean(axis=0)
+    spectrum=coefficients@result['components'][ids]/result['area_weights'].ravel()
+    support=np.min(scores/np.maximum(maximum,1e-20),axis=1)
+    indices=np.flatnonzero(common)
+    strongest=indices[np.argsort(-support[indices])[:3]].tolist()
+    return spectrum, coefficients, int(common.sum()), strongest
+
+
+def detect_peaks(spectrum, result, fraction):
+    p=result['plan'];a=result['angles'];r=result['radii']
+    values=np.asarray(spectrum).reshape(RADIAL_BINS,ANGULAR_BINS)
+    signal=np.maximum(values-np.median(values,axis=1,keepdims=True),0)
+    high=float(signal.max())
+    if high<=1e-20:return []
+    maxima=ndimage.maximum_filter(signal,size=(3,3),mode=('nearest','wrap'))
+    rr,aa=np.where((signal>=maxima)&(signal>=fraction*high))
+    order=np.argsort(-signal[rr,aa],kind='stable')
+    separation=max(float(result['settings'].get('fft_minimum_separation',.5)),1e-6)
+    peaks=[]
+    for idx in order:
+        i,j=int(rr[idx]),int(aa[idx]);q=np.array([r[i]*np.cos(a[j]),r[i]*np.sin(a[j])])
+        if any(min(np.linalg.norm(q-np.array([v['qx'],v['qy']])),np.linalg.norm(q+np.array([v['qx'],v['qy']])))<separation for v in peaks):continue
+        peaks.append(dict(profile_id=len(peaks),qx=float(q[0]),qy=float(q[1]),weight=1.,relative_strength=float(signal[i,j]/high)))
+        if len(peaks)>=int(result['settings'].get('fft_max_peaks',70)):break
+    return peaks
+
+
+def compact(model):
+    keys=('phase','template_id','zone_3index','rotation_deg','score','valid','coverage',
+          'matched_profile_count','predicted_visible_band_node_count','rms_nm_inv',
+          'fitted_a_nm','fitted_b_nm','fitted_c_nm','scale_penalty','position_score','scale_mode',
+          'scale_a','scale_c','shared_scale','scale_note')
+    out={k:model[k] for k in keys if k in model}
+    if 'fitted_a_nm' not in out and model.get('nominal_a_nm'):
+        for axis in 'abc':
+            value=model.get('nominal_'+axis+'_nm')
+            if value is not None:out['fitted_'+axis+'_nm']=float(value)/model.get('shared_scale',1.)
+        out['scale_note']='Fixed common scale; unseen dimensions are assumed, not measured.'
+    return out
+
+
+def fit_groups(result, templates, options, cancel=None, progress=None):
+    fraction=validate_options(result,options);p=result['plan'];s=result['settings']
+    count=len(result['components']);total=(1<<count)-1
+    # One physical FFT bin sets tolerance; broadening deliberately does not enlarge it.
+    tolerance=max(.1,1/min(p['window_nm']))
+    records=[]
+    fits=dict(groups=records,total=total,completed=0,peak_fraction=fraction,
+              tolerance_nm_inv=tolerance,cooccurrence_fraction=.2,
+              scoring='Position minus chance allowance minus scale cost; uniform profile weights. No weak/missing, brightness or double-diffraction scoring. Not comparable to main-analysis rank.',
+              grouping='Every nonempty subset. Mean coefficients in co-occurring windows; global mean if none. NMF coefficient scaling is preserved.',
+              validation='Best model checked without refitting against up to three unbroadened sampled spectra. Same-image consistency only; correlated windows, not independent validation.')
+    result['fits']=fits
+    for mask in range(1,total+1):
+        check_cancel(cancel)
+        ids=[i for i in range(count) if mask & (1<<i)]
+        spectrum,coefficients,common,windows=group_spectrum(result,ids)
+        peaks=detect_peaks(spectrum,result,fraction);candidates=[]
+        for ti,template in enumerate(templates):
+            check_cancel(cancel)
+            if progress:progress(mask-1,total,f'Group {mask}/{total} · template {ti+1}/{len(templates)}')
+            args=dict(bcc_a=s.get('bcc_a',.330),fcc_a=s.get('fcc_a',.417),g_min=p['g_min'],g_max=p['g_max'],omega_falloff_multiplier=s.get('omega_falloff_multiplier',1.))
+            if s.get('scale_mode','fixed')=='fixed':
+                found=core.search(peaks,[template],s.get('scale',1.),tolerance,**args)
+            else:
+                found=scale_fitting.search(peaks,[template],tolerance,s['scale_mode'],scale_penalty_strength=s.get('scale_penalty_strength',.1),ca_penalty_strength=s.get('ca_penalty_strength',.1),**args)
+            candidates.extend(found)
+        candidates=core.retain(candidates,topn=1)
+        record=dict(components=ids,coefficients=coefficients.tolist(),cooccurring_windows=common,
+                    peak_count=len(peaks),candidates=[compact(m) for m in candidates],support_checks=[])
+        if candidates:
+            best=candidates[0]
+            for index in windows:
+                observed=detect_peaks(result['raw_spectra'][index],result,fraction)
+                width=tolerance*(s.get('omega_falloff_multiplier',1.) if best['phase']=='OMEGA' else 1.)
+                check=core.score_prediction_nodes(observed,best['predicted_nodes'],width)
+                record['support_checks'].append(dict(window=index,peak_count=len(observed),
+                      matched=check['matched_profile_count'] if check else 0,
+                      coverage=check['coverage'] if check else 0.,rms_nm_inv=check['rms_nm_inv'] if check else None))
+        records.append(record);fits['completed']=mask
+        if progress:progress(mask,total,f'Fitted {mask}/{total} combinations')
+    return fits
+
+
+def group_detail(result, ids):
+    if not isinstance(ids,list) or not ids or any(type(i) is not int or not 0<=i<len(result['components']) for i in ids):
+        raise ValueError('Choose a valid component group.')
+    spectrum,coefficients,common,windows=group_spectrum(result,sorted(set(ids)))
+    return dict(spectrum=spectrum_image(spectrum,result['plan']),cooccurring_windows=common,windows=windows)

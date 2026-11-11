@@ -1,4 +1,4 @@
-"""Exploratory local-FFT PCA. No phase classification or changes to source data.
+"""Exploratory local-FFT PCA/NMF. No phase classification or changes to source data.
 
 Spectra are sampled on a shared log-radius / angle grid. Reciprocal-area weights
 make the PCA metric approximate Cartesian spectral area rather than overweighting
@@ -21,7 +21,7 @@ from scipy import fft, ndimage, linalg
 from PIL import Image
 import analysis_core as core
 
-VERSION = 'local-fft-pca-v1'
+VERSION = 'local-fft-components-v2'
 RADIAL_BINS, ANGULAR_BINS = 96, 180
 MAX_MATRIX_BYTES = 64 * 1024**2
 LOG = logging.getLogger('tem_workbench')
@@ -69,10 +69,13 @@ def plan(info, settings, options):
     n_components = number(options, 'components', 8, 1, 16)
     if int(n_components) != n_components:
         raise ValueError('Component count must be an integer.')
+    method = options.get('method', 'pca')
+    if method not in ('pca', 'nmf'):
+        raise ValueError('Choose PCA or NMF.')
     normalization = options.get('normalization', 'unit_norm')
     if normalization not in ('unit_norm', 'none'):
         raise ValueError('Choose unit norm or no spectral normalization.')
-    return dict(window_pixels=[w,h], window_nm=[w*sx,h*sy], spacing_nm=[dx*sx,dy*sy],
+    return dict(method=method,window_pixels=[w,h], window_nm=[w*sx,h*sy], spacing_nm=[dx*sx,dy*sy],
                 xs=xs.tolist(), ys=ys.tolist(), map_shape=[ny,nx], count=count,
                 pixel_nm=[sx,sy], image_shape=[height,width], g_min=inner,g_max=outer,
                 components=min(int(n_components),count-1),
@@ -159,6 +162,46 @@ def decompose(matrix, components, cancel=None):
                 residual=residual,algorithm=algorithm,total_energy=energy)
 
 
+
+def decompose_nmf(matrix, components, cancel=None, progress=None, iterations=300):
+    """Seeded Euclidean multiplicative NMF (Lee & Seung); local optimum only.
+
+    L1-normalized spectral rows make W additive component contributions, rather
+    than scale-ambiguous coefficients. No mean subtraction or phase labels.
+    """
+    check_cancel(cancel)
+    x=np.asarray(matrix,dtype=np.float32)
+    if not np.isfinite(x).all() or np.any(x<0) or not np.any(x>0):
+        raise ValueError('NMF needs finite nonnegative spectra with some signal.')
+    k=min(int(components),min(x.shape))
+    rng=np.random.default_rng(0)
+    amplitude=np.sqrt(float(x.mean())/k)
+    w=(rng.random((len(x),k),dtype=np.float32)+.1)*amplitude
+    h=(rng.random((k,x.shape[1]),dtype=np.float32)+.1)*amplitude
+    energy=float(np.sum(x.astype(np.float64)**2));previous=None;converged=False
+    for step in range(1,iterations+1):
+        check_cancel(cancel)
+        h *= (w.T@x)/np.maximum((w.T@w)@h,1e-20)
+        w *= (x@h.T)/np.maximum(w@(h@h.T),1e-20)
+        if step%10==0 or step==iterations:
+            residual=x-w@h
+            error=float(np.sum(residual.astype(np.float64)**2))
+            if progress:progress(step,iterations,'NMF iterations')
+            if previous is not None and step>=50 and 0 <= (previous-error)/max(previous,1e-20)<1e-5:
+                converged=True;break
+            previous=error
+    check_cancel(cancel)
+    norm=np.maximum(h.sum(axis=1),1e-20);h/=norm[:,None];w*=norm[None,:]
+    shares=w.sum(axis=0,dtype=np.float64);shares/=shares.sum()
+    order=np.argsort(-shares);h=h[order];w=w[:,order];shares=shares[order]
+    residual=np.linalg.norm(x-w@h,axis=1)
+    return dict(mean=np.zeros(x.shape[1],np.float32),components=h,scores=w,
+                explained_variance_ratio=np.zeros(k),contribution_share=shares,
+                residual=residual,algorithm='euclidean_multiplicative_nmf_seed0',
+                total_energy=energy,iterations=step,converged=converged,
+                relative_reconstruction_error=float(np.linalg.norm(residual)/np.sqrt(energy)))
+
+
 def compute(array, info, settings, options, cancel=None, progress=None):
     p=plan(info,settings,options)
     r,a,weights=axes(p)
@@ -173,7 +216,7 @@ def compute(array, info, settings, options, cancel=None, progress=None):
         positions.append([x,y,w,h])
         if progress:progress(i+1,p['count'],'Sampling local FFTs')
     if progress:progress(p['count'],p['count'],'Decomposing spectra')
-    result=decompose(matrix,p['components'],cancel)
+    result=(decompose_nmf(matrix,p['components'],cancel,progress) if p['method']=='nmf' else decompose(matrix,p['components'],cancel))
     result.update(plan=p,raw_spectra=raw,normalizations=norms,positions=np.asarray(positions),
                   radii=r,angles=a,area_weights=weights,source=copy.deepcopy(info),settings=copy.deepcopy(settings),
                   method_version=VERSION)
@@ -220,16 +263,19 @@ def spectrum_image(polar,p,signed=False,limits=None):
 
 
 def summary(result):
-    p=result['plan'];w=result['area_weights'].ravel()
+    p=result['plan'];w=result['area_weights'].ravel();nmf=p.get('method')=='nmf'
     components=[]
-    for i,(spectrum,ratio) in enumerate(zip(result['components'],result['explained_variance_ratio'])):
+    for i,(spectrum,ratio) in enumerate(zip(result['components'],result.get('contribution_share',result['explained_variance_ratio']))):
         scores=result['scores'][:,i].reshape(p['map_shape'])
         components.append(dict(index=i,variance=float(ratio),scores=scores.tolist(),
-                               spectrum=spectrum_image(spectrum/w,p,True)))
+                               spectrum=spectrum_image(spectrum/w,p,not nmf)))
     return dict(plan=p,source_name=result['source'].get('name','Image'),
                 source_hash=result['source'].get('sha256_pixels'),method=VERSION,
-                algorithm=result['algorithm'],components=components,
-                mean=spectrum_image(result['mean']/w,p),
+                algorithm=result['algorithm'],components=components,decomposition=p.get('method','pca'),
+                fit_status=result.get('fit_status'),fits=result.get('fits'),
+                iterations=result.get('iterations'),converged=result.get('converged'),
+                relative_reconstruction_error=result.get('relative_reconstruction_error'),
+                mean=spectrum_image((result['scores'].mean(axis=0)@result['components'] if nmf else result['mean'])/w,p),
                 raw_mean=spectrum_image(result['raw_spectra'].mean(axis=0),p),
                 residual=result['residual'].reshape(p['map_shape']).tolist(),
                 explained=float(result['explained_variance_ratio'].sum()))
@@ -256,16 +302,20 @@ def sample(result,index,selected):
 def export(result, folder):
     from batch_grids import safe_name
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
-    stem=time.strftime('%Y%m%d_%H%M%S_')+safe_name(result['source'].get('name','image'))+'_pca_'+uuid.uuid4().hex[:6]
+    stem=time.strftime('%Y%m%d_%H%M%S_')+safe_name(result['source'].get('name','image'))+'_'+result['plan'].get('method','pca')+'_'+uuid.uuid4().hex[:6]
     meta=dict(method=VERSION,source=result['source'],processing=result['settings'],plan=result['plan'],
               algorithm=result['algorithm'],explained_variance_ratio=result['explained_variance_ratio'].tolist(),
               conventions=dict(spectra='log(1 + abs(FFT)**2 / number_of_pixels); conjugate averaged',
               angular_domain='[0, pi), radians; qy up',normalization='per-window weighted norm before centering',
               reconstruction='mean + scores @ components; divide by area_weights then multiply window normalization',
               components='signed variance directions, not phases; scores and grouped energy are not fractions',
-              broadening='Gaussian in log radius and angle before PCA; no orientation registration',
+              broadening='Gaussian in log radius and angle before decomposition; no orientation registration',
               source_settings='Window, taper, mean removal and fitting band used; peak detection/matching settings not used'),
               reference='Jany et al., Micron 130 (2020) 102800; doi:10.1016/j.micron.2019.102800')
+    if result['plan'].get('method')=='nmf':
+        meta.update(contribution_share=result['contribution_share'].tolist(),iterations=result['iterations'],converged=result['converged'],relative_reconstruction_error=result['relative_reconstruction_error'],fits=result.get('fits'),fit_status=result.get('fit_status'))
+        meta['conventions'].update(normalization='Per-window weighted norm, no centering; H rows have unit L1 sum',reconstruction='scores @ components; divide by area_weights and multiply window normalization',components='Nonnegative spectral factors; contribution shares are not phase fractions or explained variance',source_settings='Decomposition uses taper, mean removal and fitting band. Optional indexing uses captured material/phase/scale settings; see fits provenance.')
+        meta['nmf_reference']='Lee & Seung, Algorithms for Non-negative Matrix Factorization, NIPS 2000 (2001), https://proceedings.neurips.cc/paper/2000/file/f9d1152547c0bde01830b7e8bd60024c-Paper.pdf'
     data_path=folder/(stem+'.npz');meta_path=folder/(stem+'.json')
     metadata=json.dumps(meta,allow_nan=False,indent=2)
     np.savez_compressed(data_path,**{key:result[key] for key in ('raw_spectra','normalizations','positions','radii','angles','area_weights','mean','components','scores','explained_variance_ratio','residual')},metadata=np.array(metadata))
@@ -314,3 +364,30 @@ class SharedSpectra:
             self.status(job_id)
             if self.job['state']!='complete' or self.result is None:raise ValueError('PCA has not completed.')
             return self.result
+
+    def fit(self,job_id,templates,options):
+        from nmf_fitting import fit_groups, validate_options
+        with self.lock:
+            result=self.completed(job_id)
+            if self.running():raise ValueError('Finish or cancel the current operation first.')
+            validate_options(result,options)
+            self.cancel=threading.Event()
+            result['fit_status']='running'
+            self.job.update(state='running',operation='fit',completed=0,total=(1<<len(result['components']))-1,
+                            stage='Preparing exhaustive combinations',started=time.monotonic())
+            self.job.pop('elapsed_seconds',None);self.job.pop('error',None)
+            def progress(done,total,stage):
+                with self.lock:self.job.update(completed=done,total=total,stage=stage)
+            def run():
+                try:
+                    fits=fit_groups(result,templates,options,self.cancel,progress)
+                    with self.lock:result['fits']=fits;result['fit_status']='complete'
+                except CancelledError:
+                    with self.lock:result['fit_status']='cancelled'
+                except Exception as exc:
+                    LOG.exception('NMF group fitting failed')
+                    with self.lock:result['fit_status']='error: '+str(exc)
+                finally:
+                    with self.lock:self.job.update(state='complete',stage='Group fitting '+result.get('fit_status','finished'),elapsed_seconds=round(time.monotonic()-self.job['started'],1))
+            self.thread=threading.Thread(target=run,name='nmf-crystal-fit',daemon=True);self.thread.start()
+            return self.status(job_id)
