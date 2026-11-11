@@ -34,7 +34,8 @@ function syncIfftControl(){
   try{while(wanted&&$('ifft-dialog').open){
    wanted=false;const version=serial,body={...snapshot,masks:clone(masks)};
    try{const data=await api('ifft',body);if(version!==serial||!$('ifft-dialog').open)continue;
-    extent=data.extent;$('ifft-spectrum').setAttribute('href',data.fft);$('ifft-input').src=data.input;$('ifft-output').src=data.image;$('ifft-output').classList.remove('pending');draw();
+    const raw=await decodeSpectrumImage({fft:data.fft});if(version!==serial||!$('ifft-dialog').open)continue;
+    extent=data.extent;$('ifft-spectrum').setAttribute('href',colourSpectrum(raw,'real_space'));$('ifft-input').src=data.input;$('ifft-output').src=data.image;$('ifft-output').classList.remove('pending');draw();
     $('ifft-export').disabled=false;
     const blank=masks.mode==='keep'&&!masks.spots.length&&!masks.keep_dc;
     status(blank?'No frequencies selected. Click FFT spots to begin.':`${masks.spots.length} paired masks · RMS ${data.rms.toPrecision(4)} · separate display contrast`);
