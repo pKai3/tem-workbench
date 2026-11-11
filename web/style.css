@@ -932,3 +932,9 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 
 html.ifft-open,html.ifft-open body{overflow:hidden}
 #ifft-dialog{overscroll-behavior:contain}
+
+/* iFFT magnifier stays above the workspace without intercepting mask/wiper drags. */
+.ifft-hover{position:fixed;z-index:1002;pointer-events:none;width:min(260px,calc(100vw - 16px),calc(100dvh - 60px));background:#0c121a;border:1px solid var(--cyan);border-radius:7px;overflow:hidden;box-shadow:0 4px 22px #0009}
+.ifft-hover[hidden]{display:none}.ifft-hover>div{padding:6px 8px;font-size:12px}
+.ifft-hover>svg{display:block;width:100%;aspect-ratio:1;background:#060b10}
+.ifft-hover image{image-rendering:pixelated}.ifft-hover-cross{stroke:white;stroke-width:1;vector-effect:non-scaling-stroke;fill:none;filter:drop-shadow(0 0 1px #000)}
