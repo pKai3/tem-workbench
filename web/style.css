@@ -952,3 +952,7 @@ html.ifft-open,html.ifft-open body{overflow:hidden}
 .ifft-loading-badge{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 14px;border-radius:12px;background:#060b1033}
 #ifft-loading-icon{display:flex}
 #ifft-loading .tem-diffraction-loader{width:80px;height:80px}
+
+#ifft-empty{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--muted);pointer-events:none}
+#ifft-empty[hidden],#ifft-reconstruction[data-view=input] #ifft-empty,#ifft-reconstruction:has(#ifft-loading:not([hidden])) #ifft-empty{display:none}
+#ifft-reconstruction[data-view=compare] #ifft-empty{left:var(--wipe);padding:12px}

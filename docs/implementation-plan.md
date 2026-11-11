@@ -10,6 +10,8 @@ Saved regions now shares the bordered, rounded collapsible panel styling and hea
 
 Reused the animated TEM diffraction motif over the reconstruction while iFFT requests or exports are computing, including live drag updates. Indicator sits above the comparison divider, does not intercept controls, and clears on completion, failure or closing the workspace. Existing reduced-motion support is retained. The spinner appears only when waiting over 400 ms for a fresh reconstruction. Each accepted frame clears and restarts the delay, so a continuous drag delivering responsive frames does not accumulate into a permanent spinner. Completion, errors and closing cancel the indicator.
 
+Empty reconstruction guidance: when Keep mode has no masks or retained DC, the filtered pane prompts the user to click FFT spots to add masks. Hidden in Input view and while the loading indicator is visible.
+
 Scope-change follow-up: prepare and publish the new source FFT/input before computing its filtered reconstruction. Both requests reuse the same cached complex FFT; stale source replies are ignored.
 
 ## iFFT full-image detected spots — completed 11 November 2026

@@ -42,6 +42,7 @@ let refreshIfftSource;
  function checkpoint(){history.push(clone(masks));if(history.length>40)history.shift()}
  function status(text,error=false){$('ifft-status').textContent=text;$('ifft-status').classList.toggle('error',error)}
  function controls(){
+  $('ifft-empty').hidden=masks.mode!=='keep'||masks.spots.length>0||masks.keep_dc;
   $('ifft-mode').value=masks.mode;$('ifft-dc').checked=masks.keep_dc;
   const all=selected==='all',spot=masks.spots[selected];
   for(const [id,field] of [['ifft-radius','radius'],['ifft-feather','feather']]){
