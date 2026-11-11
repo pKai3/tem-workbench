@@ -11,9 +11,15 @@ let refreshIfftSource;
  let spectrumRaw=null,spectrumProcessed=null,processedView=false,sourceLive=false;
  const storeKey='tem-ifft-masks-v1',clone=v=>JSON.parse(JSON.stringify(v));
  $('ifft-loading-icon').append(document.querySelector('#fft-loading .tem-diffraction-loader').cloneNode(true));
+ let loadingTimer=null;
  function syncLoading(){
   const active=$('ifft-dialog').open&&(inFlight||exporting);
-  $('ifft-loading').hidden=!active;$('ifft-reconstruction').setAttribute('aria-busy',String(active));
+  $('ifft-reconstruction').setAttribute('aria-busy',String(active));
+  if(!active){clearTimeout(loadingTimer);loadingTimer=null;$('ifft-loading').hidden=true;return}
+  if(loadingTimer===null&&$('ifft-loading').hidden)loadingTimer=setTimeout(()=>{
+   loadingTimer=null;
+   if($('ifft-dialog').open&&(inFlight||exporting))$('ifft-loading').hidden=false;
+  },200);
  }
  // Keep both square panes equal while reserving space for controls and exports.
  let layoutFrame=0;

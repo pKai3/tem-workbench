@@ -4,7 +4,7 @@ Last updated: 11 November 2026
 
 ## iFFT computation indicator — completed 11 November 2026
 
-Reused the animated TEM diffraction motif over the reconstruction while iFFT requests or exports are computing, including live drag updates. Indicator sits above the comparison divider, does not intercept controls, and clears on completion, failure or closing the workspace. Existing reduced-motion support is retained.
+Reused the animated TEM diffraction motif over the reconstruction while iFFT requests or exports are computing, including live drag updates. Indicator sits above the comparison divider, does not intercept controls, and clears on completion, failure or closing the workspace. Existing reduced-motion support is retained. The spinner appears only after 200 ms of continuous computation; faster requests cancel the pending indicator without flashing.
 
 ## iFFT full-image detected spots — completed 11 November 2026
 
