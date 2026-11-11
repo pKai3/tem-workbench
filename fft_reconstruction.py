@@ -1,7 +1,7 @@
 """Phase-preserving reciprocal masks. Independent of detection and crystal fitting."""
 import numpy as np
 from scipy.fft import fft2, ifft2, fftshift, ifftshift, fftfreq
-from analysis_core import prepare_fft_input
+from analysis_core import prepare_fft_input, processed_fft_signal
 import region_masks
 
 VERSION = 1
@@ -71,11 +71,20 @@ def reconstruct(coefficients, sx, sy, settings):
     return filtered.real.copy(), mask, float(np.max(np.abs(filtered.imag)))
 
 
-def spectrum_view(coefficients, sx, sy, limit):
+def spectrum_view(coefficients, sx, sy, limit, smoothing_sigma=None):
     h,w=coefficients.shape
     fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy))
-    ix=np.flatnonzero(abs(fx)<=limit);iy=np.flatnonzero(abs(fy)<=limit)
+    # Match the detector's padded field before trimming both display planes together.
+    field_limit=limit if smoothing_sigma is None else limit*1.05
+    ix=np.flatnonzero(abs(fx)<=field_limit);iy=np.flatnonzero(abs(fy)<=field_limit)
     power=np.log1p(abs(fftshift(coefficients)[np.ix_(iy,ix)])**2)
     dx,dy=1/(w*sx),1/(h*sy)
+    if smoothing_sigma is not None:
+        xx,yy=np.meshgrid(fx[ix],fy[iy])
+        signal=processed_fft_signal(power,np.hypot(xx,yy),max(dx,dy),smoothing_sigma)
+        cx=np.flatnonzero(abs(fx[ix])<=limit);cy=np.flatnonzero(abs(fy[iy])<=limit)
+        power=power[np.ix_(cy,cx)];signal=signal[np.ix_(cy,cx)]
+        ix=ix[cx];iy=iy[cy]
     # Pixel-edge extent aligns the display with actual frequency-bin centres.
-    return power,[float(fx[ix[0]]-dx/2),float(fx[ix[-1]]+dx/2),float(fy[iy[-1]]-dy/2),float(fy[iy[0]]+dy/2)]
+    extent=[float(fx[ix[0]]-dx/2),float(fx[ix[-1]]+dx/2),float(fy[iy[-1]]-dy/2),float(fy[iy[0]]+dy/2)]
+    return (power,extent) if smoothing_sigma is None else (power,signal,extent)

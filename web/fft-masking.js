@@ -7,6 +7,7 @@ function syncIfftControl(){
 let refreshIfftSource;
 (()=>{
  let observations=[],snapshot=null,masks={mode:'keep',keep_dc:false,spots:[]},selected=-1,extent=null,serial=0,inFlight=false,wanted=false,timer=null,dragging=null,history=[],exporting=false,key='',sourceLabel='';
+ let spectrumRaw=null,spectrumProcessed=null,processedView=false;
  const storeKey='tem-ifft-masks-v1',clone=v=>JSON.parse(JSON.stringify(v));
  // Keep both square panes equal while reserving space for controls and exports.
  let layoutFrame=0;
@@ -52,12 +53,22 @@ let refreshIfftSource;
    if(dragging?.mode==='radius'&&i===selected)group.append(el('text',{x:x+rx+6,y,fill:color,'font-size':13,stroke:'#0a1119','stroke-width':3,'paint-order':'stroke','pointer-events':'none'},`${spot.radius.toFixed(3)} nm⁻¹`));
   }});
  }
+ function displaySpectrum(){
+  const image=processedView&&spectrumProcessed?spectrumProcessed:spectrumRaw;
+  if(image)$('ifft-spectrum').setAttribute('href',colourSpectrum(image,'real_space'));
+  $('ifft-raw').setAttribute('aria-pressed',String(!processedView));
+  $('ifft-processed').setAttribute('aria-pressed',String(processedView));
+  $('ifft-processed').disabled=!spectrumProcessed;
+ }
+ function clearSpectrum(){spectrumRaw=null;spectrumProcessed=null;$('ifft-spectrum').removeAttribute('href');displaySpectrum()}
+ $('ifft-raw').onclick=()=>{processedView=false;displaySpectrum()};
+ $('ifft-processed').onclick=()=>{processedView=true;displaySpectrum()};
  function refreshSource(){
   if(!$('ifft-dialog').open)return;
   if(fileId!==snapshot?.file_id||isDiffraction()){$('ifft-dialog').close();return}
   const full=$('ifft-scope').value==='full',next={file_id:fileId,roi:full?{x:0,y:0,w:meta.width,h:meta.height}:clone(roi),settings:settings()};
   const different=canonical(next)!==canonical(snapshot);
-  if(different){remember();snapshot=next;key=canonical([fileId,next.roi,next.settings.fft_window,next.settings.remove_mean]);extent=null;$('ifft-spectrum').removeAttribute('href');$('ifft-output').removeAttribute('src');$('ifft-input').removeAttribute('src');changed()}
+  if(different){remember();snapshot=next;key=canonical([fileId,next.roi,next.settings.fft_window,next.settings.remove_mean]);extent=null;clearSpectrum();$('ifft-output').removeAttribute('src');$('ifft-input').removeAttribute('src');changed()}
   sourceLabel=`${meta.name} · ${next.roi.w} × ${next.roi.h} px · ${next.roi.polygon?'polygon fade':next.settings.fft_window==='hann'?'Hann window':'no window'} · mean ${next.settings.remove_mean?'removed':'retained'}`;
   $('ifft-source').textContent=sourceLabel;
   const matching=result&&canonical(result.roi)===canonical(next.roi);
@@ -91,8 +102,11 @@ let refreshIfftSource;
   try{while(wanted&&$('ifft-dialog').open){
    wanted=false;const version=serial,body={...snapshot,masks:clone(masks)};
    try{const data=await api('ifft',body);if(version!==serial||!$('ifft-dialog').open)continue;
-    const raw=await decodeSpectrumImage({fft:data.fft});if(version!==serial||!$('ifft-dialog').open)continue;
-    extent=data.extent;$('ifft-spectrum').setAttribute('href',colourSpectrum(raw,'real_space'));$('ifft-input').src=data.input;$('ifft-output').src=data.image;$('ifft-output').classList.remove('pending');draw();
+    const images=data.images||{fft:data.fft};
+    const [raw,processed]=await Promise.all([decodeSpectrumImage(images),images.detector_signal16?decodeSpectrumImage({fft_log16:images.detector_signal16,fft_log_limits:images.detector_signal_limits}).then(image=>({...image,detector:true})):null]);
+    if(version!==serial||!$('ifft-dialog').open)continue;
+    spectrumRaw=raw;spectrumProcessed=processed;
+    extent=data.extent;displaySpectrum();$('ifft-input').src=data.input;$('ifft-output').src=data.image;$('ifft-output').classList.remove('pending');draw();
     $('ifft-export').disabled=Boolean(dragging||wanted||timer);
     const blank=masks.mode==='keep'&&!masks.spots.length&&!masks.keep_dc;
     status(blank?'No frequencies selected. Click FFT spots to begin.':`${masks.spots.length} paired masks · RMS ${data.rms.toPrecision(4)} · separate display contrast`);
@@ -107,7 +121,7 @@ let refreshIfftSource;
   key=canonical([fileId,snapshot.roi,snapshot.settings.fft_window,snapshot.settings.remove_mean]);
   masks={mode:'keep',keep_dc:false,spots:[]};try{const saved=JSON.parse(localStorage.getItem(storeKey)||'{}')[key];if(saved)masks=saved}catch(e){}
   selected=-1;history=[];extent=null;serial++;wanted=true;controls();draw();
-  for(const id of ['ifft-input','ifft-output'])$(id).removeAttribute('src');$('ifft-spectrum').removeAttribute('href');$('ifft-export').disabled=true;
+  for(const id of ['ifft-input','ifft-output'])$(id).removeAttribute('src');processedView=showDetectorSignal;clearSpectrum();$('ifft-export').disabled=true;
   $('ifft-source').textContent=`${meta.name} · ${snapshot.roi.w} × ${snapshot.roi.h} px · ${snapshot.roi.polygon?'polygon fade':snapshot.settings.fft_window==='hann'?'Hann window':'no window'} · mean ${snapshot.settings.remove_mean?'removed':'retained'}`;
   $('ifft-scope').value='selection';setAdjusting(false);$('ifft-dialog').show();document.documentElement.classList.add('ifft-open');refreshSource();status('Preparing complex FFT…');pump();
  };

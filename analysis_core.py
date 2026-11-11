@@ -36,6 +36,12 @@ def prepare_fft_input(a,window="hann",remove_mean=True,selection_mask=None):
  elif remove_mean:z=z-float(z.mean())
  return z
 
+def processed_fft_signal(log_power,radius,bin_width,smoothing_sigma):
+ """Radial-background subtraction followed by detector smoothing."""
+ rb=np.floor(radius/bin_width).astype(int)
+ bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=log_power.ravel())
+ return gaussian_filter(log_power-(bs/np.maximum(bc,1))[rb],smoothing_sigma)
+
 def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True,g_max=10.,g_min=3.,
              smoothing_sigma=.65,threshold_floor=1.8,minimum_separation=.5,max_peaks=70,selection_mask=None):
  if window not in ('hann','none') or not isinstance(remove_mean,bool):
@@ -45,7 +51,7 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
  h,w=a.shape
  z=prepare_fft_input(a,window,remove_mean,selection_mask)
  mask_widths=region_masks.response_widths(np.asarray(selection_mask,dtype='float32'),sx,sy) if selection_mask is not None else None
- power=np.abs(fftshift(fft2(z,workers=FFT_WORKERS)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],smoothing_sigma);valid=(g>0)&(g>=g_min)&(g<=g_max)
+ power=np.abs(fftshift(fft2(z,workers=FFT_WORKERS)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));wh=processed_fft_signal(lg,g,df,smoothing_sigma);valid=(g>0)&(g>=g_min)&(g<=g_max)
  dfx,dfy=1/(w*sx),1/(h*sy)
  window_width=max(mask_widths) if mask_widths else (1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
  fraction_threshold=profile_fraction*float(np.max(wh[valid])) if np.any(valid) else 0.

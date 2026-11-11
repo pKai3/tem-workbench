@@ -53,6 +53,25 @@ class ReconstructionTests(unittest.TestCase):
             self.assertEqual(len(coordinates),2)
             self.assertTrue(any(np.allclose(q,[9/(w*sx),-5/(h*sy)]) for q in coordinates))
 
+    def test_processed_view_matches_detector_without_changing_coefficients(self):
+        rng=np.random.default_rng(15)
+        for shape in ((64,96),(65,97)):
+            h,w=shape;a=rng.normal(size=shape).astype('float32');sx,sy=.05,.08;limit=4
+            roi=dict(x=0,y=0,w=w,h=h,polygon=[[0,0],[w-12,0],[w,h],[0,h]],edge_fade_nm=.2)
+            z,coeff=reconstruction.prepare(a,roi,dict(pixel_x_nm=sx,pixel_y_nm=sy),dict(fft_window='hann',remove_mean=True))
+            original=coeff.copy()
+            for sigma in (0,.65,1.5):
+                raw,signal,extent=reconstruction.spectrum_view(coeff,sx,sy,limit,sigma)
+                expected=core.spectrum(a,sx,sy,g_max=limit,g_min=.5,smoothing_sigma=sigma,selection_mask=region_masks.mask(roi,sx,sy))
+                fx=np.fft.fftshift(np.fft.fftfreq(w,sx));fy=-np.fft.fftshift(np.fft.fftfreq(h,sy))
+                cx=np.flatnonzero(abs(fx[abs(fx)<=limit*1.05])<=limit)
+                cy=np.flatnonzero(abs(fy[abs(fy)<=limit*1.05])<=limit)
+                np.testing.assert_allclose(signal,expected['detector_signal'][np.ix_(cy,cx)],atol=1e-6)
+                legacy,legacy_extent=reconstruction.spectrum_view(coeff,sx,sy,limit)
+                np.testing.assert_array_equal(raw,legacy)
+                self.assertEqual(extent,legacy_extent)
+                np.testing.assert_array_equal(coeff,original)
+
     def test_nyquist_even_and_odd_dimensions(self):
         rng=np.random.default_rng(11)
         for shape in ((64,96),(65,97)):
@@ -87,6 +106,8 @@ class ReconstructionTests(unittest.TestCase):
                 exported=app.reconstruct_fft(dict(body,export=True))
                 self.assertEqual(prepare.call_count,1)
             self.assertEqual(preview['recipe']['roi'],body['roi'])
+            self.assertIn('detector_signal16',preview['images'])
+            self.assertIn('fft_log16',preview['images'])
             self.assertIn('1.2MX_sample',exported['path'])
             with Image.open(exported['path']) as exported_image:
                 self.assertEqual(exported_image.size,(96,64))
