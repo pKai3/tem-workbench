@@ -181,9 +181,9 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .phase-color-controls select option{color:#edf5fc;background:#172332}
 
 /* One collapsible analysis setup; display and grid controls remain by their views. */
-#processing-controls{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:var(--panel-gap)}
-#processing-controls>summary{font-weight:600}
-#processing-controls[open]>summary{margin-bottom:10px}
+:is(#processing-controls,#material-controls){border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:var(--panel-gap)}
+:is(#processing-controls,#material-controls)>summary{font-weight:600}
+:is(#processing-controls,#material-controls)[open]>summary{margin-bottom:10px}
 #ca-penalty-field[hidden]{display:none}
 .file-label>label{margin-bottom:6px}
 .file-navigation{display:flex;gap:5px;min-width:0}
@@ -697,10 +697,10 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #diffraction-controls .peak-edit-heading{margin-bottom:10px}
 #diffraction-controls .detector-tool-buttons{margin-top:0;margin-bottom:6px}
 #diffraction-controls .peak-edit-controls>.check{min-height:26px}
-#processing-controls{padding:8px 10px;margin-bottom:var(--panel-gap)}
+:is(#processing-controls,#material-controls){padding:8px 10px;margin-bottom:var(--panel-gap)}
 /* Include the enclosing border in the gap below the visible processing panels. */
-#processing-controls[open]{padding-bottom:calc(var(--panel-gap) - 1px)}
-#processing-controls[open]>summary{margin-bottom:8px}
+:is(#processing-controls,#material-controls)[open]{padding-bottom:calc(var(--panel-gap) - 1px)}
+:is(#processing-controls,#material-controls)[open]>summary{margin-bottom:8px}
 #message{padding:6px 0;min-height:30px}
 .workspace>.panel{padding-top:12px}
 .workspace>.panel>.panel-head{min-height:30px;margin-bottom:6px}
@@ -946,3 +946,5 @@ html.ifft-open,html.ifft-open body{overflow:hidden}
 .fft-window-checks .fft-tukey-control[hidden]{display:none}
 .fft-tukey-control input[type=range]{flex:0 0 100px;width:100px;min-width:0;padding:0;border:0;background:transparent}
 .fft-tukey-control output{min-width:3ch;color:var(--muted)}
+
+#material-controls .material-settings{margin-top:0}

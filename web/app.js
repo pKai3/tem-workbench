@@ -271,6 +271,8 @@ function jumpFile(delta){
 }
 $('previous-file').onclick=()=>jumpFile(-1);
 $('next-file').onclick=()=>jumpFile(1);
+$('material-controls').open=readPreference('tem-material-open',true)!==false;
+$('material-controls').ontoggle=()=>writePreference('tem-material-open',$('material-controls').open);
 $('processing-controls').open=readPreference('tem-processing-open',true)!==false;
 $('processing-controls').ontoggle=()=>writePreference('tem-processing-open',$('processing-controls').open);
 function clearFileSearch(){if($('source-filter').value){$('source-filter').value='';if(config)renderFileList()}if($('file-search').value){$('file-search').value='';if(config)renderFileList()}}

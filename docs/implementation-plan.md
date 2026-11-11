@@ -2,6 +2,10 @@
 
 Last updated: 11 November 2026
 
+## Collapsible material settings — completed 11 November 2026
+
+Grouped reference cells and phase colours/search inside a Material settings disclosure, matching Processing settings. Starts expanded and remembers its open/closed preference independently across reloads. Existing controls and values are unchanged. No release requested.
+
 ## FFT window choice — completed 11 November 2026
 
 Added Hann / Tukey / None selection, now defaulting to Tukey at 50% total taper (25% per edge) on user request and migrating the old unchecked Hann preference to None. Tukey reveals a 0–100% total-taper slider, defaulting to 50%; 0% is rectangular and 100% is Hann. Window settings persist and are included in saved analyses, grid/batch requests and iFFT recipes/cache identity. Polygon selections keep their own edge fade and disable the crop-window controls. Taper response width is measured for Tukey and cached per size/amount for peak separation and photometry.
