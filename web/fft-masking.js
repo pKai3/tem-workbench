@@ -141,7 +141,7 @@ let refreshIfftSource;
 
  let hover=null,hoverTimer=null,hoverFrame=null;
  const loupe=document.createElement('aside');loupe.className='ifft-hover';loupe.hidden=true;loupe.setAttribute('aria-hidden','true');
- const loupeTitle=document.createElement('div'),loupeView=el('svg',{viewBox:'0 0 600 600'}),loupeContent=el('g'),loupeCross=el('path',{'class':'ifft-hover-cross'});
+ const loupeTitle=document.createElement('div'),loupeView=el('svg',{viewBox:'0 0 600 600'}),loupeContent=el('g',{}),loupeCross=el('path',{'class':'ifft-hover-cross'});
  loupeView.append(loupeContent,loupeCross);loupe.append(loupeTitle,loupeView);$('ifft-dialog').append(loupe);
  function hideHover(){clearTimeout(hoverTimer);hoverTimer=null;cancelAnimationFrame(hoverFrame);hoverFrame=null;hover=null;loupe.hidden=true}
  function refreshHover(){if(!hover||loupe.hidden)return;cancelAnimationFrame(hoverFrame);hoverFrame=requestAnimationFrame(renderHover)}
