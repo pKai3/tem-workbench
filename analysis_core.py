@@ -20,6 +20,22 @@ def peak_width(spectrum):
  # Older saved/cached spectra used the Hann-specific name.
  return spectrum.get('peak_width_nm_inv', spectrum.get('hann_power_fwhm_nm_inv', 1.44*spectrum['df']))
 
+def prepare_fft_input(a,window="hann",remove_mean=True,selection_mask=None):
+ """The real input transformed by both analysis and reciprocal filtering."""
+ h,w=a.shape
+ z=a.astype('float32')
+ if selection_mask is not None:
+  mask=np.asarray(selection_mask,dtype='float32')
+  if mask.shape!=z.shape or not np.isfinite(mask).all() or mask.min()<0 or mask.max()>1 or mask.sum()<=0:
+   raise ValueError('The selection mask must contain finite weights between zero and one.')
+  if remove_mean:z=z-float(np.sum(z*mask,dtype='float64')/mask.sum(dtype='float64'))
+  z=z*mask/np.sqrt(np.mean(mask*mask))
+ elif window=='hann':
+  if remove_mean:z=z-float(z.mean())
+  z=z*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:]
+ elif remove_mean:z=z-float(z.mean())
+ return z
+
 def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True,g_max=10.,g_min=3.,
              smoothing_sigma=.65,threshold_floor=1.8,minimum_separation=.5,max_peaks=70,selection_mask=None):
  if window not in ('hann','none') or not isinstance(remove_mean,bool):
@@ -27,19 +43,8 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
  if not all(np.isfinite(v) for v in (smoothing_sigma,threshold_floor,minimum_enrichment,minimum_separation,max_peaks)) or not (0<=smoothing_sigma<=3 and 0<=threshold_floor<=20 and 0<=minimum_enrichment<=20 and 0<=minimum_separation<=3 and 4<=max_peaks<=200 and int(max_peaks)==max_peaks):
   raise ValueError('FFT detection settings are outside the supported range.')
  h,w=a.shape
- z=a.astype('float32')
- mask_widths=None
- if selection_mask is not None:
-  mask=np.asarray(selection_mask,dtype='float32')
-  if mask.shape!=z.shape or not np.isfinite(mask).all() or mask.min()<0 or mask.max()>1 or mask.sum()<=0:
-   raise ValueError('The selection mask must contain finite weights between zero and one.')
-  if remove_mean:z=z-float(np.sum(z*mask,dtype='float64')/mask.sum(dtype='float64'))
-  z=z*mask/np.sqrt(np.mean(mask*mask))
-  mask_widths=region_masks.response_widths(mask,sx,sy)
- elif window=='hann':
-  if remove_mean:z=z-float(z.mean())
-  z=z*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:]
- elif remove_mean:z=z-float(z.mean())
+ z=prepare_fft_input(a,window,remove_mean,selection_mask)
+ mask_widths=region_masks.response_widths(np.asarray(selection_mask,dtype='float32'),sx,sy) if selection_mask is not None else None
  power=np.abs(fftshift(fft2(z,workers=FFT_WORKERS)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));rb=np.floor(g/df).astype(int);bc=np.bincount(rb.ravel());bs=np.bincount(rb.ravel(),weights=lg.ravel());wh=gaussian_filter(lg-(bs/np.maximum(bc,1))[rb],smoothing_sigma);valid=(g>0)&(g>=g_min)&(g<=g_max)
  dfx,dfy=1/(w*sx),1/(h*sy)
  window_width=max(mask_widths) if mask_widths else (1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.

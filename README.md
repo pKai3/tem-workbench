@@ -16,6 +16,7 @@ The interface pairs real-space images with reciprocal-space previews and support
 - Map candidate labels and zone axes, with separate HCP/BCC/FCC symbols and legends.
 - Run uniform or adaptive grids with parallel workers and inspect area-weighted result summaries.
 - Adjust FFT colour, brightness and contrast independently of numerical analysis.
+- Use **Mask / iFFT** above the FFT to keep or reject paired circular frequency regions and preview the reconstructed crop. Click to add a pair, drag to move, and set radius/edge fade in nm⁻¹. Exports include a native-size PNG, numerical NPZ and reusable JSON mask recipe. Input Hann/polygon fading remains in the reconstruction; this does not change matching results or establish phase identity.
 - Choose data and output folders through the interface, with local directory links.
 - Save named, tagged regions linked to their source images and analysis settings.
 - Export region and grid results as JSON with source pixel hashes and engine provenance.

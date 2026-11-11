@@ -3225,6 +3225,7 @@ let spectrumLoadingTimer=null, spectrumLoading=false, spectrumExportBusy=false;
 let hoverTimer=null, hoverKey=null, hoverVersion=0, hoverController=null, hoverPointer={x:0,y:0};
 const hoverCache=new Map();
 function syncSpectrumExportControls(){
+ if(typeof syncIfftControl==='function')syncIfftControl();
  $('export-crop').disabled=!config?.crop_exports||!result||isDiffraction()||busy||pending||$('export-crop').dataset.exportState==='busy';
  $('export-crop').title=config?.crop_exports?'Save the selected crop at original pixel resolution':'Restart TEM Workbench to enable crop exports';
  syncMapExportControls();

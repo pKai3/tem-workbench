@@ -895,3 +895,16 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 
 .roi-position-controls #roi-area{font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
 #roi-area[hidden]{display:none}
+
+/* Reciprocal filtering is a separate, snapshot-based workspace. */
+#ifft-dialog{width:min(1480px,96vw);max-height:94vh;overflow:auto}
+#ifft-dialog h2{margin:0} .ifft-controls{display:flex;align-items:end;gap:8px;flex-wrap:wrap}
+.ifft-controls label{font-size:12px}.ifft-controls input[type=number]{width:100px}.ifft-controls button{min-height:32px}
+#ifft-pairs{display:flex;gap:5px;flex-wrap:wrap;margin:10px 0;max-height:85px;overflow:auto}
+#ifft-pairs button{padding:3px 9px;font-size:12px}#ifft-pairs button[aria-pressed=true]{border-color:var(--cyan);color:var(--cyan)}
+.ifft-views{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:14px}.ifft-views figure{margin:0;min-width:0}
+.ifft-views figcaption{margin:4px 0 8px}.ifft-views img{width:100%;aspect-ratio:1;object-fit:contain;background:#060b10}
+#ifft-editor{width:100%;display:block;background:#060b10;touch-action:none;cursor:crosshair;user-select:none}
+#ifft-editor ellipse{cursor:move}#ifft-output.pending{opacity:.35}.ifft-footer{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+#ifft-status{flex:1;min-width:220px;font-size:13px}#ifft-status.error{color:#ff849c}
+@media(max-width:900px){.ifft-views{grid-template-columns:1fr 1fr}.ifft-views figure:first-child{grid-column:1/-1;max-width:600px;width:100%;justify-self:center}}

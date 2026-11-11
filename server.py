@@ -31,7 +31,8 @@ import webbrowser
 import numpy as np
 from crystal_templates import PHASES
 from materials import MATERIAL_PRESETS
-from engine import Engine
+from engine import Engine, png, data_url
+import fft_reconstruction
 import diffraction
 import peak_evidence
 import brightness_grouping
@@ -72,6 +73,8 @@ class Workbench:
         self.last_preview_log = 0.
         self.token = secrets.token_urlsafe(24)
         self.lock = threading.RLock()
+        self.ifft_lock = threading.Lock()
+        self.ifft_cache = None
         self.preview_batch = None
         self.demo_download = DemoDownload(demo_data.DIRECTORY/'packs')
         self.jobs = {}
@@ -162,7 +165,7 @@ class Workbench:
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
-                'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'live_spectrum_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
+                'fft_reconstruction': True, 'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'live_spectrum_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(), 'overlap_rim_sampling': True, 'overlap_passing_strength': True,
                 'peak_evidence': peak_evidence.VERSION, 'separate_peak_penalties': True, 'double_diffraction_scoring': True, 'brightness_grouping': True, 'fft_brightness_grouping': True, 'omega_positional_falloff': True, 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -571,6 +574,44 @@ class Workbench:
                 if job.get('_rescore_token') is token:
                     job.pop('_rescore_token')
 
+    def reconstruct_fft(self, body):
+        with self.lock:
+            item = self.engine.load(body['file_id'])
+            roi, settings = self.engine.validate(item, body['roi'], body.get('settings', {}))
+            output = self.engine.output_for(body['file_id'])
+        info = item['info']
+        processing = {k: settings[k] for k in ('fft_window', 'remove_mean')}
+        masks = fft_reconstruction.validate_masks(body.get('masks', {}))
+        # One full-resolution complex FFT is cached; serialize large temporary arrays.
+        key = (id(item['array']), json.dumps(roi,sort_keys=True), json.dumps(processing,sort_keys=True), info.get('pixel_x_nm'), info.get('pixel_y_nm'))
+        with self.ifft_lock:
+            if self.ifft_cache is None or self.ifft_cache[0] != key:
+                z, coefficients = fft_reconstruction.prepare(item['array'], roi, info, processing)
+                self.ifft_cache = (key, item['array'], z, coefficients)
+            _, _, z, coefficients = self.ifft_cache
+            sx,sy=info['pixel_x_nm'],info['pixel_y_nm']
+            filtered, transfer, imaginary = fft_reconstruction.reconstruct(coefficients,sx,sy,masks)
+            limits = [float(v) for v in np.percentile(filtered,[.3,99.7])]
+            recipe = dict(schema='tem-workbench-ifft',version=fft_reconstruction.VERSION,app_version=APP_VERSION,
+                          engine_version=getattr(self.engine,'version',None),source=info,roi=roi,
+                          processing=processing,masks=masks,pixel_size_nm=[sx,sy],
+                          display_limits=limits,imaginary_residual_max=imaginary,
+                          note='Real part of inverse FFT of masked complex coefficients. Input window/fade retained; no dewindowing. Not a phase identification.')
+            if body.get('export') is True:
+                output.mkdir(parents=True,exist_ok=True)
+                stem=datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')+'_'+safe_name(info['name'])+'_ifft_'+uuid.uuid4().hex[:6]
+                target=output/stem
+                with Path(str(target)+'.png').open('xb') as f: f.write(png(filtered,limits))
+                with Path(str(target)+'.npz').open('xb') as f:
+                    np.savez_compressed(f,reconstruction=filtered,transfer_mask=transfer,recipe_json=json.dumps(recipe))
+                with Path(str(target)+'.json').open('x') as f: json.dump(recipe,f,indent=2)
+                LOG.info('Exported inverse FFT: %s',target)
+                return dict(path=str(Path(str(target)+'.png')),paths=[str(Path(str(target)+ext)) for ext in ('.png','.npz','.json')])
+            power,extent=fft_reconstruction.spectrum_view(coefficients,sx,sy,settings['g_max'])
+            return dict(input=data_url(png(z,max_size=720)),image=data_url(png(filtered,limits,max_size=720)),
+                        fft=data_url(png(power,max_size=900)),extent=extent,recipe=recipe,
+                        rms=float(np.sqrt(np.mean(filtered.astype('float64')**2))))
+
     def export_crop(self, body):
         with self.lock:
             item = self.engine.load(body['file_id'])
@@ -780,7 +821,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/region-selection.js': ROOT/'web/region-selection.js', '/live-preview.js': ROOT/'web/live-preview.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
@@ -907,6 +948,8 @@ def make_handler(app):
                     app.cancel_grid(body['job_id'])
                     LOG.info('Grid %s cancellation requested', body['job_id'][:8])
                     self.send({'ok':True})
+                elif self.path == '/api/ifft':
+                    self.send(app.reconstruct_fft(body))
                 elif self.path == '/api/export-crop':
                     self.send(app.export_crop(body))
                 elif self.path == '/api/export-spectrum':
