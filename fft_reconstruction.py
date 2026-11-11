@@ -38,7 +38,7 @@ def prepare(array, roi, info, processing):
         raise ValueError('Inverse FFT needs a real-space image, not recorded diffraction intensity.')
     x,y,w,h = (roi[k] for k in ('x','y','w','h'))
     sx,sy = info['pixel_x_nm'],info['pixel_y_nm']
-    z = prepare_fft_input(array[y:y+h,x:x+w], processing['fft_window'], processing['remove_mean'], region_masks.mask(roi,sx,sy))
+    z = prepare_fft_input(array[y:y+h,x:x+w], processing['fft_window'], processing['remove_mean'], region_masks.mask(roi,sx,sy),tukey_alpha=processing.get('fft_tukey_alpha',.2))
     return z, fft2(z, workers=2)
 
 

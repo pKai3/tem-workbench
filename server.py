@@ -165,7 +165,7 @@ class Workbench:
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
-                'fft_reconstruction': True, 'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'live_spectrum_previews': True, 'fft_log16': True, 'fft_processing': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
+                'fft_reconstruction': True, 'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'live_spectrum_previews': True, 'fft_log16': True, 'fft_processing': True, 'fft_tukey': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(), 'overlap_rim_sampling': True, 'overlap_passing_strength': True,
                 'peak_evidence': peak_evidence.VERSION, 'separate_peak_penalties': True, 'double_diffraction_scoring': True, 'brightness_grouping': True, 'fft_brightness_grouping': True, 'omega_positional_falloff': True, 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -580,7 +580,7 @@ class Workbench:
             roi, settings = self.engine.validate(item, body['roi'], body.get('settings', {}))
             output = self.engine.output_for(body['file_id'])
         info = item['info']
-        processing = {k: settings[k] for k in ('fft_window', 'remove_mean')}
+        processing = {k: settings[k] for k in ('fft_window', 'fft_tukey_alpha', 'remove_mean')}
         masks = fft_reconstruction.validate_masks(body.get('masks', {}))
         # One full-resolution complex FFT is cached; serialize large temporary arrays.
         key = (id(item['array']), json.dumps(roi,sort_keys=True), json.dumps(processing,sort_keys=True), info.get('pixel_x_nm'), info.get('pixel_y_nm'))

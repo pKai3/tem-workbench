@@ -97,7 +97,7 @@ def run_job(job):
     settings={**SETTINGS,'fft_smoothing_sigma':job['sigma_bins']}
     sx=ITEM['info']['pixel_x_nm'];sy=ITEM['info']['pixel_y_nm']
     # Separate reproducible display/pool preparation. Never changes production decisions.
-    pool=core.spectrum(crop,sx,sy,profile_fraction=settings['threshold'],minimum_enrichment=0.,window=settings['fft_window'],remove_mean=settings['remove_mean'],g_max=settings['g_max'],g_min=settings['g_min'],smoothing_sigma=settings['fft_smoothing_sigma'],threshold_floor=settings['fft_threshold_floor'],minimum_separation=settings['fft_minimum_separation'],max_peaks=settings['fft_max_peaks'])
+    pool=core.spectrum(crop,sx,sy,profile_fraction=settings['threshold'],minimum_enrichment=0.,window=settings['fft_window'],tukey_alpha=settings.get('fft_tukey_alpha',.2),remove_mean=settings['remove_mean'],g_max=settings['g_max'],g_min=settings['g_min'],smoothing_sigma=settings['fft_smoothing_sigma'],threshold_floor=settings['fft_threshold_floor'],minimum_separation=settings['fft_minimum_separation'],max_peaks=settings['fft_max_peaks'])
     np.savez_compressed(OUT/(job['id']+'_fields.npz'),raw_log_power=pool['log'],processed=pool['detector_signal'],extent=pool['extent'])
     dump(OUT/(job['id']+'_pool.json.gz'),{k:v for k,v in pool.items() if k not in ('log','detector_signal')})
     rows=[]

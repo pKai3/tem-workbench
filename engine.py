@@ -413,7 +413,7 @@ class Engine:
         x, y, w, h = [roi[k] for k in ('x', 'y', 'w', 'h')]
         crop, info = item['array'][y:y+h, x:x+w], item['info']
         spectrum = core.spectrum(crop, info['pixel_x_nm'], info['pixel_y_nm'],
-            profile_fraction=settings['threshold'], window=settings['fft_window'],
+            profile_fraction=settings['threshold'], window=settings['fft_window'], tukey_alpha=settings['fft_tukey_alpha'],
             remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'],
             smoothing_sigma=settings['fft_smoothing_sigma'], threshold_floor=settings['fft_threshold_floor'],
             minimum_enrichment=settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
@@ -473,15 +473,18 @@ class Engine:
         values['scale_mode'] = mode
         window = settings.get('fft_window', 'hann')
         remove_mean = settings.get('remove_mean', True)
-        if window not in ('hann', 'none') or not isinstance(remove_mean, bool):
-            raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
+        if window not in ('hann', 'tukey', 'none') or not isinstance(remove_mean, bool):
+            raise ValueError('Choose Hann, Tukey or no window and a boolean mean-removal setting.')
+        tukey_alpha = float(settings.get('fft_tukey_alpha', .2))
+        if not np.isfinite(tukey_alpha) or not 0 <= tukey_alpha <= 1:
+            raise ValueError('Tukey taper must be between zero and one.')
         auto_strength = settings.get('fft_auto_strength', False)
         if not isinstance(auto_strength, bool):
             raise ValueError('Auto peak strength must be enabled or disabled.')
         objective = settings.get('fft_auto_objective', 'rank')
         if objective not in ('rank', 'geometry'):
             raise ValueError('Choose rank or geometry for automatic peak strength.')
-        values.update(fft_window=window, remove_mean=remove_mean, fft_auto_strength=auto_strength, fft_auto_objective=objective)
+        values.update(fft_window=window, fft_tukey_alpha=tukey_alpha, remove_mean=remove_mean, fft_auto_strength=auto_strength, fft_auto_objective=objective)
         # Phase selection is the only search switch; legacy linked-mode flags
         # are accepted in saved requests but no longer select a separate path.
         values['phase_search_version'] = 2
@@ -571,7 +574,7 @@ class Engine:
             can_index = min(.5/sx, .5/sy) >= settings['g_max']
             auto_strength = settings['fft_auto_strength'] and can_index and bool(settings['enabled_phases'])
             s = core.spectrum(crop, sx, sy, profile_fraction=settings['threshold'],
-                              window=settings['fft_window'], remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'],
+                              window=settings['fft_window'], tukey_alpha=settings['fft_tukey_alpha'], remove_mean=settings['remove_mean'], g_max=settings['g_max'], g_min=settings['g_min'],
                               smoothing_sigma=settings['fft_smoothing_sigma'], threshold_floor=settings['fft_threshold_floor'],
                               minimum_enrichment=0. if auto_strength else settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
                               max_peaks=settings['fft_max_peaks'], selection_mask=region_masks.mask(roi, info['pixel_x_nm'], info['pixel_y_nm']))
@@ -743,14 +746,14 @@ class Engine:
             classification['flags'].append('Auto peak strength was skipped: enable a phase and ensure the image samples the fitting band.')
         window = settings.get('fft_window', 'hann')
         if s['df'] > .15:
-            window_name = 'polygon' if s.get('selection_window') else 'Hann' if window == 'hann' else 'rectangular'
+            window_name = 'polygon' if s.get('selection_window') else 'Hann' if window == 'hann' else 'Tukey' if window == 'tukey' else 'rectangular'
             classification['flags'].append(
                 f"This {min(width_nm, height_nm):.2f} nm region has an approximate {window_name}-window peak width of "
                 f"{core.peak_width(s):.3f} nm⁻¹; closely spaced candidate reflections may not be distinguishable.")
         if s.get('selection_window'):
-            classification['flags'].append('Polygon edge fading replaces the rectangular Hann window. Peak width accounts for the selected mask; narrow selections broaden reflections.')
+            classification['flags'].append('Polygon edge fading replaces the selected crop window. Peak width accounts for the selected mask; narrow selections broaden reflections.')
         elif window == 'none':
-            classification['flags'].append('Hann window is off: crop-edge streaks and side lobes can produce extra detected peaks.')
+            classification['flags'].append('Window tapering is off: crop-edge streaks and side lobes can produce extra detected peaks.')
         return classification
 
     @staticmethod

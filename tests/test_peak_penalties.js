@@ -11,7 +11,7 @@ const context={$,clamp:(v,lo,hi)=>Math.max(lo,Math.min(hi,v)),config:{grid_resco
  schedule(){},setTimeout:()=>1,clearTimeout(){},message:s=>{context.error=s},drawGrid(){},gridStatus(){},
  api:async(path,body)=>{context.request={path,body};return {settings:body,can_rescore:true}},
  reciprocalUnit:()=> 'rel.',isDiffraction:()=>false,enabledPhases:['BCC'],FFT_DETECTOR_CONTROLS:{},REFERENCE_CONTROLS:{},
- betaOmegaHidden:new Set(),setPhaseSelection(){},migratedPhaseSelection:()=>['BCC'],materialView(){},updateStrengthMode(){},
+ betaOmegaHidden:new Set(),setPhaseSelection(){},migratedPhaseSelection:()=>['BCC'],materialView(){},updateStrengthMode(){},updateFFTWindowControls(){},
  calibrationView(){},rememberCalibration(){},rememberBasicControls(){},syncBetaOmegaControls(){}};
 $('scenario').value='auto_uniform';$('material').value='titanium';
 vm.createContext(context);

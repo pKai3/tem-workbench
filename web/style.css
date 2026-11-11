@@ -938,3 +938,11 @@ html.ifft-open,html.ifft-open body{overflow:hidden}
 .ifft-hover[hidden]{display:none}.ifft-hover>div{padding:6px 8px;font-size:12px}
 .ifft-hover>svg{display:block;width:100%;aspect-ratio:1;background:#060b10}
 .ifft-hover image{image-rendering:pixelated}.ifft-hover-cross{stroke:white;stroke-width:1;vector-effect:non-scaling-stroke;fill:none;filter:drop-shadow(0 0 1px #000)}
+
+/* Compact FFT taper controls; the amount is only relevant to Tukey. */
+.fft-window-checks .fft-window-choice{display:flex;flex-direction:row;align-items:center;gap:8px}
+.fft-window-choice select{width:100px}
+.fft-window-checks .fft-tukey-control{display:flex;flex-direction:row;align-items:center;gap:6px}
+.fft-window-checks .fft-tukey-control[hidden]{display:none}
+.fft-tukey-control input[type=range]{width:100px;min-width:0}
+.fft-tukey-control output{min-width:3ch;color:var(--muted)}

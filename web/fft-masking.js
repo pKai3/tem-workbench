@@ -73,7 +73,7 @@ let refreshIfftSource;
    const moving=!full&&(Boolean(drag)||(typeof polygonVertexDrag!=='undefined'&&Boolean(polygonVertexDrag)));
    const sameProcessing=canonical(next.settings)===canonical(snapshot?.settings);
    if(!sourceLive)remember();
-   snapshot=next;key=canonical([fileId,next.roi,next.settings.fft_window,next.settings.remove_mean]);
+   snapshot=next;key=canonical([fileId,next.roi,next.settings.fft_window,next.settings.remove_mean,...(next.settings.fft_window==='tukey'?[next.settings.fft_tukey_alpha??.2]:[])]);
    if(moving&&sameProcessing){
     // Keep completed frames visible and accept intermediate ROI responses during a gesture.
     if(!sourceLive){serial++;clearTimeout(timer);timer=null;wanted=false;sourceLive=true}
@@ -82,7 +82,7 @@ let refreshIfftSource;
     sourceLive=false;extent=null;clearSpectrum();$('ifft-output').removeAttribute('src');$('ifft-input').removeAttribute('src');changed();
    }
   }
-  sourceLabel=`${meta.name} · ${next.roi.w} × ${next.roi.h} px · ${next.roi.polygon?'polygon fade':next.settings.fft_window==='hann'?'Hann window':'no window'} · mean ${next.settings.remove_mean?'removed':'retained'}`;
+  sourceLabel=`${meta.name} · ${next.roi.w} × ${next.roi.h} px · ${next.roi.polygon?'polygon fade':next.settings.fft_window==='hann'?'Hann window':next.settings.fft_window==='tukey'?`Tukey ${Math.round((next.settings.fft_tukey_alpha??.2)*100)}% taper`:'no window'} · mean ${next.settings.remove_mean?'removed':'retained'}`;
   $('ifft-source').textContent=sourceLabel;
   const matching=result&&canonical(result.roi)===canonical(next.roi);
   observations=matching?clone(result.spectrum.peaks):[];$('ifft-detected').disabled=!matching;
@@ -191,11 +191,11 @@ let refreshIfftSource;
  $('open-ifft').onclick=()=>{
   if(!result||isDiffraction())return;
   snapshot=clone({file_id:fileId,roi:result.roi,settings:result.settings});observations=clone(result.spectrum.peaks);
-  key=canonical([fileId,snapshot.roi,snapshot.settings.fft_window,snapshot.settings.remove_mean]);
+  key=canonical([fileId,snapshot.roi,snapshot.settings.fft_window,snapshot.settings.remove_mean,...(snapshot.settings.fft_window==='tukey'?[snapshot.settings.fft_tukey_alpha??.2]:[])]);
   masks={mode:'keep',keep_dc:false,spots:[]};try{const saved=JSON.parse(localStorage.getItem(storeKey)||'{}')[key];if(saved)masks=saved}catch(e){}
   selected=-1;history=[];extent=null;sourceLive=false;resetWipe();serial++;wanted=true;controls();draw();
   for(const id of ['ifft-input','ifft-output'])$(id).removeAttribute('src');processedView=showDetectorSignal;clearSpectrum();$('ifft-export').disabled=true;
-  $('ifft-source').textContent=`${meta.name} · ${snapshot.roi.w} × ${snapshot.roi.h} px · ${snapshot.roi.polygon?'polygon fade':snapshot.settings.fft_window==='hann'?'Hann window':'no window'} · mean ${snapshot.settings.remove_mean?'removed':'retained'}`;
+  $('ifft-source').textContent=`${meta.name} · ${snapshot.roi.w} × ${snapshot.roi.h} px · ${snapshot.roi.polygon?'polygon fade':snapshot.settings.fft_window==='hann'?'Hann window':snapshot.settings.fft_window==='tukey'?`Tukey ${Math.round((snapshot.settings.fft_tukey_alpha??.2)*100)}% taper`:'no window'} · mean ${snapshot.settings.remove_mean?'removed':'retained'}`;
   $('ifft-scope').value='selection';setAdjusting(false);$('ifft-dialog').show();document.documentElement.classList.add('ifft-open');refreshSource();status('Preparing complex FFT…');pump();
  };
  $('ifft-close').onclick=()=>$('ifft-dialog').close();$('ifft-dialog').addEventListener('close',()=>{serial++;wanted=false;dragging=null;sourceLive=false;hideHover();clearTimeout(timer);timer=null;document.documentElement.classList.remove('ifft-open');setAdjusting(false)});
@@ -235,7 +235,7 @@ let refreshIfftSource;
  $('ifft-import-file').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;try{
   const recipe=JSON.parse(await file.text());if(recipe.schema!=='tem-workbench-ifft'||recipe.version!==1)throw Error('Choose a Workbench inverse-FFT recipe JSON.');
   if(recipe.source.id!==snapshot.file_id||canonical(recipe.roi)!==canonical(snapshot.roi))throw Error('Open the original image and saved region used by this mask recipe first.');
-  if(recipe.processing.fft_window!==snapshot.settings.fft_window||recipe.processing.remove_mean!==snapshot.settings.remove_mean)throw Error('Match the recipe’s Hann and mean-removal settings before loading.');
+  if(recipe.processing.fft_window!==snapshot.settings.fft_window||recipe.processing.remove_mean!==snapshot.settings.remove_mean||(recipe.processing.fft_window==='tukey'&&(recipe.processing.fft_tukey_alpha??.2)!==(snapshot.settings.fft_tukey_alpha??.2)))throw Error('Match the recipe’s window, taper and mean-removal settings before loading.');
   if(!Array.isArray(recipe.masks?.spots)||recipe.masks.spots.length>128||!['keep','reject'].includes(recipe.masks.mode)||typeof recipe.masks.keep_dc!=='boolean'||!recipe.masks.spots.every(s=>['qx','qy','radius','feather'].every(k=>Number.isFinite(s[k]))&&s.radius>0&&s.radius<=100&&s.feather>=0&&s.feather<=s.radius))throw Error('Invalid mask recipe.');
   checkpoint();masks=clone(recipe.masks);selected=-1;changed();
  }catch(error){status(error.message,true)}};

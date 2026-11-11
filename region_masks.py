@@ -54,15 +54,17 @@ def mask(roi, sx, sy):
     return (inside*(.5-.5*np.cos(np.pi*t))).astype('float32')
 
 
+def axis_response_width(marginal,spacing):
+    """Power FWHM of a 1D window response, interpolated at half height."""
+    n=len(marginal)*8
+    response=abs(np.fft.rfft(marginal,n=n))**2
+    response/=response[0]
+    hits=np.flatnonzero(response<=.5)
+    if not len(hits): return 1/spacing
+    j=int(hits[0]);f=(j-1)+(.5-response[j-1])/(response[j]-response[j-1])
+    return float(2*f/(n*spacing))
+
+
 def response_widths(mask,sx,sy):
     """Axis power-FWHM of the actual mask, with interpolated half-height."""
-    widths=[]
-    for marginal,spacing in ((mask.sum(axis=0),sx),(mask.sum(axis=1),sy)):
-        n=len(marginal)*8
-        response=abs(np.fft.rfft(marginal,n=n))**2
-        response/=response[0]
-        hits=np.flatnonzero(response<=.5)
-        if not len(hits): widths.append(1/spacing);continue
-        j=int(hits[0]);f=(j-1)+(.5-response[j-1])/(response[j]-response[j-1])
-        widths.append(float(2*f/(n*spacing)))
-    return widths
+    return [axis_response_width(mask.sum(axis=0),sx),axis_response_width(mask.sum(axis=1),sy)]

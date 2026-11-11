@@ -3,6 +3,8 @@
 Independent of the web server; no file access or output at import time.
 """
 import itertools
+from functools import lru_cache
+from scipy.signal.windows import tukey
 import spot_intensity
 import region_masks
 import numpy as np
@@ -20,8 +22,17 @@ def peak_width(spectrum):
  # Older saved/cached spectra used the Hann-specific name.
  return spectrum.get('peak_width_nm_inv', spectrum.get('hann_power_fwhm_nm_inv', 1.44*spectrum['df']))
 
-def prepare_fft_input(a,window="hann",remove_mean=True,selection_mask=None):
+@lru_cache(maxsize=128)
+def tukey_power_width_bins(length,alpha):
+ # Measure the selected 1D taper once per window size, not once per grid ROI.
+ return region_masks.axis_response_width(tukey(length,alpha),1.)*length
+
+def prepare_fft_input(a,window="hann",remove_mean=True,selection_mask=None,tukey_alpha=.2):
  """The real input transformed by both analysis and reciprocal filtering."""
+ if window not in ('hann','tukey','none') or not isinstance(remove_mean,bool):
+  raise ValueError('Choose Hann, Tukey or no window and a boolean mean-removal setting.')
+ if not np.isfinite(tukey_alpha) or not 0<=tukey_alpha<=1:
+  raise ValueError('Tukey taper must be between zero and one.')
  h,w=a.shape
  z=a.astype('float32')
  if selection_mask is not None:
@@ -30,9 +41,11 @@ def prepare_fft_input(a,window="hann",remove_mean=True,selection_mask=None):
    raise ValueError('The selection mask must contain finite weights between zero and one.')
   if remove_mean:z=z-float(np.sum(z*mask,dtype='float64')/mask.sum(dtype='float64'))
   z=z*mask/np.sqrt(np.mean(mask*mask))
- elif window=='hann':
+ elif window in ('hann','tukey'):
   if remove_mean:z=z-float(z.mean())
-  z=z*np.hanning(h).astype('float32')[:,None]*np.hanning(w).astype('float32')[None,:]
+  wy=np.hanning(h) if window=='hann' else tukey(h,tukey_alpha)
+  wx=np.hanning(w) if window=='hann' else tukey(w,tukey_alpha)
+  z=z*wy.astype('float32')[:,None]*wx.astype('float32')[None,:]
  elif remove_mean:z=z-float(z.mean())
  return z
 
@@ -43,17 +56,16 @@ def processed_fft_signal(log_power,radius,bin_width,smoothing_sigma):
  return gaussian_filter(log_power-(bs/np.maximum(bc,1))[rb],smoothing_sigma)
 
 def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',remove_mean=True,g_max=10.,g_min=3.,
-             smoothing_sigma=.65,threshold_floor=1.8,minimum_separation=.5,max_peaks=70,selection_mask=None):
- if window not in ('hann','none') or not isinstance(remove_mean,bool):
-  raise ValueError('Choose Hann or no window and a boolean mean-removal setting.')
+             smoothing_sigma=.65,threshold_floor=1.8,minimum_separation=.5,max_peaks=70,selection_mask=None,tukey_alpha=.2):
  if not all(np.isfinite(v) for v in (smoothing_sigma,threshold_floor,minimum_enrichment,minimum_separation,max_peaks)) or not (0<=smoothing_sigma<=3 and 0<=threshold_floor<=20 and 0<=minimum_enrichment<=20 and 0<=minimum_separation<=3 and 4<=max_peaks<=200 and int(max_peaks)==max_peaks):
   raise ValueError('FFT detection settings are outside the supported range.')
  h,w=a.shape
- z=prepare_fft_input(a,window,remove_mean,selection_mask)
+ z=prepare_fft_input(a,window,remove_mean,selection_mask,tukey_alpha)
  mask_widths=region_masks.response_widths(np.asarray(selection_mask,dtype='float32'),sx,sy) if selection_mask is not None else None
  power=np.abs(fftshift(fft2(z,workers=FFT_WORKERS)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));wh=processed_fft_signal(lg,g,df,smoothing_sigma);valid=(g>0)&(g>=g_min)&(g<=g_max)
  dfx,dfy=1/(w*sx),1/(h*sy)
- window_width=max(mask_widths) if mask_widths else (1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
+ taper_widths=[tukey_power_width_bins(w,tukey_alpha)*dfx,tukey_power_width_bins(h,tukey_alpha)*dfy] if window=='tukey' and not mask_widths else None
+ window_width=max(mask_widths or taper_widths) if mask_widths or taper_widths else (1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
  fraction_threshold=profile_fraction*float(np.max(wh[valid])) if np.any(valid) else 0.
  threshold=max(threshold_floor,fraction_threshold)
  components,nc=label(valid&(wh>threshold));peaks=[]
@@ -79,10 +91,10 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
   if any(min(np.hypot(p['qx']-v['qx'],p['qy']-v['qy']),np.hypot(p['qx']+v['qx'],p['qy']+v['qy']))<max(minimum_separation,window_width) for v in clean):continue
   p['profile_id']=len(clean)+1;clean.append(p)
   if len(clean)>=max_peaks:break
- photometry=spot_intensity.measure_fft(power,fx,fy,clean,window_width/min(dfx,dfy) if mask_widths else (1.44 if window=='hann' else .886),neighbours=peaks)
+ photometry=spot_intensity.measure_fft(power,fx,fy,clean,window_width/min(dfx,dfy) if mask_widths or taper_widths else (1.44 if window=='hann' else .886),neighbours=peaks)
  clean=[p for p in clean if p['log_radial_enrichment']>=minimum_enrichment]
  spot_intensity.number_profiles(clean)
- return {**({'selection_window':'polygon_cosine_fade','mask_power_normalization':'mean_square','window_fwhm_xy_nm_inv':mask_widths} if mask_widths else {}),'kind':'fft','photometry':photometry,'profile_numbering':'integrated_intensity_descending','g_min':float(g_min),'g_max':float(g_max),'log':lg,'detector_signal':wh,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'remove_mean':remove_mean,'profile_threshold':threshold,'fraction_threshold':float(fraction_threshold),'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' and not mask_widths else {})}
+ return {**({'selection_window':'polygon_cosine_fade','mask_power_normalization':'mean_square','window_fwhm_xy_nm_inv':mask_widths} if mask_widths else {}),'kind':'fft','photometry':photometry,'profile_numbering':'integrated_intensity_descending','g_min':float(g_min),'g_max':float(g_max),'log':lg,'detector_signal':wh,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'fft_tukey_alpha':float(tukey_alpha),'remove_mean':remove_mean,'profile_threshold':threshold,'fraction_threshold':float(fraction_threshold),'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' and not mask_widths else {})}
 
 def rotation(q,ang):
  c=np.cos(ang);s=np.sin(ang);return q@np.array([[c,s],[-s,c]])

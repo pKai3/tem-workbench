@@ -21,8 +21,8 @@ class LivePreviewTests(TestCase):
         item = dict(array=pixels, limits=(-2.2, 2.2), info=dict(id='synthetic', name='synthetic',
             image_kind='real_space', pixel_x_nm=.02, pixel_y_nm=.02, can_index=False))
         roi = dict(x=64, y=32, w=128, h=128)
-        for window in ('hann', 'none'):
-            settings = dict(fft_window=window, remove_mean=False, fft_smoothing_sigma=.8, g_min=2.5)
+        for window in ('hann', 'none', 'tukey'):
+            settings = dict(fft_window=window, fft_tukey_alpha=.35, remove_mean=False, fft_smoothing_sigma=.8, g_min=2.5)
             with patch.object(engine, '_fit_spectrum', side_effect=AssertionError('Preview must not fit')), \
                  patch.object(engine, 'templates_for', side_effect=AssertionError('Preview must not build templates')):
                 preview = engine.spectrum_preview(item, roi, settings)

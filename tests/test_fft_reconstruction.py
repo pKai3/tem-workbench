@@ -119,5 +119,17 @@ class ReconstructionTests(unittest.TestCase):
             _,coeff=reconstruction.prepare(a,recipe['roi'],recipe['source'],recipe['processing'])
             reconstructed,_,_=reconstruction.reconstruct(coeff,.1,.2,recipe['masks'])
             np.testing.assert_allclose(reconstructed,a,atol=1e-6)
+            # Taper changes invalidate the complex FFT cache and travel in recipes.
+            body['settings'].update(fft_window='tukey',fft_tukey_alpha=.2)
+            with patch('fft_reconstruction.prepare',wraps=reconstruction.prepare) as prepare:
+                first=app.reconstruct_fft(body)
+                app.reconstruct_fft(body)
+                self.assertEqual(prepare.call_count,1)
+                body['settings']['fft_tukey_alpha']=.6
+                second=app.reconstruct_fft(body)
+                self.assertEqual(prepare.call_count,2)
+            self.assertEqual(first['recipe']['processing']['fft_tukey_alpha'],.2)
+            self.assertEqual(second['recipe']['processing']['fft_tukey_alpha'],.6)
+
 
 if __name__=='__main__':unittest.main()

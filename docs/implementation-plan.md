@@ -2,6 +2,12 @@
 
 Last updated: 11 November 2026
 
+## FFT window choice — completed 11 November 2026
+
+Added Hann / Tukey / None selection, retaining Hann as the default and migrating the old unchecked Hann preference to None. Tukey reveals a 0–100% total-taper slider, initially 20% (10% per edge); 0% is rectangular and 100% is Hann. Window settings persist and are included in saved analyses, grid/batch requests and iFFT recipes/cache identity. Polygon selections keep their own edge fade and disable the crop-window controls. Taper response width is measured for Tukey and cached per size/amount for peak separation and photometry.
+
+Verified Remove mean: subtraction precedes tapering; without a taper it changes only the DC bin apart from rounding. Central exclusion and display contrast explain the often subtle visual effect. Updated hover help rather than changing its mathematical behaviour. Validation covers taper endpoints/plateau, response widths, mean removal, polygon precedence, live/final FFT agreement, iFFT input/recipe/cache consistency, saved preferences/reset and full-page browser startup. No release requested.
+
 ## Current follow-ups — reconciled 11 November 2026
 
 This summary supersedes historical “not released” and pending-status notes below; dated entries remain an implementation history. FFT linked β/ω, polygon selections, omega falloff and combined hover cards shipped in **v1.0.31**, implementation `0932a44`, release `f94af79`. Full analysis/browser and Windows/macOS release gates passed. The managed-network Windows failure still needs confirmation on the affected machine; retries and diagnostics are not proof that its cause is resolved.

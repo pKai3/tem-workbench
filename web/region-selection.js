@@ -29,7 +29,7 @@ function syncRegionSelection(){
  $('finish-polygon').disabled=!polygonDrawing||polygonDrawing.points.length<3;
  $('polygon-help').hidden=mode!=='polygon'&&!polygonDrawing;
  if(polygon||mode==='rectangle')$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} × ${(roi.h*(meta.pixel_y_nm||meta.pixel_x_nm)).toFixed(2)} nm`;
- $('fft-hann').title=polygon?'Polygon edge fading replaces the rectangular Hann window for this selection.':'';
+ if(typeof updateFFTWindowControls==='function')updateFFTWindowControls();
  drawPolygonSelection();
 }
 // Display-only inset contour of distance to the polygon edge, in calibrated nm.
