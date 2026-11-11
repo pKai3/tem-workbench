@@ -102,7 +102,12 @@ class ReconstructionTests(unittest.TestCase):
             engine=Engine({});app.engine=SimpleNamespace(load=lambda _:item,validate=engine.validate,output_for=lambda _:Path(directory))
             body=dict(file_id='test',roi=dict(x=0,y=0,w=96,h=64),settings=dict(fft_window='none',remove_mean=False),masks=dict(mode='reject',keep_dc=True,spots=[]))
             with patch('fft_reconstruction.prepare',wraps=reconstruction.prepare) as prepare:
+                with patch('fft_reconstruction.reconstruct',side_effect=AssertionError('FFT preview must not compute iFFT')):
+                    spectrum_preview=app.reconstruct_fft(dict(body,preview_only=True))
+                self.assertNotIn('image',spectrum_preview)
                 preview=app.reconstruct_fft(body)
+                self.assertEqual(spectrum_preview['images'],preview['images'])
+                self.assertEqual(spectrum_preview['extent'],preview['extent'])
                 exported=app.reconstruct_fft(dict(body,export=True))
                 self.assertEqual(prepare.call_count,1)
             self.assertEqual(preview['recipe']['roi'],body['roi'])

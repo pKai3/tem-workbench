@@ -12,10 +12,11 @@ let refreshIfftSource;
  const storeKey='tem-ifft-masks-v1',clone=v=>JSON.parse(JSON.stringify(v));
  $('ifft-loading-icon').append(document.querySelector('#fft-loading .tem-diffraction-loader').cloneNode(true));
  let loadingTimer=null;
- function syncLoading(){
+ function syncLoading(frameReady=false){
   const active=$('ifft-dialog').open&&(inFlight||exporting);
   $('ifft-reconstruction').setAttribute('aria-busy',String(active));
-  if(!active){clearTimeout(loadingTimer);loadingTimer=null;$('ifft-loading').hidden=true;return}
+  if(frameReady||!active){clearTimeout(loadingTimer);loadingTimer=null;$('ifft-loading').hidden=true}
+  if(!active)return;
   if(loadingTimer===null&&$('ifft-loading').hidden)loadingTimer=setTimeout(()=>{
    loadingTimer=null;
    if($('ifft-dialog').open&&(inFlight||exporting))$('ifft-loading').hidden=false;
@@ -141,12 +142,23 @@ let refreshIfftSource;
   inFlight=true;syncLoading();
   try{while(wanted&&$('ifft-dialog').open){
    wanted=false;const version=serial,body={...snapshot,masks:clone(masks)};
-   try{const data=await api('ifft',body);if(version!==serial||!$('ifft-dialog').open)continue;
+   try{
+    // Publish a changed source's FFT before waiting for the inverse transform.
+    if(!spectrumRaw){
+     const preview=await api('ifft',{...body,preview_only:true});
+     if(version!==serial||!$('ifft-dialog').open)continue;
+     const images=preview.images||{fft:preview.fft};
+     const [raw,processed]=await Promise.all([decodeSpectrumImage(images),images.detector_signal16?decodeSpectrumImage({fft_log16:images.detector_signal16,fft_log_limits:images.detector_signal_limits}).then(image=>({...image,detector:true})):null]);
+     if(version!==serial||!$('ifft-dialog').open)continue;
+     spectrumRaw=raw;spectrumProcessed=processed;extent=preview.extent;
+     displaySpectrum();$('ifft-input').src=preview.input;draw();
+    }
+    const data=await api('ifft',body);if(version!==serial||!$('ifft-dialog').open)continue;
     const images=data.images||{fft:data.fft};
     const [raw,processed]=await Promise.all([decodeSpectrumImage(images),images.detector_signal16?decodeSpectrumImage({fft_log16:images.detector_signal16,fft_log_limits:images.detector_signal_limits}).then(image=>({...image,detector:true})):null]);
     if(version!==serial||!$('ifft-dialog').open)continue;
     spectrumRaw=raw;spectrumProcessed=processed;
-    extent=data.extent;displaySpectrum();$('ifft-input').src=data.input;$('ifft-output').src=data.image;$('ifft-output').classList.remove('pending');draw();
+    extent=data.extent;displaySpectrum();$('ifft-input').src=data.input;$('ifft-output').src=data.image;$('ifft-output').classList.remove('pending');draw();syncLoading(true);
     $('ifft-export').disabled=Boolean(dragging||sourceLive||wanted||timer);
     const blank=masks.mode==='keep'&&!masks.spots.length&&!masks.keep_dc;
     status(blank?'No frequencies selected. Click FFT spots to begin.':`${masks.spots.length} paired masks · RMS ${data.rms.toPrecision(4)} · separate display contrast`);

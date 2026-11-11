@@ -590,6 +590,15 @@ class Workbench:
                 self.ifft_cache = (key, item['array'], z, coefficients, {})
             _, _, z, coefficients, display_cache = self.ifft_cache
             sx,sy=info['pixel_x_nm'],info['pixel_y_nm']
+            if body.get('export') is not True:
+                display_key=(settings['g_max'],settings['fft_smoothing_sigma'])
+                if display_cache.get('key') != display_key:
+                    power,signal,extent=fft_reconstruction.spectrum_view(coefficients,sx,sy,*display_key)
+                    display_cache.clear()
+                    display_cache.update(key=display_key,images=spectrum_images(power,signal),extent=extent)
+                images,extent=display_cache['images'],display_cache['extent']
+                if body.get('preview_only') is True:
+                    return dict(input=data_url(png(z,max_size=720)),fft=images['fft'],images=images,extent=extent)
             filtered, transfer, imaginary = fft_reconstruction.reconstruct(coefficients,sx,sy,masks)
             limits = [float(v) for v in np.percentile(filtered,[.3,99.7])]
             recipe = dict(schema='tem-workbench-ifft',version=fft_reconstruction.VERSION,app_version=APP_VERSION,
@@ -607,12 +616,6 @@ class Workbench:
                 with Path(str(target)+'.json').open('x') as f: json.dump(recipe,f,indent=2)
                 LOG.info('Exported inverse FFT: %s',target)
                 return dict(path=str(Path(str(target)+'.png')),paths=[str(Path(str(target)+ext)) for ext in ('.png','.npz','.json')])
-            display_key=(settings['g_max'],settings['fft_smoothing_sigma'])
-            if display_cache.get('key') != display_key:
-                power,signal,extent=fft_reconstruction.spectrum_view(coefficients,sx,sy,*display_key)
-                display_cache.clear()
-                display_cache.update(key=display_key,images=spectrum_images(power,signal),extent=extent)
-            images,extent=display_cache['images'],display_cache['extent']
             return dict(input=data_url(png(z,max_size=720)),image=data_url(png(filtered,limits,max_size=720)),
                         fft=images['fft'],images=images,extent=extent,recipe=recipe,
                         rms=float(np.sqrt(np.mean(filtered.astype('float64')**2))))

@@ -4,7 +4,9 @@ Last updated: 11 November 2026
 
 ## iFFT computation indicator — completed 11 November 2026
 
-Reused the animated TEM diffraction motif over the reconstruction while iFFT requests or exports are computing, including live drag updates. Indicator sits above the comparison divider, does not intercept controls, and clears on completion, failure or closing the workspace. Existing reduced-motion support is retained. The spinner appears only after 200 ms of continuous computation; faster requests cancel the pending indicator without flashing.
+Reused the animated TEM diffraction motif over the reconstruction while iFFT requests or exports are computing, including live drag updates. Indicator sits above the comparison divider, does not intercept controls, and clears on completion, failure or closing the workspace. Existing reduced-motion support is retained. The spinner appears only when waiting over 200 ms for a fresh reconstruction. Each accepted frame clears and restarts the delay, so a continuous drag delivering responsive frames does not accumulate into a permanent spinner. Completion, errors and closing cancel the indicator.
+
+Scope-change follow-up: prepare and publish the new source FFT/input before computing its filtered reconstruction. Both requests reuse the same cached complex FFT; stale source replies are ignored.
 
 ## iFFT full-image detected spots — completed 11 November 2026
 
