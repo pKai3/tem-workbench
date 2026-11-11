@@ -26,12 +26,12 @@ async function flush(){for(let i=0;i<10;i++)await Promise.resolve()}
   f.ctx.wanted=true;f.requests.shift().resolve(frame);await flush();
   assert.equal(f.nodes['ifft-loading'].hidden,true,'Fresh frames prevent accumulated busy time showing spinner');
  }
- f.advance(199);assert.equal(f.nodes['ifft-loading'].hidden,true);
+ f.advance(399);assert.equal(f.nodes['ifft-loading'].hidden,true);
  f.advance(1);assert.equal(f.nodes['ifft-loading'].hidden,false,'Stalled reconstruction shows spinner');
  f.ctx.wanted=true;f.requests.shift().resolve(frame);await flush();
  assert.equal(f.nodes['ifft-loading'].hidden,true,'New frame clears an already-visible spinner');
  f.requests.shift().reject(Error('Test failure'));await run;
- assert.equal(f.nodes['ifft-loading'].hidden,true);f.advance(300);assert.equal(f.nodes['ifft-loading'].hidden,true);
+ assert.equal(f.nodes['ifft-loading'].hidden,true);f.advance(500);assert.equal(f.nodes['ifft-loading'].hidden,true);
  const stale=fixture(),staleRun=stale.start();stale.ctx.serial++;stale.requests.shift().resolve(frame);await staleRun;
  assert.equal(stale.ctx.spectrumRaw,null);assert.equal(stale.requests.length,0,'Obsolete source preview does not launch reconstruction');
  console.log('iFFT progress: staged FFT, continuous fresh frames, stalls, recovery, errors and stale sources passed.');

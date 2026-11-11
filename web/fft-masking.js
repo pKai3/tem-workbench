@@ -20,7 +20,7 @@ let refreshIfftSource;
   if(loadingTimer===null&&$('ifft-loading').hidden)loadingTimer=setTimeout(()=>{
    loadingTimer=null;
    if($('ifft-dialog').open&&(inFlight||exporting))$('ifft-loading').hidden=false;
-  },200);
+  },400);
  }
  // Keep both square panes equal while reserving space for controls and exports.
  let layoutFrame=0;
