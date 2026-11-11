@@ -1,4 +1,4 @@
-# TEM Workbench — upcoming release
+# TEM Workbench 1.0.31
 
 - Add rectangular and polygon FFT selections with adjustable edge fading, an inset fade preview, editable vertices and saved-region support. Correct FFT overlay alignment for non-square selections.
 - Extend parent-linked β + ω variant fitting to FFT regions, including grid and batch summaries. Add an adjustable ω-specific positional falloff control in Scale fitting.
