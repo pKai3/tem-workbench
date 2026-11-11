@@ -419,7 +419,7 @@ class Engine:
             minimum_enrichment=settings['fft_minimum_enrichment'], minimum_separation=settings['fft_minimum_separation'],
             max_peaks=settings['fft_max_peaks'], selection_mask=region_masks.mask(roi, info['pixel_x_nm'], info['pixel_y_nm']))
         return dict(roi=roi, image_kind='real_space', settings=settings,
-            spectrum={key:spectrum[key] for key in ('extent', 'df', 'profile_threshold', 'minimum_peak_enrichment')},
+            spectrum={key:spectrum[key] for key in ('extent', 'df', 'profile_threshold', 'minimum_peak_enrichment', 'peaks')},
             images={**spectrum_images(spectrum['log'], spectrum['detector_signal'], crop, item['limits']), **({'crop':data_url(self.region_preview(item,roi,768))} if roi.get('polygon') else {})},
             elapsed_ms=round((time.perf_counter()-started)*1000, 1))
 

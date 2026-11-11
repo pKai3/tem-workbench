@@ -29,6 +29,8 @@ class LivePreviewTests(TestCase):
             final = engine.analyze(item, roi, settings)
             self.assertEqual(preview['images'], final['images'])
             self.assertEqual(preview['spectrum']['extent'], final['spectrum']['extent'])
+            self.assertEqual(preview['spectrum']['peaks'], final['spectrum']['peaks'])
+            self.assertTrue(preview['spectrum']['peaks'])
             self.assertNotIn('classification', preview)
             self.assertNotIn('models', preview)
             image = Image.open(BytesIO(base64.b64decode(preview['images']['crop'].split(',')[1])))

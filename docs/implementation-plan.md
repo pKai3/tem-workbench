@@ -2,6 +2,10 @@
 
 Last updated: 11 November 2026
 
+## iFFT full-image detected spots — completed 11 November 2026
+
+Add detected spots now detects profiles on demand for the selected iFFT area when no matching selection analysis is available, including Full image. Uses the existing spectrum-preview detector without crystal fitting, caches observations while the source/settings stay unchanged, and discards responses after scope changes or closing the workspace. Paired masks and duplicate prevention remain unchanged.
+
 ## Collapsible material settings — completed 11 November 2026
 
 Grouped reference cells and phase colours/search inside a Material settings disclosure, matching Processing settings. Starts expanded and remembers its open/closed preference independently across reloads. Existing controls and values are unchanged. No release requested.
