@@ -1,11 +1,24 @@
-# TEM Workbench 1.0.31
+# TEM Workbench 1.0.32
 
-- Add rectangular and polygon FFT selections with adjustable edge fading, an inset fade preview, editable vertices and saved-region support. Correct FFT overlay alignment for non-square selections.
-- Extend parent-linked β + ω variant fitting to FFT regions, including grid and batch summaries. Add an adjustable ω-specific positional falloff control in Scale fitting.
-- Show combined phase/orientation solutions, their ranks and acceptance status in region hover cards. Restore both measured FFT peak markers when displaying linked β + ω solutions.
-- Clarify which threshold limits FFT peak detection, put smoothing first, and tidy selection and processing controls. Show the source filename above the main image and remove the duplicate central-exclusion control.
-- Add Windows drive selection and bounded retries for temporary network-folder sharing locks, with clearer diagnostics. Confirmation on the affected managed Windows computer is still needed.
+- Show polygon area and reconcile implementation follow-ups
+- Add paired FFT masks and phase-preserving inverse reconstruction
+- Keep selected FFT palette in inverse FFT editor
+- Expand inverse FFT workspace with live selection and wipe comparison
+- Add All selection for inverse FFT mask pairs
+- Update inverse FFT during mask drags and lock background scrolling
+- Add raw and processed FFT display toggle to inverse FFT workspace
+- Improve iFFT comparison, hover previews and live selection updates
+- Fix iFFT workspace initialization with production SVG helper
+- Add adjustable Tukey FFT window and clarify mean removal
+- Update Tukey previews live and default to 50 percent taper
+- Group material controls in a persistent collapsible section
+- Detect spots for full-image inverse FFT masks
+- Show TEM loading animation during inverse FFT computation
+- Delay inverse FFT loading indicator by 200 ms
+- Keep responsive iFFT drags clear and show source FFT before reconstruction
+- Match saved regions panel styling and delay iFFT spinner 400 ms
+- Explain empty inverse FFT reconstruction before masks are added
+- Hide unloaded iFFT image placeholder text
+- Fix verification fixtures after changing FFT window defaults
 
-The new FFT linked search can change analysis results. The ω falloff defaults to 1; larger values are exploratory tolerance choices, not confirmation of a phase. Rerun grids to apply new matching settings.
-
-Use **Check for updates → Install update and restart**. Export unsaved grid results before restarting.
+Use **Check for updates → Install update and restart**.
