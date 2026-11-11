@@ -373,7 +373,7 @@ The maintained [implementation plan](docs/implementation-plan.md) tracks HCP fit
 
 The versioned [methods atlas](docs/architecture/README.md) documents the implementation with equations, flowcharts, acceptance decisions and adaptive-grid rules. Read the [eight-page PDF](docs/architecture/tem-workbench-architecture.pdf) or the individual editable SVG panels. Its [JSON source](docs/architecture/architecture.json) and [renderer](tools/render_architecture.py) live in this repository; a source-hash check flags relevant code changes for review before regeneration.
 
-The [methods manuscript draft](docs/paper/README.md) includes the numerical workflow, equations, documented development checks and references to prior work. Proposed PCA/NMF analysis and outstanding validation are clearly separated from implemented behaviour.
+The [methods manuscript draft](docs/paper/README.md) includes the numerical workflow, equations, documented development checks and references to prior work. The manuscript records its original implementation snapshot. The separate experimental [local FFT PCA workspace](docs/local-fft-pca.md) is documented with its limitations; NMF and scientific validation remain pending.
 
 ### Acquisition locations
 

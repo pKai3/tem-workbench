@@ -206,6 +206,8 @@ class BatchGrids:
         with app.lock, app.job_lock:
             if self.running() or (app.grid_thread and app.grid_thread.is_alive()) or app.closing:
                 raise ValueError('Finish or cancel the current grid or batch first.')
+            if getattr(app, 'pca', None) and app.pca.running():
+                raise ValueError('Finish or cancel PCA first.')
             if getattr(app, 'window_probe', None) and app.window_probe.running():
                 raise ValueError('Finish or cancel the window size check first.')
             cutoff=float(body.get('cutoff',400000))

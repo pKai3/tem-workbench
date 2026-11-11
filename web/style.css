@@ -956,3 +956,20 @@ html.ifft-open,html.ifft-open body{overflow:hidden}
 #ifft-empty{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--muted);pointer-events:none}
 #ifft-empty[hidden],#ifft-reconstruction[data-view=input] #ifft-empty,#ifft-reconstruction:has(#ifft-loading:not([hidden])) #ifft-empty{display:none}
 #ifft-reconstruction[data-view=compare] #ifft-empty{left:var(--wipe);padding:12px}
+
+/* Exploratory PCA stays separate from classification and grid displays. */
+html.pca-open,html.pca-open body{overflow:hidden}
+#pca-dialog{position:fixed;inset:2vh 2vw;margin:0;width:auto;max-width:none;height:96vh;max-height:none;box-sizing:border-box;overflow:auto;background:var(--panel,#111d28);color:var(--text,#d8e5f0);border:1px solid #41576a;border-radius:12px;padding:18px;overscroll-behavior:contain}
+#pca-dialog::backdrop{background:#0009}
+#pca-dialog h2{margin:0} #pca-dialog figure{margin:0;min-width:0}
+.pca-controls{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}
+.pca-controls input[type=number]{width:110px}.pca-controls label{display:flex;flex-direction:column;gap:5px}
+#pca-group{display:flex;flex-wrap:wrap;gap:8px;align-self:center}#pca-group label{flex-direction:row;align-items:center}
+.pca-views{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1100px;margin:auto}
+.pca-views img,.pca-views canvas{width:100%;aspect-ratio:1;object-fit:contain;background:#050a0f;display:block}
+#pca-map{cursor:crosshair}.pca-samples{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:1000px;margin:12px auto}.pca-samples img{width:100%;aspect-ratio:1;object-fit:contain;background:#050a0f}
+#pca-dialog img:not([src]){visibility:hidden}#pca-dialog figcaption{padding:6px 0}
+#pca-scree{display:flex;align-items:end;gap:6px;overflow:auto;padding:4px 0;height:100px}
+#pca-scree button{flex:1;min-width:70px;padding:5px;font-size:12px;background:linear-gradient(to top,#315979 var(--bar),#182636 var(--bar));height:100%;white-space:normal}
+#pca-scree button[aria-pressed=true]{border-color:#61d7d1}#pca-status.error{color:#ff9cb0}#pca-status{min-height:1.5em}
+@media(max-width:750px){.pca-views{grid-template-columns:1fr}.pca-samples{grid-template-columns:1fr}#pca-dialog{inset:1vh 1vw;padding:10px}.pca-controls{gap:6px}}

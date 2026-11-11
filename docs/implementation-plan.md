@@ -1,6 +1,6 @@
 # TEM Workbench implementation plan
 
-Last updated: 11 November 2026
+Last updated: 12 November 2026
 
 ## Window-default verification — 11 November 2026
 
@@ -40,14 +40,14 @@ Tukey follow-up: removed inherited range-input padding so the thumb reaches the 
 
 This summary supersedes historical “not released” and pending-status notes below; dated entries remain an implementation history. FFT linked β/ω, polygon selections, omega falloff and combined hover cards shipped in **v1.0.31**, implementation `0932a44`, release `f94af79`. Full analysis/browser and Windows/macOS release gates passed. The managed-network Windows failure still needs confirmation on the affected machine; retries and diagnostics are not proof that its cause is resolved.
 
-Retain the agreed analysis order: HCP scaling validation/optimizer review, weaker-pattern-aware automatic strength, then remaining batch/reporting work. Reciprocal masks/iFFT was explicitly queued after FFT β/ω and remains the next requested feature in that sequence. This audit does not authorize starting additional features.
+Retain the agreed analysis order: HCP scaling validation/optimizer review, weaker-pattern-aware automatic strength, then remaining batch/reporting work. Reciprocal masks/iFFT is implemented. The user subsequently approved a first PCA experiment on a separate branch; other roadmap items still require their own approval.
 
 - **Weaker-pattern automatic strength:** dominant-rank auto can still drop minority evidence. Geometry-auto and FFT linked β/ω now exist; a separately supported multi-pattern objective is still open. Validate β-only versus β+ω and β+two-ω without tuning solely to obtain expected labels.
 - **FFT masking and inverse FFT:** first implementation completed 11 November; paired circular masks, live reconstruction and PNG/data/recipe export. FFT manual peak editing is a separate deferred item.
 - **Automatic smoothing:** user discussed a coarse search in 0.25-bin increments, not exhaustive optimization. The window-size probe can hold physical width or bins fixed but does not search smoothing. Record this as a requested follow-up with objective, bounds, runtime budget and weak-pattern controls still to agree; it is not delivered.
 - **Reopen exported grid/batch JSON:** explicit follow-up from the request to reconstruct exported analysis in the app. Existing refresh recovery reconnects to an in-memory backend job, not a general export importer. Add a version-aware import/view workflow preserving source identity, settings, raw windows, linked variants, aggregation and provenance; display old results without silently recalculating. Audit older exports for missing data and report limitations. Not implemented.
 - **Incremental placement passes:** retain completed matching windows when extending passes; stable placement origins and exact source/settings reuse remain prerequisites. Pending.
-- **Shared-spectrum PCA/NMF:** proposed, not approved for immediate implementation; independent-window matching remains current. Compare minority recovery and boundary preservation before adoption.
+- **Shared-spectrum PCA:** first experimental workspace implemented on `feature/local-fft-pca` (12 November); see below. Independent-window crystal matching remains unchanged. NMF, factor indexing and adoption into phase mapping remain pending scientific validation.
 - **Image-assisted acquisition alignment:** planned; suggest verified image-content alignment without silently replacing manual placements. ADF and Hitachi offsets are to be compared against nearby images, not merely against one another.
 - **Validation/reporting:** native Windows managed-folder retest; Mac/Windows numerical review; independent β/ω and known-phase controls; update the paper's methods/results after validation. The in-app size recommendation probe exists, while the full crop-size diagnostic panel and broader controlled study remain separate open work. No automatic architecture refresh.
 
@@ -496,11 +496,19 @@ Created a [methods manuscript draft](paper/README.md), editable Markdown and rep
 
 Refreshed the explicitly requested [architecture atlas](architecture/README.md) to eight panels: signal extraction, template fitting, scores, classification, adaptive/batch searches, overlapping maps and parallel execution/state. Routine future changes still do not require a refresh unless requested.
 
-## Shared-spectrum PCA/NMF — proposed, 4 November 2026
+## Local FFT PCA — experimental branch, 12 November 2026
 
-Discussed following Jany, Janas and Krok (Micron 130, 102800; DOI 10.1016/j.micron.2019.102800): collect nonnegative local spectra on a common reciprocal grid; use PCA to inform component count; estimate NMF spectral factors and spatial loadings; inspect/index factors using the crystal matcher. Compare with the existing independent-window pipeline, which aggregates results only after fitting.
+User approved a first implementation on a separate branch after completing the current main revision, and requested tolerance of gradual lattice rotation/spacing changes. Main was separately released as **v1.0.32** through the fully gated release workflow (tested implementation `c90425a`, release `fc1facc`). PCA is not part of that release.
 
-Potential benefit is more stable recovery of weak recurring patterns. This is unimplemented and not a guaranteed improvement. Components may encode orientation, thickness, background or imaging contrast rather than phase. Rare components and sharp boundaries must be retained; loadings are not phase fractions. Define normalization, nonnegative representation, component count, reproducible initialization, memory limits and provenance before implementation. Test minority-pattern recovery, boundary localization, calibration sensitivity and runtime on independently characterized images with held-out tuning. This proposal does not supersede the agreed analysis priorities or authorize starting implementation.
+Implemented on `feature/local-fft-pca`: a cancellable **Local FFT PCA** workspace beside the window-size check. Samples the full calibrated real-space image using square physical windows and the captured FFT window/taper, mean removal and fitting band. Retains original sampled spectra, signed components, spatial scores, explained variance and residuals; inspect a selected window's input and reconstruction. Exports numeric NPZ plus JSON provenance to the source's configured output folder. Existing crystal matching and grid classifications are unchanged; current polygon/selection is not the PCA sampling mask.
+
+Gradual distortion: optional angular and log-radius Gaussian broadening, both off by default, reduces sensitivity to small peak shifts without aligning every orientation. Related components can be grouped by score energy. Original sampled spectra remain available. This does not guarantee one crystal per component and can blur genuinely different orientations; twins and minority patterns need separate validation.
+
+Bounded first pass: at most 970 windows (64 MiB per spectral matrix, several matrices in memory), 32–2048 pixels per window axis, 1–16 retained components, deterministic SVD, no extra dependencies. Progress/cancellation and stale-job protection; prevents competing grid/batch/size-check jobs. Desktop and narrow browser checks cover run, maps, component grouping, window selection, export feedback and cancellation. Nine numerical/integration tests cover synthetic localization, reconstruction, reproducibility, drift sensitivity, calibration, export and cancellation. Full Python suite: 439 tests, 16 skipped, plus the subsequently added server integration test; the one process-list permission failure passed when rerun with permission. All 28 JavaScript suites pass.
+
+Real-image smoke check: ST 1203, 324 windows of approximately 4.90 nm, eight components: 0.86 s without optional broadening, 0.89 s at 2°/2%; retained variance 21.9% and 38.9%, respectively. These are local timing/integrity checks, not evidence of correct phase separation. Export round-trips and finite output checked. See [method and usage notes](local-fft-pca.md).
+
+Prior work: Jany, Janas and Krok, Micron 130 (2020), 102800, DOI 10.1016/j.micron.2019.102800. Their PCA/NMF workflow motivates shared-spectrum analysis; this first pass is PCA only. NMF, component indexing, alignment-aware grouping, minority recovery, boundary preservation and independent ground-truth comparisons remain follow-ups. Do not interpret scores as phase fractions or increase smoothing solely to obtain expected labels.
 
 ## Window-size check and blended support — 3 November 2026
 
