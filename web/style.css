@@ -1010,6 +1010,7 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-reference .pca-samples{grid-template-columns:repeat(2,minmax(0,350px));max-width:none;justify-content:start;margin:12px 0}
 @media(max-width:750px){#pca-reference .pca-samples{grid-template-columns:minmax(0,350px)}}
 .nmf-fit-results {overflow:auto;max-height:420px;container-type:inline-size}
+#nmf-fit-results {max-height:none;overflow:visible}
 .nmf-fit-results table {width:100%;font-size:12px}
 .nmf-fit-results th {position:sticky;top:0;background:#13212c;z-index:1}
 #nmf-group-detail {margin:16px 0;padding:12px;border:1px solid #385364;border-radius:8px}
