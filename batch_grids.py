@@ -11,9 +11,11 @@ import threading
 import uuid
 import math
 import os
+import logging
 from PIL import Image, ImageDraw, ImageFont
 from engine import Engine
 import batch_stability
+LOG = logging.getLogger('tem_workbench')
 
 LABELS = ('hcp_compatible','bcc_compatible','fcc_compatible','ort_compatible','omega_compatible','coexisting_candidates','multiple_orientations','ambiguous','unresolved','insufficient')
 COLORS = dict(zip(LABELS, ('#79bafa','#f4b75e','#ff8ac3','#64e2b0','#b49aff','#d692fa','#64d6bb','#df9da6','#a4adba','#596778')))
@@ -199,6 +201,7 @@ class BatchGrids:
     def cancel_run(self):
         self.cancel.set()
         if self.running():
+            LOG.info('Batch cancellation requested: %s/%s images finished', self.data.get('finished', 0), self.data.get('total', 0))
             with self.app.job_lock:
                 job=self.app.jobs.get(self.data.get('job_id'))
                 if job:job['cancel']=True
@@ -245,11 +248,13 @@ class BatchGrids:
                 started_at=datetime.now().astimezone().isoformat(),
                 interpretation=batch_stability.INTERPRETATION if options.get('overlap') is not None else 'Candidate-labelled image areas, not confirmed phase fractions. Sample pooling sums acquired fields, which may overlap. Classification areas are disjoint; passing phase/zone support overlaps and must not be added as fractions.')
             def work():
+                LOG.info('Batch started: %s images; method=%s; workers=%s; PNGs=%s; output=%s',len(chosen),(options.get('component') or {}).get('method','overlap' if options.get('overlap') else 'grid'),options.get('workers'),options.get('png_views'),folder)
                 try:
                     self.write(folder)
                     for key in chosen:
                         if self.cancel.is_set():break
                         row=eligible[key]
+                        LOG.info('Batch image %s/%s: %s',self.data['finished']+1,len(chosen),key)
                         with self.lock:
                             self.data.update(current=row['name'],job_id=None)
                             self.live=None;self.live_preview=None
@@ -308,14 +313,17 @@ class BatchGrids:
                                         extra='' if len(products)==1 and suffix in ('classification','support_all') else '_'+suffix
                                         png_target=image_folder/(stem+'_'+kind+extra+'.png')
                                         map_png(item,job,png_target,options.get('colors'),float(options.get('opacity',.2)),view,phase)
+                                        LOG.info('Batch PNG exported: %s; view=%s; phase=%s', png_target, suffix, phase)
                                         with self.lock:
                                             summary.setdefault('png_files',{})[suffix]=os.path.relpath(png_target,folder) if png_target.drive==folder.drive else str(png_target)
                                             summary.setdefault('png_file',summary['png_files'][suffix])
                                     except Exception as error:
+                                        LOG.exception('Batch PNG export failed: source=%s view=%s',key,suffix)
                                         with self.lock:self.data['failures'].append(dict(file_id=key,stage='PNG export',view=suffix,error=str(error)))
                             if job.get('error'):
                                 with self.lock:self.data['failures'].append(dict(file_id=key,stage='grid',error=job['error']))
                         except Exception as error:
+                            LOG.exception('Batch image failed: %s',key)
                             with self.lock:self.data['failures'].append(dict(file_id=key,stage='analysis',error=str(error)))
                         finally:
                             if options.get('component') is not None:
@@ -325,12 +333,15 @@ class BatchGrids:
                                     current.pop('_component_result',None)
                                 engine.loaded.clear()
                         with self.lock:self.data['finished']+=1
+                        LOG.info('Batch progress: %s/%s images; %s failures',self.data['finished'],len(chosen),len(self.data['failures']))
                         self.write(folder)
                     with self.lock:self.data.update(state='cancelled' if self.cancel.is_set() else 'complete',current=None,job_id=None)
                 except Exception as error:
+                    LOG.exception('Batch failed')
                     with self.lock:self.data.update(state='error',error=str(error))
                 finally:
                     with self.lock:self.data['finished_at']=datetime.now().astimezone().isoformat()
+                    LOG.info('Batch %s: %s/%s images; %s failures; output=%s',self.data['state'],self.data['finished'],len(chosen),len(self.data['failures']),folder)
                     self.write(folder)
             self.thread=threading.Thread(target=work,name='tem-batch',daemon=True);self.thread.start()
         return self.status()

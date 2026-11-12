@@ -1092,17 +1092,17 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-hypotheses .pca-controls label{flex:1;min-width:140px}
 #pca-hypotheses .pca-controls #pca-map-top-label{flex:0 0 110px;min-width:110px}
 #pca-hypotheses .pca-controls select{width:100%;min-width:0}
-#pca-hypothesis-list{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:6px}
-#pca-hypothesis-list table{table-layout:fixed;font-size:11px}
-#pca-hypothesis-list th{position:sticky;top:0;z-index:1;background:#13212c}
-#pca-hypothesis-list :is(th,td){padding:7px 5px;text-align:right;vertical-align:middle}
-#pca-hypothesis-list :is(th,td):first-child{width:34px;text-align:center}
-#pca-hypothesis-list :is(th,td):nth-child(2){width:36%;text-align:left}
-#pca-hypothesis-list th{white-space:pre-line}
-#pca-hypothesis-list input{width:13px;height:13px;min-height:0;margin:0;padding:0}
-#pca-hypothesis-list tr.selected{background:#18313d}
-#pca-hypothesis-list .pca-hypothesis-name{border:0;background:none;font:inherit;line-height:1.5;white-space:pre-line;text-align:left;padding:0;min-height:0;overflow-wrap:anywhere}
-#pca-hypothesis-list .pca-hypothesis-symbol{font-size:13px}
+.hypothesis-list{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+.hypothesis-list table{table-layout:fixed;font-size:11px}
+.hypothesis-list th{position:sticky;top:0;z-index:1;background:#13212c}
+.hypothesis-list :is(th,td){padding:7px 5px;text-align:right;vertical-align:middle}
+.hypothesis-list :is(th,td):first-child{width:34px;text-align:center}
+.hypothesis-list :is(th,td):nth-child(2){width:36%;text-align:left}
+.hypothesis-list th{white-space:pre-line}
+.hypothesis-list input{width:13px;height:13px;min-height:0;margin:0;padding:0}
+.hypothesis-list tr.selected{background:#18313d}
+.hypothesis-list .pca-hypothesis-name{border:0;background:none;font:inherit;line-height:1.5;white-space:pre-line;text-align:left;padding:0;min-height:0;overflow-wrap:anywhere}
+.hypothesis-list .pca-hypothesis-symbol{font-size:13px}
 #nmf-phase-map {display:block;width:100%;max-width:560px;cursor:crosshair;}
 .pca-map-frame{position:relative;max-width:560px;aspect-ratio:1}
 #pca-aggregation-status{position:absolute;top:8px;left:8px;max-width:calc(100% - 16px);box-sizing:border-box;margin:0;padding:5px 8px;border-radius:5px;background:#0c1729e6;color:var(--text);font-size:12px;line-height:1.4;overflow-wrap:anywhere;pointer-events:none;display:flex;align-items:center;gap:7px}
@@ -1145,3 +1145,8 @@ html.pca-open,html.pca-open body{overflow:hidden}
 .component-grid-fields label{min-width:0}
 .component-grid-fields input,.component-grid-fields select{width:100%;min-width:0}
 #grid-progress{width:100%;height:6px;accent-color:var(--cyan);margin-top:10px}
+
+#component-hypotheses{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
+#component-hypotheses .row{margin:10px 0}
+#component-hypotheses .row label{flex:0 1 260px}
+#component-pool-control{flex:0 1 150px!important}

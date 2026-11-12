@@ -218,6 +218,76 @@ if(typeof document!=='undefined'){
   const solutionSymbols=new Map();let symbolModels=null,poolSummaries=[],hypothesisOrder=[],manualPool=false;
   const selectedHypotheses=new Set();
   const expandedSignals=new Set();
+  let linkedJob=null,poolRequestKey='',poolRequestEpoch=0,reconnectingGrid=null;
+  const linkedGrid=()=>Boolean(grid?.component&&grid.id===job?.id&&snapshot?.file_id===fileId);
+  function syncLinkedPool(){
+   const linked=linkedGrid(),maps=data?.phase_support,control=$('component-map-top');
+   $('component-pool-control').hidden=!grid?.component;
+   $('component-hypotheses').hidden=!linked||!maps;
+   if(!linked){$('component-pool-status').hidden=true;componentPoolPending=null;syncMapLoading()}
+   control.disabled=!linked||!maps;
+   if(!linked||!maps||pendingView)return;
+   const source=$('pca-map-top');
+   const ids=hypothesisOrder.filter(m=>selectedHypotheses.has(m.id)).map(m=>m.id).sort((a,b)=>a-b);
+   const value=manualPool?'custom':String(ids.length);
+   if(control.options.length!==source.options.length)control.replaceChildren(...[...source.options].map(o=>new Option(o.textContent,o.value)));
+   control.querySelector('[value="custom"]').textContent=`Custom (${ids.length})`;
+   control.querySelector('[value="custom"]').disabled=true;control.value=value;
+   $('component-hypotheses-summary').textContent=`Hypotheses · ${ids.length} of ${maps.models.length} selected`;
+   $('component-map-sort').value=$('pca-map-sort').value;
+   updateHypothesisRows($('component-hypothesis-list'),maps);
+   // Numerical fits stay retained. Only the displayed grid pool changes.
+   const key=JSON.stringify([job.id,maps.generation,ids,grid.state==='running'?null:maps.windows.length]);
+   if(key===poolRequestKey)return;
+   poolRequestKey=key;const serial=++poolRequestEpoch,id=job.id;
+   $('component-pool-status').hidden=true;componentPoolPending=id;updatePenaltyControls();
+   api('grid/component-pool',{id,models:ids}).then(status=>{
+    if(serial!==poolRequestEpoch||!linkedGrid()||job.id!==id)return;
+    componentPoolPending=null;trackedGrid=status;grid=status;drawGrid();gridStatus();updatePenaltyControls();
+   }).catch(error=>{
+    if(serial!==poolRequestEpoch||!linkedGrid()||job.id!==id)return;
+    componentPoolPending=null;poolRequestKey='';updatePenaltyControls();$('component-pool-status').hidden=false;$('component-pool-status').textContent=error.message;
+   });
+  }
+  function syncLinkedControls(fromMain=true){
+   if(!linkedGrid())return;
+   const pairs=[['grid-opacity','nmf-map-opacity','opacity'],['map-mode','pca-map-metric','mode'],
+    ['map-display','pca-map-display'],['map-phase','nmf-map-phase'],['map-symbol','pca-map-symbols'],
+    ['map-show-rim','pca-map-rim','check'],['map-normalize','pca-map-normalize','check'],['grid-workers','pca-workers']];
+   for(const [main,detail,type]of pairs){
+    const a=$(fromMain?main:detail),b=$(fromMain?detail:main);
+    if(type==='check'){b.checked=a.checked;continue}
+    let value=a.value;
+    if(type==='opacity')value=String(Number(value)*(fromMain ? .01 : 100));
+    if(type==='mode')value=(fromMain?{top:'best',support:'frequency'}:{best:'top',frequency:'support'})[value]||value;
+    if(b.tagName!=='SELECT'||[...b.options].some(o=>o.value===value))b.value=value;
+   }
+   if(fromMain)preferredMapDisplay=readPreference('tem-map-display','hex');
+   else{
+    writePreference('tem-grid-opacity',Number($('grid-opacity').value));
+    writePreference('tem-map-mode',$('map-mode').value);
+    if($('pca-map-display').value!=='centres')writePreference('tem-map-display',$('pca-map-display').value);
+    for(const [id,key]of [['map-show-rim','tem-map-show-rim'],['map-normalize','tem-map-normalize']])writePreference(key,$(id).checked);
+    writePreference('tem-map-symbol',$('map-symbol').value);syncMapDisplay();updateGridOpacity();
+   }
+   rememberViewer();
+  }
+  $('component-map-top').onchange=()=>{selectTopHypotheses(Number($('component-map-top').value));syncLinkedPool();drawPhaseMap();rememberViewer()};
+  $('component-map-sort').onchange=()=>{$('pca-map-sort').value=$('component-map-sort').value;orderHypotheses(data.phase_support);drawPhaseMap();rememberViewer()};
+  document.addEventListener('tem-grid-view-updated',()=>{
+   syncLinkedPool();
+   if(!grid?.component){linkedJob=null;return}
+   if(!linkedGrid()){
+    if(reconnectingGrid===grid.id)return;
+    reconnectingGrid=grid.id;
+    reconnect().finally(()=>{reconnectingGrid=null;if(linkedGrid()){syncLinkedControls();syncLinkedPool()}});
+    return;
+   }
+   if(linkedJob!==grid.id){linkedJob=grid.id;syncLinkedControls()}
+   syncLinkedPool();
+  });
+  for(const id of ['grid-opacity','map-mode','map-display','map-phase','map-symbol','map-show-rim','map-normalize','grid-workers'])$(id).addEventListener(id==='grid-opacity'?'input':'change',()=>{syncLinkedControls();drawPhaseMap()});
+  for(const id of ['nmf-map-opacity','pca-map-metric','pca-map-display','nmf-map-phase','pca-map-symbols','pca-map-rim','pca-map-normalize','pca-workers'])$(id).addEventListener(id==='nmf-map-opacity'?'input':'change',()=>syncLinkedControls(false));
   const isPca=()=>data?.decomposition==='pca';
   const sourceLabel=g=>isPca()?PcaView.sourceLabel(g):`NMF ${g.components.map(i=>i+1).join(' + ')}`;
   const hypothesisIdentity=(m,rotation=m.rotation_deg)=>`${m.phase==='OMEGA'?'ω':m.phase} ${zoneLabel(m)} · ${rotation.toFixed(1)}°`;
@@ -407,7 +477,7 @@ if(typeof document!=='undefined'){
     $('nmf-fit-help').textContent=pca?'Individual positive/negative features are fitted separately. Selected combinations reconstruct the mean plus actual signed scores times loadings at each sampled window. Up to five distinct candidates per phase per source/subset are retained, with an exact source window. Select PCs on the Signals cards; choose combination fitting in Analysis settings. Original-window support is checked separately.':'Every nonempty NMF subset is fitted with captured phase and scale settings. Weighted sums use mean coefficients in co-occurring windows, or global means if none. Ranks use position minus scale cost, without main-analysis photometric penalties.';
    $('nmf-fit-help').textContent+=' Peak cutoff is the fraction of the strongest maximum above the median at the same reciprocal radius: default 0.35. Higher values reject more weak/background maxima. The saved cutoff applies to features, combinations and original-window checks; it is not a distance or an absolute brightness threshold. Matching uses the same native FFT taper-response width as ordinary FFT fits; optional decomposition smoothing does not widen it.';
    $('nmf-map-phase-label').textContent='Phase';
-   $('nmf-map-help').textContent=pca?'The ticked hypotheses form the map pool. Best local match colours each window centre by its highest-support passing member; all locally supported shows every passing pool member. No passing member means unresolved. A white corner marks close competing explanations of shared peaks. Multiple patterns require at least three unique nonparallel profiles and over 15% of detected profiles per pattern. Passing overlays alone are not proof of coexistence or phase fractions. All hypotheses are checked against every original unbroadened window with ±3°/±3% refinement (rotation only for fixed scale), regardless of PCA score.':'Group fits are checked in eligible original windows with bounded local rotation and scale refinement. One best passing model per phase. Blended cells require separate nonparallel evidence. Pink marks competing explanations; colours are not phase fractions.';
+   $('nmf-map-help').textContent=pca?'The ticked hypotheses form the map pool. Best local match colours each window centre by its highest-support passing member; all locally supported shows every passing pool member. No passing member means unresolved. A white corner marks close competing explanations of shared peaks. Multiple patterns require at least three unique nonparallel profiles and over 15% of detected profiles per pattern. Passing overlays alone are not proof of coexistence or phase fractions. All hypotheses are checked against every original unbroadened window with ±3°/±3% refinement (rotation only for fixed scale), regardless of PCA score.':'Ticked hypotheses form the map pool. Near-identical group fits share one representative and the union of eligible windows. Best local match shows the highest passing local score; all locally supported shows each passing pool member. Activity determines eligibility, not phase presence. White triangles indicate competing explanations; colours are not phase fractions.';
    showSection(section);
    r.components.forEach(c=>{
     for(const host of ['pca-group','pca-map-group']){
@@ -722,7 +792,7 @@ if(typeof document!=='undefined'){
    const hypothesis=original?data.phase_support.models[windowModel]:null;
    $('nmf-group-label').textContent=original?`Window ${windowIndex+1} · ${hypothesisIdentity(hypothesis)} · original-window fit`:`${sourceLabel(group)} · crystal fits`;
    $('nmf-group-source-help').hidden=!original;
-   if(original)$('nmf-group-source-note').textContent=`Hypothesis sources: ${sourceLabel(hypothesis)}. These sources produced matching crystal geometry and were merged into one hypothesis. PC numbers joined by + identify a mean-plus-score-weighted reconstruction; a trailing + or − identifies one signed feature of a component. This view tests the retained crystal hypothesis against window ${windowIndex+1}’s original spectrum, with bounded local refinement. It does not add these source spectra together.`;
+   if(original)$('nmf-group-source-note').textContent=`Hypothesis sources: ${sourceLabel(hypothesis)}. These sources produced matching crystal geometry and were merged into one hypothesis. ${isPca()?'PC numbers joined by + identify a mean-plus-score-weighted reconstruction; a trailing + or − identifies one signed feature of a component.':'NMF source groups determine eligible windows; overlapping groups are not additional crystal orientations.'} This view tests the retained crystal hypothesis against window ${windowIndex+1}’s original spectrum, with bounded local refinement. It does not add these source spectra together.`;
    $('nmf-group-spectrum').setAttribute('aria-label',$('nmf-group-label').textContent+' spectrum with detected peaks and predictions');
    status.textContent='Detecting peaks and fitting candidates…';status.classList.remove('error');if(!pane.open){pane.showModal();$('nmf-group-close').focus()}$('nmf-group-body').scrollTop=0;
    try{
@@ -732,18 +802,19 @@ if(typeof document!=='undefined'){
      $('nmf-group-label').textContent=`Window ${windowIndex+1} · ${hypothesisIdentity(detail.candidates[0])} · original-window fit`;
      $('nmf-group-spectrum').setAttribute('aria-label',$('nmf-group-label').textContent+' spectrum with detected peaks and predictions');
     }
-    status.textContent=`${detail.peaks.length} detected profiles · peak cutoff ${detail.peak_fraction} · ${detail.phases.join(' + ')||'no phases'}${isPca()?(original?' · original unbroadened spectrum'+(detail.component_score==null?'':` · PC ${detail.component+1} score `+detail.component_score.toPrecision(3)):combination?` · mean + score-weighted PCs · source window ${detail.window+1}`:' · '+group.side+' deviations from the mean'):' · '+detail.cooccurring_windows+' co-occurring windows'}`;
+    status.textContent=`${detail.peaks.length} detected profiles · peak cutoff ${detail.peak_fraction} · ${detail.phases.join(' + ')||'no phases'}${isPca()?(original?' · original unbroadened spectrum'+(detail.component_score==null?'':` · PC ${detail.component+1} score `+detail.component_score.toPrecision(3)):combination?` · mean + score-weighted PCs · source window ${detail.window+1}`:' · '+group.side+' deviations from the mean'):original?' · original unbroadened spectrum':' · '+detail.cooccurring_windows+' co-occurring windows'}`;
     $('nmf-group-content').hidden=false;
     const support=$('nmf-support');support.replaceChildren();
     const note=document.createElement('p');note.className='hint settings-heading-label';note.textContent=original?'Original-window support':'Partial-match screen';
     const help=document.createElement('span'),helpButton=document.createElement('button'),helpText=document.createElement('span');help.className='settings-help';helpButton.type='button';helpButton.className='settings-help-button';helpButton.textContent='ⓘ';helpButton.setAttribute('aria-label','About the partial-match screen');helpText.className='settings-help-popup';helpText.setAttribute('role','tooltip');
     helpText.textContent='Pass requires at least four assigned profiles, directional spread, over 30% observed-profile coverage and rank above 0.20. It does not require every prediction to have a peak. NMF uses position minus scale cost, with no missing-prediction, weak-peak, brightness or double-diffraction terms. Solid outlines are assigned; faint dotted outlines are unassigned. Assignments can be displaced and lose positional credit. Neither components nor co-occurrence establish phases.';help.append(helpButton,helpText);note.append(help);$('nmf-group-toolbar').append(note);
-    if(isPca())helpText.textContent=original?'Original-window support requires four close profiles, directional spread, more than 30% prediction coverage and support above 0.20 after chance and scale costs. Refinement is limited to ±3° and ±3% scale (rotation only in fixed mode). Solid predictions have close assignments; others are dotted. PCA scores do not gate these checks.':'This is a fit to one side of a signed deviation from the mean, not to an absolute diffraction pattern. Pass is a partial observed-profile screen; original-window support is checked separately. PCA sign is arbitrary: reversing both loading and scores swaps the labels. Same-phase orientations remain separate.';
+    if(original)helpText.textContent='Original-window support requires four close profiles, directional spread, more than 30% prediction coverage and support above 0.20 after chance and scale costs. Refinement is limited to ±3° and ±3% scale (rotation only in fixed mode). Solid predictions have close assignments; others are dotted. '+(isPca()?'PCA scores do not gate these checks.':'NMF activity determines eligible windows; this view checks the actual original spectrum.');
+    else if(isPca())helpText.textContent='This is a fit to one side of a signed deviation from the mean, not to an absolute diffraction pattern. Pass is a partial observed-profile screen; original-window support is checked separately. PCA sign is arbitrary: reversing both loading and scores swaps the labels. Same-phase orientations remain separate.';
     if(!original)helpText.textContent+=' Near-duplicate fits of the same phase and zone keep only the higher rank: interior predictions must pair within one matching width, allowing reflections to cross a fitting-limit boundary. Different matched-peak subsets alone do not create a new solution.';
-    if(original)helpText.textContent+=' Repeated orientations across PCA components/signs use one best representative and retain every feature source. Support counts are not added. The displayed PC score belongs to the representative source.';
+    if(original)helpText.textContent+=' Repeated geometries use one best representative and retain every source. Support counts are not added.'+(isPca()?' The displayed PC score belongs to the representative source.':'');
     if(combination&&!original)helpText.textContent='This spectrum is the PCA mean plus selected signed score-weighted loadings for the named source window, with area weighting and normalization reversed. It is a partial reconstruction, not the original spectrum. Candidate support is checked separately in every original window. Scores: '+detail.components.map((c,i)=>`PC ${c+1}: ${detail.coefficients[i].toPrecision(4)}`).join('; ')+`. Negative reconstructed pixels: ${(100*detail.negative_fraction).toFixed(1)}%.`;
     if(detail.tolerance_nm_inv)helpText.textContent+=original?` Counted matches must lie within ${detail.tolerance_nm_inv.toFixed(3)} nm⁻¹ (one native FFT taper-response width, including any omega multiplier). Farther assignments contribute decreasing positional credit out to ${(4*detail.tolerance_nm_inv).toFixed(3)} nm⁻¹ but do not count toward the four-profile minimum. Opposite spots count as one profile.`:` The base matching width is ${detail.tolerance_nm_inv.toFixed(3)} nm⁻¹, from the native FFT taper response. Search assignments extend to four widths with decreasing positional credit; omega uses its configured multiplier. Original-window match counts require one width. Opposite spots count as one profile.`;
-    if(!isPca()&&!detail.cooccurring_windows){const warning=document.createElement('p');warning.textContent='No co-occurring windows: this sum uses global means and is hypothetical.';$('nmf-group-toolbar').append(warning)}
+    if(!isPca()&&!original&&!detail.cooccurring_windows){const warning=document.createElement('p');warning.textContent='No co-occurring windows: this sum uses global means and is hypothetical.';$('nmf-group-toolbar').append(warning)}
     const chosen=new Set(detail.candidates.length?[0]:[]),svg=$('nmf-group-spectrum');svg.replaceChildren();
     const background=el('image',{width:420,height:420}),overlay=el('g',{});svg.append(background,overlay);
     function draw(){if(serial===groupEpoch&&pane.open)drawComponentFitOverlay(overlay,detail,chosen)}
@@ -760,15 +831,24 @@ if(typeof document!=='undefined'){
       componentFitCells(row,m,detail.peaks.length,{original});
      });wrap.append(table);support.append(wrap);
     }
-    for(const check of group.support_checks||[]){const b=document.createElement('button');b.type='button';b.textContent=`Window ${check.window+1}: ${check.matched}/${check.peak_count} matched`;b.title='Check of the best combination model against the original window, without refitting';b.onclick=()=>{closeInspector();index=check.window;selectGroupMap(group)};support.append(b)}
+    for(const check of original?[]:group.support_checks||[]){const b=document.createElement('button');b.type='button';b.textContent=`Window ${check.window+1}: ${check.matched}/${check.peak_count} matched`;b.title='Check of the best combination model against the original window, without refitting';b.onclick=()=>{closeInspector();index=check.window;selectGroupMap(group)};support.append(b)}
    }catch(e){if(serial===groupEpoch){status.textContent=e.message;status.classList.add('error')}}
   }
   function selectTopHypotheses(count){
    manualPool=false;selectedHypotheses.clear();hypothesisOrder.slice(0,count).forEach(m=>selectedHypotheses.add(m.id));
    $('pca-map-top').value=String(Math.min(count,hypothesisOrder.length));
   }
-  function renderHypothesisList(maps){
-   const box=$('pca-hypothesis-list'),scroll=box.scrollTop,focused=box.contains(document.activeElement)?{id:document.activeElement.closest('tr')?.dataset.hypothesis,tag:document.activeElement.tagName.toLowerCase()}:null;box.replaceChildren();
+  function updateHypothesisRows(box,maps){
+   const models=new Map(maps.models.map(m=>[m.id,m]));
+   for(const row of box.querySelectorAll('tr[data-hypothesis]')){
+    const id=Number(row.dataset.hypothesis);row.classList.toggle('selected',selectedHypotheses.has(id));
+    row.querySelector('input').checked=selectedHypotheses.has(id);
+    row.querySelector('button').style.color=phaseColors[models.get(id).phase];
+   }
+  }
+  function renderHypothesisList(maps,box){
+   if(!box){renderHypothesisList(maps,$('pca-hypothesis-list'));if(linkedGrid())renderHypothesisList(maps,$('component-hypothesis-list'));return}
+   const scroll=box.scrollTop,focused=box.contains(document.activeElement)?{id:document.activeElement.closest('tr')?.dataset.hypothesis,tag:document.activeElement.tagName.toLowerCase()}:null;box.replaceChildren();
    const table=document.createElement('table'),head=table.createTHead().insertRow();
    for(const [label,help] of [['Show','Include this hypothesis in the map'],['Hypothesis / rotation','Click the name to show only this hypothesis'],['Passing','Percentage of all checked windows where this hypothesis passes'],['Cumulative\npassing','Unique windows supported by this row and every row above it, irrespective of ticks. Shared passing windows count once. The map summary reports the actual checked pool.'],['New','Newly supported windows when added after every hypothesis above it'],['Better','Already-supported windows whose best passing local score increases when added after every hypothesis above it']]){
     const cell=document.createElement('th');cell.textContent=label;cell.title=help;cell.scope='col';head.append(cell);
@@ -777,12 +857,12 @@ if(typeof document!=='undefined'){
    hypothesisOrder.forEach((model,i)=>{
     const row=body.insertRow();row.dataset.hypothesis=String(model.id);
     const check=document.createElement('input');check.type='checkbox';check.dataset.hypothesis=String(model.id);check.setAttribute('aria-label','Show '+hypothesisLabel(model));
-    check.onchange=()=>{manualPool=true;if(check.checked)selectedHypotheses.add(model.id);else selectedHypotheses.delete(model.id);drawPhaseMap()};row.insertCell().append(check);
-    const cell=row.insertCell(),button=document.createElement('button');button.type='button';button.className='pca-hypothesis-name';button.title='Show only this hypothesis · '+sourceLabel(model);button.setAttribute('aria-label','Show only '+hypothesisLabel(model));
+    check.onchange=()=>{manualPool=true;if(check.checked)selectedHypotheses.add(model.id);else selectedHypotheses.delete(model.id);drawPhaseMap();rememberViewer()};row.insertCell().append(check);
+    const cell=row.insertCell(),button=document.createElement('button');button.type='button';button.className='pca-hypothesis-name';button.title='Show only this hypothesis · '+sourceLabel(model)+' · '+scaleDetails(model);button.setAttribute('aria-label','Show only '+hypothesisLabel(model));
     const symbol=document.createElement('span');symbol.className='pca-hypothesis-symbol';button.append(symbol,document.createTextNode(`${i+1}. ${model.phase==='OMEGA'?'ω':model.phase} ${zoneLabel(model)}\n${model.rotation_deg.toFixed(1)}°`));cell.append(button);
-    button.onclick=()=>{manualPool=true;selectedHypotheses.clear();selectedHypotheses.add(model.id);drawPhaseMap()};
+    button.onclick=()=>{manualPool=true;selectedHypotheses.clear();selectedHypotheses.add(model.id);drawPhaseMap();rememberViewer()};
     const gain=poolSummaries[i];for(const value of [maps.model_passing_counts[model.id]||0,gain.supported,gain.newlySupported,gain.improved])row.insertCell().textContent=PcaView.supportPercent(value,maps.windows.length);
-   });box.append(table);box.scrollTop=scroll;if(focused?.id)box.querySelector(`tr[data-hypothesis="${focused.id}"] ${focused.tag}`)?.focus({preventScroll:true});
+   });box.append(table);updateHypothesisRows(box,maps);box.scrollTop=scroll;if(focused?.id)box.querySelector(`tr[data-hypothesis="${focused.id}"] ${focused.tag}`)?.focus({preventScroll:true});
    if(!hypothesisOrder.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No retained hypotheses.';box.append(empty)}
   }
   function orderHypotheses(maps,reset=false){
@@ -792,6 +872,9 @@ if(typeof document!=='undefined'){
    if(top.options.length!==poolSummaries.length+2)top.replaceChildren(custom,new Option('None','0'),...poolSummaries.map(pool=>new Option(String(pool.count),String(pool.count))));
    top.disabled=!maps.models.length;$('pca-map-sort').disabled=!maps.models.length;
    if(reset||!manualPool)selectTopHypotheses(count);else{const available=new Set(hypothesisOrder.map(m=>m.id));for(const id of selectedHypotheses)if(!available.has(id))selectedHypotheses.delete(id)}
+   if(reset&&linkedGrid()&&Array.isArray(grid.component_pool?.models)){
+    manualPool=true;selectedHypotheses.clear();for(const id of grid.component_pool.models)if(maps.models.some(m=>m.id===id))selectedHypotheses.add(id);
+   }
    renderHypothesisList(maps);
   }
   function showPhaseMaps(){
@@ -802,15 +885,19 @@ if(typeof document!=='undefined'){
    const select=$('nmf-map-phase'),previous=select.value;
    if(!maps)return;
    if([...select.options].map(o=>o.value).join(',')!==['all',...maps.phases].join(','))select.replaceChildren(new Option('All phases','all'),...maps.phases.map(p=>new Option(p,p)));select.value=[...select.options].some(o=>o.value===previous)?previous:'all';
-   if(isPca()){
+   {
+    // Older NMF snapshots retained phase winners only; expose their available
+    // support without inventing unrecorded alternatives. Update mapping to rebuild.
+    if(!maps.model_passing_counts){
+     maps.model_passing_counts={};maps.model_mean_support={};
+     for(const m of maps.models){const values=maps.windows.flatMap(w=>w.candidates.filter(c=>c.model===m.id&&c.valid).map(c=>c.score));maps.model_passing_counts[m.id]=values.length;maps.model_mean_support[m.id]=values.length?values.reduce((a,b)=>a+b,0)/values.length:0}
+    }
     const identity=maps.generation||maps.models;const reset=symbolModels!==identity;if(reset){solutionSymbols.clear();symbolModels=identity}
     orderHypotheses(maps,reset);
+    syncLinkedPool();
     $('nmf-map-counts').textContent=`${maps.windows.length} original windows checked · ${maps.models.length} retained hypotheses`;
     return;
    }
-   select.disabled=false;
-   if([...select.options].map(o=>o.value).join(',')!==['all',...maps.phases].join(','))select.replaceChildren(new Option('All phases','all'),...maps.phases.map(p=>new Option(p,p)));select.value=[...select.options].some(o=>o.value===previous)?previous:'all';
-   $('nmf-map-counts').textContent=`${maps.windows.length}/${maps.total??data.plan.count} windows checked · ${maps.counts.single} single · ${maps.counts.multiple} separately supported multiple · ${maps.counts.ambiguous} ambiguous · ${maps.counts.unresolved} unresolved${maps.nmf_converged===false?' · NMF reached iteration limit':''}`;
   }
   function requestAggregate(maps,ids,colour){
    ids=[...ids].sort((a,b)=>a-b);
@@ -865,8 +952,8 @@ if(typeof document!=='undefined'){
     if(metric==='spread'&&c.passes<2)continue;
     let colour,value;
     if(metric==='best'){
-     const available=keys.filter(k=>c.phases[k].fit_presence>0).sort((a,b)=>c.phases[b].rank-c.phases[a].rank);
-     const winner=available[0];colour=winner?colourHex(colours[winner]):'#596778';value=winner?c.phases[winner].support:0;
+     const available=keys.filter(k=>c.phases[k].support>0).sort((a,b)=>c.phases[b].passing_strength-c.phases[a].passing_strength);
+     const winner=available[0];colour=winner?colourHex(colours[winner]):'#596778';value=winner?c.phases[winner].passing_strength:0;
     }else if(metric==='samples'){colour='#00d9e8';value=c.samples/maximum}
     else {const blend=blendSupport(keys.map(k=>[colourHex(colours[k]),c.phases[k]?.[field]||0]));colour=blend.colour;value=blend.value/maximum}
     const rgba=[1,3,5].map(i=>parseInt(colour.slice(i,i+2),16));rgba.push(Math.round(255*(.15+.85*Math.max(0,Math.min(1,value)))));
@@ -885,11 +972,12 @@ if(typeof document!=='undefined'){
    mapHit={data:a,hex,keys,metric};
   }
   function drawPhaseMap(options={}){
+   if(!options.canvas)syncLinkedPool();
    if(section!=='support')return;
    const maps=data?.phase_support;if(!maps)return;
    const metric=$('pca-map-metric').value,raw=metric==='raw';mapHit=null;
    const display=$('pca-map-display');display.querySelector('[value=centres]').hidden=!raw;if(raw){if(display.value!=='centres')preferredMapDisplay=display.value;display.value='centres'}else if(display.value==='centres')display.value=preferredMapDisplay;
-   display.disabled=raw;$('pca-map-mode-label').hidden=!isPca()||!raw;
+   display.disabled=raw;$('pca-map-mode-label').hidden=!raw;
    $('pca-normalize-label').hidden=!['strength','frequency'].includes(metric);
    $('pca-map-metric').querySelector('[value=spread]').disabled=(data.plan.grid?.passes||1)<2;
    if(metric==='spread'&&(data.plan.grid?.passes||1)<2){$('pca-map-metric').value='frequency';drawPhaseMap();return}
@@ -898,17 +986,16 @@ if(typeof document!=='undefined'){
    const scale=Math.min(canvas.width/width,canvas.height/height),ox=(canvas.width-width*scale)/2,oy=(canvas.height-height*scale)/2;
    ctx.fillStyle='#050a0f';ctx.fillRect(0,0,canvas.width,canvas.height);
    if(sourceImage?.complete&&sourceImage.naturalWidth)ctx.drawImage(sourceImage,ox,oy,width*scale,height*scale);
-   const pca=isPca(),mode=$('pca-map-mode').value,colourBy=pca?$('pca-map-colour').value:'phase';
-   $('pca-map-colour-label').hidden=!pca;$('pca-map-symbols-label').hidden=!raw;
+   const mode=$('pca-map-mode').value,colourBy=$('pca-map-colour').value;
+   $('pca-map-colour-label').hidden=false;$('pca-map-symbols-label').hidden=!raw;
    $('pca-map-rim-label').hidden=!raw;$('pca-map-rim').disabled=!p.samples?.some(s=>s.rim);
-   $('pca-hypotheses').hidden=!pca;$('nmf-map-select-label').hidden=pca&&(raw||colourBy==='hypothesis');$('nmf-phase-content').classList.toggle('pca-hypotheses-layout',pca);
+   $('pca-hypotheses').hidden=false;$('nmf-map-select-label').hidden=raw||colourBy==='hypothesis';$('nmf-phase-content').classList.add('pca-hypotheses-layout');
    const [w,h]=p.window_pixels,[dx,dy]=[p.spacing_nm[0]/p.pixel_nm[0],p.spacing_nm[1]/p.pixel_nm[1]],phase=$('nmf-map-phase').value;
-   const pool=pca?hypothesisOrder.filter(m=>selectedHypotheses.has(m.id)):[],ids=pool.map(m=>m.id),single=pca&&pool.length===1,model=single?pool[0]:null;
-   const local=pca?maps.windows.map(win=>PcaView.localHypotheses(win,ids)):[];
+   const pool=hypothesisOrder.filter(m=>selectedHypotheses.has(m.id)),ids=pool.map(m=>m.id),single=pool.length===1,model=single?pool[0]:null;
+   const local=maps.windows.map(win=>PcaView.localHypotheses(win,ids));
    const visible=visibleMapWindows(),symbolStyle=$('pca-map-symbols').value,showSymbols=raw&&symbolStyle!=='circle';
-   const nmfWinners=pca?[]:maps.windows.map(win=>({winner:[...win.candidates].filter(c=>c.valid&&(phase==='all'||c.phase===phase)).sort((a,b)=>b.score-a.score)[0]||null}));
-   const winning=PcaView.winningSolutions(maps,visible.map(w=>(pca?local:nmfWinners)[w.index]),ZONE_SYMBOLS,solutionSymbols);
-   if(pca){
+   const winning=PcaView.winningSolutions(maps,visible.map(w=>local[w.index]),ZONE_SYMBOLS,solutionSymbols);
+   {
     const top=$('pca-map-top');top.value=manualPool?'custom':String(pool.length);top.querySelector('[value="custom"]').textContent=`Custom (${pool.length})`;
     const winners=new Set(winning.map(entry=>entry.model.id));
     for(const row of $('pca-hypothesis-list').querySelectorAll('[data-hypothesis]')){
@@ -917,23 +1004,23 @@ if(typeof document!=='undefined'){
      row.querySelector('.pca-hypothesis-symbol').textContent=showSymbols&&winners.has(id)?solutionSymbols.get(id)+' ':'';
     }
    }
-   const aggregated=raw?null:requestAggregate(maps,pca?ids:maps.models.map(m=>m.id),pca?colourBy:'phase');
+   const aggregated=raw?null:requestAggregate(maps,ids,colourBy);
    updateMapStatus(raw);
    updateMapExportControls();
-   if(aggregated)paintAggregate(ctx,aggregated,metric,pca?colourBy:'phase',phase,scale,ox,oy);
+   if(aggregated)paintAggregate(ctx,aggregated,metric,colourBy,phase,scale,ox,oy);
    ctx.globalAlpha=Number($('nmf-map-opacity').value);
    const rois=PcaView.windows(p);
    if(raw)for(const win of visible){
     const r=rois[win.index],cx=r.x+w/2,cy=r.y+h/2;
-    const state=(pca?local:nmfWinners)[win.index],shown=pca?(mode==='best'?(state.winner?[state.winner]:[]):state.passing):[];
-    const colours=pca?[...new Map(shown.map(c=>[colourBy==='phase'?c.phase:c.model,PcaView.hypothesisColour(maps.models[c.model],colourBy)])).values()]:[PcaView.supportColour(win,phase)];
+    const state=local[win.index],shown=mode==='best'?(state.winner?[state.winner]:[]):state.passing;
+    const colours=[...new Map(shown.map(c=>[colourBy==='phase'?c.phase:c.model,PcaView.hypothesisColour(maps.models[c.model],colourBy)])).values()];
     if(!colours.length)colours.push([65,72,80]);
     const x=ox+cx*scale,y=oy+cy*scale,size=mapCentreMarkerSize(dx)*scale,radius=size*.6;
     if(symbolStyle!=='zone'||!state.winner){
      ctx.save();ctx.globalAlpha*=symbolStyle==='circle'?.85:.35;
      colours.forEach((colour,j)=>{ctx.fillStyle=`rgb(${colour.join(',')})`;ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,radius,-Math.PI/2+j*2*Math.PI/colours.length,-Math.PI/2+(j+1)*2*Math.PI/colours.length);ctx.closePath();ctx.fill()});ctx.restore();
     }
-    if(pca&&!single&&state.label==='ambiguous'){
+    if(!single&&state.label==='ambiguous'){
      const s=size*.3;ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(x+radius*.5,y-radius);ctx.lineTo(x+radius*.5+s,y-radius);ctx.lineTo(x+radius*.5,y-radius+s);ctx.closePath();ctx.fill();
     }
     if(showSymbols&&state.winner){
@@ -945,21 +1032,19 @@ if(typeof document!=='undefined'){
    ctx.globalAlpha=1;const roi=rois[index];
    if(options.selection!==false&&(!raw||visible.some(win=>win.index===index))){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+roi.x*scale,oy+roi.y*scale,w*scale,h*scale)}
    const key=$('nmf-map-key');key.replaceChildren();
-   let legend=pca?[...new Map(pool.map(m=>[colourBy==='phase'?m.phase:m.id,{label:colourBy==='phase'?(m.phase==='OMEGA'?'ω':m.phase):hypothesisIdentity(m),colour:PcaView.hypothesisColour(m,colourBy)}])).values()]:
-    (phase==='all'?[...maps.phases,'Ambiguous','Unresolved']:[phase,'Below / inactive']).map(name=>({label:name,colour:PcaView.phaseColours[name]||(name==='Ambiguous'?[230,155,170]:[140,150,160])}));
-   if(pca)legend.push({label:'Unresolved',colour:[140,150,160]});
+   let legend=[...new Map(pool.map(m=>[colourBy==='phase'?m.phase:m.id,{label:colourBy==='phase'?(m.phase==='OMEGA'?'ω':m.phase):hypothesisIdentity(m),colour:PcaView.hypothesisColour(m,colourBy)}])).values()];
+   legend.push({label:'Unresolved',colour:[140,150,160]});
    if(!raw&&aggregated){legend=metric==='samples'?[{label:'Sampling density',colour:[0,217,232]}]:mapHit.keys.map(k=>({label:aggregated.colour_by==='hypothesis'?hypothesisIdentity(maps.models.find(m=>String(m.id)===k)):k,colour:aggregated.colour_by==='hypothesis'?PcaView.hypothesisColour(maps.models.find(m=>String(m.id)===k),'hypothesis'):PcaView.phaseColours[k]||[210,210,210]}))}
    if(maps.windows.length<(maps.total??p.count))key.append(document.createTextNode('Uncoloured: not checked yet · '));
    for(const entry of legend){const item=document.createElement('span');item.textContent='● '+entry.label+'  ';item.style.color=`rgb(${entry.colour})`;key.append(item)}
    function legendHelp(host,label,text,id,iconOnly=false){
     const help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');help.className='settings-help';button.type='button';button.className=iconOnly?'settings-help-button':'pca-legend-help'+(id==='pca-map-ambiguity-help'?' pca-ambiguity-key':'');button.textContent=iconOnly?'ⓘ':label+(id==='pca-map-ambiguity-help'?'':' ⓘ');button.setAttribute('aria-label','About '+label.toLowerCase());button.setAttribute('aria-describedby',id);popup.className='settings-help-popup';popup.id=id;popup.setAttribute('role','tooltip');popup.textContent=text;help.append(button,popup);host.append(help);
    }
-   if(raw&&pca&&!single)legendHelp(key,'Competing explanations','Small white triangles flag competing explanations: multiple hypotheses in the selected pool pass in that window, explain mostly the same peaks, and have similar support scores. In Best local match, the circle colour and symbol show the highest-support passing fit. The interpretation is ambiguous; this does not establish that the phases coexist.','pca-map-ambiguity-help');
-   if(raw&&!pca&&phase==='all')key.append(document.createTextNode('Blended: separate evidence for multiple phases'));
+   if(raw&&!single)legendHelp(key,'Competing explanations','Small white triangles flag competing explanations: multiple hypotheses in the selected pool pass in that window, explain mostly the same peaks, and have similar support scores. In Best local match, the circle colour and symbol show the highest-support passing fit. The interpretation is ambiguous; this does not establish that the phases coexist.','pca-map-ambiguity-help');
    if(!raw){
     if(legend.length===2&&['strength','frequency'].includes(metric)){const ramp=document.createElement('span');ramp.className='pca-stability-ramp';const colours=Object.fromEntries(legend.map(e=>[e.label,'#'+e.colour.map(v=>v.toString(16).padStart(2,'0')).join('')]));ramp.style.background=supportBlendGradient(legend.map(e=>e.label),colours);ramp.title='Colour blends relative support between the two displayed entries. Opacity indicates support; not phase proportions.';key.append(ramp)}
     const labels={strength:'Match score',frequency:'Match frequency',best:'Best match',spread:'Placement sensitivity',samples:'Sampling density'};
-    legendHelp(key,labels[metric],`Each location combines completed original windows covering it, weighted toward their centres. Each placement pass is normalized separately, then passes are averaged equally. Match frequency counts passing support; Match score averages the best passing local score, with failed/missing fits as zero. Best match uses highest average available score, faded by passing frequency. Placement sensitivity is the range of passing frequencies across at least two passes. Density counts contributing windows. Colours blend relative support, not phase fractions. Unchecked/unsampled areas stay blank. Continuous display interpolates the sampled map, not the FFTs. Click to inspect a real contributing window. ${$('pca-map-normalize').checked?'Opacity is relative to the strongest displayed value, with one factor across phases.':'Opacity uses a fixed 0–1 scale, multiplied by the slider.'}`,'pca-stability-help');
+    legendHelp(key,labels[metric],`Each location combines completed original windows covering it, weighted toward their centres. Each placement pass is normalized separately, then passes are averaged equally. Match frequency counts passing support; Match score averages the best passing local score, with failed/missing fits as zero. Best match uses the highest average passing score, with failed/missing fits contributing zero; opacity uses that score on a fixed 0–1 scale. Placement sensitivity is the range of passing frequencies across at least two passes. Density counts contributing windows. Colours blend relative support, not phase fractions. Unchecked/unsampled areas stay blank. Continuous display interpolates the sampled map, not the FFTs. Click to inspect a real contributing window. ${$('pca-map-normalize').checked?'Opacity is relative to the strongest displayed value, with one factor across phases.':'Opacity uses a fixed 0–1 scale, multiplied by the slider.'}`,'pca-stability-help');
    }
    if(showSymbols&&winning.length){
     const group=document.createElement('div');group.className='zone-legend-group pca-solution-key';
@@ -973,23 +1058,23 @@ if(typeof document!=='undefined'){
    const selectedCandidate=model?win?.candidates.find(c=>c.model===model.id):null;
    const state=local[index],descriptions={unresolved:'unresolved',single:'one supported pattern',multiple:'separate patterns supported',ambiguous:'competing explanations'};
 
-   if(pca){
+   {
     const supported=local.filter(s=>s.winner).length,summary=`${supported}/${maps.windows.length} windows (${PcaView.supportPercent(supported,maps.windows.length)})`;
     $('nmf-map-counts').textContent=`${manualPool?'Selected':'Top'} ${pool.length} of ${maps.models.length} hypotheses · ${summary} supported by this pool${maps.windows.length<(maps.total??p.count)?' · '+(maps.total??p.count)+' total · provisional':''}`;
     if(!manualPool&&pool.length>1){const gain=poolSummaries[pool.length-1];$('nmf-map-counts').textContent+=` · Last addition: +${PcaView.supportPercent(gain.newlySupported,maps.windows.length)} newly supported · ${PcaView.supportPercent(gain.improved,maps.windows.length)} better fit`}
    }
    const box=$('nmf-map-evidence');box.replaceChildren();
    if(!win){$('nmf-map-window').textContent=`Window ${index+1} · not checked yet`;return}
-   $('nmf-map-window').textContent=pca?`Window ${index+1} · ${single?(selectedCandidate?.valid?'supported':'below support'):descriptions[state.label]} · ${win.peak_count} profiles${selectedCandidate?.component_score!=null?` · PC ${selectedCandidate.component+1} score `+selectedCandidate.component_score.toPrecision(3):''}`:`Window ${index+1} · ${win.label}${win.phases.length?' · '+win.phases.join(' + '):''} · ${win.peak_count} profiles · ${win.tested_models} eligible fits`;
+   $('nmf-map-window').textContent=`Window ${index+1} · ${single?(selectedCandidate?.valid?'supported':'below support'):descriptions[state.label]} · ${win.peak_count} profiles${selectedCandidate?.component_score!=null?` · PC ${selectedCandidate.component+1} score `+selectedCandidate.component_score.toPrecision(3):''}`;
    const table=document.createElement('table'),head=table.createTHead().insertRow();
-   [isPca()?'Fit at this window':'Phase / group','Window score','Screen','Matched predictions','Prediction coverage'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th);if(t==='Window score')legendHelp(th,'Window score','How well this hypothesis fits the selected original spectrum after bounded rotation/scale refinement. Higher is better; failed fits remain listed for comparison. The star marks the best passing member of the selected map pool. This is not a PCA component weight, intensity fraction or phase percentage.','pca-window-score-help',true)});
-   const displayed=pca?(single?(selectedCandidate?[selectedCandidate]:[]):win.candidates.filter(c=>ids.includes(c.model)).sort((a,b)=>Number(b.valid)-Number(a.valid)||b.score-a.score)):win.candidates;
-   for(const c of displayed){const row=table.insertRow(),model=maps.models[c.model],button=document.createElement('button');button.type='button';button.textContent=pca?`${c.model===state.winner?.model&&!single?'★ ':''}${hypothesisIdentity(model,c.rotation_deg??model.rotation_deg)}`:`${c.phase} · ${model.components.map(i=>i+1).join(' + ')}`;button.onclick=()=>inspectGroup(data.fits.groups[model.group],pca?model.id:null);button.title=(pca?'Inspect original-window predictions · ':'Inspect component-group fit · ')+sourceLabel(model);row.insertCell().append(button);
+   ['Fit at this window','Window score','Screen','Matched predictions','Prediction coverage'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th);if(t==='Window score')legendHelp(th,'Window score','How well this hypothesis fits the selected original spectrum after bounded rotation/scale refinement. Higher is better; failed fits remain listed for comparison. The star marks the best passing member of the selected map pool. This is not a PCA component weight, intensity fraction or phase percentage.','pca-window-score-help',true)});
+   const displayed=single?(selectedCandidate?[selectedCandidate]:[]):win.candidates.filter(c=>ids.includes(c.model)).sort((a,b)=>Number(b.valid)-Number(a.valid)||b.score-a.score);
+   for(const c of displayed){const row=table.insertRow(),model=maps.models[c.model],button=document.createElement('button');button.type='button';button.textContent=`${c.model===state.winner?.model&&!single?'★ ':''}${hypothesisIdentity(model,c.rotation_deg??model.rotation_deg)}`;button.onclick=()=>inspectGroup(data.fits.groups[model.group],isPca()||maps.kind==='nmf_hypotheses'?model.id:null);button.title='Inspect fit · '+sourceLabel(model);row.insertCell().append(button);
     [c.score.toFixed(3),c.valid?'Pass':'Below',`${c.profiles.length}/${c.predicted_count??win.peak_count}`,`${Math.round((c.predicted_coverage??c.coverage)*100)}%`].forEach(t=>row.insertCell().textContent=t);
     row.title=`[${model.zone_3index.join(' ')}] at ${(c.rotation_deg??model.rotation_deg).toFixed(1)}°; local rotation ${(c.rotation_adjustment_deg??0).toFixed(2)}°, reciprocal scale ×${(c.local_scale??1).toFixed(4)}; RMS ${c.rms_nm_inv.toFixed(3)} nm⁻¹.${isPca()?'':' Distinct profiles: '+(win.unique_profiles[c.phase]||[]).length+'.'}`;
    }
    box.append(table);
-   if(pca&&model?.sources?.length){
+   if(model?.sources?.length){
     const sources=document.createElement('div');sources.className='pca-controls pca-source-links';sources.append(document.createTextNode('Feature sources'));
     for(const source of model.sources){const group={...data.fits.groups[source.group],window:source.window??data.fits.groups[source.group].window},button=document.createElement('button');button.type='button';button.textContent=sourceLabel(group)+(group.kind==='combination'?` · W${group.window+1}`:'');button.onclick=()=>inspectGroup(group);sources.append(button)}
     box.append(sources);

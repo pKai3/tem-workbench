@@ -17,6 +17,7 @@ from PIL import Image
 import errno
 import json
 import logging
+import diagnostics
 import os
 import platform
 import sys
@@ -790,6 +791,7 @@ def make_handler(app):
             pass
 
         def send(self, content, mime='application/json', status=200):
+            self.response_status=status
             if not isinstance(content, bytes):
                 content = json.dumps(content, allow_nan=False).encode()
             self.send_response(status)
@@ -817,8 +819,9 @@ def make_handler(app):
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
                 if url.path == '/api/config':
+                    LOG.info('Viewer connected: version=%s', APP_VERSION)
                     with app.lock:
-                        self.send(app.config_info())
+                        self.send({**app.config_info(), 'diagnostics': True})
                 elif url.path == '/api/catalogue':
                     with app.lock:
                         self.send(app.catalogue_status())
@@ -866,6 +869,7 @@ def make_handler(app):
                 elif url.path == '/api/pca/live':
                     self.send(app.pca.live(query['id'][0],int(query.get('revision',[-1])[0]),int(query.get('windows',[0])[0]),query.get('generation',[''])[0]))
                 elif url.path == '/api/pca/result':
+                    LOG.info('Viewer reattached to component result: %s', query['id'][0][:8])
                     self.send(shared_spectra.summary(app.pca.inspectable(query['id'][0])))
                 elif url.path == '/api/window-size':
                     self.send(app.window_probe.status(query['id'][0]))
@@ -884,7 +888,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/component-batch.js': ROOT/'web/component-batch.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/diagnostics.js': ROOT/'web/diagnostics.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/component-batch.js': ROOT/'web/component-batch.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
@@ -894,6 +898,7 @@ def make_handler(app):
                 self.send({'error': str(exc)}, status=400)
 
         def do_POST(self):
+            request_started=time.monotonic();self.response_status=500;body={}
             try:
                 self.check_origin()
                 if self.headers.get('X-TEM-Token') != app.token:
@@ -903,7 +908,13 @@ def make_handler(app):
                 if size <= 0 or size > limit or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                     raise ValueError('Expected a small JSON request.')
                 body=json.loads(self.rfile.read(size))
-                if self.path == '/api/browse-folders':
+                if not isinstance(body, dict):
+                    raise ValueError('Expected a JSON object.')
+                if self.path != '/api/diagnostics':
+                    LOG.info('Action %s started: %s',self.path,diagnostics.request_details(body))
+                if self.path == '/api/diagnostics':
+                    self.send(diagnostics.browser_events(body))
+                elif self.path == '/api/browse-folders':
                     self.send(folder_paths.browse(body.get('path'), app.root))
                 elif self.path == '/api/sources':
                     self.send(app.set_sources(body['sources'], body['output_root']))
@@ -952,6 +963,9 @@ def make_handler(app):
                     self.send(app.fit_nmf(body,support=True))
                 elif self.path == '/api/pca/map':
                     self.send(app.pca.stability_map(body['id'],body.get('options',{})))
+                elif self.path == '/api/grid/component-pool':
+                    from component_grid import select_pool
+                    self.send(select_pool(app, body['id'], body['models']))
                 elif self.path == '/api/pca/group-preview':
                     from nmf_fitting import group_preview
                     self.send(group_preview(app.pca.inspectable(body['id']), body['components']))
@@ -1078,6 +1092,9 @@ def make_handler(app):
             except Exception as exc:
                 LOG.exception('Request %s failed: %s', self.path.split('?')[0], exc)
                 self.send({'error': str(exc)}, status=500)
+            finally:
+                if self.path != '/api/diagnostics':
+                    LOG.info('Action %s finished: HTTP %s · %.0f ms',self.path,self.response_status,1000*(time.monotonic()-request_started))
     return Handler
 
 

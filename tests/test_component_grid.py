@@ -77,6 +77,24 @@ class ComponentGridTests(unittest.TestCase):
             self.assertEqual([m['score'] for m in row['models']],[m['score'] for m in window['candidates']])
         with self.assertRaisesRegex(ValueError,'Rerun PCA/NMF'):self.app.rescore(job['id'],.1)
         json.dumps(job,allow_nan=False)
+        # Main-window pool edits leave the retained full PCA checks intact;
+        # all map products and compact status use the selected pool.
+        retained=copy.deepcopy(self.app.pca.result['phase_support'])
+        ids=[retained['models'][0]['id']]
+        selected=component_grid.select_pool(self.app,job['id'],ids)
+        self.assertEqual(selected['component_pool']['models'],ids)
+        expected=component_maps.aggregate(self.app.pca.result,dict(models=ids))
+        for actual,reference in zip(selected['aggregation']['cells'],expected['cells']):
+            for phase,values in reference['phases'].items():self.assertEqual(actual['phases'][phase],values)
+        self.assertEqual(self.app.pca.result['phase_support'],retained)
+        empty=component_grid.select_pool(self.app,job['id'],[])
+        self.assertTrue(all(c['winner'] is None for c in empty['aggregation']['hex']['cells']))
+        self.assertTrue(all(r['label']=='unresolved' for r in empty['regions']))
+        all_ids=[m['id'] for m in retained['models']]
+        restored=component_grid.select_pool(self.app,job['id'],all_ids)
+        self.assertEqual(restored['aggregation'],job['aggregation'])
+        for invalid in ([999999],[True],'all'):
+            with self.assertRaises(ValueError):component_grid.select_pool(self.app,job['id'],invalid)
 
     def test_existing_batch_exports_multiple_map_products_and_numeric_results(self):
         original=self.app.pca
@@ -98,6 +116,23 @@ class ComponentGridTests(unittest.TestCase):
                 saved=json.loads((folder/row['data_file']).read_text());self.assertEqual(saved['grid']['component_method'],method)
             self.assertTrue((folder/'folders.csv').is_file())
             self.assertNotIn('_component_result',next(iter(self.app.jobs.values())))
+
+    def test_nmf_pool_selection_retains_original_checks(self):
+        component={**self.component,'method':'nmf'}
+        with patch.object(shared_spectra,'compute',side_effect=self.compute):
+            started=self.app.grid(self.app.engine.load('a'),self.settings,20,False,5,workers=1,overlap=self.overlap,component=component)
+            self.app.grid_thread.join(20)
+        self.assertEqual(self.app.status(started['id'])['state'],'complete')
+        maps=copy.deepcopy(self.app.pca.result['phase_support'])
+        self.assertEqual(maps['kind'],'nmf_hypotheses')
+        self.assertTrue(maps['models'])
+        for ids in ([],[maps['models'][0]['id']],[m['id'] for m in maps['models']]):
+            selected=component_grid.select_pool(self.app,started['id'],ids)
+            expected=component_maps.aggregate(self.app.pca.result,dict(models=ids))
+            for actual,reference in zip(selected['aggregation']['cells'],expected['cells']):
+                for phase,values in reference['phases'].items():self.assertEqual(actual['phases'][phase],values)
+            self.assertTrue(all(c['model'] in ids for row in self.app.status(started['id'],full=True)['regions'] for c in row['models']))
+            self.assertEqual(self.app.pca.result['phase_support'],maps)
 
     def test_cancel_during_sampling_remains_a_cancelled_grid(self):
         entered=threading.Event()

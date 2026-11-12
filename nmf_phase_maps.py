@@ -1,9 +1,10 @@
 """Locally refined NMF-group hypotheses checked against original sampled FFT windows.
 
-Activity gates eligibility, not phase presence. Each phase gets one best fit,
-regardless of how many overlapping factor combinations support it.
+Activity gates eligibility, not phase presence. Retain distinct hypotheses for
+pool selection; map aggregation takes one best passing fit per phase/window.
 """
 import math
+import logging
 import numpy as np
 import analysis_core as core
 from component_execution import ComponentPool, selected_workers
@@ -111,7 +112,7 @@ def window_task(result, templates, context, wi, cancel):
     spectrum=result['raw_spectra'][wi];tolerance=matching_width(result)
     check_cancel(cancel)
     peaks=detect_peaks(spectrum,result,fraction)
-    best={};tested=0
+    candidates=[];tested=0
     for model,eligible in zip(models,eligibility):
         check_cancel(cancel)
         if not eligible[wi]:continue
@@ -128,11 +129,30 @@ def window_task(result, templates, context, wi, cancel):
                        rotation_deg=model['rotation_deg']+local['rotation_adjustment_deg'],
                        rotation_adjustment_deg=local['rotation_adjustment_deg'],local_scale=local['local_scale'],
                        local_scale_penalty=local['local_scale_penalty'],profiles=local['profiles'])
-        previous=best.get(model['phase'])
-        # A passing hypothesis takes precedence over a higher-ranking failed one.
-        if previous is None or (candidate['valid'],rank)>(previous['valid'],previous['score']):best[model['phase']]=candidate
-    candidates=sorted(best.values(),key=lambda c:(-c['score'],c['model']))
-    return dict(index=wi,peak_count=len(peaks),tested_models=tested,candidates=candidates,**classify(candidates,peaks))
+        candidates.append(candidate)
+    candidates.sort(key=lambda c:(-c['score'],c['model']))
+    return dict(index=wi,peak_count=len(peaks),tested_models=tested,candidates=candidates,
+                peak_positions=[[p['profile_id'],p['qx'],p['qy']] for p in peaks],**classify(candidates,peaks))
+
+
+def unique_models(proposals, eligibility):
+    """Keep the best unchanged geometry, combining only source eligibility.
+
+    Use the same prediction-distance test as PCA and ordinary fitting. A small
+    angular difference alone does not prove two differently scaled cells equal.
+    Compare to the representative, never merge through a chain of neighbours.
+    """
+    models=[];eligible=[]
+    for proposal,active in sorted(zip(proposals,eligibility),key=lambda pair:-pair[0]['score']):
+        source={key:proposal[key] for key in ('group','components','score','rotation_deg')}
+        match=next((i for i,m in enumerate(models) if core.same_solution(proposal,m)),None)
+        if match is None:
+            models.append(dict(proposal,id=len(models),sources=[source]))
+            eligible.append(active.copy())
+        else:
+            models[match]['sources'].append(source)
+            eligible[match] |= active
+    return models,eligible
 
 
 def build(result, templates, cancel=None, progress=None, publish=None):
@@ -157,19 +177,28 @@ def build(result, templates, cancel=None, progress=None, publish=None):
             candidates=core.retain(search_candidates(result,detect_peaks(spectrum,result,fraction),templates,cancel),topn=1)
             candidates=[m for m in candidates if m.get('valid')]
         for model in candidates:
-            models.append(dict(compact(model),id=len(models),group=gi,components=group['components'],predicted_nodes=model['predicted_nodes']))
+            proposal=dict(compact(model),group=gi,components=group['components'],predicted_nodes=model['predicted_nodes'])
+            proposal.setdefault('position_matching',dict(distance_scale_nm_inv=tolerance*(result['settings'].get('omega_falloff_multiplier',1.) if model['phase']=='OMEGA' else 1.)))
+            proposal.setdefault('fitting_band_nm_inv',[result['plan']['g_min'],result['plan']['g_max']])
+            models.append(proposal)
             eligibility.append(common)
+    proposal_count=len(models)
+    models,eligibility=unique_models(models,eligibility)
+    logging.getLogger('tem_workbench').info('NMF mapping hypotheses: %s proposals → %s distinct geometries; source eligibility retained',proposal_count,len(models))
     phases=list(dict.fromkeys(t['phase'] for t in templates))
     windows=[];n=len(result['raw_spectra'])
     counts={label:0 for label in ('single','multiple','ambiguous','unresolved')}
-    maps=dict(version=2,phases=phases,models=models,windows=windows,counts=counts,
+    support_scores={m['id']:[] for m in models}
+    maps=dict(kind='nmf_hypotheses',version=3,phases=phases,models=models,windows=windows,counts=counts,
+                model_passing_counts={str(mid):0 for mid in support_scores},
+                model_mean_support={str(mid):0. for mid in support_scores},
                 passing_counts={phase:sum(any(c['phase']==phase and c['valid'] for c in w['candidates']) for w in windows) for phase in phases},
                 parameters=dict(peak_fraction=fraction,cooccurrence_fraction=cooccurrence,tolerance_nm_inv=tolerance,
                                 omega_falloff_multiplier=result['settings'].get('omega_falloff_multiplier',1.),
                                 minimum_profiles=4,minimum_predicted_coverage=.30,minimum_support_score=.20,
                                 minimum_spread_sine=.5,local_rotation_deg=LOCAL_ROTATION_DEG,local_scale_fraction=LOCAL_SCALE_FRACTION,unique_profiles=3,unique_fraction=.15,
                                 ambiguous_rank_gap=.08,ambiguous_shared_fraction=.6),
-                interpretation='Best passing locally refined group fit per phase (predicted-profile support minus chance and scale costs, not the group-search rank) in each original unbroadened sampled spectrum. Multiple phases require at least three distinct nonparallel profiles per phase and >15% of all detected profiles. Local adjustment is limited to ±3° rotation and ±3% uniform reciprocal scale (rotation only for fixed scale); scale drift adds a penalty without discounting the group cost. At least four profiles within one matching width and nonparallel directions are required. Extra observed peaks increase the chance allowance without diluting support. NMF activity is eligibility only. Overlapping groups are not summed.',
+                interpretation='Distinct group geometries checked in original unbroadened spectra. Near duplicates keep the highest-ranked unchanged representative and all source groups; eligibility is the union of those groups, never summed support. All eligible hypotheses are retained for selectable map pools. Multiple patterns require at least three distinct nonparallel profiles per pattern and >15% of all detected profiles. Local adjustment is limited to ±3° rotation and ±3% uniform reciprocal scale (rotation only for fixed scale); scale drift adds a penalty without discounting the group cost. At least four profiles within one matching width and nonparallel directions are required. NMF activity is eligibility only, not phase presence.',
                 limitations='Same-image consistency, not independent validation or phase fractions. Original spectra are polar-sampled log power. Bounded group refinement may miss larger local drift; c/a and phase/zone identity stay fixed. Overlapping windows are correlated.',
                 nmf_converged=result.get('converged'))
     if publish:publish(maps)
@@ -179,6 +208,10 @@ def build(result, templates, cancel=None, progress=None, publish=None):
         for _,window,_ in pool.map(window_task,range(n)):
             windows.append(window);wi=window['index'];candidates=window['candidates']
             counts[windows[-1]['label']]+=1
+            for candidate in candidates:
+                if candidate['valid']:support_scores[candidate['model']].append(candidate['score'])
+            maps['model_passing_counts']={str(mid):len(values) for mid,values in support_scores.items()}
+            maps['model_mean_support']={str(mid):float(np.mean(values)) if values else 0. for mid,values in support_scores.items()}
             for phase in phases:
                 if any(c['phase']==phase and c['valid'] for c in candidates):maps['passing_counts'][phase]+=1
             if publish:publish(maps)

@@ -12,18 +12,16 @@ def aggregate(result, options):
     if not maps:
         raise ValueError('Mapping has not started yet.')
     p = result['plan']
-    pca = p.get('method', 'pca') == 'pca'
     colour = options.get('colour_by', 'phase')
-    if colour not in ('phase', 'hypothesis') or (not pca and colour != 'phase'):
-        raise ValueError('Choose phase or PCA hypothesis colours.')
+    if colour not in ('phase', 'hypothesis'):
+        raise ValueError('Choose phase or hypothesis colours.')
     models = {m['id']: m for m in maps['models']}
-    ids = options.get('models', list(models)) if pca else list(models)
+    ids = options.get('models', list(models))
     if not isinstance(ids, list) or any(type(i) is not int or i not in models for i in ids):
         raise ValueError('Choose hypotheses from this analysis.')
     ids = set(ids)
     key = lambda c: str(c['model']) if colour == 'hypothesis' else c['phase']
     keys = list(dict.fromkeys(str(i) if colour == 'hypothesis' else models[i]['phase'] for i in sorted(ids)))
-    if not pca:keys = maps['phases']
     samples = window_samples(p)
     regions = []
     for win in maps['windows']:

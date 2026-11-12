@@ -12,7 +12,7 @@ import overlap_maps
 import shared_spectra
 from component_execution import selected_workers
 
-LOG = logging.getLogger(__name__)
+LOG = logging.getLogger('tem_workbench')
 
 
 def options_for(info, overlap, component, workers):
@@ -26,7 +26,7 @@ def options_for(info, overlap, component, workers):
     return options, fit_options, sampling
 
 
-def regions(result):
+def regions(result, model_ids=None):
     """Adapt local checks to the established map contract without rescoring."""
     from nmf_phase_maps import classify
     samples = shared_spectra.window_samples(result['plan'])
@@ -35,8 +35,8 @@ def regions(result):
     output = []
     for window in maps['windows']:
         sample = samples[window['index']]
-        candidates = window['candidates']
-        if result['plan']['method'] == 'pca':
+        candidates = [c for c in window['candidates'] if model_ids is None or c['model'] in model_ids]
+        if result['plan']['method'] == 'pca' or 'peak_positions' in window:
             peaks = [dict(profile_id=i, qx=x, qy=y) for i, x, y in window.get('peak_positions', [])]
             state = classify(candidates, peaks)
         else:
@@ -55,6 +55,38 @@ def regions(result):
                            classification=dict(label=label), models=local,
                            component_window=window['index'], peak_count=window['peak_count']))
     return output
+
+
+def select_pool(app, job_id, model_ids):
+    """Change the displayed hypothesis pool, preserving all retained checks."""
+    result = app.pca.inspectable(job_id)
+    maps = result.get('phase_support') or {}
+    available = {m['id'] for m in maps.get('models', [])}
+    if not isinstance(model_ids, list) or any(type(i) is not int or i not in available for i in model_ids):
+        raise ValueError('Choose hypotheses from this component analysis.')
+    ids = sorted(set(model_ids))
+    LOG.info('Component grid %s pool: %s/%s hypotheses; ids=%s',job_id[:8],len(ids),len(available),ids)
+    with app.job_lock:
+        job = app.jobs.get(job_id)
+        if not job or not job.get('component'):
+            raise ValueError('This analysis is not the current component grid.')
+        job['_component_models'] = ids
+        revision = job['_pool_revision'] = job.get('_pool_revision', 0) + 1
+    while True:
+        mapped = regions(result, ids)
+        aggregate = overlap_maps.aggregate({**job, 'regions': mapped})
+        with app.job_lock:
+            if job['_pool_revision'] != revision:
+                break
+            if len(mapped) >= job['processed']:
+                job.update(regions=mapped, aggregation=aggregate,
+                           component_pool=dict(models=ids, available=len(available)),
+                           interpretation='Selected hypotheses checked against original windows. One best passing score per phase per window; all checks remain in the retained component analysis. Overlapping support is not phase fraction.')
+                break
+        # Mapping advanced while this selection was aggregating. Never replace
+        # a newer (especially final) snapshot with an earlier partial map.
+        result = app.pca.inspectable(job_id)
+    return app.status(job_id)
 
 
 def start(app, item, settings, workers, batch, engine, overlap, component):
@@ -94,10 +126,17 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
                     except ValueError: pass  # Sampling/decomposition has no map yet.
                     count = len(((result or {}).get('phase_support') or {}).get('windows', []))
                     if result is not None and count != previous and (not running or time.monotonic()-last_map >= 1.):
-                        mapped = regions(result)
+                        with app.job_lock:
+                            ids = job.get('_component_models')
+                            revision = job.get('_pool_revision', 0)
+                        mapped = regions(result, ids)
                         aggregate = overlap_maps.aggregate({**job, 'regions': mapped})
                         with app.job_lock:
-                            job.update(regions=mapped, aggregation=aggregate, processed=count, pending=planned['count']-count)
+                            if job.get('_pool_revision', 0) != revision:
+                                continue  # A new display pool superseded this aggregate.
+                            available = len((result.get('phase_support') or {}).get('models', []))
+                            job.update(regions=mapped, aggregation=aggregate, processed=count, pending=planned['count']-count,
+                                       component_pool=dict(models=ids, available=available))
                         previous=count;last_map=time.monotonic()
                     if not running:
                         complete = bool(result and result.get('phase_support_status') == 'complete')

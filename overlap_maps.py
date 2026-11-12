@@ -8,7 +8,7 @@ import phase_support
 import math
 import numpy as np
 
-VERSION = 'overlap-v6'
+VERSION = 'overlap-v7'
 MAX_WINDOWS = 10000
 
 
@@ -178,12 +178,12 @@ def aggregate(job, resolution=64):
         cell['cx'], cell['cy'] = points[cell['x']]
         if options.get('sample_edges', False):
             cell['sample_x'], cell['sample_y'] = float(hx[0, cell['x']]), float(hy[0, cell['x']])
-        candidates = [(p,f) for p,f in cell['phases'].items() if f['fit_presence']>0]
-        cell['winner'] = max(candidates, key=lambda pf:pf[1]['rank'])[0] if candidates else None
+        candidates = [(p,f) for p,f in cell['phases'].items() if f['support']>0]
+        cell['winner'] = max(candidates, key=lambda pf:pf[1]['passing_strength'])[0] if candidates else None
     result['hex'] = dict(cells=hex_result['cells'], spacing_nm=spacing,
                          radius_x=sx/math.sqrt(3), radius_y=spacing/source['pixel_y_nm']/math.sqrt(3),
                          edge_sampling='nearest_in_image_pixel' if options.get('sample_edges', False) else 'tile_centre',
-                         interpretation='Highest averaged rank among available phase fits. Fading shows winning phase passing frequency; not phase identity or fraction.')
+                         interpretation='Highest average passing score; failed/missing fits contribute zero. Fading uses that score on a fixed 0–1 scale; not phase identity or fraction.')
     return result
 
 

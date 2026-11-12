@@ -1,11 +1,12 @@
-# TEM Workbench 1.0.33
+# TEM Workbench — next release
 
-- Add the experimental Local FFT PCA/NMF workspace, with signed PCA features, NMF factors, score-weighted component combinations and crystal-fit inspection.
-- Check proposed orientations against original image windows and display selectable hypothesis maps, overlapping support, hexagonal sampling and image-edge coverage.
-- Reuse the main interface's spectrum colours, peak markers and animation; add map PNG export and retain active or finished analyses across browser reloads.
-- Run PCA/NMF fitting and mapping with selectable workers. Four workers were about 2.2× faster on the 447-window example, with identical output.
-- Add independent-image PCA/NMF batches with captured settings, per-image NPZ/JSON exports, a saved progress manifest, failure reporting, cancellation and background progress.
+- Run PCA and NMF stability maps from Automatic grid, with the familiar sampling, progress, project/subfolder batch selection and map PNG exports.
+- Add an Accepted hypotheses selector and collapsible hypothesis table to the main window. Selection, opacity and shared map controls stay linked to the detailed inspector and survive browser reloads.
+- Fix Best match maps becoming weaker when more hypotheses are included. Colours and opacity now follow the strongest average passing evidence, consistently in the viewer and exports.
+- Merge near-duplicate NMF crystal geometries across signal groups, retaining their source information. NMF now uses the same selectable hypothesis pools as PCA and can inspect each fit against its original window.
+- Hide the PCA/NMF inspector button for ordinary grid methods.
+- Expand local logs with settings and actions, analysis stages and timing, batch progress, exports, reconnections and browser errors. Repeated polling and large image/spectrum payloads are omitted.
 
-PCA/NMF remains experimental: components and map support are not measured phase fractions. Each batch image has its own decomposition; component numbers do not align across images. Browser reloads reconnect to active jobs; restarting Workbench stops them.
+PCA/NMF remains experimental: map support is not a phase fraction. Similar rotation angles can still represent different lattice dimensions; merging compares predicted geometry, not angle alone. Restarting Workbench stops retained jobs; rerun NMF mapping after updating to use the merged hypotheses.
 
 Use **Check for updates → Install update and restart**.

@@ -190,8 +190,8 @@ def _local(result, peaks, model):
 def _candidate(result, wi, model, local):
     component=model.get('component')
     score = float(result['scores'][wi, component]) if component is not None else None
-    base = dict(model=model['id'], phase=model['phase'], component=model['component'],
-                side=model['side'], component_score=score,
+    base = dict(model=model['id'], phase=model['phase'], component=component,
+                side=model.get('side'), component_score=score,
                 score_sign=None if score is None else 'positive' if score > 0 else 'negative' if score < 0 else 'zero')
     if local is None:
         return dict(base, score=0., valid=False, coverage=0., predicted_coverage=0.,
@@ -292,14 +292,14 @@ def build(result, templates, cancel=None, progress=None, publish=None):
 
 def window_detail(result, index, model_id):
     maps = result.get('phase_support')
-    if not maps or maps.get('kind') != 'pca_signed_lobes':
-        raise ValueError('Build PCA window checks first.')
+    if not maps or maps.get('kind') not in ('pca_signed_lobes','nmf_hypotheses'):
+        raise ValueError('Build original-window mapping first.')
     if type(index) is not int or not 0 <= index < len(result['raw_spectra']):
         raise ValueError('Choose an original sampled window.')
     if index>=len(maps['windows']):
         raise ValueError('This window has not been checked yet.')
     if type(model_id) is not int or not 0 <= model_id < len(maps['models']):
-        raise ValueError('Choose a retained PCA fit.')
+        raise ValueError('Choose a retained component fit.')
     model = maps['models'][model_id]
     peaks = detect_peaks(result['raw_spectra'][index], result, maps['parameters']['peak_fraction'])
     local = _local(result, peaks, model)
@@ -319,7 +319,7 @@ def window_detail(result, index, model_id):
     # The c/a ratio is unchanged by the uniform local refinement.
     for key in ('scale_a','scale_b','scale_c','shared_scale','overall_prediction_scale'):
         if fitted.get(key) is not None: fitted[key] *= candidate['local_scale']
-    return dict(kind='pca_window', component=model['component'], components=model['components'],side=model['side'], sources=model.get('sources',[]),window=index,
+    return dict(kind='pca_window' if result['plan']['method']=='pca' else 'nmf_window', component=model.get('component'), components=model['components'],side=model.get('side'), sources=model.get('sources',[]),window=index,
                 spectrum=spectrum_image(result['raw_spectra'][index], result['plan']), peaks=peaks,
                 candidates=[fitted], phases=[model['phase']], component_score=candidate['component_score'],
                 peak_fraction=maps['parameters']['peak_fraction'], g_max=result['plan']['g_max'],tolerance_nm_inv=width)

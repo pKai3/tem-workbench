@@ -4,7 +4,7 @@ const source=fs.readFileSync('web/app.js','utf8'),controls=new Map(),storage=new
 function $(id){if(!controls.has(id))controls.set(id,{id,value:'',dataset:{},classList:{toggle(){}},disabled:false});return controls.get(id)}
 const context={$,clamp:(v,lo,hi)=>Math.max(lo,Math.min(hi,v)),config:{grid_rescore:true,peak_evidence:true,separate_peak_penalties:true,peak_evidence_falloff:true},
  document:{activeElement:null,querySelector:()=>$('scale-label')},grid:null,jobId:null,meta:{},
- rescorePending:false,rescoreBusy:false,rescoreJobId:null,rescoreTimer:null,rescoreRevision:0,
+ rescorePending:false,rescoreBusy:false,rescoreJobId:null,rescoreTimer:null,rescoreRevision:0,componentPoolPending:null,
  scalePenalty:.1,caPenalty:.1,peakEvidenceWeight:.1,missingPeakWeight:.1,peakFalloff:8,
  readPreference:(k,d)=>storage.has(k)?storage.get(k):d,writePreference:(k,v)=>storage.set(k,v),
  isGridRunning:()=>false,effectiveScalePenalty:()=>context.scalePenalty,syncMapLoading(){},syncMapExportControls(){},

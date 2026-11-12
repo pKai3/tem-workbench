@@ -44,6 +44,26 @@ class ComponentMapTests(unittest.TestCase):
         for options in (dict(models=[99]),dict(models=[True]),dict(models='all'),dict(colour_by='invented')):
             with self.assertRaises(ValueError):component_maps.aggregate(result,options)
 
+    def test_larger_pool_cannot_reduce_best_passing_strength(self):
+        result=self.fixture()
+        # A rejected alternative must not compete with passing BCC, even when
+        # its numerical score is higher. Another BCC proposal fills previously
+        # absent windows with poor rejected scores, lowering the old rank mean.
+        windows=result['phase_support']['windows']
+        windows[0]['candidates']=[dict(model=0,phase='BCC',valid=True,score=.6)]
+        for win in windows[1:]:
+            win['candidates']=[dict(model=1,phase='BCC',valid=False,score=-.3),
+                               dict(model=2,phase='HCP',valid=False,score=.8)]
+        previous=None
+        for ids in ([0],[0,1],[0,1,2]):
+            a=component_maps.aggregate(result,dict(models=ids))
+            cells=a['hex']['cells']
+            for i,c in enumerate(cells):
+                self.assertEqual(c['winner'],'BCC')
+                score=c['phases'][c['winner']]['passing_strength']
+                if previous is not None:self.assertGreaterEqual(score,previous[i])
+            previous=[c['phases'][c['winner']]['passing_strength'] for c in cells]
+
     def test_live_unchecked_windows_do_not_count_as_failed(self):
         result=self.fixture();result['phase_support']['windows']=result['phase_support']['windows'][:2]
         a=component_maps.aggregate(result,{})

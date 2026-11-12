@@ -105,7 +105,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     h = round(1800*source['height']/max(source['width'],source['height']))
     strength_view=view in ('strength','hex_strength')
     metric='passing_strength' if strength_view else 'support'
-    if strength_view and a['cells'] and 'passing_strength' not in next(iter(a['cells'][0]['phases'].values())):
+    if (strength_view or view=='hex') and a['cells'] and 'passing_strength' not in next(iter(a['cells'][0]['phases'].values())):
         a=overlap_maps.aggregate(job)  # Old exports retain the raw fits; no new fitting is needed.
     blend_key=view in ('support','strength','hex_support','hex_strength') and phase is None and len(phases)==2
     triangle_key=view in ('support','strength','hex_support','hex_strength') and phase is None and len(phases)==3
@@ -121,7 +121,8 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
         # Reconstruct older exports lacking hex fields from their raw windows.
         hexes = a.get('hex') or overlap_maps.aggregate(job)['hex']
         for cell in hexes['cells']:
-            p=cell['winner']; value=cell['phases'][p]['support'] if p else 0
+            p=max((p for p,f in cell['phases'].items() if f['support']>0), key=lambda p:cell['phases'][p]['passing_strength'], default=None)
+            value=cell['phases'][p]['passing_strength'] if p else 0
             points=[((cell['cx']+hexes['radius_x']*math.cos(math.radians(30+i*60)))*w/source['width'],
                      (cell['cy']+hexes['radius_y']*math.sin(math.radians(30+i*60)))*h/source['height']) for i in range(6)]
             c=color(p)

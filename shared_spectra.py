@@ -10,6 +10,7 @@ import copy
 import io
 import json
 import logging
+from diagnostics import Progress, request_details
 import math
 import os
 import shutil
@@ -435,7 +436,10 @@ class SharedSpectra:
             self.job=dict(id=uuid.uuid4().hex,state='running',operation='decomposition',automatic=pipeline is not None,
                           completed=0,total=p['count'],stage='Preparing',started=time.monotonic())
             job_id=self.job['id']
+            LOG.info('%s %s started: source=%s; %s windows; %s components; %s',p['method'].upper(),job_id[:8],item['info'].get('id'),p['count'],p['components'],request_details(dict(options=options,settings=settings)))
+            logged_progress=Progress(f'{p["method"].upper()} {job_id[:8]} decomposition')
             def progress(done,total,stage):
+                logged_progress(done,total,stage)
                 with self.lock:self.job.update(completed=done,total=total,stage=stage)
             def run():
                 try:
@@ -455,6 +459,7 @@ class SharedSpectra:
                     with self.lock:self.job.update(state='error',error=str(exc),stage='Failed')
                 finally:
                     with self.lock:self.job['elapsed_seconds']=round(time.monotonic()-self.job['started'],1)
+                    LOG.info('%s %s %s: stage=%s; %s/%s; %.1fs',p['method'].upper(),job_id[:8],self.job['state'],self.job['stage'],self.job['completed'],self.job['total'],self.job['elapsed_seconds'])
             self.thread=threading.Thread(target=run,name='local-fft-pca',daemon=True);self.thread.start()
             return self.status(job_id)
 
@@ -563,7 +568,10 @@ class SharedSpectra:
                             stage='Preparing signed PCA features' if pca else 'Preparing exhaustive combinations',started=time.monotonic())
             self._bump_live();self.last_publish=0.
             self.job.pop('elapsed_seconds',None);self.job.pop('error',None)
+            LOG.info('Component %s crystal fitting started: %s; %s workers; %s',job_id[:8],'PCA' if pca else 'NMF',result['execution']['workers'],request_details(dict(options=options)))
+            logged_progress=Progress(f'Component {job_id[:8]} fitting')
             def progress(done,total,stage):
+                logged_progress(done,total,stage)
                 with self.lock:
                     self.job.update(completed=done,total=total,stage=stage)
                     self._publish_fits()
@@ -580,6 +588,7 @@ class SharedSpectra:
                     with self.lock:
                         self._publish_fits(force=True)
                         self.job.update(state='complete',stage='Group fitting '+result.get('fit_status','finished'),elapsed_seconds=round(time.monotonic()-self.job['started'],1))
+                        LOG.info('Component %s fitting %s: %s/%s sources; %.1fs',job_id[:8],result['fit_status'],self.job['completed'],self.job['total'],self.job['elapsed_seconds'])
             if not _within_pipeline:
                 self.thread=threading.Thread(target=run,name='component-crystal-fit',daemon=True);self.thread.start()
                 return self.status(job_id)
@@ -621,7 +630,10 @@ class SharedSpectra:
                             stage='Preparing phase maps',started=time.monotonic())
             self._bump_live();self.last_publish=0.
             self.job.pop('elapsed_seconds',None);self.job.pop('error',None)
+            LOG.info('Component %s mapping started: %s windows; %s workers',job_id[:8],self.job['total'],result['execution']['workers'])
+            logged_progress=Progress(f'Component {job_id[:8]} mapping')
             def progress(done,total,stage):
+                logged_progress(done,total,stage)
                 with self.lock:self.job.update(completed=done,total=total,stage=stage)
             def run():
                 try:
@@ -641,6 +653,7 @@ class SharedSpectra:
                         self.pending_support=None
                         self.live_data['phase_support_status']=result['phase_support_status'];self._bump_live()
                         self.job.update(state='complete',stage='Phase mapping '+result['phase_support_status'],elapsed_seconds=round(time.monotonic()-self.job['started'],1))
+                        LOG.info('Component %s mapping %s: %s hypotheses; %s/%s windows; %.1fs',job_id[:8],result['phase_support_status'],len((result.get('phase_support') or {}).get('models',[])),self.job['completed'],self.job['total'],self.job['elapsed_seconds'])
             if not _within_pipeline:
                 self.thread=threading.Thread(target=run,name='component-window-checks',daemon=True);self.thread.start()
                 return self.status(job_id)

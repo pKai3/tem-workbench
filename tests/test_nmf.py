@@ -28,6 +28,21 @@ def factor_result(k=2):
 
 
 class NmfTests(unittest.TestCase):
+    def test_duplicate_group_geometry_merges_sources_and_eligibility(self):
+        from test_candidate_retention import candidate
+        proposals=[dict(candidate(score,angle=angle),group=i,components=[i])
+                   for i,(score,angle) in enumerate(((.6,50.),(.5,50.3),(.4,53.)))]
+        eligibility=[np.array([True,False,False]),np.array([False,True,False]),np.array([False,False,True])]
+        before=copy.deepcopy(proposals)
+        models,active=phase_maps.unique_models(proposals,eligibility)
+        self.assertEqual(len(models),2)
+        self.assertEqual(models[0]['rotation_deg'],50.)
+        self.assertEqual([s['group'] for s in models[0]['sources']],[0,1])
+        self.assertEqual(active[0].tolist(),[True,True,False])
+        self.assertEqual(active[1].tolist(),[False,False,True])
+        self.assertEqual(proposals,before)
+        self.assertEqual(eligibility[0].tolist(),[True,False,False])
+
     def test_group_preview_uses_fitting_spectrum_without_search(self):
         result=factor_result()
         result['scores'][:,1]=3
@@ -171,6 +186,16 @@ class NmfTests(unittest.TestCase):
         self.assertEqual(support['counts']['single'],len(r['raw_spectra']))
         self.assertEqual(support['passing_counts']['BCC'],len(r['raw_spectra']))
         self.assertTrue(all(w['phases']==['BCC'] for w in support['windows']))
+        self.assertEqual(support['kind'],'nmf_hypotheses')
+        self.assertTrue(support['models'][0]['sources'])
+        self.assertTrue(support['windows'][0]['peak_positions'])
+        self.assertEqual(support['model_passing_counts']['0'],len(r['raw_spectra']))
+        r['phase_support']=support
+        from pca_fitting import window_detail
+        detail=window_detail(r,0,0)
+        self.assertEqual(detail['kind'],'nmf_window')
+        self.assertTrue(detail['candidates'][0]['valid'])
+        self.assertIsNone(detail['component_score'])
         json.dumps(support,allow_nan=False)
 
         r['settings'].update(scale_mode='auto_uniform',scale_penalty_strength=.1)

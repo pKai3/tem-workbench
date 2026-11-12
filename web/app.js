@@ -122,6 +122,7 @@ const phaseMaps=()=>Object.fromEntries(PHASES.map(phase=>[phase,new Map()]));
 const labels={beta_omega_ambiguous:'β + ω · parent ambiguous',beta_omega_candidate:'β + ω variants candidate',beta_only:'Beta candidate · no ω support in band',insufficient_parent:'Beta parent unresolved',hcp_compatible:'HCP compatible',bcc_compatible:'BCC compatible',fcc_compatible:'FCC compatible',ort_compatible:'Orthorhombic compatible',omega_compatible:'ω compatible',coexisting_candidates:'Two candidate structures',multiple_orientations:'Multiple orientations',ambiguous:'Phase ambiguous',unresolved:'Phase unresolved',insufficient:'Insufficient evidence'};
 const colors={hcp_compatible:'#79bafa',bcc_compatible:'#f4b75e',fcc_compatible:'#ff8ac3',ort_compatible:'#64e2b0',omega_compatible:'#b49aff',coexisting_candidates:'#d692fa',multiple_orientations:'#64d6bb',ambiguous:'#df9da6',unresolved:'#a4adba',insufficient:'#596778'};
 let mapExportBusy=false;
+let componentPoolPending=null;
 let detectorRaw=null,showDetectorSignal=false;
 let demoPromptShown=false;
 let config, meta, roi={x:0,y:0,w:684,h:684}, fileId, result=null, fftRaw=null, grid=null, jobId=null;
@@ -1485,6 +1486,7 @@ function restoreComponentControls(component){
 }
 function syncComponentGridControls(){
  const method=componentGridMode();$('component-grid-controls').hidden=!method;
+ $('open-pca').hidden=!method;
  $('window-size-smoothing').closest('label').hidden=Boolean(method);$('window-size-check').hidden=Boolean(method);
  if($('grid-pca-combination-mode'))$('grid-pca-combination-mode').closest('label').hidden=method!=='pca';
  if(!trackedGrid&&!gridStarting)$('grid-status').textContent=method?'Run grid to discover hypotheses and check original windows.':overlapRequest()?'Run grid to analyse overlapping windows.':'Run grid to analyse image regions.';
@@ -1785,7 +1787,7 @@ function renderOverlapSummary(container){
  const title=document.createElement('h3');title.textContent=grid.grid.component_method?grid.grid.component_method.toUpperCase()+' map results':'Overlapping map results';container.append(title);
  const text=document.createElement('p');text.className='hint';
  text.textContent=`${grid.processed} / ${grid.grid.sample_count} windows · ${grid.grid.passes} placement pass(es) · ${grid.state}. `+(a?`${a.coverage_percent.toFixed(1)}% approximate sampled image coverage. `:'Aggregation appears when the run stops. ')+ 'Match frequency includes weaker passing phases and components supported by a passing β + ω fit; linked components share one joint rank. Phases can overlap. It is not a phase fraction or a probability. Failed and missing fits count as no passing support.';
- if(grid.grid.component_method)text.textContent=`${grid.processed} / ${grid.grid.sample_count} original windows checked · ${grid.grid.passes} placement ${grid.grid.passes===1?'pass':'passes'} · ${grid.state}. `+(a?`${a.coverage_percent.toFixed(1)}% sampled image coverage. `:'')+'All discovered hypotheses; one best passing score per phase per window. Support is not phase fraction.';
+ if(grid.grid.component_method)text.textContent=`${grid.processed} / ${grid.grid.sample_count} original windows checked · ${grid.grid.passes} placement ${grid.grid.passes===1?'pass':'passes'} · ${grid.state}. `+(a?`${a.coverage_percent.toFixed(1)}% sampled image coverage. `:'')+(grid.component_pool?.models?`${grid.component_pool.models.length} / ${grid.component_pool.available} accepted hypotheses. `:'All discovered hypotheses. ')+'One best passing score per phase per window. Support is not phase fraction.';
  container.append(text);
  if(!a)return;
  const table=document.createElement('table'),head=document.createElement('tr');
@@ -1818,8 +1820,8 @@ function ensurePassingStrength(job){
 function supportMapView(view){return ['support','hex_support','strength','hex_strength'].includes(view)}
 function strengthMapView(view){return ['strength','hex_strength'].includes(view)}
 function topMapCell(cell){
- let winner=null,rank=-Infinity;
- for(const [phase,fit]of Object.entries(cell.phases))if(fit.fit_presence>0&&Number.isFinite(fit.rank)&&fit.rank>rank){winner=phase;rank=fit.rank}
+ let winner=null,score=-Infinity;
+ for(const [phase,fit]of Object.entries(cell.phases))if(fit.support>0&&Number.isFinite(fit.passing_strength)&&fit.passing_strength>score){winner=phase;score=fit.passing_strength}
  return {...cell,winner};
 }
 function mapSupportScale(aggregation,view,phases){
@@ -1870,7 +1872,7 @@ function drawOverlapMap(){
  const view=selectedMapView(),hexView=['hex','hex_support','hex_strength'].includes(view),topView=['hex','top'].includes(view),supportView=supportMapView(view),strength=strengthMapView(view),metric=strength?'passing_strength':'support',choices=supportView?['all',...phases]:phases;
  select.replaceChildren(...choices.map(phase=>{const o=document.createElement('option');o.value=phase;o.textContent=phase==='all'?`All phases (${phases.map(p=>phaseLabel(p)).join(' + ')})`:phaseLabel(phase);return o}));if(choices.includes(previous))select.value=previous;
  const phase=select.value,a=grid.aggregation,opacity=Number($('grid-opacity').value)/100,combined=supportView&&phase==='all';
- if(strength)ensurePassingStrength(grid);
+ if(strength||topView)ensurePassingStrength(grid);
  const opacityMaximum=mapSupportScale(a,view,combined?phases:[phase]),opacityScale=opacityMaximum||1,opacityHelp=supportView?mapOpacityDescription(view,opacityMaximum):'';
  const metricName=strength?'mean passing score':'passing frequency',formatted=value=>strength?value.toFixed(3):(100*value).toFixed(1)+'%';
  $('map-mode').querySelector('option[value=spread]').disabled=grid.grid.passes<2;
@@ -1880,7 +1882,7 @@ function drawOverlapMap(){
  $('map-rim-label').hidden=Boolean(a)&&view!=='raw';
  $('map-show-rim').disabled=!grid.regions.some(r=>r.rim);
  const showRim=grid.state==='running'||$('map-show-rim').checked;
- $('overlap-key').textContent=topView?'Highest averaged rank among available phase fits; missing fits are excluded from the mean. Fading shows the winning phase’s passing frequency. Blank areas are unmeasured. Click or hover to inspect a contributing FFT window.':view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sampling density: darker to brighter = fewer to more windows':strength?'Average best passing rank per phase, weighted within each FFT footprint then averaged equally across placement passes. Failed/missing fits count as zero. Colour blends relative strength. Not a phase fraction or probability; blank = unmeasured.':combined?`${phases.map(p=>phaseLabel(p)).join(' + ')} passing frequency · colour blends relative support · not proof of coexisting structures · blank = unmeasured`:`${phaseLabel(phase)} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
+ $('overlap-key').textContent=topView?'Highest average passing score; failed/missing fits contribute zero. Fading uses that score on a fixed 0–1 scale. Blank areas are unmeasured. Click or hover to inspect a contributing FFT window.':view==='raw'?`Raw centres: ${symbolStyle==='circle'?'classification circles':'highest-ranked zone candidate'}; click to inspect the square FFT window`:view==='separate'?'Separately supported structures in the same window · 0% → 100%':view==='samples'?'Sampling density: darker to brighter = fewer to more windows':strength?'Average best passing rank per phase, weighted within each FFT footprint then averaged equally across placement passes. Failed/missing fits count as zero. Colour blends relative strength. Not a phase fraction or probability; blank = unmeasured.':combined?`${phases.map(p=>phaseLabel(p)).join(' + ')} passing frequency · colour blends relative support · not proof of coexisting structures · blank = unmeasured`:`${phaseLabel(phase)} ${view==='spread'?'placement disagreement':'passing frequency'} · dark 0% → phase colour 100% · blank = unmeasured`;
  if(!a&&view!=='raw')$('overlap-key').textContent+=' · showing raw centres until aggregation';
  if(supportView)$('overlap-key').textContent+=' '+opacityHelp;
  if($('show-grid').checked){
@@ -1891,13 +1893,13 @@ function drawOverlapMap(){
     for(const {roi:r} of grid.regions)clip.append(el('rect',{x:r.x,y:r.y,width:r.w,height:r.h}));
     const tiles=el('g',{'clip-path':'url(#hex-coverage-clip)'});group.append(clip,tiles);
     for(const [index,cell] of a.hex.cells.entries()){
-     const winner=cell.winner,fit=cell.phases[winner];
+     const {winner}=topMapCell(cell),fit=cell.phases[winner];
      const blend=blendSupport((combined?phases:[phase]).map(p=>[phaseColors[p],cell.phases[p]?.[metric]??0]));
-     const colour=view==='hex'?phaseColors[winner]||'#596778':blend.colour,value=view==='hex'?(fit?.support||0):blend.value;
+     const colour=view==='hex'?phaseColors[winner]||'#596778':blend.colour,value=view==='hex'?(fit?.passing_strength||0):blend.value;
      // Adjacent hexes must serialize shared edges identically: tiny floating
      // differences otherwise leave hairline gaps even with crisp rendering.
      const points=Array.from({length:6},(_,i)=>{const angle=(30+i*60)*Math.PI/180;return `${(cell.cx+a.hex.radius_x*Math.cos(angle)).toFixed(6)},${(cell.cy+a.hex.radius_y*Math.sin(angle)).toFixed(6)}`}).join(' ');
-     const label=supportView?(combined?phases:[phase]).map(p=>`${p}: ${formatted(cell.phases[p]?.[metric]??0)} ${metricName}`).join(' · ')+` · ${cell.samples} windows, ${cell.passes} passes`:winner?`${winner} · averaged rank ${fit.rank.toFixed(3)} · ${(fit.support*100).toFixed(1)}% passing · ${cell.samples} windows, ${cell.passes} passes`:'No candidate fits';
+     const label=supportView?(combined?phases:[phase]).map(p=>`${p}: ${formatted(cell.phases[p]?.[metric]??0)} ${metricName}`).join(' · ')+` · ${cell.samples} windows, ${cell.passes} passes`:winner?`${winner} · passing score ${fit.passing_strength.toFixed(3)} · ${(fit.support*100).toFixed(1)}% passing · ${cell.samples} windows, ${cell.passes} passes`:'No candidate fits';
      const node=el('polygon',{points,fill:colour,'fill-opacity':opacity*(.15+.85*clamp(value/opacityScale,0,1)),stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':cell.region_id,'aria-label':label,'data-hex-index':index,'data-support-view':supportView?'true':'false'});
      tiles.append(node);
     }
@@ -1906,8 +1908,8 @@ function drawOverlapMap(){
    const max=Math.max(1,...a.cells.map(c=>c.samples));
    for(const [cellIndex,cell] of a.cells.entries()){if(view==='spread'&&cell.passes<2)continue;
     if(topView){
-     const {winner}=topMapCell(cell),fit=cell.phases[winner],value=fit?.support||0;
-     const label=winner?`${winner} · averaged rank ${fit.rank.toFixed(3)} · ${(value*100).toFixed(1)}% passing · ${cell.samples} windows, ${cell.passes} passes`:'No candidate fits';
+     const {winner}=topMapCell(cell),fit=cell.phases[winner],value=fit?.passing_strength||0;
+     const label=winner?`${winner} · passing score ${fit.passing_strength.toFixed(3)} · ${(fit.support*100).toFixed(1)}% passing · ${cell.samples} windows, ${cell.passes} passes`:'No candidate fits';
      group.append(el('rect',{x:cell.x*meta.width/a.width,y:cell.y*meta.height/a.height,width:meta.width/a.width,height:meta.height/a.height,fill:phaseColors[winner]||'#596778','fill-opacity':opacity*(.15+.85*clamp(value,0,1)),stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':cell.region_id,'data-top-index':cellIndex,'aria-label':label}));
      continue;
     }
@@ -1941,7 +1943,7 @@ function drawOverlapMap(){
   else{
    const legend=$('zone-legend');legend.replaceChildren();legend.hidden=true;
    if(topView){
-    const cells=view==='hex'?a.hex?.cells||[]:a.cells.map(topMapCell);
+    const cells=view==='hex'?(a.hex?.cells||[]).map(topMapCell):a.cells.map(topMapCell);
     const winners=phases.filter(p=>cells.some(c=>c.winner===p));
     if(winners.length){
      const host=$('map-colour-key'),help=document.createElement('span'),button=document.createElement('button'),key=document.createElement('span'),popup=document.createElement('span');
@@ -2028,6 +2030,7 @@ function drawActiveGridWindows(group,job){
  if(!keys.size){outlines.remove();spinners.remove()}
 }
 function drawGrid(){
+ document.dispatchEvent(new CustomEvent('tem-grid-view-updated'));
  drawActiveGridWindows($('grid-active-windows'),grid&&gridMatchesSource(grid)?grid:null);
  syncMapOpacityControl();
  $('map-colour-key').hidden=true;
@@ -2320,7 +2323,7 @@ async function save(body,id){
 }
 $('save-region').onclick=()=>{if(result)save({file_id:fileId,roi:result.roi,settings:result.settings},'save-region')};$('save-grid').onclick=()=>{if(jobId)save({job_id:jobId},'save-grid')};
 function syncMapLoading(){
- const show=Boolean(meta&&grid&&jobId&&!isDiffraction()&&(rescorePending||(rescoreBusy&&rescoreJobId===jobId)));
+ const show=Boolean(meta&&grid&&jobId&&!isDiffraction()&&(componentPoolPending===grid.id||rescorePending||(rescoreBusy&&rescoreJobId===jobId)));
  $('map-loading').hidden=!show;
  $('overview').setAttribute('aria-busy',String(show));
 }
@@ -2347,7 +2350,7 @@ function updatePenaltyControls(){
  $('brightness-grouping-field').hidden=false;
  $('brightness-grouping-weight').disabled=!(isDiffraction()?config?.brightness_grouping:config?.fft_brightness_grouping)||running;$('brightness-grouping-slider').disabled=$('brightness-grouping-weight').disabled;
  const mismatch=Boolean(grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||(config?.peak_evidence&&peakEvidenceWeight!==grid.settings.peak_evidence_weight||(config?.separate_peak_penalties&&missingPeakWeight!==(grid.settings.missing_peak_weight??grid.settings.peak_evidence_weight))||(config?.fft_brightness_grouping&&brightnessGroupingWeight!==(grid.settings.brightness_grouping_weight??.1))||(config?.double_diffraction_scoring&&ddWeight!==(grid.settings.double_diffraction_weight??0))||(config?.peak_evidence_falloff&&peakFalloff!==(grid.settings.peak_evidence_half_weight_nm_inv??0)))));
- const updating=rescorePending||rescoreBusy;
+ const updating=rescorePending||rescoreBusy||Boolean(grid&&componentPoolPending===grid.id);
  syncMapLoading();
  $('grid-map').classList.toggle('stale',updating||mismatch);
  $('save-grid').disabled=!grid||running||updating||mismatch||$('save-grid').dataset.exportState==='busy';syncMapExportControls();
@@ -3412,12 +3415,12 @@ function renderRegionPreviewDetails(region){
  if(region.hex||region.top||region.support){
   const cell=region.hex||region.top||region.support,heading=$('region-hover-title'),name=$('region-hover-name'),rows=$('region-hover-models');
   const strength=region.support&&strengthMapView(selectedMapView());
-  heading.textContent=region.support?(strength?'Match score':'Passing support')+' · overlapping readings':cell.winner?`${cell.winner} · highest averaged rank`:'No candidate fits';heading.style.color=region.support?'#dce6ef':phaseColors[cell.winner]||'#dce6ef';
+  heading.textContent=region.support?(strength?'Match score':'Passing support')+' · overlapping readings':cell.winner?`${cell.winner} · highest average passing score`:'No candidate fits';heading.style.color=region.support?'#dce6ef':phaseColors[cell.winner]||'#dce6ef';
   name.hidden=false;name.textContent=`${cell.samples} windows · ${cell.passes} passes · contributing window shown below`;
   rows.replaceChildren();
-  for(const [phase,fit]of Object.entries(cell.phases).filter(([,f])=>region.support||f.fit_presence>0).sort((a,b)=>strength?b[1].passing_strength-a[1].passing_strength:b[1].rank-a[1].rank)){
+  for(const [phase,fit]of Object.entries(cell.phases).filter(([,f])=>region.support||f.support>0).sort((a,b)=>b[1].passing_strength-a[1].passing_strength)){
    const row=document.createElement('div'),label=document.createElement('span'),rank=document.createElement('span'),support=document.createElement('span');
-   label.textContent=phaseLabel(phase);label.style.color=phaseColors[phase];rank.textContent=strength?'Strength '+fit.passing_strength.toFixed(3):Number.isFinite(fit.rank)?'Mean '+fit.rank.toFixed(3):'No fit';support.textContent=(100*fit.support).toFixed(0)+'% passing';row.append(label,rank,support);rows.append(row);
+   label.textContent=phaseLabel(phase);label.style.color=phaseColors[phase];rank.textContent='Score '+fit.passing_strength.toFixed(3);support.textContent=(100*fit.support).toFixed(0)+'% passing';row.append(label,rank,support);rows.append(row);
   }
   return;
  }
@@ -3605,7 +3608,7 @@ function syncMapExportControls(){
  const mismatch=grid&&((grid.settings.scale_mode!=='fixed'&&effectiveScalePenalty()!==grid.settings.scale_penalty_strength)||(grid.settings.scale_mode==='auto_hcp_ratio'&&caPenalty!==(grid.settings.ca_penalty_strength??.10))||peakEvidenceWeight!==grid.settings.peak_evidence_weight||(config?.separate_peak_penalties&&missingPeakWeight!==(grid.settings.missing_peak_weight??grid.settings.peak_evidence_weight))||(config?.fft_brightness_grouping&&brightnessGroupingWeight!==(grid.settings.brightness_grouping_weight??.1))||(config?.double_diffraction_scoring&&ddWeight!==(grid.settings.double_diffraction_weight??0))||(config?.peak_evidence_falloff&&peakFalloff!==(grid.settings.peak_evidence_half_weight_nm_inv??0)));
  for(const id of ['export-map','export-map-grid']){
   const button=$(id);
-  button.disabled=!config?.map_exports||!meta||isDiffraction()||grid?.state!=='complete'||Boolean(grid?.error)||grid?.source?.sha256_pixels!==meta?.sha256_pixels||rescoreBusy||rescorePending||mismatch||mapExportBusy||spectrumExportBusy;
+  button.disabled=!config?.map_exports||!meta||isDiffraction()||grid?.state!=='complete'||Boolean(grid?.error)||grid?.source?.sha256_pixels!==meta?.sha256_pixels||rescoreBusy||rescorePending||componentPoolPending===grid?.id||mismatch||mapExportBusy||spectrumExportBusy;
   button.title=!config?.map_exports?'Restart TEM Workbench, then reload to enable map exports':button.disabled?'Complete a grid and finish reweighting before exporting':'Save the visible map, colours and zone legend as PNG';
  }
 }
