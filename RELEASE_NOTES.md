@@ -1,4 +1,4 @@
-# TEM Workbench
+# TEM Workbench 1.0.33
 
 - Add the experimental Local FFT PCA/NMF workspace, with signed PCA features, NMF factors, score-weighted component combinations and crystal-fit inspection.
 - Check proposed orientations against original image windows and display selectable hypothesis maps, overlapping support, hexagonal sampling and image-edge coverage.
