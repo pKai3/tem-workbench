@@ -935,6 +935,12 @@ def make_handler(app):
                 elif self.path == '/api/pca/window-fit':
                     from pca_fitting import window_detail
                     self.send(window_detail(app.pca.completed(body['id']),body['index'],body['model']))
+                elif self.path == '/api/pca/combination':
+                    from pca_fitting import combination_detail
+                    result=app.pca.completed(body['id'])
+                    with app.lock:
+                        templates=copy.deepcopy(app.engine.templates_for(result['settings']))
+                    self.send(combination_detail(result,body['components'],body['index'],templates,body.get('options',{})))
                 elif self.path == '/api/pca/cancel':
                     with app.pca.lock:
                         app.pca.status(body['id'])

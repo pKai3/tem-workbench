@@ -170,6 +170,9 @@
   <label title="Gaussian angular broadening before decomposition, in standard deviations. Can reduce splitting caused by small rotations, but can also merge genuinely different orientations. Zero disables it.">Rotation smoothing σ, °<input id="pca-angle" type="number" value="0" min="0" max="5" step="0.25" required></label>
   <label title="Gaussian smoothing in log reciprocal radius. Can reduce splitting from gradual spacing changes, but may conceal real differences. Zero disables it.">Spacing smoothing σ, %<input id="pca-scale" type="number" value="0" min="0" max="5" step="0.25" required></label>
   <label title="Unit norm reduces window-to-window contrast differences. None retains brightness variation. PCA is mean-centred; NMF is not.">Normalize spectra<select id="pca-normalization"><option value="unit_norm">Unit norm</option><option value="none">None</option></select></label>
+  <label id="pca-combination-scope" hidden>PCA fitting<select id="pca-combination-mode"><option value="together">Features + selected PCs together</option><option value="all">Features + all selected subsets</option><option value="none">Individual features only</option></select></label>
+  <label id="pca-combination-selection" hidden>Fit PCs<input id="pca-combination-components" type="text" placeholder="All computed · e.g. 1,2,3" aria-label="PCA components for combination fitting"></label>
+  <span id="pca-combination-help" class="settings-help" hidden><button class="settings-help-button" type="button" aria-label="About PCA combinations">ⓘ</button><span class="settings-help-popup" role="tooltip">Individual positive/negative features remain available. Combinations use the mean plus signed, score-weighted selected PCs at every sampled window. Together fits one selected combination; all subsets fits every group of two or more selected PCs. For 8 PCs this is 247 combinations per window and can take much longer. Retained candidates are checked against every original unbroadened window. Blank Fit PCs uses all computed components.</span></span>
  </form>
  </details>
  <div id="pca-results" hidden>
@@ -192,7 +195,7 @@
     <button id="nmf-fit" type="button">Fit all combinations</button><span id="nmf-fit-count" class="hint"></span>
     <span class="settings-help"><button class="settings-help-button" type="button" aria-label="About component crystal fitting">ⓘ</button><span id="nmf-fit-help" class="settings-help-popup" role="tooltip"></span></span>
    </div>
-   <p id="nmf-fit-note" class="hint"></p>
+  <p id="nmf-fit-note" class="hint"></p>
    <section id="nmf-group-detail" hidden>
     <div class="pca-controls"><strong id="nmf-group-label"></strong><button id="nmf-group-close" type="button">Close inspector</button></div>
     <p id="nmf-group-status" role="status"></p>
@@ -203,7 +206,10 @@
    <section id="pca-support-panel" data-pca-panel="support" role="tabpanel" aria-labelledby="pca-tab-support" hidden><div class="pca-controls"><h3 id="nmf-support-heading">Phase support</h3><button id="nmf-build-map" type="button">Build phase maps</button></div>
    <p id="nmf-map-status" class="hint" role="status"></p>
    <section id="nmf-phase-panel" hidden>
-    <div class="pca-controls"><label><span id="nmf-map-phase-label">Phase</span><select id="nmf-map-phase"><option value="all">All phases</option></select></label><label>Map opacity<input id="nmf-map-opacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+    <div class="pca-controls"><label id="pca-map-mode-label" hidden>Display<select id="pca-map-mode"><option value="best">Best local match</option><option value="all">All locally supported</option><option value="single">Single hypothesis</option></select></label>
+     <label id="pca-map-top-label" hidden>Top hypotheses<input id="pca-map-top" type="number" min="1" step="1" value="3"></label>
+     <label id="nmf-map-select-label"><span id="nmf-map-phase-label">Phase</span><select id="nmf-map-phase"><option value="all">All phases</option></select></label>
+     <label id="pca-map-colour-label" hidden>Colour by<select id="pca-map-colour"><option value="phase">Phase</option><option value="hypothesis">Hypothesis</option></select></label><label>Map opacity<input id="nmf-map-opacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
      <span class="settings-help"><button class="settings-help-button" type="button" aria-label="About original-window checks">ⓘ</button><span id="nmf-map-help" class="settings-help-popup" role="tooltip"></span></span>
     </div>
     <div id="nmf-phase-content"><figure><canvas id="nmf-phase-map" width="700" height="700" tabindex="0" role="img" aria-label="Phase support map; click or use arrow keys to inspect a window"></canvas><figcaption id="nmf-map-key"></figcaption></figure><div><p id="nmf-map-counts"></p><p id="nmf-map-window"></p><div id="nmf-map-evidence" class="nmf-fit-results"></div><p class="hint">Click a cell to select its original window. Fit buttons open their spectrum overlays.</p></div></div>

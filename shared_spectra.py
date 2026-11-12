@@ -445,7 +445,7 @@ class SharedSpectra:
             if self.running():raise ValueError('Finish or cancel the current operation first.')
             pca=result['plan'].get('method','pca')=='pca'
             if pca:
-                from pca_fitting import fit_lobes as fit_groups, validate_options
+                from pca_fitting import fit_features as fit_groups, combination_options as validate_options
             else:
                 from nmf_fitting import fit_groups, validate_options
             validate_options(result,options)
