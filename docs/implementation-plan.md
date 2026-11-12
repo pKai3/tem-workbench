@@ -1320,3 +1320,7 @@ Validation: all 45 focused Python checks and 32 JavaScript suites pass. Tests co
 Follow-up to `e450c06`: Analysis settings now reuses the main interface’s bordered disclosure styling, including rounded corners, padding and summary weight. It remains above the output tabs and retains its open/closed behaviour. This is a presentation-only change.
 
 Validation: browser checks confirm matching computed border/radius/padding, working collapse/expand, and no horizontal overflow at 720 px. No analysis changes, new tests or release.
+
+Follow-up to `9fafd3c`: keep the boxed Analysis settings and output tabs inside the sticky workspace header so they remain accessible while scrolling through signals, crystal fits or window checks. Action buttons stay grouped on the left.
+
+Verified by scrolling populated Signals and Window checks at desktop and 720 px widths: the settings box and tabs remain visible in the header.

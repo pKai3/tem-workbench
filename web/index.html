@@ -160,8 +160,6 @@
   <div class="pca-dialog-actions"><button id="pca-run" type="submit" form="pca-form" class="primary">Run PCA</button><button id="pca-cancel" type="button" disabled>Cancel</button><button id="pca-export" type="button" disabled>Export data</button></div>
  <p id="pca-status" role="status">Uses the current FFT window, taper, mean removal and fitting band. Crystal fitting and original-window checks follow decomposition.</p>
  <progress id="pca-progress" max="1" value="0" aria-label="Analysis progress" hidden></progress>
-
- </div>
  <details id="pca-setup" open><summary>Analysis settings</summary>
  <form id="pca-form" class="pca-controls">
   <label>Method<select id="pca-method"><option value="pca" selected>PCA · signed</option><option value="nmf">NMF · nonnegative</option></select></label>
@@ -177,6 +175,7 @@
  </form>
  </details>
   <nav id="pca-navigation" role="tablist" aria-label="Decomposition results" hidden><button id="pca-tab-signals" type="button" role="tab" data-pca-tab="signals" aria-controls="pca-signals-panel" aria-selected="true">Signals</button><button id="pca-tab-fits" type="button" role="tab" data-pca-tab="fits" aria-controls="pca-fits-panel" aria-selected="false">Crystal fits</button><button id="pca-tab-support" type="button" role="tab" data-pca-tab="support" aria-controls="pca-support-panel" aria-selected="false">Phase support</button></nav>
+ </div>
  <div id="pca-results" hidden>
   <section id="pca-signals-panel" data-pca-panel="signals" role="tabpanel" aria-labelledby="pca-tab-signals">
   <div class="pca-controls"><label>View<select id="pca-layout"><option value="overview" selected>Signals</option><option value="group">Group activity</option><option value="residual">Unexplained variation</option></select></label><div id="pca-top-label" hidden><label>Top signals<input id="pca-top" type="number" min="1" max="16" step="1" value="5" aria-describedby="pca-available"></label><span id="pca-available" class="hint"></span><button id="pca-show-all" type="button" title="Show every computed component">All</button></div>

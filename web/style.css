@@ -969,11 +969,11 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-close{margin-left:auto;width:30px;padding:0;font-size:20px}
 #pca-source{margin:4px 0;overflow-wrap:anywhere}
 #pca-status{font-size:12px;line-height:1.4;margin:6px 0}
-#pca-navigation{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
+#pca-navigation{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}
 #pca-navigation[hidden],#pca-navigation [hidden],#pca-dialog [data-pca-panel][hidden]{display:none}
 #pca-navigation button{min-height:32px;padding:6px 12px;font-size:12px;background:transparent}
 #pca-navigation button[aria-selected=true]{background:#29475e;border-color:#61d7d1}
-#pca-setup{margin:0 0 var(--panel-gap)}
+#pca-setup{margin:12px 0 0}
 #pca-form{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));align-items:end}
 #pca-form input[type=number],#pca-form select{width:100%;min-width:0}
 #pca-dialog [data-pca-panel]{min-width:0}
