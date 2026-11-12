@@ -439,6 +439,17 @@ class SharedSpectra:
             if self.job['state']!='complete' or self.result is None:raise ValueError('PCA has not completed.')
             return self.result
 
+    def inspectable(self,job_id):
+        """Completed source fits stay readable while original-window checks run."""
+        with self.lock:
+            self.status(job_id)
+            if (self.job['state']=='running' and self.job.get('operation')=='support'
+                    and self.result is not None and self.result.get('fit_status')=='complete'):
+                # Support writes only its own result/status. Do not expose a
+                # previous map or mutable stage status through source readers.
+                return {k:v for k,v in self.result.items() if k not in ('phase_support','phase_support_status')}
+            return self.completed(job_id)
+
     def fit(self,job_id,templates,options):
         with self.lock:
             result=self.completed(job_id)

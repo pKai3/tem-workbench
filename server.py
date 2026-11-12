@@ -919,16 +919,16 @@ def make_handler(app):
                     self.send(app.fit_nmf(body,support=True))
                 elif self.path == '/api/pca/group-preview':
                     from nmf_fitting import group_preview
-                    self.send(group_preview(app.pca.completed(body['id']), body['components']))
+                    self.send(group_preview(app.pca.inspectable(body['id']), body['components']))
                 elif self.path == '/api/pca/group':
                     from nmf_fitting import group_detail
-                    result=app.pca.completed(body['id'])
+                    result=app.pca.inspectable(body['id'])
                     with app.lock:
                         templates=copy.deepcopy(app.engine.templates_for(result['settings']))
                     self.send(group_detail(result,body['components'],templates,body.get('options',{})))
                 elif self.path == '/api/pca/lobe':
                     from pca_fitting import lobe_detail
-                    result=app.pca.completed(body['id'])
+                    result=app.pca.inspectable(body['id'])
                     with app.lock:
                         templates=copy.deepcopy(app.engine.templates_for(result['settings']))
                     self.send(lobe_detail(result,body['component'],body['side'],templates,body.get('options',{})))
@@ -937,7 +937,7 @@ def make_handler(app):
                     self.send(window_detail(app.pca.completed(body['id']),body['index'],body['model']))
                 elif self.path == '/api/pca/combination':
                     from pca_fitting import combination_detail
-                    result=app.pca.completed(body['id'])
+                    result=app.pca.inspectable(body['id'])
                     with app.lock:
                         templates=copy.deepcopy(app.engine.templates_for(result['settings']))
                     self.send(combination_detail(result,body['components'],body['index'],templates,body.get('options',{})))
@@ -947,7 +947,7 @@ def make_handler(app):
                         app.pca.cancel.set()
                     self.send({'cancelled': True})
                 elif self.path == '/api/pca/sample':
-                    self.send(shared_spectra.sample(app.pca.completed(body['id']), body['index'], body['components']))
+                    self.send(shared_spectra.sample(app.pca.inspectable(body['id']), body['index'], body['components']))
                 elif self.path == '/api/pca/export':
                     with app.pca.lock:
                         result = app.pca.completed(body['id'])

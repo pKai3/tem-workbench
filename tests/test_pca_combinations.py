@@ -123,5 +123,49 @@ class PcaCombinationTests(unittest.TestCase):
         manager.support('test',t);manager.thread.join(10)
         self.assertEqual(r['phase_support_status'],'complete')
 
+    def test_completed_source_inspection_during_window_checks(self):
+        r,t=split_pattern();manager=spectra.SharedSpectra();manager.result=r
+        manager.job=dict(id='test',state='complete',started=time.monotonic())
+        manager.fit('test',t,OPTIONS);manager.thread.join(10)
+        before=json.dumps(r['fits']);started=threading.Event();release=threading.Event()
+        def paused_build(*args):
+            started.set()
+            if not release.wait(10):raise TimeoutError('Test did not release window checks')
+            return dict(windows=[],models=[])
+        with patch.object(fitting,'build',side_effect=paused_build):
+            manager.support('test',t)
+            try:
+                self.assertTrue(started.wait(2))
+                ready=manager.inspectable('test')
+                self.assertIs(ready['fits'],r['fits'])
+                self.assertNotIn('phase_support_status',ready)
+                self.assertNotIn('phase_support',ready)
+                self.assertTrue(fitting.combination_detail(ready,[0,1],0,t)['candidates'])
+                self.assertEqual(fitting.lobe_detail(ready,0,'positive',t)['component'],0)
+                self.assertEqual(spectra.sample(ready,0,[0,1])['selected'],[0,1])
+                self.assertEqual(manager.status('test')['state'],'running')
+                with self.assertRaises(ValueError):manager.completed('test')
+                with self.assertRaises(ValueError):manager.fit('test',t,OPTIONS)
+                with self.assertRaises(ValueError):manager.support('test',t)
+                with self.assertRaises(ValueError):manager.inspectable('old')
+                # Cancelling checks must not make completed source fits unreadable.
+                manager.cancel.set()
+                self.assertIs(manager.inspectable('test')['fits'],r['fits'])
+            finally:
+                release.set();manager.thread.join(10)
+        self.assertEqual(json.dumps(r['fits']),before)
+        self.assertIs(manager.completed('test'),r)
+
+    def test_inspection_still_rejects_unfinished_or_replaced_sources(self):
+        manager=spectra.SharedSpectra()
+        manager.job=dict(id='current',state='running',operation='fit',started=time.monotonic())
+        manager.result=dict(fit_status='running')
+        with self.assertRaises(ValueError):manager.inspectable('current')
+        manager.job['operation']='support'
+        with self.assertRaises(ValueError):manager.inspectable('current')
+        manager.result=None
+        with self.assertRaises(ValueError):manager.inspectable('current')
+        with self.assertRaises(ValueError):manager.inspectable('old')
+
 
 if __name__=='__main__':unittest.main()

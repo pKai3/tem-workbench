@@ -130,6 +130,8 @@ Select top contains counts only. The list’s **Cumulative passing** column give
 
 ## Window and mean-spectrum views
 
+Completed source-fit tables and inspectors are available while original-window checks continue. The progress readout identifies this stage. Source inspection and spectrum previews do not restart the analysis; settings/refitting remain locked, and completed-window overlays become available after the support stage. Support completion preserves an open source inspector.
+
 Selected-window Original spectrum / Selected reconstruction previews are up to 450 px wide (previously 180 px). They appear only in Signals or a populated Window checks/Phase support tab, where a map can change the selected window; they are hidden in Crystal fits. **Smoothed input** appears only when the completed result used nonzero angular or spacing smoothing. All displayed selected-window spectra retain the same intensity range; no extra smoothing or fitting allowance is introduced.
 
 Original-window fit headings show the window and crystal identity/rotation. A source-history tooltip explains that combined-PC reconstructions and signed component features may independently propose the same geometry, which is retained as one hypothesis. The original-window check tests that retained hypothesis on the selected original spectrum; slash-separated sources were provenance, not an additional sum of spectra.

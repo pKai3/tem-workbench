@@ -173,6 +173,7 @@ if(typeof document!=='undefined'){
   const sourceContext=()=>JSON.stringify([fileId,meta?.sha256_pixels,meta?.pixel_x_nm,meta?.pixel_y_nm,settings()]);
   const notify=(message,error=false)=>{$('pca-status').textContent=message;$('pca-status').classList.toggle('error',error)};
   const running=()=>job?.state==='running'||pipeline!==null;
+  const canInspect=()=>Boolean(data&&(!running()||((pipeline?.stage||job?.operation)==='support'&&data.fit_status==='complete')));
   function controls(){
    for(const field of form.querySelectorAll('input,select'))field.disabled=running()||exporting;
    $('pca-run').disabled=running()||exporting||!snapshot;
@@ -290,7 +291,7 @@ if(typeof document!=='undefined'){
    if(overview)drawOverview();drawPhaseMap();
   }
   async function inspect(){
-   if(!data||!selected.size||running()||$('pca-inspect').hidden)return;
+   if(!canInspect()||!selected.size||$('pca-inspect').hidden)return;
    const serial=++sampleEpoch,jobId=job.id;
    $('pca-sample-label').textContent=`Window ${index+1} of ${data.plan.count} · loading spectra…`;
    try{
@@ -301,10 +302,11 @@ if(typeof document!=='undefined'){
     $('pca-sample-note').textContent=`These views use the same intensity range. Reconstruction uses ${r.selected.length} selected component(s)${data.decomposition==='nmf'?'':' plus the mean'}. ${(100*r.negative_fraction).toFixed(1)}% of reconstructed bins are negative and displayed black.`;
    }catch(e){if(serial===sampleEpoch)notify(e.message,true)}
   }
-  function showResult(r){
+  function showResult(r,{keepInspector=false}={}){
    const first=!data;
    if(first){$('pca-setup').open=false;section='signals';expandedSignals.clear();$('pca-layout').value='overview'}
-   data=r;$('pca-top').max=String(r.components.length);$('pca-top').value=String(showAllSignals?r.components.length:PcaView.topCount($('pca-top').value,r.components.length));$('pca-available').textContent=`of ${r.components.length} computed`;groupEpoch++;$('nmf-group-detail').hidden=true;if(first){selected=new Set(r.components.map(c=>c.index));index=Math.floor(r.plan.count/2)}
+   data=r;$('pca-top').max=String(r.components.length);$('pca-top').value=String(showAllSignals?r.components.length:PcaView.topCount($('pca-top').value,r.components.length));$('pca-available').textContent=`of ${r.components.length} computed`;
+   if(first||!keepInspector){groupEpoch++;$('nmf-group-detail').hidden=true}if(first){selected=new Set(r.components.map(c=>c.index));index=Math.floor(r.plan.count/2)}
    $('pca-results').hidden=false;$('pca-navigation').hidden=false;$('pca-group').replaceChildren();$('pca-map-group').replaceChildren();
    const pca=r.decomposition==='pca';
    $('pca-smoothed-input').hidden=!(r.plan.angular_sigma_deg>0||r.plan.spacing_sigma_percent>0);
@@ -337,14 +339,14 @@ if(typeof document!=='undefined'){
    try{
     const next=await api('pca?id='+encodeURIComponent(job.id));if(serial!==epoch)return;job=next;controls();
     $('pca-progress').max=Math.max(1,job.total);$('pca-progress').value=job.completed;
-    notify(`${job.stage} · ${job.completed}/${job.total} · ${job.elapsed_seconds}s`);
+    notify(`${job.stage} · ${job.completed}/${job.total} · ${job.elapsed_seconds}s${job.state==='running'&&job.operation==='support'?' · crystal fits ready to inspect':''}`);
     if(job.state==='running')pollTimer=setTimeout(()=>poll(serial),600);
     else if(job.state==='complete'){
      const result=await api('pca/result?id='+encodeURIComponent(job.id));if(serial!==epoch)return;
-     const stage=pipeline?.stage;
+     const stage=pipeline?.stage||job.operation;
      const failure=stage==='fit'&&result.fit_status!=='complete'?result.fit_status||'incomplete':stage==='support'&&result.phase_support_status!=='complete'?result.phase_support_status||'incomplete':null;
      if(failure||stage==='support')pipeline=null;
-     showResult(result);
+     showResult(result,{keepInspector:stage==='support'});
      if(failure){notify(`Analysis stopped: ${failure}. Completed results are retained.`,failure!=='cancelled');return}
      if(stage==='decomposition'&&pipeline)await startStage('fit',serial);
      else if(stage==='fit'&&pipeline)await startStage('support',serial);
@@ -355,8 +357,8 @@ if(typeof document!=='undefined'){
   async function startStage(stage,serial){
    const body={id:job.id};if(stage==='fit')body.options={peak_fraction:pipeline?.cutoff??Number($('nmf-cutoff').value),...(isPca()?combinationOptions():{})};
    if(pipeline)pipeline.stage=stage;
-   groupEpoch++;sampleEpoch++;job={...job,state:'running'};controls();$('pca-progress').value=0;
-   notify(stage==='fit'?(isPca()?'Stage 2/3 · fitting PCA features and selected combinations…':'Stage 2/3 · fitting all crystal combinations…'):'Stage 3/3 · checking original windows…');
+   if(stage==='fit'){groupEpoch++;sampleEpoch++;$('nmf-group-detail').hidden=true}job={...job,state:'running',operation:stage};controls();$('pca-progress').value=0;
+   notify(stage==='fit'?(isPca()?'Stage 2/3 · fitting PCA features and selected combinations…':'Stage 2/3 · fitting all crystal combinations…'):'Stage 3/3 · checking original windows · crystal fits are ready to inspect');
    const response=await api('pca/'+stage,body);if(serial!==epoch)return;job=response;
    if(cancelRequested)await api('pca/cancel',{id:job.id});
    poll(serial);
@@ -393,14 +395,14 @@ if(typeof document!=='undefined'){
    const target=canvas.id==='nmf-phase-map'?canvas:component===undefined?$('pca-map'):$('pca-overview').querySelector(`[data-component="${component}"]`);target?.focus({preventScroll:true});inspect();
   }
   function selectMapWindow(event){
-   if(!data||running())return;const canvas=event.currentTarget,box=canvas.getBoundingClientRect(),p=data.plan,[h,w]=p.image_shape;
+   if(!canInspect())return;const canvas=event.currentTarget,box=canvas.getBoundingClientRect(),p=data.plan,[h,w]=p.image_shape;
    const scale=Math.min(box.width/w,box.height/h),ox=(box.width-w*scale)/2,oy=(box.height-h*scale)/2;
    const x=(event.clientX-box.left-ox)/scale,y=(event.clientY-box.top-oy)/scale;
    if(x<0||y<0||x>w||y>h)return;
    index=PcaView.nearest(p,x,y);refreshWindowSelection(canvas);
   };
   function stepMapWindow(event){
-   if(!data||running())return;const dx={ArrowLeft:-1,ArrowRight:1,ArrowUp:-data.plan.xs.length,ArrowDown:data.plan.xs.length}[event.key];
+   if(!canInspect())return;const dx={ArrowLeft:-1,ArrowRight:1,ArrowUp:-data.plan.xs.length,ArrowDown:data.plan.xs.length}[event.key];
    if(dx===undefined)return;event.preventDefault();index=Math.max(0,Math.min(data.plan.count-1,index+dx));refreshWindowSelection(event.currentTarget);
   };
   $('pca-map').onclick=selectMapWindow;$('pca-map').onkeydown=stepMapWindow;
@@ -483,7 +485,7 @@ if(typeof document!=='undefined'){
   $('nmf-inspect-component').onclick=inspectSelectedSpectrum;
   $('nmf-group-close').onclick=()=>{groupEpoch++;$('nmf-group-detail').hidden=true};
   async function inspectGroup(group,windowModel=null){
-   if(!data||running())return;const serial=++groupEpoch,jobId=job.id;
+   if(!canInspect()||(windowModel!==null&&running()))return;const serial=++groupEpoch,jobId=job.id;
    showSection('fits',true);
    const pane=$('nmf-group-detail'),status=$('nmf-group-status');pane.hidden=false;$('nmf-group-content').hidden=true;
    const original=windowModel!==null,windowIndex=index,combination=group.kind==='combination';
