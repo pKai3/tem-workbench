@@ -1314,3 +1314,9 @@ The background worker now progresses through decomposition, fitting and original
 Discussed only: optionally exclude lower PCA signals before feature/combination fitting and window checks. This can reduce work, but variance alone is not evidence that a signal is useless. No automatic component removal or parallel execution is approved in this change.
 
 Validation: all 45 focused Python checks and 32 JavaScript suites pass. Tests cover continuous stage execution without a viewer, cancellation between stages, source/settings binding, retry without rerunning, stale identities, shared SVG shapes/variant colours/animation/numbering, masked spectrum contrast and shared reconstruction ranges. Browser checks cover both PCA signs, NMF inspection, shared display controls, running and completed reload recovery, restored hypothesis selection, map-preview removal, control placement and 720 px layout without horizontal overflow. No release or version bump.
+
+### PCA/NMF settings panel — completed 12 November 2026
+
+Follow-up to `e450c06`: Analysis settings now reuses the main interface’s bordered disclosure styling, including rounded corners, padding and summary weight. It remains above the output tabs and retains its open/closed behaviour. This is a presentation-only change.
+
+Validation: browser checks confirm matching computed border/radius/padding, working collapse/expand, and no horizontal overflow at 720 px. No analysis changes, new tests or release.

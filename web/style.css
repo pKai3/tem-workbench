@@ -181,9 +181,9 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .phase-color-controls select option{color:#edf5fc;background:#172332}
 
 /* One collapsible analysis setup; display and grid controls remain by their views. */
-:is(#processing-controls,#material-controls,#saved-regions-panel){border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:var(--panel-gap)}
-:is(#processing-controls,#material-controls,#saved-regions-panel)>summary{font-weight:600}
-:is(#processing-controls,#material-controls,#saved-regions-panel)[open]>summary{margin-bottom:10px}
+:is(#processing-controls,#material-controls,#saved-regions-panel,#pca-setup){border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:var(--panel-gap)}
+:is(#processing-controls,#material-controls,#saved-regions-panel,#pca-setup)>summary{font-weight:600}
+:is(#processing-controls,#material-controls,#saved-regions-panel,#pca-setup)[open]>summary{margin-bottom:10px}
 #ca-penalty-field[hidden]{display:none}
 .file-label>label{margin-bottom:6px}
 .file-navigation{display:flex;gap:5px;min-width:0}
@@ -697,10 +697,10 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 #diffraction-controls .peak-edit-heading{margin-bottom:10px}
 #diffraction-controls .detector-tool-buttons{margin-top:0;margin-bottom:6px}
 #diffraction-controls .peak-edit-controls>.check{min-height:26px}
-:is(#processing-controls,#material-controls,#saved-regions-panel){padding:8px 10px;margin-bottom:var(--panel-gap)}
+:is(#processing-controls,#material-controls,#saved-regions-panel,#pca-setup){padding:8px 10px;margin-bottom:var(--panel-gap)}
 /* Include the enclosing border in the gap below the visible processing panels. */
-:is(#processing-controls,#material-controls,#saved-regions-panel)[open]{padding-bottom:calc(var(--panel-gap) - 1px)}
-:is(#processing-controls,#material-controls,#saved-regions-panel)[open]>summary{margin-bottom:8px}
+:is(#processing-controls,#material-controls,#saved-regions-panel,#pca-setup)[open]{padding-bottom:calc(var(--panel-gap) - 1px)}
+:is(#processing-controls,#material-controls,#saved-regions-panel,#pca-setup)[open]>summary{margin-bottom:8px}
 #message{padding:6px 0;min-height:30px}
 .workspace>.panel{padding-top:12px}
 .workspace>.panel>.panel-head{min-height:30px;margin-bottom:6px}
@@ -973,8 +973,8 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-navigation[hidden],#pca-navigation [hidden],#pca-dialog [data-pca-panel][hidden]{display:none}
 #pca-navigation button{min-height:32px;padding:6px 12px;font-size:12px;background:transparent}
 #pca-navigation button[aria-selected=true]{background:#29475e;border-color:#61d7d1}
-#pca-setup{margin:0 0 12px;padding-top:0;border-top:0}
-#pca-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));align-items:end}
+#pca-setup{margin:0 0 var(--panel-gap)}
+#pca-form{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));align-items:end}
 #pca-form input[type=number],#pca-form select{width:100%;min-width:0}
 #pca-dialog [data-pca-panel]{min-width:0}
 #nmf-fitting:not([hidden]){display:contents}
