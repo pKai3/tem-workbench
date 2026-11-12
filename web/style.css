@@ -962,35 +962,70 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-dialog{position:fixed;inset:2vh 2vw;margin:0;width:auto;max-width:none;height:96vh;max-height:none;box-sizing:border-box;overflow:auto;background:var(--panel,#111d28);color:var(--text,#d8e5f0);border:1px solid #41576a;border-radius:12px;padding:18px;overscroll-behavior:contain}
 #pca-dialog::backdrop{background:#0009}
 #pca-dialog h2{margin:0} #pca-dialog figure{margin:0;min-width:0}
+.pca-dialog-header{position:sticky;top:-18px;z-index:5;background:var(--panel,#111d28);padding:18px 18px 10px;border-bottom:1px solid var(--line);margin:-18px -18px 12px}
+.pca-dialog-header>.panel-head{flex-wrap:wrap;margin-bottom:4px;gap:8px}
+.pca-dialog-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:auto}
+.pca-dialog-actions button{min-height:30px;padding:5px 9px;font-size:12px}
+#pca-close{width:30px;padding:0;font-size:20px}
+#pca-source{margin:4px 0;overflow-wrap:anywhere}
+#pca-status{font-size:12px;line-height:1.4;margin:6px 0}
+#pca-navigation{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+#pca-navigation[hidden],#pca-navigation [hidden],#pca-dialog [data-pca-panel][hidden]{display:none}
+#pca-navigation button{min-height:32px;padding:6px 12px;font-size:12px;background:transparent}
+#pca-navigation button[aria-selected=true]{background:#29475e;border-color:#61d7d1}
+#pca-setup{margin:0 0 12px;padding-top:0;border-top:0}
+#pca-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));align-items:end}
+#pca-form input[type=number],#pca-form select{width:100%;min-width:0}
+#pca-dialog [data-pca-panel]{min-width:0}
+#nmf-fitting:not([hidden]){display:contents}
+#nmf-fitting[hidden]{display:none}
 .pca-controls{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}
-.pca-controls [hidden]{display:none}.pca-controls input[type=number]{width:110px}.pca-controls label{display:flex;flex-direction:column;gap:5px}
-#pca-group{display:flex;flex-wrap:wrap;gap:8px;align-self:center}#pca-group label{flex-direction:row;align-items:center}
-.pca-views{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1100px;margin:auto}
+.pca-controls [hidden]{display:none}.pca-controls input[type=number]{width:110px}.pca-controls label{display:flex;flex-direction:column;gap:5px;min-width:0}
+.pca-controls select{max-width:100%;min-width:0}
+.pca-local-selection{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0;font-size:12px}
+.pca-local-selection[hidden]{display:none}
+#pca-group,#pca-map-group{display:flex;flex-wrap:wrap;gap:8px;align-self:center}
+#pca-group label,#pca-map-group label{display:inline-flex;flex-direction:row;align-items:center;gap:4px}
+#pca-group input,#pca-map-group input{width:13px;height:13px;min-height:0;margin:0;padding:0}
+#pca-metrics{margin-top:12px}
+#pca-metrics>summary>.settings-heading-label{display:inline-flex;vertical-align:middle}
+#pca-dialog .settings-help-popup{width:min(360px,calc(100vw - 70px));max-width:none;white-space:normal}
+.pca-views{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:900px;margin:auto}
 .pca-views img,.pca-views canvas{width:100%;aspect-ratio:1;object-fit:contain;background:#050a0f;display:block}
 #pca-map{cursor:crosshair}.pca-samples{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:1000px;margin:12px auto}.pca-samples img{width:100%;aspect-ratio:1;object-fit:contain;background:#050a0f}
 #pca-dialog img:not([src]){visibility:hidden}#pca-dialog figcaption{padding:6px 0}
 #pca-scree{display:flex;align-items:end;gap:6px;overflow:auto;padding:4px 0;height:100px}
 #pca-scree button{flex:1;min-width:70px;padding:5px;font-size:12px;background:linear-gradient(to top,#315979 var(--bar),#182636 var(--bar));height:100%;white-space:normal}
 #pca-scree button[aria-pressed=true]{border-color:#61d7d1}#pca-status.error{color:#ff9cb0}#pca-status{min-height:1.5em}
-@media(max-width:750px){.pca-views{grid-template-columns:1fr}.pca-samples{grid-template-columns:1fr}#pca-dialog{inset:1vh 1vw;padding:10px}.pca-controls{gap:6px}}
+@media(max-width:750px){.pca-views{grid-template-columns:1fr}.pca-samples{grid-template-columns:1fr}#pca-dialog{inset:1vh 1vw;padding:10px}.pca-dialog-header{top:-10px;margin:-10px -10px 12px;padding:10px}.pca-controls{gap:6px}}
 
 /* Shared spectral decomposition and exhaustive NMF fit progress. */
 #pca-progress {display:block;width:100%;height:14px;accent-color:#63ddd5;margin:8px 0 16px}
 #pca-progress[hidden] {display:none}
+.pca-dialog-header #pca-progress{height:8px;margin:6px 0}
+#pca-inspect .pca-samples{grid-template-columns:repeat(3,minmax(0,180px));justify-content:start;max-width:none;margin:10px 0}
+#pca-inspect .pca-samples figcaption{font-size:11px}
+@media(max-width:500px){#pca-inspect .pca-samples{grid-template-columns:minmax(0,280px)}}
 .nmf-fit-results {overflow:auto;max-height:420px}
 .nmf-fit-results table {width:100%;font-size:12px}
 .nmf-fit-results th {position:sticky;top:0;background:#13212c;z-index:1}
 #nmf-group-detail {margin:16px 0;padding:12px;border:1px solid #385364;border-radius:8px}
 #nmf-group-detail[hidden],#nmf-group-content[hidden] {display:none}
 #nmf-group-content {display:flex;gap:18px;align-items:start}
-#nmf-group-content figure {margin:0;flex:1;min-width:200px;max-width:520px}
+#nmf-group-content figure {margin:0;flex:0 1 34%;min-width:200px;max-width:520px}
 #nmf-group-spectrum {width:100%;display:block}
 #nmf-support {flex:1;min-width:0}
 #nmf-support button {margin:4px}
 #nmf-support .nmf-fit-results {max-height:500px}
-#nmf-support table {min-width:650px}
+#nmf-support table {min-width:480px}
+#nmf-support td,#nmf-support th{padding:8px 4px}
+#nmf-support input[type=checkbox]{width:13px;height:13px;min-height:0;margin:0;padding:0}
+#nmf-support .nmf-candidate-meta{border:0;margin:0;padding:0}
+#nmf-support .nmf-candidate-meta summary{font-size:12px}
+#nmf-support .nmf-candidate-meta p{font-size:11px;line-height:1.5;max-width:240px}
+#nmf-support .settings-help-popup{left:auto;right:0}
 #pca-overview canvas[role="button"],#pca-spectrum[role="button"] {cursor:pointer}
-@media(max-width:850px){#nmf-group-content{flex-direction:column}#nmf-support{width:100%}}
+@media(max-width:850px){#nmf-group-content{flex-direction:column}#nmf-group-content figure{width:min(100%,360px);min-width:0}#nmf-support{width:100%}.nmf-fit-results{max-height:none}}
 
 /* Compact component comparison: maps above spectra. */
 #pca-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;align-items:start}
@@ -1008,7 +1043,7 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #nmf-phase-panel {border:1px solid var(--border, #344b5a);border-radius:10px;padding:16px;margin:12px 0;}
 #nmf-phase-content {display:grid;grid-template-columns:minmax(250px,1fr) minmax(300px,1fr);gap:20px;align-items:start;}
 #nmf-phase-content figure {margin:0;min-width:0;}
-#nmf-phase-map {display:block;width:100%;max-width:700px;cursor:crosshair;}
+#nmf-phase-map {display:block;width:100%;max-width:560px;cursor:crosshair;}
 #nmf-map-key {line-height:1.8;}
 #nmf-map-key span {white-space:nowrap;}
 #nmf-map-evidence {max-height:28rem;overflow:auto;}

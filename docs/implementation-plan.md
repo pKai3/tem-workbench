@@ -1178,3 +1178,15 @@ Group summaries now show rotation. Clicking the group number selects its compone
 Replaced all-observed-peak dilution with prediction-normalized support minus chance and scale costs. Added bounded ±3° rotation / ±3% uniform scale refinement, preserving phase, zone and cell proportions (fixed mode allows rotation only). Retains group scale cost and charges local scale drift. Requires four close matches, nonparallel directions and >30% prediction coverage. Multiple-phase classifications retain distinct-evidence checks.
 
 On the saved five-factor 0274 export, single-supported windows increased from 16 to 149 of 324; 175 remain unresolved. That export contains no passing BCC group, so this does not validate beta recovery or the user's separate four-factor result. Further scientific validation, factor peak extraction and convergence remain pending. No main release.
+
+### PCA contrast and decomposition workspace — 12 November 2026
+
+Implemented on `feature/local-fft-pca`, following NMF navigation/support commit `0bf2641`: **Per signal / Shared across signals** PCA contrast. Shared maps retain a symmetric range over all computed PCs, independent of Top signals selection. Spectra use RMS-score-weighted loadings and their own shared symmetric range. Numerical decompositions, reconstructions and exports are unchanged. Weak components remain available; low variance alone is not a noise label.
+
+The workspace now separates Signals, Crystal fits and Phase support into tabs, keeps run/progress controls visible, collapses setup after a result, and puts reconstruction/group selections and map opacity beside their respective views. NMF percentages are labelled signal share. Two saved five-factor 0274 runs have near-equal shares, highly similar factors, dominant radial background and incomplete convergence; these observations are documented in the method notes, not treated as phase abundance or as validation of the eight-factor screenshot.
+
+The NMF inspector distinguishes assigned predictions (solid) from unassigned predictions (faint dotted), and shows observed/predicted coverage separately. Its partial-match screen and absence of missing-prediction cost are explicit; candidate details expand locally to keep the inspector table compact. This fixes misleading overlay presentation without changing matching or acceptance thresholds. Exact reproduction of the eight-factor screenshot remains unavailable.
+
+Signed PCA lobe fitting is **proposed, not implemented**: preserve both signs, retain separate same-phase orientations, and validate hypotheses against all original windows, including opposite-sign/mean-present signals. See [method and proposal details](local-fft-pca.md). This does not approve the separate automatic component-count roadmap item or the general export follow-up.
+
+Validation: focused shared-range checks cover amplitude, sign symmetry, stable ranges, zero fields and unchanged source data; all 28 JavaScript suites pass. Browser verification covers PCA/NMF navigation, local controls and responsive layout. No release requested.
