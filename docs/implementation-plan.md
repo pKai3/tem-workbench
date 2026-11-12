@@ -1128,3 +1128,10 @@ Validation: 15 focused Python tests, JavaScript checks and browser exercises wit
 Multi-map inspection: clicking any compact spatial map selects the same sampled window across all maps and updates the original/broadened/reconstructed spectrum comparison. A white window outline is shared across maps; focused maps support arrow-key navigation without leaving comparison mode.
 
 Validation: PCA and NMF browser checks cover All/count controls through 16 signals, compact-map selection, linked sample requests, arrow-key focus retention, palette changes and narrow-screen layout.
+
+
+### PCA/NMF export to synced folders — 12 November 2026
+
+Fixed repeated macOS Errno 60 failures while NumPy/ZIP wrote compressed spectra directly into OneDrive. PCA and NMF exports now build the complete NPZ and JSON pair in local application storage, then transfer each completed file sequentially to a temporary output file and rename it after closing. A destination failure retains both complete local files under `export-recovery`; the UI and log report their locations and the failed destination. Successful transfers remove the temporary local copy. Analysis arrays, fits and provenance are unchanged. This avoids ZIP seeks during cloud writes; it cannot guarantee cloud-provider availability or upload completion.
+
+Validation: export round-trip and failure-injection checks cover local staging, successful cleanup, write/rename/directory errors, JSON-transfer failure, and retained NMF fitting/convergence metadata.

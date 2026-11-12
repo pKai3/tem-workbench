@@ -11,6 +11,10 @@ import io
 import json
 import logging
 import math
+import os
+import shutil
+import sys
+import tempfile
 from pathlib import Path
 import threading
 import time
@@ -311,9 +315,38 @@ def sample(result,index,selected):
                 negative_fraction=float(np.mean(reconstructed<0)),scores=result['scores'][index].tolist())
 
 
+def export_staging_root():
+    """Keep recoverable exports outside project and synced output folders."""
+    if sys.platform == 'darwin':
+        base = Path.home() / 'Library/Application Support/TEM Workbench'
+    elif sys.platform == 'win32':
+        base = Path(os.environ['LOCALAPPDATA']) / 'TEMWorkbench'
+    else:
+        base = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'tem-workbench'
+    return base / 'export-recovery'
+
+
+def copy_export_file(source, destination):
+    """Sequential cloud write; publish only after the complete file closes."""
+    from folder_paths import retry_sharing_violation
+    fd, name = tempfile.mkstemp(prefix='.' + destination.name + '-', suffix='.part', dir=destination.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, 'wb') as target, source.open('rb') as origin:
+            shutil.copyfileobj(origin, target, length=1024 * 1024)
+            target.flush()
+            os.fsync(target.fileno())
+        retry_sharing_violation(lambda: os.replace(temporary, destination), 'publishing spectrum export')
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            LOG.warning('Could not remove incomplete export transfer: %s', temporary, exc_info=True)
+
+
 def export(result, folder):
     from batch_grids import safe_name
-    folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
+    folder=Path(folder)
     stem=time.strftime('%Y%m%d_%H%M%S_')+safe_name(result['source'].get('name','image'))+'_'+result['plan'].get('method','pca')+'_'+uuid.uuid4().hex[:6]
     meta=dict(method=VERSION,source=result['source'],processing=result['settings'],plan=result['plan'],
               algorithm=result['algorithm'],explained_variance_ratio=result['explained_variance_ratio'].tolist(),
@@ -328,11 +361,33 @@ def export(result, folder):
         meta.update(contribution_share=result['contribution_share'].tolist(),iterations=result['iterations'],converged=result['converged'],relative_reconstruction_error=result['relative_reconstruction_error'],fits=result.get('fits'),fit_status=result.get('fit_status'))
         meta['conventions'].update(normalization='Per-window weighted norm, no centering; H rows have unit L1 sum',reconstruction='scores @ components; divide by area_weights and multiply window normalization',components='Nonnegative spectral factors; contribution shares are not phase fractions or explained variance',source_settings='Decomposition uses taper, mean removal and fitting band. Optional indexing uses captured material/phase/scale settings; see fits provenance.')
         meta['nmf_reference']='Lee & Seung, Algorithms for Non-negative Matrix Factorization, NIPS 2000 (2001), https://proceedings.neurips.cc/paper/2000/file/f9d1152547c0bde01830b7e8bd60024c-Paper.pdf'
-    data_path=folder/(stem+'.npz');meta_path=folder/(stem+'.json')
     metadata=json.dumps(meta,allow_nan=False,indent=2)
-    np.savez_compressed(data_path,**{key:result[key] for key in ('raw_spectra','normalizations','positions','radii','angles','area_weights','mean','components','scores','explained_variance_ratio','residual')},metadata=np.array(metadata))
-    meta_path.write_text(metadata+'\n')
-    return dict(files=[str(data_path),str(meta_path)])
+    staging_root = export_staging_root()
+    staging_root.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=stem + '-', dir=staging_root))
+    local_files = [staging / (stem + suffix) for suffix in ('.npz', '.json')]
+    try:
+        LOG.info('Preparing %s export locally: %s', result['plan'].get('method', 'pca'), staging)
+        np.savez_compressed(local_files[0],**{key:result[key] for key in ('raw_spectra','normalizations','positions','radii','angles','area_weights','mean','components','scores','explained_variance_ratio','residual')},metadata=np.array(metadata))
+        local_files[1].write_text(metadata+'\n', encoding='utf-8')
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    destination_files = [folder / path.name for path in local_files]
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        LOG.info('Copying completed spectrum export to %s', folder)
+        for source, destination in zip(local_files, destination_files):
+            copy_export_file(source, destination)
+    except OSError as error:
+        LOG.warning('Spectrum export transfer to %s failed; complete local copies retained at %s: %s', folder, staging, error, exc_info=True)
+        return dict(files=[str(path) for path in local_files], saved_locally=True,
+                    warning=f'Could not copy export to {folder}: {error}. Complete export saved locally:',
+                    requested_folder=str(folder))
+    shutil.rmtree(staging, ignore_errors=True)
+    LOG.info('Spectrum export complete: %s', destination_files[0])
+    return dict(files=[str(path) for path in destination_files], saved_locally=False)
+
 
 
 class SharedSpectra:

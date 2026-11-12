@@ -227,7 +227,7 @@ if(typeof document!=='undefined'){
   };
   $('pca-export').onclick=async()=>{
    if(!data||exporting)return;exporting=true;controls();notify('Exporting spectra, fits and provenance…');
-   try{const r=await api('pca/export',{id:job.id});notify('Export complete: '+r.files.join(' · '))}catch(e){notify(e.message,true)}finally{exporting=false;controls()}
+   try{const r=await api('pca/export',{id:job.id});notify((r.warning?r.warning+' ':'Export complete: ')+r.files.join(' · '),Boolean(r.warning))}catch(e){notify(e.message,true)}finally{exporting=false;controls()}
   };
  };
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initPca);else initPca();

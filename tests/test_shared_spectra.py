@@ -105,6 +105,62 @@ class SharedSpectraTests(unittest.TestCase):
                 self.assertEqual(saved['positions'].shape,(r['plan']['count'],4))
                 self.assertEqual(meta,json.loads(Path(files[1]).read_text()))
 
+    def test_export_stages_locally_and_cleans_success(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);staging=base/'local';output=base/'cloud'
+            original=pca.np.savez_compressed
+            def save(path, **arrays):
+                self.assertTrue(Path(path).is_relative_to(staging))
+                self.assertFalse(output.exists())
+                return original(path, **arrays)
+            with patch.object(pca,'export_staging_root',return_value=staging), patch.object(pca.np,'savez_compressed',side_effect=save):
+                response=pca.export(self.result,output)
+            self.assertFalse(response['saved_locally'])
+            self.assertEqual(list(staging.iterdir()),[])
+            self.assertEqual(len(list(output.iterdir())),2)
+            self.assertTrue(all(Path(path).is_file() for path in response['files']))
+
+    def test_export_timeout_retains_complete_local_pair(self):
+        # Simulate failure during sequential copying and during final publication.
+        for failure in ('write','rename','mkdir'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                base=Path(folder);staging=base/'local';output=base/'cloud'
+                if failure=='mkdir':output.write_text('not a directory')
+                target={'write':'shutil.copyfileobj','rename':'os.replace','mkdir':'copy_export_file'}[failure]
+                def fail(*args, **kwargs):
+                    if failure=='write':args[1].write(b'partial')
+                    raise TimeoutError(60,'Operation timed out')
+                # mkdir fails naturally; the patched copy must never be reached.
+                with patch.object(pca,'export_staging_root',return_value=staging), patch('shared_spectra.'+target,side_effect=fail), self.assertLogs('tem_workbench',level='WARNING'):
+                    response=pca.export(self.result,output)
+                self.assertTrue(response['saved_locally'])
+                self.assertIn('Complete export saved locally',response['warning'])
+                self.assertEqual(response['requested_folder'],str(output))
+                with np.load(response['files'][0],allow_pickle=False) as saved:
+                    np.testing.assert_array_equal(saved['raw_spectra'],self.result['raw_spectra'])
+                    np.testing.assert_array_equal(saved['scores'],self.result['scores'])
+                    self.assertEqual(json.loads(str(saved['metadata'])),json.loads(Path(response['files'][1]).read_text()))
+                if output.is_dir():self.assertEqual(list(output.iterdir()),[])
+
+    def test_export_json_transfer_failure_retains_nmf_provenance(self):
+        r={**self.result,'plan':{**self.result['plan'],'method':'nmf'},
+           'contribution_share':np.array([.6,.4]),'iterations':300,'converged':False,
+           'relative_reconstruction_error':.12,'fits':{'groups':[{'components':[0,1]}]},'fit_status':'complete'}
+        with tempfile.TemporaryDirectory() as folder:
+            base=Path(folder);original=pca.copy_export_file
+            def copy(source,destination):
+                if source.suffix=='.json':raise TimeoutError(60,'Operation timed out')
+                original(source,destination)
+            with patch.object(pca,'export_staging_root',return_value=base/'local'), patch.object(pca,'copy_export_file',side_effect=copy), self.assertLogs('tem_workbench',level='WARNING'):
+                response=pca.export(r,base/'cloud')
+            self.assertTrue(response['saved_locally'])
+            meta=json.loads(Path(response['files'][1]).read_text())
+            self.assertEqual(meta['fits'],r['fits']);self.assertFalse(meta['converged'])
+            self.assertEqual(meta['iterations'],300)
+            cloud_npz=next((base/'cloud').glob('*.npz'))
+            with np.load(cloud_npz,allow_pickle=False) as saved:
+                self.assertEqual(json.loads(str(saved['metadata'])),meta)
+
     def test_component_display_raster_preserves_sign_and_exclusions(self):
         import base64
         r=self.result;p=r['plan']
