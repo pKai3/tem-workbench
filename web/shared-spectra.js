@@ -161,6 +161,9 @@ if(typeof document!=='undefined'){
    section=next;
    for(const panel of dialog.querySelectorAll('[data-pca-panel]'))panel.hidden=panel.dataset.pcaPanel!==section;
    for(const button of dialog.querySelectorAll('[data-pca-tab]')){const active=button.dataset.pcaTab===section;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1}
+   const mapAvailable=Boolean(data&&(section==='signals'||(section==='support'&&data.phase_support)));
+   $('pca-inspect').hidden=!mapAvailable;$('pca-reference').hidden=!data||section!=='signals';
+   if(mapAvailable)inspect();
    if(scroll)dialog.scrollTop=0;
   }
   for(const button of dialog.querySelectorAll('[data-pca-tab]'))button.onclick=()=>showSection(button.dataset.pcaTab,true);
@@ -287,7 +290,7 @@ if(typeof document!=='undefined'){
    if(overview)drawOverview();drawPhaseMap();
   }
   async function inspect(){
-   if(!data||!selected.size||running())return;
+   if(!data||!selected.size||running()||$('pca-inspect').hidden)return;
    const serial=++sampleEpoch,jobId=job.id;
    $('pca-sample-label').textContent=`Window ${index+1} of ${data.plan.count} · loading spectra…`;
    try{
@@ -295,7 +298,7 @@ if(typeof document!=='undefined'){
     if(serial!==sampleEpoch||job?.id!==jobId)return;
     $('pca-original').src=r.raw.image;$('pca-processed').src=r.processed.image;$('pca-reconstruction').src=r.reconstruction.image;
     $('pca-sample-label').textContent=`Window ${index+1} of ${data.plan.count} · X ${r.roi[0]}, Y ${r.roi[1]} · ${r.roi[2]} × ${r.roi[3]} px`;
-    $('pca-sample-note').textContent=`All three use the same intensity range. Reconstruction uses ${r.selected.length} selected component(s)${data.decomposition==='nmf'?'':' plus the mean'}. ${(100*r.negative_fraction).toFixed(1)}% of reconstructed bins are negative and displayed black.`;
+    $('pca-sample-note').textContent=`These views use the same intensity range. Reconstruction uses ${r.selected.length} selected component(s)${data.decomposition==='nmf'?'':' plus the mean'}. ${(100*r.negative_fraction).toFixed(1)}% of reconstructed bins are negative and displayed black.`;
    }catch(e){if(serial===sampleEpoch)notify(e.message,true)}
   }
   function showResult(r){
@@ -304,6 +307,7 @@ if(typeof document!=='undefined'){
    data=r;$('pca-top').max=String(r.components.length);$('pca-top').value=String(showAllSignals?r.components.length:PcaView.topCount($('pca-top').value,r.components.length));$('pca-available').textContent=`of ${r.components.length} computed`;groupEpoch++;$('nmf-group-detail').hidden=true;if(first){selected=new Set(r.components.map(c=>c.index));index=Math.floor(r.plan.count/2)}
    $('pca-results').hidden=false;$('pca-navigation').hidden=false;$('pca-group').replaceChildren();$('pca-map-group').replaceChildren();
    const pca=r.decomposition==='pca';
+   $('pca-smoothed-input').hidden=!(r.plan.angular_sigma_deg>0||r.plan.spacing_sigma_percent>0);
    $('pca-tab-support').textContent=pca?'Window checks':'Phase support';
    $('nmf-support-heading').textContent=pca?'Original-window checks':'Phase support';
    $('nmf-fit').textContent=pca?'Fit selected scope':'Fit all combinations';
@@ -321,12 +325,13 @@ if(typeof document!=='undefined'){
     }
    });
    $('pca-mean').src=r.mean.image;$('pca-raw-mean').src=r.raw_mean.image;
-   $('pca-mean-label').textContent=r.decomposition==='nmf'?'Mean NMF reconstruction':'Mean PCA input';
+   $('pca-mean-label').textContent=r.decomposition==='nmf'?'Mean NMF reconstruction':'PCA baseline';
+   $('pca-mean-help').textContent=pca?'Average of the inputs after optional smoothing and per-window normalization. PCA subtracts this baseline before finding components and adds it back during reconstruction. It can differ from the original average even when smoothing is zero. The display reverses reciprocal-area weighting, but does not restore each window’s original brightness. The two mean images use independent display ranges.':'Average spectrum reconstructed by all NMF factors, in the normalized input representation. NMF does not subtract a mean. This can differ from the original average because of normalization, optional smoothing and reconstruction error. The two images use independent display ranges.';
    $('pca-band').textContent=`${r.plan.g_min}–${r.plan.g_max} nm⁻¹ · +qx right, +qy up · centre excluded`;
    notify(r.decomposition==='nmf'?`${r.plan.count} windows · NMF ${r.iterations} iterations · relative reconstruction error ${(100*r.relative_reconstruction_error).toFixed(1)}%${r.converged?'':' · iteration limit reached'}. Bars show signal shares, not phase fractions.`:`${r.plan.count} windows · ${(r.explained*100).toFixed(1)}% of variance retained. Components are not phases.`);
    $('nmf-fitting').hidden=false;$('nmf-fit-count').textContent=pca?(r.fits?.combination_count?`${2*r.components.length} sides + ${r.fits.combination_count} combinations × ${r.fits.combination_windows} windows`:`${2*r.components.length} signed sides`):`${2**r.components.length-1} combinations`;showFits();showPhaseMaps();
    sourceImage=new Image();sourceImage.onload=drawMap;sourceImage.src='/api/file-preview?id='+encodeURIComponent(snapshot.file_id);
-   controls();drawMap();inspect();
+   controls();drawMap();
   }
   async function poll(serial){
    try{
@@ -482,12 +487,19 @@ if(typeof document!=='undefined'){
    showSection('fits',true);
    const pane=$('nmf-group-detail'),status=$('nmf-group-status');pane.hidden=false;$('nmf-group-content').hidden=true;
    const original=windowModel!==null,windowIndex=index,combination=group.kind==='combination';
-   $('nmf-group-label').textContent=`${original?'Window '+(windowIndex+1)+' · ':''}${sourceLabel(original?data.phase_support.models[windowModel]:group)} · ${original?'original-window fit':'crystal fits'}`;
+   const hypothesis=original?data.phase_support.models[windowModel]:null;
+   $('nmf-group-label').textContent=original?`Window ${windowIndex+1} · ${hypothesisIdentity(hypothesis)} · original-window fit`:`${sourceLabel(group)} · crystal fits`;
+   $('nmf-group-source-help').hidden=!original;
+   if(original)$('nmf-group-source-note').textContent=`Hypothesis sources: ${sourceLabel(hypothesis)}. These sources produced matching crystal geometry and were merged into one hypothesis. PC numbers joined by + identify a mean-plus-score-weighted reconstruction; a trailing + or − identifies one signed feature of a component. This view tests the retained crystal hypothesis against window ${windowIndex+1}’s original spectrum, with bounded local refinement. It does not add these source spectra together.`;
    $('nmf-group-spectrum').setAttribute('aria-label',$('nmf-group-label').textContent+' spectrum with detected peaks and predictions');
    status.textContent='Detecting peaks and fitting candidates…';status.classList.remove('error');pane.scrollIntoView({block:'nearest'});
    try{
     const detail=await api(original?'pca/window-fit':combination?'pca/combination':isPca()?'pca/lobe':'pca/group',original?{id:jobId,index:windowIndex,model:windowModel}:{id:jobId,components:group.components,component:group.component,side:group.side,index:group.window,options:{peak_fraction:Number($('nmf-cutoff').value)}});
     if(serial!==groupEpoch||job?.id!==jobId)return;
+    if(original&&detail.candidates[0]){
+     $('nmf-group-label').textContent=`Window ${windowIndex+1} · ${hypothesisIdentity(detail.candidates[0])} · original-window fit`;
+     $('nmf-group-spectrum').setAttribute('aria-label',$('nmf-group-label').textContent+' spectrum with detected peaks and predictions');
+    }
     status.textContent=`${detail.peaks.length} detected profiles · peak cutoff ${detail.peak_fraction} · ${detail.phases.join(' + ')||'no phases'}${isPca()?(original?' · original unbroadened spectrum'+(detail.component_score==null?'':` · PC ${detail.component+1} score `+detail.component_score.toPrecision(3)):combination?` · mean + score-weighted PCs · source window ${detail.window+1}`:' · '+group.side+' deviations from the mean'):' · '+detail.cooccurring_windows+' co-occurring windows'}`;
     $('nmf-group-content').hidden=false;
     const support=$('nmf-support');support.replaceChildren();
@@ -535,7 +547,7 @@ if(typeof document!=='undefined'){
   function renderHypothesisList(maps){
    const box=$('pca-hypothesis-list');box.replaceChildren();
    const table=document.createElement('table'),head=table.createTHead().insertRow();
-   for(const [label,help] of [['Show','Include this hypothesis in the map'],['Hypothesis / rotation','Click the name to show only this hypothesis'],['Passing','Percentage of all checked windows where this hypothesis passes'],['New','Newly supported windows when added after every hypothesis above it'],['Better','Already-supported windows whose best passing local score increases when added after every hypothesis above it']]){
+   for(const [label,help] of [['Show','Include this hypothesis in the map'],['Hypothesis / rotation','Click the name to show only this hypothesis'],['Passing','Percentage of all checked windows where this hypothesis passes'],['Cumulative\npassing','Unique windows supported by this row and every row above it, irrespective of ticks. Shared passing windows count once. The map summary reports the actual checked pool.'],['New','Newly supported windows when added after every hypothesis above it'],['Better','Already-supported windows whose best passing local score increases when added after every hypothesis above it']]){
     const cell=document.createElement('th');cell.textContent=label;cell.title=help;cell.scope='col';head.append(cell);
    }
    const body=table.createTBody();
@@ -546,7 +558,7 @@ if(typeof document!=='undefined'){
     const cell=row.insertCell(),button=document.createElement('button');button.type='button';button.className='pca-hypothesis-name';button.title='Show only this hypothesis · '+sourceLabel(model);button.setAttribute('aria-label','Show only '+hypothesisLabel(model));
     const symbol=document.createElement('span');symbol.className='pca-hypothesis-symbol';button.append(symbol,document.createTextNode(`${i+1}. ${model.phase==='OMEGA'?'ω':model.phase} ${zoneLabel(model)}\n${model.rotation_deg.toFixed(1)}°`));cell.append(button);
     button.onclick=()=>{manualPool=true;selectedHypotheses.clear();selectedHypotheses.add(model.id);drawPhaseMap()};
-    const gain=poolSummaries[i];for(const value of [maps.model_passing_counts[model.id]||0,gain.newlySupported,gain.improved])row.insertCell().textContent=PcaView.supportPercent(value,maps.windows.length);
+    const gain=poolSummaries[i];for(const value of [maps.model_passing_counts[model.id]||0,gain.supported,gain.newlySupported,gain.improved])row.insertCell().textContent=PcaView.supportPercent(value,maps.windows.length);
    });box.append(table);
    if(!hypothesisOrder.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No retained hypotheses.';box.append(empty)}
   }
@@ -554,7 +566,7 @@ if(typeof document!=='undefined'){
    const top=$('pca-map-top'),count=reset?3:manualPool?selectedHypotheses.size:Number(top.value);
    hypothesisOrder=PcaView.orderedHypotheses(maps,$('pca-map-sort').value);poolSummaries=PcaView.hypothesisPools(maps,hypothesisOrder);
    const custom=new Option('Custom selection','custom');custom.disabled=true;
-   top.replaceChildren(custom,new Option('None','0'),...poolSummaries.map(pool=>new Option(`${pool.count} · ${PcaView.supportPercent(pool.supported,maps.windows.length)} supported`,String(pool.count))));
+   top.replaceChildren(custom,new Option('None','0'),...poolSummaries.map(pool=>new Option(String(pool.count),String(pool.count))));
    top.disabled=!maps.models.length;$('pca-map-sort').disabled=!maps.models.length;
    if(reset||!manualPool)selectTopHypotheses(count);else{const available=new Set(hypothesisOrder.map(m=>m.id));for(const id of selectedHypotheses)if(!available.has(id))selectedHypotheses.delete(id)}
    renderHypothesisList(maps);
@@ -590,7 +602,7 @@ if(typeof document!=='undefined'){
    const local=pca?maps.windows.map(win=>PcaView.localHypotheses(win,ids)):[];
    const winning=pca?PcaView.winningSolutions(maps,local,ZONE_SYMBOLS,solutionSymbols):[],showSymbols=pca&&$('pca-map-symbols').checked;
    if(pca){
-    const top=$('pca-map-top');top.value=manualPool?'custom':String(pool.length);top.querySelector('[value="custom"]').textContent=`Custom · ${pool.length} selected`;
+    const top=$('pca-map-top');top.value=manualPool?'custom':String(pool.length);top.querySelector('[value="custom"]').textContent=`Custom (${pool.length})`;
     const winners=new Set(winning.map(entry=>entry.model.id));
     for(const row of $('pca-hypothesis-list').querySelectorAll('[data-hypothesis]')){
      const id=Number(row.dataset.hypothesis);if(row.tagName==='INPUT'){row.checked=selectedHypotheses.has(id);continue}
