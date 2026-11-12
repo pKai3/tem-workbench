@@ -622,6 +622,7 @@ async function openFile(){
   if(isDiffraction())roi={x:0,y:0,w:info.width,h:info.height};
   else{const size=Math.min(info.width,info.height,Math.max(32,Math.round(preferredRegionNm/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size}}
   updateBox();renderSavedRegions();schedule(0);
+  document.dispatchEvent(new Event('tem-image-opened'));
   message(isDiffraction()?'Direct diffraction: check the beam centre, mask the beam stop if needed, and inspect the spot fits.':'');
  }catch(e){if(version===sourceRequest){finishSpectrumLoading();syncSpectrumExportControls();message(e.message,true)}}
 }
@@ -1071,7 +1072,7 @@ async function decodeSpectrumImage(images){
 }
 function colourSpectrum(raw,imageKind){
  const {canvas,pixels,precise,histogram,maximum,limits}=raw,ctx=canvas.getContext('2d');
- const percentile=f=>{let sum=0;for(let i=0;i<=maximum;i++){sum+=histogram[i];if(sum>=canvas.width*canvas.height*f)return i}return maximum};
+ const percentile=f=>{let sum=0;for(let i=0;i<=maximum;i++){sum+=histogram[i];if(sum>=(raw.sampleCount??canvas.width*canvas.height)*f)return i}return maximum};
  const lo=percentile(Number($('contrast').value)/100),high=clamp(Number($('fft-white').value)||99.8,91,100),hi=percentile(high/100);
  const linear=$('fft-curve').value==='linear'&&precise&&!raw.detector;
  const transform=code=>{if(!linear)return code;const intensity=Math.expm1(limits[0]+code/maximum*(limits[1]-limits[0]));return imageKind==='diffraction'?intensity:Math.sqrt(intensity)};
@@ -1081,7 +1082,7 @@ function colourSpectrum(raw,imageKind){
   lookup.set(rgb,code*3);
  }
  const out=ctx.createImageData(canvas.width,canvas.height);
- for(let i=0;i<out.data.length;i+=4){const code=precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i];out.data[i]=lookup[code*3];out.data[i+1]=lookup[code*3+1];out.data[i+2]=lookup[code*3+2];out.data[i+3]=255}
+ for(let i=0;i<out.data.length;i+=4){if(raw.mask&&!raw.mask[i/4]){out.data.set([0,0,0,255],i);continue}const code=precise?(pixels.data[i]<<8)|pixels.data[i+1]:pixels.data[i];out.data[i]=lookup[code*3];out.data[i+1]=lookup[code*3+1];out.data[i+2]=lookup[code*3+2];out.data[i+3]=255}
  ctx.putImageData(out,0,0);return canvas.toDataURL();
 }
 function spectrumTicks(extent){
@@ -1163,7 +1164,7 @@ function drawForbiddenReflections(fits,qp){
   section.append(status);host.append(section);
  }
 }
-function drawFitPredictions(fits,qp){
+function drawFitPredictions(fits,qp,overlay=$('fft-overlay')){
 const shownWeak=new Set(),positions=new Map();
 for(const f of fits){
  const matched=new Set(f.model.matches.map(m=>m.node_index));
@@ -1181,7 +1182,7 @@ for(const f of fits){
    if(shapeMode!=='off'){
     const title=f.geometry?`${f.name||'Geometry'} ${indexLabel(node.coefficients_mn.map(n=>sign*n),'()')}`:`${f.name} ${planeLabel(f.model,node.hkl,sign)} · ${f.model.valid?'passes screen':'below threshold'} · ${evidenceText}`;
     const entry={shapeMode,title,attrs:{...attrs,'data-marker-kind':'prediction','data-marker-phase':f.geometry?'geometry':f.model.phase,'data-marker-shape':shapeMode,'data-legend-label':f.geometry?f.name:f.name+' '+zoneLabel(f.model),'data-legend-color-target':f.colorTarget||''}};
-    if(f.geometry){const shape=markerShape(x,y,shapeMode,entry.attrs,7);shape.append(el('title',{},title));$('fft-overlay').append(shape)}
+    if(f.geometry){const shape=markerShape(x,y,shapeMode,entry.attrs,7);shape.append(el('title',{},title));overlay.append(shape)}
     else{
      const match=f.model.matches.find(m=>m.node_index===nodeIndex),q=node.q.map(v=>v*sign);
      const polarity=match&&q[0]*match.observed_q[0]+q[1]*match.observed_q[1]>=0?1:-1;
@@ -1195,7 +1196,7 @@ for(const f of fits){
     for(const q of observations){
      const key=JSON.stringify([evidence.weak_id,...q]);if(shownWeak.has(key))continue;shownWeak.add(key);
      const [wx,wy]=qp(q[0],q[1]),mark=weakMarker(wx,wy,evidence.weak_id);
-     if(mark){mark.append(el('title',{},'Weak detection · '+evidenceText));$('fft-overlay').append(mark)}
+     if(mark){mark.append(el('title',{},'Weak detection · '+evidenceText));overlay.append(mark)}
     }
    }
   }
@@ -1206,8 +1207,8 @@ for(const f of fits){
   if(entries.length>1){
    const symbol=sharedPredictionSymbols(px,py,entries,7);
    symbol.append(el('title',{},'Shared assigned spot or prediction: '+entries.map(e=>e.title).join(' / ')+'. Symbol centred on the mean fitted position; numerical fits are unchanged.'));
-   $('fft-overlay').append(symbol);
-  }else{const entry=entries[0],shape=markerShape(px,py,entry.shapeMode,entry.attrs,7);shape.append(el('title',{},entry.title));$('fft-overlay').append(shape)}
+   overlay.append(symbol);
+  }else{const entry=entries[0],shape=markerShape(px,py,entry.shapeMode,entry.attrs,7);shape.append(el('title',{},entry.title));overlay.append(shape)}
  }
 }
 function drawFFT(){

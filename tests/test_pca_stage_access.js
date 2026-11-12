@@ -8,11 +8,12 @@ function setup(){
  const $=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)};
  const result={decomposition:'pca',components:[],plan:{count:4,g_min:2.5,g_max:10},mean:{image:'mean'},raw_mean:{image:'raw'},explained:.8,fit_status:'complete',fits:{completed:4,total:4,groups:[]}};
  const context=vm.createContext({assert,$,job:{id:'job',state:'running',operation:'support'},pipeline:{stage:'support'},data:result,
-  selected:new Set(),section:'fits',index:0,epoch:1,groupEpoch:2,sampleEpoch:0,showAllSignals:true,liveRevision:0,snapshot:{file_id:'image'},sourceImage:null,
+  selected:new Set(),expandedSignals:new Set(),section:'fits',index:0,epoch:1,groupEpoch:2,sampleEpoch:0,showAllSignals:true,liveRevision:0,snapshot:{file_id:'image'},sourceImage:null,
   PcaView:require('../web/shared-spectra.js'),Image:class{},document:{createElement:element},phaseColors:{},
+  renderSpectrumPreviews(){},restoreView(){},rememberViewer(){},inspectorControls(){},sampledSpectrumUrl:spec=>spec.image,drawComponentFitOverlay(){},inspectorRender:null,el:(tag,attrs)=>{Object.entries(attrs);return element()},
   isPca:()=>true,sourceLabel:()=> 'PC 1+',showSection(section){context.section=section},controls(){},drawMap(){},showFits(){},showPhaseMaps(){},drawPhaseMap(){},
   notify(message){context.notice=message},setTimeout(fn){timers.push(fn)},pollTimer:null,
-  async api(path,body){requests.push({path,body});if(path==='pca/lobe')return new Promise(resolve=>pending.push(resolve));if(path.startsWith('pca/live'))return context.nextLive;if(path.startsWith('pca/result'))return {...result,phase_support_status:'complete'};return context.nextJob},
+  async api(path,body){requests.push({path,body});if(context.networkError)throw context.networkError;if(path==='pca/lobe')return new Promise(resolve=>pending.push(resolve));if(path.startsWith('pca/live'))return context.nextLive;if(path.startsWith('pca/result'))return {...result,phase_support_status:'complete'};return context.nextJob},
  });
  vm.runInContext(slice('  const running=','  function controls()'),context);
  vm.runInContext(slice('  function showResult(','  async function startStage('),context);
@@ -54,6 +55,14 @@ async function main(){
  incremental.context.nextLive={changed:true,revision:2,fits:incremental.context.data.fits,fit_status:'complete',phase_support_status:'running',phase_support:{generation:'a',window_offset:0,models:[],windows:[{index:0}],total:4}};
  await incremental.run('poll(1)');assert.equal(incremental.context.data.phase_support.windows.length,1);assert.equal(incremental.context.liveRevision,2);assert.equal(incremental.context.section,'fits');
  assert.ok(incremental.requests.some(r=>r.path.startsWith('pca/live')));
+ const retry=setup();retry.context.networkError=new TypeError('Failed to fetch');
+ await retry.run('poll(1)');assert.equal(retry.context.job.state,'running');assert.equal(retry.context.pipeline.stage,'support');assert.equal(retry.timers.length,1);assert.match(retry.context.notice,/reconnecting/);
+ retry.context.networkError=null;retry.context.nextJob={id:'job',state:'complete',operation:'support',automatic:true};
+ await retry.timers[0]();assert.equal(retry.context.pipeline,null);assert.match(retry.context.notice,/analysis complete/);
+ assert.ok(retry.requests.every(r=>!r.body),'recovery only reads the retained job; it never restarts analysis');
+ const restored=setup();restored.context.data=null;restored.context.nextJob={id:'job',state:'running',operation:'fit',automatic:true,has_result:true};
+ await restored.run('poll(1)');assert.equal(restored.context.pipeline.stage,'fit');assert.ok(restored.context.data);assert.equal(restored.context.notice.includes('reconnecting'),false);
+ const gone=setup();gone.context.networkError=Object.assign(new Error('No longer in memory'),{status:400});await gone.run('poll(1)');assert.equal(gone.timers.length,0);assert.equal(gone.context.job.state,'error');
  console.log('PCA stage access: early source inspection, live progress, completion preservation, mutation guards and stale replies passed.');
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

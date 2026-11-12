@@ -240,3 +240,21 @@ for(const phase of ['HCP','FCC','ORT','OMEGA']){
  assert.equal(context.independentFitStyle(fit).colorTarget,'orientation:'+phase+':1');
 }
 console.log('All-phase orientation colours: stable labels, separate editable colours, phase switching, shared shapes and Off passed.');
+
+// Component inspectors reuse the same renderer without writing into the main SVG.
+const componentSource=fs.readFileSync('web/shared-spectra.js','utf8');
+vm.runInContext(componentSource.slice(componentSource.indexOf('function drawComponentFitOverlay('),componentSource.indexOf("if(typeof module!==")),context);
+const popup=context.el('g');popup.replaceChildren=function(){this.children=[]};
+$('show-spectrum-overlays').getAttribute=()=> 'true';$('bcc-marker').value='square';$('peak-marker').value='circle';$('show-peak-numbers').checked=true;
+host.children=[];const detail={g_max:10,candidates:bccFits,peaks:[{profile_id:0,qx:1,qy:0}]},beforeDetail=JSON.stringify(detail);
+context.drawComponentFitOverlay(popup,detail,new Set([0,1]));
+assert.equal(host.children.length,0,'Inspector drawing cannot change the main image');
+assert.equal(popup.children.filter(n=>n.attrs['data-marker-kind']==='measured').length,2);
+assert.equal(popup.children.filter(n=>n.attrs['data-profile-number']===1).length,2);
+assert.equal(segments(popup.children[0]).length,2,'Shared assignments retain split variant colours');
+assert.equal(layers(popup.children[0])[0].attrs['data-marker-shape'],'square');
+assert.equal(layers(popup.children[0])[0].attrs['data-motion-offset'],.75,'Shared main animation timing');
+$('peak-marker').value='off';$('bcc-marker').value='off';context.drawComponentFitOverlay(popup,detail,new Set([0,1]));assert.equal(popup.children.length,0);
+$('show-spectrum-overlays').getAttribute=()=> 'false';$('peak-marker').value='circle';context.drawComponentFitOverlay(popup,detail,new Set([0]));assert.equal(popup.children.length,0);
+assert.equal(JSON.stringify(detail),beforeDetail,'Display changes leave fitting data intact');
+console.log('Component overlays reuse main shapes, numbering, animation, shared variants and master visibility.');

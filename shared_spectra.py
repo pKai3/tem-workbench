@@ -262,15 +262,14 @@ def encoded(values,valid=None,signed=False,limits=None):
 
 
 def spectrum_image(polar,p,signed=False,limits=None):
-    values,valid=cartesian(polar,p)
-    return encoded(values,valid,signed,limits)
+    return component_image(polar,p,signed,limits)
 
 
-def component_image(polar, p, signed):
+def component_image(polar, p, signed, limits=None):
     """Compact display raster; numeric exports retain full precision."""
     import base64
     values, valid = cartesian(polar, p)
-    result = encoded(values, valid, signed)
+    result = encoded(values, valid, signed, limits)
     lo, hi = result['limits']
     raster = np.rint(np.clip((values-lo)/max(hi-lo, 1e-20), 0, 1)*254).astype(np.uint8)
     raster[~valid] = 255
@@ -398,17 +397,21 @@ class SharedSpectra:
     def __init__(self):
         self.lock=threading.RLock();self.thread=None;self.cancel=threading.Event();self.job=None;self.result=None
         self.live_data={};self.live_revision=0;self.last_publish=0.;self.support_generation=None;self.pending_support=None
+        self.viewer=None
 
     def running(self):
         with self.lock:return bool(self.thread and self.thread.is_alive())
 
-    def start(self,item,settings,options,folder):
+    def start(self,item,settings,options,folder,viewer=None,pipeline=None):
         p=plan(item['info'],settings,options)
         with self.lock:
             if self.running():raise ValueError('Finish or cancel the current PCA first.')
             self.cancel=threading.Event();self.result=None;self.folder=Path(folder)
             self.live_data={};self.live_revision=0;self.last_publish=0.;self.support_generation=None;self.pending_support=None
-            self.job=dict(id=uuid.uuid4().hex,state='running',completed=0,total=p['count'],stage='Preparing',started=time.monotonic())
+            self.viewer=copy.deepcopy(viewer)
+            pipeline=copy.deepcopy(pipeline)
+            self.job=dict(id=uuid.uuid4().hex,state='running',operation='decomposition',automatic=pipeline is not None,
+                          completed=0,total=p['count'],stage='Preparing',started=time.monotonic())
             job_id=self.job['id']
             def progress(done,total,stage):
                 with self.lock:self.job.update(completed=done,total=total,stage=stage)
@@ -417,6 +420,12 @@ class SharedSpectra:
                     result=compute(item['array'],copy.deepcopy(item['info']),copy.deepcopy(settings),copy.deepcopy(options),self.cancel,progress)
                     check_cancel(self.cancel)
                     with self.lock:self.result=result;self.job.update(state='complete',stage='Complete')
+                    # The worker owns the whole run; a disconnected viewer cannot
+                    # strand it between decomposition, fitting and window checks.
+                    if pipeline is not None:
+                        self.fit(job_id,pipeline['templates'],pipeline['options'],_within_pipeline=True)
+                        if result.get('fit_status')=='complete':
+                            self.support(job_id,pipeline['templates'],_within_pipeline=True)
                 except CancelledError:
                     with self.lock:self.job.update(state='cancelled',stage='Cancelled')
                 except Exception as exc:
@@ -433,7 +442,13 @@ class SharedSpectra:
             status={k:v for k,v in self.job.items() if k!='started'}|dict(elapsed_seconds=self.job.get('elapsed_seconds',round(time.monotonic()-self.job['started'],1)))
             # Do not advertise completion until the worker can safely be replaced.
             if status['state']!='running' and self.running():status['state']='running'
+            status['has_result']=self.result is not None
             return status
+
+    def current(self):
+        with self.lock:
+            if not self.job:return None
+            return dict(job=self.status(self.job['id']),viewer=copy.deepcopy(self.viewer))
 
     def completed(self,job_id):
         with self.lock:
@@ -447,6 +462,7 @@ class SharedSpectra:
             self.status(job_id)
             if self.job['state']=='running' and self.job.get('operation') in ('fit','support') and self.result is not None:
                 return {k:v for k,v in self.result.items() if k not in ('fits','fit_status','phase_support','phase_support_status')} | self.live_data
+            if self.result is not None and self.job['state'] in ('complete','cancelled','error') and not self.running():return self.result
             return self.completed(job_id)
 
     def live(self,job_id,revision=-1,window_count=0,generation=''):
@@ -490,17 +506,16 @@ class SharedSpectra:
                                   phase_support_status=self.result.get('phase_support_status'))
             self._bump_live()
 
-    def fit(self,job_id,templates,options):
+    def fit(self,job_id,templates,options,_within_pipeline=False):
         with self.lock:
-            result=self.completed(job_id)
-            if self.running():raise ValueError('Finish or cancel the current operation first.')
+            result=self._stage_result(job_id,_within_pipeline)
             pca=result['plan'].get('method','pca')=='pca'
             if pca:
                 from pca_fitting import fit_features as fit_groups, combination_options as validate_options
             else:
                 from nmf_fitting import fit_groups, validate_options
             validate_options(result,options)
-            self.cancel=threading.Event()
+            if self.viewer is not None:self.viewer['fit_options']=copy.deepcopy(options)
             result.pop('phase_support',None);result.pop('phase_support_status',None)
             result['fit_status']='running';result['fits']=None
             self.live_data=dict(fits=None,fit_status='running',phase_support=None,phase_support_status=None)
@@ -525,13 +540,26 @@ class SharedSpectra:
                     with self.lock:
                         self._publish_fits(force=True)
                         self.job.update(state='complete',stage='Group fitting '+result.get('fit_status','finished'),elapsed_seconds=round(time.monotonic()-self.job['started'],1))
-            self.thread=threading.Thread(target=run,name='component-crystal-fit',daemon=True);self.thread.start()
-            return self.status(job_id)
+            if not _within_pipeline:
+                self.thread=threading.Thread(target=run,name='component-crystal-fit',daemon=True);self.thread.start()
+                return self.status(job_id)
+        run()
+        return self.status(job_id)
 
-    def support(self,job_id,templates):
+    def _stage_result(self,job_id,within_pipeline):
+        self.status(job_id)
+        if within_pipeline:
+            if threading.current_thread() is not self.thread:raise ValueError('Only the analysis worker can advance its pipeline.')
+            check_cancel(self.cancel)
+            return self.result
+        result=self.completed(job_id)
+        if self.running():raise ValueError('Finish or cancel the current operation first.')
+        self.cancel=threading.Event();self.job['automatic']=False
+        return result
+
+    def support(self,job_id,templates,_within_pipeline=False):
         with self.lock:
-            result=self.completed(job_id)
-            if self.running():raise ValueError('Finish or cancel the current operation first.')
+            result=self._stage_result(job_id,_within_pipeline)
             if result['plan'].get('method','pca')=='pca':
                 from pca_fitting import build
             else:
@@ -539,7 +567,6 @@ class SharedSpectra:
             fits=result.get('fits')
             if not fits or fits['completed']!=fits['total']:
                 raise ValueError('Finish component crystal fitting first.')
-            self.cancel=threading.Event()
             result['phase_support_status']='running';result.pop('phase_support',None)
             self.support_generation=uuid.uuid4().hex;self.pending_support=None
             self.live_data.update(phase_support=None,phase_support_status='running')
@@ -567,5 +594,8 @@ class SharedSpectra:
                         self.pending_support=None
                         self.live_data['phase_support_status']=result['phase_support_status'];self._bump_live()
                         self.job.update(state='complete',stage='Phase mapping '+result['phase_support_status'],elapsed_seconds=round(time.monotonic()-self.job['started'],1))
-            self.thread=threading.Thread(target=run,name='component-window-checks',daemon=True);self.thread.start()
-            return self.status(job_id)
+            if not _within_pipeline:
+                self.thread=threading.Thread(target=run,name='component-window-checks',daemon=True);self.thread.start()
+                return self.status(job_id)
+        run()
+        return self.status(job_id)

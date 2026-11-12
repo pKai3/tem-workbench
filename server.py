@@ -209,7 +209,11 @@ class Workbench:
             item = self.engine.load(body['file_id'])
             _, settings = self.engine.validate(item, body['roi'], body.get('settings', {}))
             snapshot = {**item, 'info': copy.deepcopy(item['info'])}
-            return self.pca.start(snapshot, settings, body.get('options', {}), self.engine.output_for(body['file_id']))
+            options=body.get('options', {})
+            fit_options=body.get('fit_options', {})
+            viewer=dict(file_id=body['file_id'],roi=body['roi'],settings=settings,options=options,fit_options=fit_options)
+            pipeline=dict(templates=self.engine.templates_for(settings),options=fit_options) if body.get('automatic') else None
+            return self.pca.start(snapshot, settings, options, self.engine.output_for(body['file_id']),viewer,pipeline)
 
     def fit_nmf(self, body, support=False):
         with self.lock, self.job_lock:
@@ -839,10 +843,12 @@ def make_handler(app):
                     self.send(app.batch.status())
                 elif url.path == '/api/pca':
                     self.send(app.pca.status(query['id'][0]))
+                elif url.path == '/api/pca/current':
+                    self.send(app.pca.current())
                 elif url.path == '/api/pca/live':
                     self.send(app.pca.live(query['id'][0],int(query.get('revision',[-1])[0]),int(query.get('windows',[0])[0]),query.get('generation',[''])[0]))
                 elif url.path == '/api/pca/result':
-                    self.send(shared_spectra.summary(app.pca.completed(query['id'][0])))
+                    self.send(shared_spectra.summary(app.pca.inspectable(query['id'][0])))
                 elif url.path == '/api/window-size':
                     self.send(app.window_probe.status(query['id'][0]))
                 elif url.path == '/api/job':
