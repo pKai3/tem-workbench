@@ -174,7 +174,7 @@ A component describes correlated variation. It can represent a phase, orientatio
 
 The common spectral grid limits reciprocal detail. Spatial resolution is governed by FFT window width, not just centre spacing; neighbouring windows are correlated. Individual-window displays represent sampling centres; stability displays aggregate overlapping footprints. Neither gives exact phase boundaries. Unsampled edge margins remain visible when Sample image rim is off. Changes in retained variance after smoothing do not establish better physical interpretation.
 
-The first pass limits each float32 spectral matrix to 64 MiB (970 windows at this grid size). Multiple matrices and decomposition buffers coexist, so this is not a total memory limit. Windows are limited to 32–2048 pixels per axis. The fitting band must span at least four native FFT bins. Cancellation is checked between windows and matrix stages, not inside a numerical-library operation.
+PCA and NMF share the ordinary grid's 10,000-window limit, including all placement passes and rim windows. At this limit each float32 spectral matrix occupies about 659 MiB; original and processed spectra coexist, and PCA also holds a centred matrix. Energy reductions avoid full double-precision copies, and NMF reconstruction residuals use an 8 MiB block buffer. These figures are not a total process-memory limit. Windows are limited to 32–2048 pixels per axis. The fitting band must span at least four native FFT bins. Cancellation is checked between windows, residual blocks and matrix stages, not inside a numerical-library operation.
 
 ## Validation and next experiments
 

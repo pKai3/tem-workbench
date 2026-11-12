@@ -30,7 +30,7 @@ from component_execution import selected_workers
 
 VERSION = 'local-fft-components-v2'
 RADIAL_BINS, ANGULAR_BINS = 96, 180
-MAX_MATRIX_BYTES = 64 * 1024**2
+RESIDUAL_BLOCK_BYTES = 8 * 1024**2
 LOG = logging.getLogger('tem_workbench')
 
 
@@ -68,21 +68,19 @@ def plan(info, settings, options):
     dx, dy = max(1, round(spacing/sx)), max(1, round(spacing/sy))
     nx, ny = (width-w)//dx+1, (height-h)//dy+1
     count = nx*ny
-    if count < 4:
-        raise ValueError('Choose a smaller window or spacing to sample at least four locations.')
-    if count*RADIAL_BINS*ANGULAR_BINS*4 > MAX_MATRIX_BYTES:
-        raise ValueError(f'{count} windows exceed the PCA memory budget (maximum {MAX_MATRIX_BYTES//(RADIAL_BINS*ANGULAR_BINS*4)}). Increase centre spacing.')
-    xs = ((width-w-(nx-1)*dx)//2 + np.arange(nx)*dx).astype(int)
-    ys = ((height-h-(ny-1)*dy)//2 + np.arange(ny)*dy).astype(int)
     sampling = {}
     if any(key in options for key in ('layout', 'passes', 'sample_edges')):
         samples, grid = overlap_maps.sampling(info, dict(window_nm=window, spacing_nm=spacing,
             layout=options.get('layout', 'hex'), passes=options.get('passes', 1),
             sample_edges=options.get('sample_edges', True)))
         count = len(samples)
-        if count < 4 or count*RADIAL_BINS*ANGULAR_BINS*4 > MAX_MATRIX_BYTES:
-            raise ValueError(f'{count} windows including passes/rim exceed the supported range (4–{MAX_MATRIX_BYTES//(RADIAL_BINS*ANGULAR_BINS*4)}). Increase centre spacing or reduce placement passes.')
         sampling = dict(samples=samples, grid=grid)
+    if count < 4:
+        raise ValueError('Choose a smaller window or spacing to sample at least four locations.')
+    if count > overlap_maps.MAX_WINDOWS:
+        raise ValueError(f'{count} windows exceed the {overlap_maps.MAX_WINDOWS:,}-window map limit. Increase centre spacing or reduce placement passes.')
+    xs = ((width-w-(nx-1)*dx)//2 + np.arange(nx)*dx).astype(int)
+    ys = ((height-h-(ny-1)*dy)//2 + np.arange(ny)*dy).astype(int)
     n_components = number(options, 'components', 8, 1, 16)
     if int(n_components) != n_components:
         raise ValueError('Component count must be an integer.')
@@ -140,6 +138,24 @@ def features(raw, p, weights):
     return values/max(norm,1e-20), norm
 
 
+def squared_row_norms(matrix):
+    """Accumulate in double precision without copying/squaring the full matrix."""
+    return np.einsum('ij,ij->i', matrix, matrix, dtype=np.float64)
+
+
+def reconstruction_errors(matrix, scores, components, cancel=None):
+    """Per-window squared residuals with a bounded reconstruction buffer."""
+    rows = max(1, RESIDUAL_BLOCK_BYTES // (matrix.shape[1]*matrix.dtype.itemsize))
+    errors = np.empty(len(matrix), np.float64)
+    for start in range(0, len(matrix), rows):
+        check_cancel(cancel)
+        stop = start+rows
+        residual = scores[start:stop]@components
+        residual -= matrix[start:stop]
+        errors[start:stop] = squared_row_norms(residual)
+    return errors
+
+
 def decompose(matrix, components, cancel=None):
     """Centred PCA; exact small SVD, seeded randomized range for larger jobs.
 
@@ -149,8 +165,9 @@ def decompose(matrix, components, cancel=None):
     check_cancel(cancel)
     mean = matrix.mean(axis=0,dtype=np.float64).astype(np.float32)
     x = matrix-mean
-    energy = float(np.sum(x.astype(np.float64)**2))
-    if energy <= 1e-14*max(1.,float(np.sum(matrix.astype(np.float64)**2))):
+    window_energy = squared_row_norms(x)
+    energy = float(window_energy.sum())
+    if energy <= 1e-14*max(1.,float(squared_row_norms(matrix).sum())):
         raise ValueError('No measurable variation between windows; PCA has nothing to separate.')
     k = min(components,min(x.shape)-1)
     if min(x.shape)<=64:
@@ -174,7 +191,7 @@ def decompose(matrix, components, cancel=None):
     scores=x@v.T
     captured=np.sum(scores.astype(np.float64)**2,axis=0)
     variance=captured/energy
-    residual=np.sqrt(np.maximum(0,np.sum(x.astype(np.float64)**2,axis=1)-np.sum(scores.astype(np.float64)**2,axis=1)))
+    residual=np.sqrt(np.maximum(0,window_energy-squared_row_norms(scores)))
     return dict(mean=mean,components=v,scores=scores,explained_variance_ratio=variance,
                 residual=residual,algorithm=algorithm,total_energy=energy)
 
@@ -195,14 +212,13 @@ def decompose_nmf(matrix, components, cancel=None, progress=None, iterations=300
     amplitude=np.sqrt(float(x.mean())/k)
     w=(rng.random((len(x),k),dtype=np.float32)+.1)*amplitude
     h=(rng.random((k,x.shape[1]),dtype=np.float32)+.1)*amplitude
-    energy=float(np.sum(x.astype(np.float64)**2));previous=None;converged=False
+    energy=float(squared_row_norms(x).sum());previous=None;converged=False
     for step in range(1,iterations+1):
         check_cancel(cancel)
         h *= (w.T@x)/np.maximum((w.T@w)@h,1e-20)
         w *= (x@h.T)/np.maximum(w@(h@h.T),1e-20)
         if step%10==0 or step==iterations:
-            residual=x-w@h
-            error=float(np.sum(residual.astype(np.float64)**2))
+            error=float(reconstruction_errors(x,w,h,cancel).sum())
             if progress:progress(step,iterations,'NMF iterations')
             if previous is not None and step>=50 and 0 <= (previous-error)/max(previous,1e-20)<1e-5:
                 converged=True;break
@@ -211,7 +227,7 @@ def decompose_nmf(matrix, components, cancel=None, progress=None, iterations=300
     norm=np.maximum(h.sum(axis=1),1e-20);h/=norm[:,None];w*=norm[None,:]
     shares=w.sum(axis=0,dtype=np.float64);shares/=shares.sum()
     order=np.argsort(-shares);h=h[order];w=w[:,order];shares=shares[order]
-    residual=np.linalg.norm(x-w@h,axis=1)
+    residual=np.sqrt(reconstruction_errors(x,w,h,cancel))
     return dict(mean=np.zeros(x.shape[1],np.float32),components=h,scores=w,
                 explained_variance_ratio=np.zeros(k),contribution_share=shares,
                 residual=residual,algorithm='euclidean_multiplicative_nmf_seed0',

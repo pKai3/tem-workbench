@@ -87,6 +87,59 @@ class SharedSpectraTests(unittest.TestCase):
         cancel=threading.Event();cancel.set()
         with self.assertRaises(CancelledError):pca.compute(self.image,INFO,SETTINGS,OPTIONS,cancel)
 
+    def test_window_limit_matches_ordinary_grid_including_passes_and_rim(self):
+        import component_grid
+        info={**INFO,'width':428,'height':428}
+        options=dict(window_nm=1.28,spacing_nm=.16,components=2)
+        self.assertEqual(pca.overlap_maps.MAX_WINDOWS,10000)
+        for method in ('pca','nmf'):
+            # The legacy rectangular viewer and the main/batch grid share the cap.
+            legacy=pca.plan(info,SETTINGS,{**options,'method':method})
+            self.assertEqual(legacy['count'],10000)
+            overlap={**options,'layout':'square','passes':1,'sample_edges':True}
+            resolved,_,grid=component_grid.options_for(info,overlap,dict(method=method),1)
+            planned=pca.plan(info,SETTINGS,resolved)
+            self.assertEqual(planned['count'],10000)
+            self.assertEqual(planned['count'],grid['sample_count'])
+            self.assertEqual(len(pca.window_samples(planned)),10000)
+            with self.assertRaisesRegex(ValueError,r'10,?000'):
+                pca.plan({**info,'width':432,'height':432},SETTINGS,{**options,'method':method})
+            for extras in (dict(passes=3),dict(sample_edges=True)):
+                # 10,000 interior windows, but extra passes or rim exceed the cap.
+                with self.assertRaisesRegex(ValueError,r'10,?000'):
+                    pca.plan({**info,'width':430,'height':430},SETTINGS,
+                             {**options,'method':method,'layout':'square','passes':1,'sample_edges':False,**extras})
+            large=pca.plan(INFO,SETTINGS,{**OPTIONS,'method':method,'spacing_nm':.8,
+                            'layout':'hex','passes':9,'sample_edges':True})
+            self.assertEqual(large['count'],4634)
+            self.assertGreater(large['grid']['rim_sample_count'],0)
+
+    def test_large_window_decomposition_keeps_every_row(self):
+        rng=np.random.default_rng(45)
+        matrix=(rng.random((10000,2),dtype=np.float32)@rng.random((2,96),dtype=np.float32))
+        before=matrix.copy()
+        p=pca.decompose(matrix,2)
+        np.testing.assert_allclose(p['mean']+p['scores']@p['components'],matrix,atol=5e-6)
+        n=pca.decompose_nmf(matrix,2,iterations=20)
+        self.assertEqual(n['scores'].shape,(10000,2))
+        expected=np.linalg.norm(matrix.astype(float)-n['scores']@n['components'],axis=1)
+        np.testing.assert_allclose(n['residual'],expected,atol=1e-6)
+        np.testing.assert_array_equal(matrix,before)
+
+    def test_residual_blocks_preserve_errors_and_cancellation(self):
+        rng=np.random.default_rng(9)
+        x=rng.random((37,90),dtype=np.float32)
+        scores=rng.random((37,3),dtype=np.float32)
+        components=rng.random((3,90),dtype=np.float32)
+        expected=np.sum((x-scores@components).astype(float)**2,axis=1)
+        with patch.object(pca,'RESIDUAL_BLOCK_BYTES',90*4*5), patch.object(pca,'squared_row_norms',wraps=pca.squared_row_norms) as norms:
+            actual=pca.reconstruction_errors(x,scores,components)
+            self.assertGreater(norms.call_count,1)
+            self.assertTrue(all(len(call.args[0])<=5 for call in norms.call_args_list))
+        np.testing.assert_allclose(actual,expected,rtol=1e-7)
+        cancel=threading.Event();cancel.set()
+        with self.assertRaises(CancelledError):pca.reconstruction_errors(x,scores,components,cancel)
+
     def test_samples_share_scale_and_exports_reconstruct(self):
         r=self.result;s=pca.sample(r,0,[0,1])
         self.assertEqual(s['raw']['limits'],s['processed']['limits'])
