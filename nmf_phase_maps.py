@@ -7,7 +7,7 @@ import math
 import numpy as np
 import analysis_core as core
 from shared_spectra import check_cancel
-from nmf_fitting import detect_peaks, search_candidates, group_spectrum, compact
+from nmf_fitting import detect_peaks, search_candidates, group_spectrum, compact, matching_width
 
 
 def classify(candidates, peaks):
@@ -111,7 +111,7 @@ def build(result, templates, cancel=None, progress=None):
         raise ValueError('Finish fitting all NMF combinations before building phase maps.')
     check_cancel(cancel)
     fraction=fits['peak_fraction'];cooccurrence=fits.get('cooccurrence_fraction',.2)
-    tolerance=max(.1,1/min(result['plan']['window_nm']))
+    tolerance=matching_width(result)
     scores=result['scores'];maxima=scores.max(axis=0)
     active=(scores>=cooccurrence*maxima)&(maxima>1e-20)
     models=[];eligibility=[];groups=fits['groups']

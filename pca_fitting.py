@@ -9,14 +9,14 @@ from collections import OrderedDict
 import numpy as np
 import analysis_core as core
 from shared_spectra import check_cancel, number, spectrum_image
-from nmf_fitting import detect_peaks, search_candidates, compact, screen_reasons
+from nmf_fitting import detect_peaks, search_candidates, compact, screen_reasons, matching_width, DEFAULT_PEAK_FRACTION
 from nmf_phase_maps import match_local, LOCAL_ROTATION_DEG, LOCAL_SCALE_FRACTION
 
 
 def validate_options(result, options):
     if result['plan'].get('method', 'pca') != 'pca':
         raise ValueError('Signed feature fitting requires PCA.')
-    return number(options, 'peak_fraction', .2, .01, 1)
+    return number(options, 'peak_fraction', DEFAULT_PEAK_FRACTION, .01, 1)
 
 
 def lobe_spectrum(result, component, side):
@@ -35,7 +35,7 @@ def fit_lobes(result, templates, options, cancel=None, progress=None):
     records = []
     fits = dict(kind='pca_signed_lobes', version=2, groups=records, total=total,
                 completed=0, peak_fraction=fraction, candidates_per_phase=5,
-                tolerance_nm_inv=max(.1, 1/min(result['plan']['window_nm'])),
+                tolerance_nm_inv=matching_width(result),
                 scoring='Position minus chance allowance minus scale cost; uniform profile weights. Lobe fit is a hypothesis, not original-window support. No weak/missing, brightness or double-diffraction adjustments.',
                 grouping='Positive and negative loadings divided by reciprocal-area weights, clipped separately at zero. No offset, mean addition, score-sign gate or combination of opposite lobes.',
                 validation='Every retained orientation, including below-screen feature fits, is checked against every original unbroadened window. PCA sign is arbitrary; flipping loading and scores swaps side labels only.')
@@ -65,7 +65,7 @@ def lobe_detail(result, component, side, templates, options=None):
                 candidates=[dict(compact(m), rejection_reasons=screen_reasons(m),
                                  predicted_nodes=m['predicted_nodes'], matches=m['matches']) for m in candidates],
                 phases=list(dict.fromkeys(t['phase'] for t in templates)),
-                peak_fraction=fraction, g_max=result['plan']['g_max'])
+                peak_fraction=fraction, g_max=result['plan']['g_max'],tolerance_nm_inv=matching_width(result))
 
 
 def combination_options(result, options):
@@ -155,11 +155,11 @@ def combination_detail(result, ids, index, templates, options=None):
     return dict(kind='pca_combination',components=sorted(set(ids)),window=index,coefficients=coefficients.tolist(),
                 negative_fraction=float(np.mean(spectrum<0)),spectrum=spectrum_image(spectrum,result['plan']),peaks=peaks,
                 candidates=[dict(compact(m),rejection_reasons=screen_reasons(m),predicted_nodes=m['predicted_nodes'],matches=m['matches']) for m in candidates],
-                phases=list(dict.fromkeys(t['phase'] for t in templates)),peak_fraction=fraction,g_max=result['plan']['g_max'])
+                phases=list(dict.fromkeys(t['phase'] for t in templates)),peak_fraction=fraction,g_max=result['plan']['g_max'],tolerance_nm_inv=matching_width(result))
 
 
 def _local(result, peaks, model):
-    width = max(.1, 1/min(result['plan']['window_nm']))
+    width = matching_width(result)
     if model['phase'] == 'OMEGA':
         width *= result['settings'].get('omega_falloff_multiplier', 1.)
     return match_local(peaks, model, width, result['settings'])
@@ -196,7 +196,7 @@ def unique_models(result, cancel=None):
                        components=group['components'],side=group['side'])
             # Backward compatibility for fits already held by an older server.
             if 'position_matching' not in model:
-                width=max(.1,1/min(result['plan']['window_nm']))
+                width=matching_width(result)
                 if model['phase']=='OMEGA':width*=result['settings'].get('omega_falloff_multiplier',1.)
                 model['position_matching']=dict(distance_scale_nm_inv=width)
             model.setdefault('fitting_band_nm_inv',[result['plan']['g_min'],result['plan']['g_max']])
@@ -248,6 +248,8 @@ def build(result, templates, cancel=None, progress=None):
                 model_passing_counts={str(mid):len(values) for mid,values in support_scores.items()},
                 model_mean_support={str(mid):float(np.mean(values)) if values else 0. for mid,values in support_scores.items()},
                 parameters=dict(peak_fraction=fits['peak_fraction'], score_gate=False,
+                                tolerance_nm_inv=matching_width(result),
+                                omega_falloff_multiplier=result['settings'].get('omega_falloff_multiplier',1.),
                                 local_rotation_deg=LOCAL_ROTATION_DEG, local_scale_fraction=LOCAL_SCALE_FRACTION,
                                 minimum_profiles=4, minimum_prediction_coverage=.3, minimum_support=.2),
                 interpretation='Per-geometry support in all original unbroadened sampled windows, regardless of score sign or magnitude. Near duplicates across feature/combination sources keep the highest-ranked unchanged fit and all source links; each geometry is checked once. Global display ranking is passing-window count, then mean passing support. Resolved same-phase orientations remain separate. Counts across hypotheses overlap and must not be summed. Shared predictions alone do not establish coexistence.',
@@ -269,7 +271,9 @@ def window_detail(result, index, model_id):
     match = local['match'] if local else dict(predicted_nodes=model['predicted_nodes'], matches=[])
     # The original-window screen only counts close assignments, unlike lobe search.
     matches = [m for m in match['matches'] if m['profile_id'] in candidate['profiles']]
+    width=matching_width(result)*(result['settings'].get('omega_falloff_multiplier',1.) if model['phase']=='OMEGA' else 1.)
     fitted = {**model, **candidate, 'predicted_nodes':match['predicted_nodes'], 'matches':matches,
+              'position_matching':dict(distance_scale_nm_inv=width,search_radius_nm_inv=core.matching_radius(width)),
               'matched_profile_count':len(matches), 'coverage':len(matches)/max(len(peaks), 1),
               'rejection_reasons':[] if candidate['valid'] else ['Below original-window support screen']}
     for axis in 'abc':
@@ -278,4 +282,4 @@ def window_detail(result, index, model_id):
     return dict(kind='pca_window', component=model['component'], components=model['components'],side=model['side'], sources=model.get('sources',[]),window=index,
                 spectrum=spectrum_image(result['raw_spectra'][index], result['plan']), peaks=peaks,
                 candidates=[fitted], phases=[model['phase']], component_score=candidate['component_score'],
-                peak_fraction=maps['parameters']['peak_fraction'], g_max=result['plan']['g_max'])
+                peak_fraction=maps['parameters']['peak_fraction'], g_max=result['plan']['g_max'],tolerance_nm_inv=width)

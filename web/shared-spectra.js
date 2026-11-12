@@ -12,6 +12,18 @@ const PcaView={
  topHypotheses(maps,n){
   return [...maps.models].sort((a,b)=>(maps.model_passing_counts[b.id]||0)-(maps.model_passing_counts[a.id]||0)||(maps.model_mean_support?.[b.id]||0)-(maps.model_mean_support?.[a.id]||0)||a.id-b.id).slice(0,Math.max(1,Math.floor(n)||1));
  },
+ hypothesisPools(maps){
+  const ranked=this.topHypotheses(maps,maps.models.length),order=new Map(ranked.map((m,i)=>[m.id,i])),added=ranked.map(()=>0);
+  // A window joins the pool when its first passing hypothesis is included.
+  for(const window of maps.windows){
+   let first=ranked.length;
+   for(const candidate of window.candidates)if(candidate.valid&&order.has(candidate.model))first=Math.min(first,order.get(candidate.model));
+   if(first<ranked.length)added[first]++;
+  }
+  let supported=0;
+  return added.map((count,i)=>({count:i+1,supported:supported+=count}));
+ },
+ supportPercent(count,total){return `${(total?100*count/total:0).toFixed(1)}%`},
  localHypotheses(window,ids){
   const pool=new Set(ids),passing=window.candidates.filter(c=>pool.has(c.model)&&c.valid).sort((a,b)=>b.score-a.score||a.model-b.model);
   if(!passing.length)return {passing,winner:null,label:'unresolved',independent:[]};
@@ -253,8 +265,9 @@ if(typeof document!=='undefined'){
    $('nmf-support-heading').textContent=pca?'Original-window checks':'Phase support';
    $('nmf-fit').textContent=pca?'Fit selected scope':'Fit all combinations';
    $('nmf-build-map').textContent=pca?'Check original windows':'Build phase maps';
-   $('nmf-cutoff-label').textContent=pca?'Feature peak cutoff':'Factor peak cutoff';
+   $('nmf-cutoff-label').textContent='Peak cutoff';
    $('nmf-fit-help').textContent=pca?'Individual positive/negative features are fitted separately. Selected combinations reconstruct the mean plus actual signed scores times loadings at each sampled window. Up to five distinct candidates per phase per source/subset are retained, with an exact source window. Open Analysis settings to change the selected PCs or scope. Original-window support is checked separately.':'Every nonempty NMF subset is fitted with captured phase and scale settings. Weighted sums use mean coefficients in co-occurring windows, or global means if none. Ranks use position minus scale cost, without main-analysis photometric penalties.';
+   $('nmf-fit-help').textContent+=' Peak cutoff is the fraction of the strongest maximum above the median at the same reciprocal radius: default 0.35. Higher values reject more weak/background maxima. The saved cutoff applies to features, combinations and original-window checks; it is not a distance or an absolute brightness threshold. Matching uses the same native FFT taper-response width as ordinary FFT fits; optional decomposition smoothing does not widen it.';
    $('nmf-map-phase-label').textContent=pca?'Hypothesis':'Phase';
    $('nmf-map-help').textContent=pca?'Top N is a global pool ranked by passing-window count, then mean passing support. Best local match colours each square by its highest-support passing member; all locally supported shows every passing pool member. No passing member means unresolved. A white corner marks close competing explanations of shared peaks. Multiple patterns require at least three unique nonparallel profiles and over 15% of detected profiles per pattern. Passing overlays alone are not proof of coexistence or phase fractions. All hypotheses are checked against every original unbroadened window with ±3°/±3% refinement (rotation only for fixed scale), regardless of PCA score.':'Group fits are checked in eligible original windows with bounded local rotation and scale refinement. One best passing model per phase. Blended cells require separate nonparallel evidence. Pink marks competing explanations; colours are not phase fractions.';
    showSection(section);
@@ -395,7 +408,7 @@ if(typeof document!=='undefined'){
    try{
     const detail=await api(original?'pca/window-fit':combination?'pca/combination':isPca()?'pca/lobe':'pca/group',original?{id:jobId,index:windowIndex,model:windowModel}:{id:jobId,components:group.components,component:group.component,side:group.side,index:group.window,options:{peak_fraction:Number($('nmf-cutoff').value)}});
     if(serial!==groupEpoch||job?.id!==jobId)return;
-    status.textContent=`${detail.peaks.length} detected profiles · cutoff ${detail.peak_fraction} · ${detail.phases.join(' + ')||'no phases'}${isPca()?(original?' · original unbroadened spectrum'+(detail.component_score==null?'':` · PC ${detail.component+1} score `+detail.component_score.toPrecision(3)):combination?` · mean + score-weighted PCs · source window ${detail.window+1}`:' · '+group.side+' deviations from the mean'):' · '+detail.cooccurring_windows+' co-occurring windows'}`;
+    status.textContent=`${detail.peaks.length} detected profiles · peak cutoff ${detail.peak_fraction} · ${detail.phases.join(' + ')||'no phases'}${isPca()?(original?' · original unbroadened spectrum'+(detail.component_score==null?'':` · PC ${detail.component+1} score `+detail.component_score.toPrecision(3)):combination?` · mean + score-weighted PCs · source window ${detail.window+1}`:' · '+group.side+' deviations from the mean'):' · '+detail.cooccurring_windows+' co-occurring windows'}`;
     $('nmf-group-content').hidden=false;
     const support=$('nmf-support');support.replaceChildren();
     const note=document.createElement('p');note.className='hint settings-heading-label';note.textContent=original?'Original-window support':'Partial-match screen';
@@ -405,6 +418,7 @@ if(typeof document!=='undefined'){
     if(!original)helpText.textContent+=' Near-duplicate fits of the same phase and zone keep only the higher rank: interior predictions must pair within one matching width, allowing reflections to cross a fitting-limit boundary. Different matched-peak subsets alone do not create a new solution.';
     if(original)helpText.textContent+=' Repeated orientations across PCA components/signs use one best representative and retain every feature source. Support counts are not added. The displayed PC score belongs to the representative source.';
     if(combination&&!original)helpText.textContent='This spectrum is the PCA mean plus selected signed score-weighted loadings for the named source window, with area weighting and normalization reversed. It is a partial reconstruction, not the original spectrum. Candidate support is checked separately in every original window. Scores: '+detail.components.map((c,i)=>`PC ${c+1}: ${detail.coefficients[i].toPrecision(4)}`).join('; ')+`. Negative reconstructed pixels: ${(100*detail.negative_fraction).toFixed(1)}%.`;
+    if(detail.tolerance_nm_inv)helpText.textContent+=original?` Counted matches must lie within ${detail.tolerance_nm_inv.toFixed(3)} nm⁻¹ (one native FFT taper-response width, including any omega multiplier). Farther assignments contribute decreasing positional credit out to ${(4*detail.tolerance_nm_inv).toFixed(3)} nm⁻¹ but do not count toward the four-profile minimum. Opposite spots count as one profile.`:` The base matching width is ${detail.tolerance_nm_inv.toFixed(3)} nm⁻¹, from the native FFT taper response. Search assignments extend to four widths with decreasing positional credit; omega uses its configured multiplier. Original-window match counts require one width. Opposite spots count as one profile.`;
     if(!isPca()&&!detail.cooccurring_windows){const warning=document.createElement('p');warning.textContent='No co-occurring windows: this sum uses global means and is hypothetical.';support.append(warning)}
     const chosen=new Set(detail.candidates.length?[0]:[]),canvas=$('nmf-group-spectrum'),ctx=canvas.getContext('2d'),img=new Image();
     const colours={BCC:'#36ff58',HCP:'#79bcff',OMEGA:'#ffb54a',FCC:'#ff79c6',ORT:'#66dfbc'};
@@ -432,6 +446,7 @@ if(typeof document!=='undefined'){
       const name=row.insertCell(),meta=document.createElement('details'),summary=document.createElement('summary'),metrics=document.createElement('p');meta.className='nmf-candidate-meta';summary.textContent=`${m.phase} [${m.zone_3index.join(' ')}] · ${m.rotation_deg.toFixed(1)}°`;summary.style.color=colours[m.phase]||'#ddd';
       const cell=['a','b','c'].filter(a=>m['fitted_'+a+'_nm']!=null).map(a=>`${a} ${m['fitted_'+a+'_nm'].toFixed(4)}`).join(' · ')||'—';
       metrics.textContent=`RMS ${m.rms_nm_inv.toFixed(3)} nm⁻¹ · Cell ${cell} nm${m.scale_note?' · '+m.scale_note:''}${m.valid?'':' · '+m.rejection_reasons.join('; ')}`;meta.append(summary,metrics);name.append(meta);
+      if(m.position_matching?.distance_scale_nm_inv)metrics.textContent+=` · Match ${original?'≤':'<'} ${(m.position_matching.distance_scale_nm_inv*(original?1:4)).toFixed(3)} nm⁻¹`;
       const rank=row.insertCell();rank.textContent=m.score.toFixed(4);rank.title=`Position ${(m.position_score??m.score).toFixed(4)} − scale ${(m.scale_penalty??0).toFixed(4)}${original?' − local scale '+(m.local_scale_penalty??0).toFixed(4):''}`;
       const screen=row.insertCell();screen.textContent=m.valid?'Pass':'Below';screen.title=m.valid?'Passes the partial-match screen':m.rejection_reasons.join('; ')||'Below screen';
       row.insertCell().textContent=`${m.matched_profile_count}/${detail.peaks.length}`;
@@ -452,10 +467,13 @@ if(typeof document!=='undefined'){
    if(!maps)return;
    if(isPca()){
     select.replaceChildren();
-    PcaView.topHypotheses(maps,maps.models.length).forEach(m=>select.add(new Option(`${hypothesisLabel(m)} · ${maps.model_passing_counts[m.id]}/${maps.windows.length} windows`,String(m.id))));
+    PcaView.topHypotheses(maps,maps.models.length).forEach(m=>select.add(new Option(`${hypothesisLabel(m)} · ${maps.model_passing_counts[m.id]}/${maps.windows.length} windows (${PcaView.supportPercent(maps.model_passing_counts[m.id]||0,maps.windows.length)})`,String(m.id))));
     if(!maps.models.length)select.add(new Option('No retained feature fits',''));
     select.disabled=!maps.models.length;
-    $('pca-map-top').max=Math.max(1,maps.models.length);$('pca-map-top').value=Math.min(Number($('pca-map-top').value)||3,Math.max(1,maps.models.length));
+    const top=$('pca-map-top'),count=Math.min(Number(top.value)||3,Math.max(1,maps.models.length));
+    top.replaceChildren(...PcaView.hypothesisPools(maps).map(pool=>new Option(`${pool.count} · ${PcaView.supportPercent(pool.supported,maps.windows.length)} supported`,String(pool.count))));
+    if(!maps.models.length)top.add(new Option('No retained hypotheses',''));
+    top.disabled=!maps.models.length;if(maps.models.length)top.value=String(count);
     if([...select.options].some(o=>o.value===previous))select.value=previous;
     $('nmf-map-counts').textContent=`${maps.windows.length} original windows checked · ${maps.models.length} retained hypotheses`;
     return;
@@ -501,7 +519,10 @@ if(typeof document!=='undefined'){
    const selectedCandidate=model?win.candidates.find(c=>c.model===model.id):null;
    const state=local[index],descriptions={unresolved:'unresolved',single:'one supported pattern',multiple:'separate patterns supported',ambiguous:'competing explanations'};
    $('nmf-map-window').textContent=pca?`Window ${index+1} · ${single?(selectedCandidate?.valid?'supported':'below support'):descriptions[state.label]} · ${win.peak_count} profiles${selectedCandidate?.component_score!=null?` · PC ${selectedCandidate.component+1} score `+selectedCandidate.component_score.toPrecision(3):''}`:`Window ${index+1} · ${win.label}${win.phases.length?' · '+win.phases.join(' + '):''} · ${win.peak_count} profiles · ${win.tested_models} eligible fits`;
-   if(pca)$('nmf-map-counts').textContent=single?(model?`${maps.model_passing_counts[model.id]} / ${maps.windows.length} windows support this hypothesis. Representative source: ${model.valid?'Pass':'Below'}.`:'No retained hypotheses.'):`Top ${pool.length} of ${maps.models.length} hypotheses · ${local.filter(s=>s.winner).length}/${maps.windows.length} windows supported by this pool`;
+   if(pca){
+    const supported=local.filter(s=>s.winner).length,summary=`${supported}/${maps.windows.length} windows (${PcaView.supportPercent(supported,maps.windows.length)})`;
+    $('nmf-map-counts').textContent=single?(model?`${summary} support this hypothesis. Representative source: ${model.valid?'Pass':'Below'}.`:'No retained hypotheses.'):`Top ${pool.length} of ${maps.models.length} hypotheses · ${summary} supported by this pool`;
+   }
    const box=$('nmf-map-evidence');box.replaceChildren();
    const table=document.createElement('table'),head=table.createTHead().insertRow();
    [isPca()?'Original-window overlay':'Phase / group','Local support','Screen','Matched predictions','Prediction coverage'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th)});

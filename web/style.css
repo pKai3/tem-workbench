@@ -981,7 +981,7 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #nmf-fitting[hidden]{display:none}
 .pca-controls{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}
 .pca-source-links{align-items:center}
-.pca-controls #pca-map-top{width:5em}
+.pca-controls #pca-map-top{width:15em;max-width:100%}
 #pca-combination-components{width:16ch;max-width:100%}
 .pca-controls [hidden]{display:none}.pca-controls input[type=number]{width:110px}.pca-controls label{display:flex;flex-direction:column;gap:5px;min-width:0}
 .pca-controls select{max-width:100%;min-width:0}

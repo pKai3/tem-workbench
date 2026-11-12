@@ -9,11 +9,20 @@ import analysis_core as core
 import scale_fitting
 from shared_spectra import check_cancel, number, spectrum_image, RADIAL_BINS, ANGULAR_BINS
 
+DEFAULT_PEAK_FRACTION = .35
+
+
+def matching_width(result):
+    """Use the same taper-response width as ordinary FFT crystal fitting."""
+    p=result['plan'];s=result['settings']
+    return max(.1,core.fft_window_width(p['window_nm'],p['window_pixels'],
+                                       s.get('fft_window','hann'),s.get('fft_tukey_alpha',.5)))
+
 
 def validate_options(result, options):
     if result['plan'].get('method') != 'nmf':
         raise ValueError('Crystal fitting requires nonnegative NMF components; rerun using NMF.')
-    return number(options,'peak_fraction',.2,.01,1)
+    return number(options,'peak_fraction',DEFAULT_PEAK_FRACTION,.01,1)
 
 
 def group_spectrum(result, ids):
@@ -71,7 +80,7 @@ def compact(model):
 def search_candidates(result, peaks, templates, cancel=None, progress=None):
     """Shared search for exhaustive summaries and on-demand inspection."""
     p=result['plan'];s=result['settings']
-    tolerance=max(.1,1/min(p['window_nm']))
+    tolerance=matching_width(result)
     candidates=[]
     for ti,template in enumerate(templates):
         check_cancel(cancel)
@@ -88,8 +97,8 @@ def search_candidates(result, peaks, templates, cancel=None, progress=None):
 def fit_groups(result, templates, options, cancel=None, progress=None):
     fraction=validate_options(result,options);p=result['plan'];s=result['settings']
     count=len(result['components']);total=(1<<count)-1
-    # One physical FFT bin sets tolerance; broadening deliberately does not enlarge it.
-    tolerance=max(.1,1/min(p['window_nm']))
+    # Native taper response sets tolerance; feature broadening does not enlarge it.
+    tolerance=matching_width(result)
     records=[]
     fits=dict(groups=records,total=total,completed=0,peak_fraction=fraction,
               tolerance_nm_inv=tolerance,cooccurrence_fraction=.2,
@@ -158,4 +167,4 @@ def group_detail(result, ids, templates, options=None):
                 coefficients=coefficients.tolist(),cooccurring_windows=common,windows=windows,
                 peaks=peaks,candidates=models,peak_fraction=fraction,
                 phases=list(dict.fromkeys(t['phase'] for t in templates)),
-                g_max=result['plan']['g_max'],tolerance_nm_inv=max(.1,1/min(result['plan']['window_nm'])))
+                g_max=result['plan']['g_max'],tolerance_nm_inv=matching_width(result))

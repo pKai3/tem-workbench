@@ -22,4 +22,14 @@ assert.notDeepEqual(pca.hypothesisColour(maps.models[0],'hypothesis'),pca.hypoth
 assert.equal(pca.sourceLabel({kind:'combination',components:[0,1],window:12}),'PC 1+2');
 assert.equal(pca.sourceLabel({sources:[{component:0,side:'negative'},{kind:'combination',components:[0,1]}]}),'PC 1− / PC 1+2');
 assert.deepEqual(pca.topHypotheses({...maps,model_passing_counts:{0:6,1:6,2:3}},2).map(m=>m.id),[1,0]);
+const supportMap={...maps,windows:[win,shared,below,{candidates:[]}]};
+assert.deepEqual(pca.hypothesisPools(supportMap),[{count:1,supported:2},{count:2,supported:2},{count:3,supported:3}],
+ 'pool support counts overlapping passing windows once and excludes unresolved windows');
+for(const pool of pca.hypothesisPools(supportMap)){
+ const ids=pca.topHypotheses(supportMap,pool.count).map(m=>m.id);
+ assert.equal(pool.supported,supportMap.windows.filter(w=>pca.localHypotheses(w,ids).winner).length);
+}
+assert.equal(pca.supportPercent(301,324),'92.9%');
+assert.equal(pca.supportPercent(0,0),'0.0%');
+assert.deepEqual(pca.hypothesisPools({models:[],windows:[],model_passing_counts:{}}),[]);
 console.log('PCA hypothesis maps: global pool, local winner, independent/shared evidence, unresolved windows and combination labels passed.');

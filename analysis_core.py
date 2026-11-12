@@ -27,6 +27,12 @@ def tukey_power_width_bins(length,alpha):
  # Measure the selected 1D taper once per window size, not once per grid ROI.
  return region_masks.axis_response_width(tukey(length,alpha),1.)*length
 
+def fft_window_width(window_nm,window_pixels,window,tukey_alpha=.2):
+ """Power-response FWHM in reciprocal units, shared by FFT and component fits."""
+ if window=='tukey':
+  return max(tukey_power_width_bins(n,tukey_alpha)*(1/length) for n,length in zip(window_pixels,window_nm))
+ return (1.44 if window=='hann' else .886)*max(1/length for length in window_nm)
+
 def prepare_fft_input(a,window="hann",remove_mean=True,selection_mask=None,tukey_alpha=.2):
  """The real input transformed by both analysis and reciprocal filtering."""
  if window not in ('hann','tukey','none') or not isinstance(remove_mean,bool):
@@ -64,8 +70,7 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
  mask_widths=region_masks.response_widths(np.asarray(selection_mask,dtype='float32'),sx,sy) if selection_mask is not None else None
  power=np.abs(fftshift(fft2(z,workers=FFT_WORKERS)))**2;fx=fftshift(fftfreq(w,sx));fy=-fftshift(fftfreq(h,sy));ix=np.where(abs(fx)<=g_max*1.05)[0];iy=np.where(abs(fy)<=g_max*1.05)[0];lg=np.log1p(power[np.ix_(iy,ix)]);xx,yy=np.meshgrid(fx[ix],fy[iy]);g=np.hypot(xx,yy);df=max(1/(w*sx),1/(h*sy));wh=processed_fft_signal(lg,g,df,smoothing_sigma);valid=(g>0)&(g>=g_min)&(g<=g_max)
  dfx,dfy=1/(w*sx),1/(h*sy)
- taper_widths=[tukey_power_width_bins(w,tukey_alpha)*dfx,tukey_power_width_bins(h,tukey_alpha)*dfy] if window=='tukey' and not mask_widths else None
- window_width=max(mask_widths or taper_widths) if mask_widths or taper_widths else (1.44 if window=='hann' else .886)*df  # Approximate power FWHM of the window response.
+ window_width=max(mask_widths) if mask_widths else fft_window_width([w*sx,h*sy],[w,h],window,tukey_alpha)
  fraction_threshold=profile_fraction*float(np.max(wh[valid])) if np.any(valid) else 0.
  threshold=max(threshold_floor,fraction_threshold)
  components,nc=label(valid&(wh>threshold));peaks=[]
@@ -91,7 +96,7 @@ def spectrum(a,sx,sy,profile_fraction=.35,minimum_enrichment=3.,window='hann',re
   if any(min(np.hypot(p['qx']-v['qx'],p['qy']-v['qy']),np.hypot(p['qx']+v['qx'],p['qy']+v['qy']))<max(minimum_separation,window_width) for v in clean):continue
   p['profile_id']=len(clean)+1;clean.append(p)
   if len(clean)>=max_peaks:break
- photometry=spot_intensity.measure_fft(power,fx,fy,clean,window_width/min(dfx,dfy) if mask_widths or taper_widths else (1.44 if window=='hann' else .886),neighbours=peaks)
+ photometry=spot_intensity.measure_fft(power,fx,fy,clean,window_width/min(dfx,dfy) if mask_widths or window=='tukey' else (1.44 if window=='hann' else .886),neighbours=peaks)
  clean=[p for p in clean if p['log_radial_enrichment']>=minimum_enrichment]
  spot_intensity.number_profiles(clean)
  return {**({'selection_window':'polygon_cosine_fade','mask_power_normalization':'mean_square','window_fwhm_xy_nm_inv':mask_widths} if mask_widths else {}),'kind':'fft','photometry':photometry,'profile_numbering':'integrated_intensity_descending','g_min':float(g_min),'g_max':float(g_max),'log':lg,'detector_signal':wh,'extent':[float(fx[ix[0]]),float(fx[ix[-1]]),float(fy[iy[-1]]),float(fy[iy[0]])],'peaks':clean,'df':df,'peak_width_nm_inv':window_width,'fft_window':window,'fft_tukey_alpha':float(tukey_alpha),'remove_mean':remove_mean,'profile_threshold':threshold,'fraction_threshold':float(fraction_threshold),'detection_smoothing_sigma_bins':float(smoothing_sigma),'detection_threshold_floor':float(threshold_floor),'minimum_peak_enrichment':float(minimum_enrichment),'minimum_peak_separation_nm_inv':float(max(minimum_separation,window_width)),'max_peak_profiles':int(max_peaks),**({'hann_power_fwhm_nm_inv':window_width} if window=='hann' and not mask_widths else {})}
