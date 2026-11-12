@@ -62,6 +62,52 @@ const PcaView={
   return added.map((count,i)=>({count:i+1,supported:supported+=count,newlySupported:count,improved:improved[i]}));
  },
  supportPercent(count,total){return `${(total?100*count/total:0).toFixed(1)}%`},
+ solutionRegistry(run,generation){
+  const key=JSON.stringify([run,generation]);
+  if(this.symbolRun!==key){this.symbolRun=key;this.solutionSymbols=new Map()}
+  return this.solutionSymbols;
+ },
+ componentState(region){
+  const state=region.component_display;
+  return {winner:state.winner==null?null:{model:state.winner},passing:state.passing.map(model=>({model})),label:state.label};
+ },
+ restoreComponentDisplay(grid,maps){
+  // A refreshed page can repair the display of a retained pre-fix backend job.
+  if(!grid?.component||grid.component_hypotheses||!maps)return grid;
+  const windows=new Map(maps.windows.map(w=>[String(w.index),w])),ids=grid.component_pool?.models??maps.models.map(m=>m.id);
+  if(grid.regions.some(r=>!windows.has(String(r.id))))return grid;
+  const {generation,models,model_passing_counts,model_mean_support}=maps;
+  return {...grid,component_hypotheses:{generation,models,model_passing_counts,model_mean_support},regions:grid.regions.map(r=>{
+   const state=this.localHypotheses(windows.get(String(r.id)),ids);
+   return {...r,component_display:{winner:state.winner?.model??null,passing:state.passing.map(c=>c.model),label:state.label}};
+  })};
+ },
+ rawStyle(state,models,mode='best',colourBy='phase'){
+  const shown=mode==='best'?(state.winner?[state.winner]:[]):state.passing;
+  const colours=[...new Map(shown.map(c=>{const m=models.get(c.model);return [colourBy==='phase'?m.phase:m.id,this.hypothesisColour(m,colourBy)]})).values()];
+  return {colours:colours.length?colours:[[65,72,80]],winner:state.winner?models.get(state.winner.model):null,ambiguous:state.label==='ambiguous'};
+ },
+ hypothesisIdentity(model){return `${model.phase==='OMEGA'?'ω':model.phase} ${zoneLabel(model)} · ${model.rotation_deg.toFixed(1)}°`},
+ rawLegend(host,pool,winning,{colourBy='phase',showSymbols=true}={}){
+  host.replaceChildren();
+  const legend=document.createElement('div');legend.className='zone-legend-group component-type-key';
+  for(const entry of new Map([...pool].sort((a,b)=>a.id-b.id).map(m=>[colourBy==='phase'?m.phase:m.id,{label:colourBy==='phase'?(m.phase==='OMEGA'?'ω':m.phase):this.hypothesisIdentity(m),colour:this.hypothesisColour(m,colourBy)}])).values()){
+   const item=document.createElement('span');item.dataset.mapLegendEntry='true';item.textContent='● '+entry.label;item.style.color=`rgb(${entry.colour})`;legend.append(item);
+  }
+  const unresolved=document.createElement('span');unresolved.dataset.mapLegendEntry='true';unresolved.textContent='● Unresolved';unresolved.style.color='#8c96a0';legend.append(unresolved);
+  const help=(parent,label,text,iconOnly=false)=>{
+   const wrap=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');wrap.className='settings-help';button.type='button';button.className=iconOnly?'settings-help-button':'pca-legend-help pca-ambiguity-key';button.textContent=iconOnly?'ⓘ':label;button.setAttribute('aria-label','About '+label.toLowerCase());popup.className='settings-help-popup';popup.id=host.id+'-raw-'+(iconOnly?'symbols':'ambiguity')+'-help';button.setAttribute('aria-describedby',popup.id);popup.setAttribute('role','tooltip');popup.textContent=text;wrap.append(button,popup);parent.append(wrap);
+  };
+  if(pool.length>1)help(legend,'Competing explanations','Small white triangles flag passing hypotheses that explain mostly the same peaks with similar scores. The symbol always identifies the highest-support passing fit. A rejected fit cannot replace it. This does not establish coexistence.');
+  host.append(legend);
+  if(showSymbols&&winning.length){
+   const group=document.createElement('div');group.className='zone-legend-group pca-solution-key';
+   for(const entry of winning){
+    const item=document.createElement('span'),symbol=document.createElement('b'),count=document.createElement('small');item.className='zone-key';item.dataset.mapLegendEntry='true';item.style.color=`rgb(${this.hypothesisColour(entry.model,colourBy)})`;symbol.textContent=entry.symbol+' ';count.textContent='×'+entry.count;item.append(symbol,document.createTextNode(this.hypothesisIdentity(entry.model)+' '),count);group.append(item);
+   }
+   help(group,'Solution symbols','Each symbol identifies one retained phase, zone and orientation hypothesis. Only the highest-support passing fit receives a symbol at each centre. Counts are locally winning visible windows, not all passing windows or image area. Hidden rim points are excluded. Symbols and counts agree between the main map and inspector.',true);host.append(group);
+  }
+ },
  winningSolutions(maps,local,palette,registry){
   const counts=new Map();
   for(const state of local)if(state.winner)counts.set(state.winner.model,(counts.get(state.winner.model)||0)+1);
@@ -215,7 +261,7 @@ if(typeof document!=='undefined'){
   $('pca-workers').onchange=()=>writePreference('tem-pca-workers',Number($('pca-workers').value));
   const workerOptions=()=>({workers:config?.component_workers?Number($('pca-workers').value):1});
   let section='signals';
-  const solutionSymbols=new Map();let symbolModels=null,poolSummaries=[],hypothesisOrder=[],manualPool=false;
+  let solutionSymbols=new Map(),symbolModels=null,poolSummaries=[],hypothesisOrder=[],manualPool=false;
   const selectedHypotheses=new Set();
   const expandedSignals=new Set();
   let linkedJob=null,poolRequestKey='',poolRequestEpoch=0,reconnectingGrid=null;
@@ -275,6 +321,7 @@ if(typeof document!=='undefined'){
   $('component-map-top').onchange=()=>{selectTopHypotheses(Number($('component-map-top').value));syncLinkedPool();drawPhaseMap();rememberViewer()};
   $('component-map-sort').onchange=()=>{$('pca-map-sort').value=$('component-map-sort').value;orderHypotheses(data.phase_support);drawPhaseMap();rememberViewer()};
   document.addEventListener('tem-grid-view-updated',()=>{
+   if(linkedGrid())grid=PcaView.restoreComponentDisplay(grid,data?.phase_support);
    syncLinkedPool();
    if(!grid?.component){linkedJob=null;return}
    if(!linkedGrid()){
@@ -288,6 +335,7 @@ if(typeof document!=='undefined'){
   });
   for(const id of ['grid-opacity','map-mode','map-display','map-phase','map-symbol','map-show-rim','map-normalize','grid-workers'])$(id).addEventListener(id==='grid-opacity'?'input':'change',()=>{syncLinkedControls();drawPhaseMap()});
   for(const id of ['nmf-map-opacity','pca-map-metric','pca-map-display','nmf-map-phase','pca-map-symbols','pca-map-rim','pca-map-normalize','pca-workers'])$(id).addEventListener(id==='nmf-map-opacity'?'input':'change',()=>syncLinkedControls(false));
+  for(const id of ['pca-map-mode','pca-map-colour'])$(id).addEventListener('change',()=>{if(linkedGrid())drawGrid()});
   const isPca=()=>data?.decomposition==='pca';
   const sourceLabel=g=>isPca()?PcaView.sourceLabel(g):`NMF ${g.components.map(i=>i+1).join(' + ')}`;
   const hypothesisIdentity=(m,rotation=m.rotation_deg)=>`${m.phase==='OMEGA'?'ω':m.phase} ${zoneLabel(m)} · ${rotation.toFixed(1)}°`;
@@ -892,7 +940,7 @@ if(typeof document!=='undefined'){
      maps.model_passing_counts={};maps.model_mean_support={};
      for(const m of maps.models){const values=maps.windows.flatMap(w=>w.candidates.filter(c=>c.model===m.id&&c.valid).map(c=>c.score));maps.model_passing_counts[m.id]=values.length;maps.model_mean_support[m.id]=values.length?values.reduce((a,b)=>a+b,0)/values.length:0}
     }
-    const identity=maps.generation||maps.models;const reset=symbolModels!==identity;if(reset){solutionSymbols.clear();symbolModels=identity}
+    const identity=maps.generation||maps.models,reset=symbolModels!==identity;symbolModels=identity;solutionSymbols=PcaView.solutionRegistry(job.id,maps.generation);
     orderHypotheses(maps,reset);
     syncLinkedPool();
     $('nmf-map-counts').textContent=`${maps.windows.length} original windows checked · ${maps.models.length} retained hypotheses`;
@@ -992,7 +1040,7 @@ if(typeof document!=='undefined'){
    $('pca-hypotheses').hidden=false;$('nmf-map-select-label').hidden=raw||colourBy==='hypothesis';$('nmf-phase-content').classList.add('pca-hypotheses-layout');
    const [w,h]=p.window_pixels,[dx,dy]=[p.spacing_nm[0]/p.pixel_nm[0],p.spacing_nm[1]/p.pixel_nm[1]],phase=$('nmf-map-phase').value;
    const pool=hypothesisOrder.filter(m=>selectedHypotheses.has(m.id)),ids=pool.map(m=>m.id),single=pool.length===1,model=single?pool[0]:null;
-   const local=maps.windows.map(win=>PcaView.localHypotheses(win,ids));
+   const local=maps.windows.map(win=>PcaView.localHypotheses(win,ids)),modelsById=new Map(maps.models.map(m=>[m.id,m]));
    const visible=visibleMapWindows(),symbolStyle=$('pca-map-symbols').value,showSymbols=raw&&symbolStyle!=='circle';
    const winning=PcaView.winningSolutions(maps,visible.map(w=>local[w.index]),ZONE_SYMBOLS,solutionSymbols);
    {
@@ -1012,9 +1060,7 @@ if(typeof document!=='undefined'){
    const rois=PcaView.windows(p);
    if(raw)for(const win of visible){
     const r=rois[win.index],cx=r.x+w/2,cy=r.y+h/2;
-    const state=local[win.index],shown=mode==='best'?(state.winner?[state.winner]:[]):state.passing;
-    const colours=[...new Map(shown.map(c=>[colourBy==='phase'?c.phase:c.model,PcaView.hypothesisColour(maps.models[c.model],colourBy)])).values()];
-    if(!colours.length)colours.push([65,72,80]);
+    const state=local[win.index],{colours}=PcaView.rawStyle(state,modelsById,mode,colourBy);
     const x=ox+cx*scale,y=oy+cy*scale,size=mapCentreMarkerSize(dx)*scale,radius=size*.6;
     if(symbolStyle!=='zone'||!state.winner){
      ctx.save();ctx.globalAlpha*=symbolStyle==='circle'?.85:.35;
@@ -1032,27 +1078,19 @@ if(typeof document!=='undefined'){
    ctx.globalAlpha=1;const roi=rois[index];
    if(options.selection!==false&&(!raw||visible.some(win=>win.index===index))){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+roi.x*scale,oy+roi.y*scale,w*scale,h*scale)}
    const key=$('nmf-map-key');key.replaceChildren();
-   let legend=[...new Map(pool.map(m=>[colourBy==='phase'?m.phase:m.id,{label:colourBy==='phase'?(m.phase==='OMEGA'?'ω':m.phase):hypothesisIdentity(m),colour:PcaView.hypothesisColour(m,colourBy)}])).values()];
-   legend.push({label:'Unresolved',colour:[140,150,160]});
+   if(raw)PcaView.rawLegend(key,pool,winning,{colourBy,showSymbols});
+   let legend=raw?[]:[...new Map(pool.map(m=>[colourBy==='phase'?m.phase:m.id,{label:colourBy==='phase'?(m.phase==='OMEGA'?'ω':m.phase):hypothesisIdentity(m),colour:PcaView.hypothesisColour(m,colourBy)}])).values()];
+   if(!raw)legend.push({label:'Unresolved',colour:[140,150,160]});
    if(!raw&&aggregated){legend=metric==='samples'?[{label:'Sampling density',colour:[0,217,232]}]:mapHit.keys.map(k=>({label:aggregated.colour_by==='hypothesis'?hypothesisIdentity(maps.models.find(m=>String(m.id)===k)):k,colour:aggregated.colour_by==='hypothesis'?PcaView.hypothesisColour(maps.models.find(m=>String(m.id)===k),'hypothesis'):PcaView.phaseColours[k]||[210,210,210]}))}
    if(maps.windows.length<(maps.total??p.count))key.append(document.createTextNode('Uncoloured: not checked yet · '));
    for(const entry of legend){const item=document.createElement('span');item.textContent='● '+entry.label+'  ';item.style.color=`rgb(${entry.colour})`;key.append(item)}
    function legendHelp(host,label,text,id,iconOnly=false){
     const help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');help.className='settings-help';button.type='button';button.className=iconOnly?'settings-help-button':'pca-legend-help'+(id==='pca-map-ambiguity-help'?' pca-ambiguity-key':'');button.textContent=iconOnly?'ⓘ':label+(id==='pca-map-ambiguity-help'?'':' ⓘ');button.setAttribute('aria-label','About '+label.toLowerCase());button.setAttribute('aria-describedby',id);popup.className='settings-help-popup';popup.id=id;popup.setAttribute('role','tooltip');popup.textContent=text;help.append(button,popup);host.append(help);
    }
-   if(raw&&!single)legendHelp(key,'Competing explanations','Small white triangles flag competing explanations: multiple hypotheses in the selected pool pass in that window, explain mostly the same peaks, and have similar support scores. In Best local match, the circle colour and symbol show the highest-support passing fit. The interpretation is ambiguous; this does not establish that the phases coexist.','pca-map-ambiguity-help');
    if(!raw){
     if(legend.length===2&&['strength','frequency'].includes(metric)){const ramp=document.createElement('span');ramp.className='pca-stability-ramp';const colours=Object.fromEntries(legend.map(e=>[e.label,'#'+e.colour.map(v=>v.toString(16).padStart(2,'0')).join('')]));ramp.style.background=supportBlendGradient(legend.map(e=>e.label),colours);ramp.title='Colour blends relative support between the two displayed entries. Opacity indicates support; not phase proportions.';key.append(ramp)}
     const labels={strength:'Match score',frequency:'Match frequency',best:'Best match',spread:'Placement sensitivity',samples:'Sampling density'};
     legendHelp(key,labels[metric],`Each location combines completed original windows covering it, weighted toward their centres. Each placement pass is normalized separately, then passes are averaged equally. Match frequency counts passing support; Match score averages the best passing local score, with failed/missing fits as zero. Best match uses the highest average passing score, with failed/missing fits contributing zero; opacity uses that score on a fixed 0–1 scale. Placement sensitivity is the range of passing frequencies across at least two passes. Density counts contributing windows. Colours blend relative support, not phase fractions. Unchecked/unsampled areas stay blank. Continuous display interpolates the sampled map, not the FFTs. Click to inspect a real contributing window. ${$('pca-map-normalize').checked?'Opacity is relative to the strongest displayed value, with one factor across phases.':'Opacity uses a fixed 0–1 scale, multiplied by the slider.'}`,'pca-stability-help');
-   }
-   if(showSymbols&&winning.length){
-    const group=document.createElement('div');group.className='zone-legend-group pca-solution-key';
-    for(const entry of winning){
-     const item=document.createElement('span'),symbol=document.createElement('b'),count=document.createElement('small');item.className='zone-key';item.style.color=`rgb(${PcaView.hypothesisColour(entry.model,colourBy)})`;symbol.textContent=entry.symbol;count.textContent='×'+entry.count;
-     item.append(symbol,document.createTextNode(hypothesisIdentity(entry.model)),count);group.append(item);
-    }
-    legendHelp(group,'Solution symbols','Each symbol identifies one retained phase, zone and orientation solution. Only the highest-support passing fit receives a symbol at each window centre, including in All locally supported view. Separate orientations of the same phase and zone have different symbols. Counts are locally winning visible windows, not all passing windows or image area. Hidden rim points do not contribute to these display counts. Symbols stay stable while changing the pool, view or colour setting.','pca-map-symbols-help',true);key.append(group);
    }
    const win=maps.windows[index];
    const selectedCandidate=model?win?.candidates.find(c=>c.model===model.id):null;
@@ -1101,7 +1139,7 @@ if(typeof document!=='undefined'){
    map.width=Math.round(1800*w/Math.max(w,h));map.height=Math.round(1800*h/Math.max(w,h));
    drawPhaseMap({canvas:map,selection:false});
    const width=Math.max(900,map.width+40),measure=map.getContext('2d');measure.font='18px Arial';
-   const key=$('nmf-map-key'),items=[...key.children].filter(n=>n.style.color).concat([...key.querySelectorAll('.zone-key')]);
+   const key=$('nmf-map-key'),items=$('pca-map-metric').value==='raw'?[...key.querySelectorAll('[data-map-legend-entry]')]:[...key.children].filter(n=>n.style.color);
    const lines=[];let x=20,y=map.height+110;
    for(const item of items){const text=item.textContent.trim(),size=measure.measureText(text).width+24;if(x>20&&x+size>width-20){x=20;y+=28}lines.push({x,y,text,colour:item.style.color});x+=size}
    const height=y+30,factor=Math.min(1,3000/height),output=document.createElement('canvas');output.width=Math.round(width*factor);output.height=Math.round(height*factor);

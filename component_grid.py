@@ -15,6 +15,27 @@ from component_execution import selected_workers
 LOG = logging.getLogger('tem_workbench')
 
 
+def hypothesis_summary(result):
+    """Keep solution identities in compact grid status, without fit arrays."""
+    maps = result.get('phase_support') or {}
+    return dict(generation=maps.get('generation'),
+                models=[{k:m[k] for k in ('id','phase','zone_3index','rotation_deg')}
+                        for m in maps.get('models', [])],
+                model_passing_counts=maps.get('model_passing_counts', {}),
+                model_mean_support=maps.get('model_mean_support', {}))
+
+
+def display_state(region):
+    """The same passing-only winner and tie break used by the detailed map."""
+    passing = sorted((m for m in region['models'] if m['valid']),
+                     key=lambda m:(-m['score'],m['model']))
+    label = region['classification']['label']
+    if label.endswith('_compatible'):label = 'single'
+    if label in ('coexisting_candidates','multiple_orientations'):label = 'multiple'
+    return dict(winner=passing[0]['model'] if passing else None,
+                passing=[m['model'] for m in passing], label=label)
+
+
 def options_for(info, overlap, component, workers):
     if not isinstance(component, dict) or component.get('method') not in ('pca', 'nmf'):
         raise ValueError('Choose PCA or NMF for component mapping.')
@@ -80,6 +101,7 @@ def select_pool(app, job_id, model_ids):
                 break
             if len(mapped) >= job['processed']:
                 job.update(regions=mapped, aggregation=aggregate,
+                           component_hypotheses=hypothesis_summary(result),
                            component_pool=dict(models=ids, available=len(available)),
                            interpretation='Selected hypotheses checked against original windows. One best passing score per phase per window; all checks remain in the retained component analysis. Overlapping support is not phase fraction.')
                 break
@@ -136,6 +158,7 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
                                 continue  # A new display pool superseded this aggregate.
                             available = len((result.get('phase_support') or {}).get('models', []))
                             job.update(regions=mapped, aggregation=aggregate, processed=count, pending=planned['count']-count,
+                                       component_hypotheses=hypothesis_summary(result),
                                        component_pool=dict(models=ids, available=available))
                         previous=count;last_map=time.monotonic()
                     if not running:

@@ -1861,13 +1861,42 @@ function supportTriangleLegend(phases,palette,compact=false,strength=false,opaci
  return svg;
 }
 function mapCentreMarkerSize(spacingPixels){return Math.max(5,spacingPixels*.28)}
+function drawComponentCentres(group,showRim,symbolStyle,opacity){
+ const maps=grid.component_hypotheses;
+ if(!maps||grid.regions.some(r=>!r.component_display)||typeof PcaView==='undefined')return false;
+ for(const [phase,hex]of Object.entries(phaseColors))PcaView.phaseColours[phase]=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
+ const visible=grid.regions.filter(r=>!r.rim||showRim),local=visible.map(r=>PcaView.componentState(r)),registry=PcaView.solutionRegistry(grid.id,maps.generation);
+ const winning=PcaView.winningSolutions(maps,local,ZONE_SYMBOLS,registry),models=new Map(maps.models.map(m=>[m.id,m]));
+ const mode=$('pca-map-mode').value,colourBy=$('pca-map-colour').value,showSymbols=symbolStyle!=='circle';
+ const ids=grid.component_pool?.models,pool=maps.models.filter(m=>!ids||ids.includes(m.id));
+ for(const [i,r]of visible.entries()){
+  const state=local[i],style=PcaView.rawStyle(state,models,mode,colourBy),cx=r.roi.x+r.roi.w/2,cy=r.roi.y+r.roi.h/2;
+  const size=mapCentreMarkerSize(grid.grid.spacing_nm/meta.pixel_x_nm),radius=size*.6;
+  const node=el('g',{class:'grid-cell','data-id':r.id,'data-hypothesis':state.winner?.model??'',role:'img','aria-label':style.winner?PcaView.hypothesisIdentity(style.winner):'Unresolved'});group.append(node);
+  // Keep the centre clickable even in symbol-only display.
+  node.append(el('circle',{cx,cy,r:radius,fill:'transparent'}));
+  if(symbolStyle!=='zone'||!state.winner)style.colours.forEach((colour,j)=>{
+   const attrs={fill:`rgb(${colour})`,'fill-opacity':opacity*(symbolStyle==='circle'?.85:.35)};
+   if(style.colours.length===1){node.append(el('circle',{cx,cy,r:radius,...attrs}));return}
+   const a=-Math.PI/2+j*2*Math.PI/style.colours.length,b=-Math.PI/2+(j+1)*2*Math.PI/style.colours.length;
+   node.append(el('path',{d:`M ${cx} ${cy} L ${cx+radius*Math.cos(a)} ${cy+radius*Math.sin(a)} A ${radius} ${radius} 0 ${b-a>Math.PI?1:0} 1 ${cx+radius*Math.cos(b)} ${cy+radius*Math.sin(b)} Z`,...attrs}));
+  });
+  if(pool.length>1&&style.ambiguous){const x=cx+radius*.5,y=cy-radius,s=size*.3;node.append(el('path',{d:`M ${x} ${y} h ${s} l ${-s} ${s} Z`,fill:'#fff','fill-opacity':opacity}))}
+  if(showSymbols&&state.winner)node.append(el('text',{x:cx,y:cy,fill:`rgb(${PcaView.hypothesisColour(style.winner,colourBy)})`,'font-size':size,'stroke-width':size*.15,class:'zone-marker','aria-hidden':'true'},registry.get(state.winner.model)));
+ }
+ const legend=$('zone-legend');legend.hidden=false;PcaView.rawLegend(legend,pool,winning,{colourBy,showSymbols});
+ for(const box of [$('component-hypothesis-list'),$('pca-hypothesis-list')])for(const row of box.querySelectorAll('tr[data-hypothesis]')){
+  const entry=winning.find(e=>e.model.id===Number(row.dataset.hypothesis));row.querySelector('.pca-hypothesis-symbol').textContent=showSymbols&&entry?entry.symbol+' ':'';
+ }
+ return true;
+}
 function drawOverlapMap(){
  syncMapOpacityControl();
  hideRegionPreview();$('class-legend').hidden=true;$('zone-legend').hidden=true;
  $('map-colour-key').replaceChildren();$('map-colour-key').hidden=true;
  const group=$('grid-map');group.replaceChildren();
  if(zoneJob!==grid.id){zoneJob=grid.id;zoneSymbols=phaseMaps();$('map-phase').value='all'}
- const shown=phaseMaps();
+ const shown=phaseMaps();let componentCentres=false;
  const select=$('map-phase'),phases=analysisPhases(grid.settings),previous=select.value;
  const view=selectedMapView(),hexView=['hex','hex_support','hex_strength'].includes(view),topView=['hex','top'].includes(view),supportView=supportMapView(view),strength=strengthMapView(view),metric=strength?'passing_strength':'support',choices=supportView?['all',...phases]:phases;
  select.replaceChildren(...choices.map(phase=>{const o=document.createElement('option');o.value=phase;o.textContent=phase==='all'?`All phases (${phases.map(p=>phaseLabel(p)).join(' + ')})`:phaseLabel(phase);return o}));if(choices.includes(previous))select.value=previous;
@@ -1924,6 +1953,9 @@ function drawOverlapMap(){
     const node=el('rect',{x:cell.x*meta.width/a.width,y:cell.y*meta.height/a.height,width:meta.width/a.width,height:meta.height/a.height,fill:value>0?colour:'#596778','fill-opacity':opacity*(.15+.85*clamp(value/opacityScale,0,1)),stroke:'none','shape-rendering':'crispEdges',class:'grid-cell','data-id':cell.region_id,...(supportView?{'data-support-index':cellIndex}:{})});
     node.setAttribute('aria-label',`${phaseLabel(phase)}: ${formatted(value)}${strength?' mean passing score':''}; ${cell.samples} windows, ${cell.passes} passes`);group.append(node);
    }
+  }else if(grid.component&&(componentCentres=drawComponentCentres(group,showRim,symbolStyle,opacity))){
+   // Component maps retain hypotheses and passing winners, rather than zones.
+   $('overlap-key').textContent='Raw centres: highest-support passing hypothesis; symbols distinguish phase, zone and orientation. Click to inspect the original FFT window.';
   }else{
    for(const r of grid.regions){
     if(r.rim&&!showRim)continue;
@@ -1939,7 +1971,8 @@ function drawOverlapMap(){
   }
  }
  if($('show-grid').checked){
-  if(!a||view==='raw'){renderClassLegend(grid.regions.filter(r=>!r.rim||showRim));renderZoneLegend(shown)}
+  if((!a||view==='raw')&&!componentCentres){renderClassLegend(grid.regions.filter(r=>!r.rim||showRim));renderZoneLegend(shown)}
+  else if(componentCentres){/* The shared hypothesis legend was rendered above. */}
   else{
    const legend=$('zone-legend');legend.replaceChildren();legend.hidden=true;
    if(topView){
@@ -3633,7 +3666,10 @@ function mapSnapshot(){
  }
  if(!$('class-legend').hidden)for(const node of $('class-legend').children)if(!node.hidden)legendItem('● '+(node.dataset.caption||node.textContent),colors[node.dataset.label]);
  if(x!==20){x=20;y+=28}
- if(!$('zone-legend').hidden)for(const group of $('zone-legend').querySelectorAll('.zone-legend-group')){
+ if(!$('zone-legend').hidden&&$('zone-legend').querySelector('[data-map-legend-entry]')){
+  for(const node of $('zone-legend').querySelectorAll('[data-map-legend-entry]'))legendItem(node.textContent,node.style.color);
+  x=20;y+=28;
+ }else if(!$('zone-legend').hidden)for(const group of $('zone-legend').querySelectorAll('.zone-legend-group')){
   const phase=group.dataset.phase;legendItem(group.querySelector('strong').textContent,phaseColors[phase]);
   for(const node of group.querySelectorAll('.zone-key'))legendItem([...node.childNodes].map(n=>n.textContent).join(' '),phaseColors[phase]);
   x=20;y+=28;

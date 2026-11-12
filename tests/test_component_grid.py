@@ -80,6 +80,13 @@ class ComponentGridTests(unittest.TestCase):
         # Main-window pool edits leave the retained full PCA checks intact;
         # all map products and compact status use the selected pool.
         retained=copy.deepcopy(self.app.pca.result['phase_support'])
+        compact=self.app.status(job['id'])
+        self.assertEqual(compact['component_hypotheses']['models'],[
+            {k:m[k] for k in ('id','phase','zone_3index','rotation_deg')} for m in retained['models']])
+        self.assertNotIn('windows',compact['component_hypotheses'])
+        for row,full in zip(compact['regions'],job['regions']):
+            self.assertEqual(row['component_display'],component_grid.display_state(full))
+            self.assertNotIn('models',row)
         ids=[retained['models'][0]['id']]
         selected=component_grid.select_pool(self.app,job['id'],ids)
         self.assertEqual(selected['component_pool']['models'],ids)
@@ -90,6 +97,7 @@ class ComponentGridTests(unittest.TestCase):
         empty=component_grid.select_pool(self.app,job['id'],[])
         self.assertTrue(all(c['winner'] is None for c in empty['aggregation']['hex']['cells']))
         self.assertTrue(all(r['label']=='unresolved' for r in empty['regions']))
+        self.assertTrue(all(r['component_display']==dict(winner=None,passing=[],label='unresolved') for r in empty['regions']))
         all_ids=[m['id'] for m in retained['models']]
         restored=component_grid.select_pool(self.app,job['id'],all_ids)
         self.assertEqual(restored['aggregation'],job['aggregation'])
@@ -133,6 +141,17 @@ class ComponentGridTests(unittest.TestCase):
                 for phase,values in reference['phases'].items():self.assertEqual(actual['phases'][phase],values)
             self.assertTrue(all(c['model'] in ids for row in self.app.status(started['id'],full=True)['regions'] for c in row['models']))
             self.assertEqual(self.app.pca.result['phase_support'],maps)
+
+    def test_compact_display_keeps_rotations_and_excludes_failed_winners(self):
+        models=[dict(model=i,phase='BCC',zone_3index=[1,-3,-1],rotation_deg=angle,score=score,valid=valid)
+                for i,angle,score,valid in [(0,171.1,.5,True),(1,172.5,.6,True),(2,171.2,.9,False)]]
+        row=dict(models=models,classification=dict(label='multiple_orientations'))
+        self.assertEqual(component_grid.display_state(row),dict(winner=1,passing=[1,0],label='multiple'))
+        models[0]['score']=.6
+        self.assertEqual(component_grid.display_state(row)['winner'],0,'Ties use the same stable model ID as the detailed map')
+        for m in models:m['valid']=False
+        row['classification']['label']='unresolved'
+        self.assertEqual(component_grid.display_state(row),dict(winner=None,passing=[],label='unresolved'))
 
     def test_cancel_during_sampling_remains_a_cancelled_grid(self):
         entered=threading.Event()

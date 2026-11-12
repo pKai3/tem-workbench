@@ -538,6 +538,7 @@ class Workbench:
                                   ('id', 'state', 'source', 'settings', 'grid', 'execution')})
 
     def status(self, job_id, full=False):
+        import component_grid
         with self.job_lock:
             job = self.jobs.get(job_id)
             if not job:
@@ -550,7 +551,8 @@ class Workbench:
             result['regions'] = ([{k: v for k, v in r.items() if not k.startswith('_')} for r in regions] if full else
                                  [{'id': r['id'], 'roi': r['roi'], 'label': r['classification']['label'],
                                    'leaf': r['leaf'], 'depth': r['depth'], 'elapsed_ms': r['elapsed_ms'],
-                                   'best_zones': self.best_zones(r), 'linked_support': phase_support.linked_summary(r), 'pass_id': r.get('pass_id'), 'rim': r.get('rim', False)} for r in regions])
+                                   'best_zones': self.best_zones(r), 'linked_support': phase_support.linked_summary(r), 'pass_id': r.get('pass_id'), 'rim': r.get('rim', False),
+                                   **({'component_display': component_grid.display_state(r)} if job.get('component') else {})} for r in regions])
             return result
 
     def rescore(self, job_id, strength, evidence_weight=None, ca_penalty_strength=None, half_weight_nm_inv=None, missing_weight=None, brightness_weight=None, dd_weight=None):
