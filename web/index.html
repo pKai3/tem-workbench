@@ -196,11 +196,6 @@
     <span class="settings-help"><button class="settings-help-button" type="button" aria-label="About component crystal fitting">ⓘ</button><span id="nmf-fit-help" class="settings-help-popup" role="tooltip"></span></span>
    </div>
   <p id="nmf-fit-note" class="hint"></p>
-   <section id="nmf-group-detail" hidden>
-    <div class="pca-controls"><strong id="nmf-group-label"></strong><span id="nmf-group-source-help" class="settings-help" hidden><button class="settings-help-button" type="button" aria-label="About hypothesis sources">ⓘ</button><span id="nmf-group-source-note" class="settings-help-popup" role="tooltip"></span></span><button id="nmf-group-close" type="button">Close inspector</button></div>
-    <p id="nmf-group-status" role="status"></p>
-    <div id="nmf-group-content" hidden><figure><canvas id="nmf-group-spectrum" width="600" height="600" role="img" aria-label="NMF spectrum with detected peaks and candidate predictions"></canvas><figcaption>Crosses: peaks · solid: assigned · dotted: unassigned · dashed: below screen</figcaption></figure><div id="nmf-support"></div></div>
-   </section>
    <div id="nmf-fit-results" class="nmf-fit-results"></div>
    </section>
    <section id="pca-support-panel" data-pca-panel="support" role="tabpanel" aria-labelledby="pca-tab-support" hidden><div class="pca-controls"><h3 id="nmf-support-heading">Phase support</h3><button id="nmf-build-map" type="button">Build phase maps</button></div>
@@ -230,10 +225,10 @@
    </section>
    </section>
   </section>
-  <details id="pca-inspect" hidden><summary id="pca-sample-label">Selected window</summary><div class="pca-local-selection"><span>Reconstruction components</span><span id="pca-group"></span></div><div class="pca-samples">
+  <details id="pca-inspect" hidden><summary id="pca-sample-label">Selected window</summary><div class="pca-local-selection"><span>Preview components<span class="settings-help"><button type="button" class="settings-help-button" aria-label="About reconstruction preview">ⓘ</button><span class="settings-help-popup" role="tooltip">Choose components for the reconstruction preview below. In Signals, these selections also control the Group activity map. They do not select crystal hypotheses or alter fit scores. Reconstruction combines selected components using this window’s scores, adding the mean for PCA. Window checks use the original spectrum. Use a fit button above to inspect its predicted reflections.</span></span></span><span id="pca-group"></span></div><div class="pca-samples">
    <figure><figcaption>Original spectrum</figcaption><img id="pca-original" alt="" role="img" aria-label="Original local spectrum"></figure>
    <figure id="pca-smoothed-input" hidden><figcaption>Smoothed input</figcaption><img id="pca-processed" alt="" role="img" aria-label="Spectrum after optional smoothing"></figure>
-   <figure><figcaption>Selected reconstruction</figcaption><img id="pca-reconstruction" alt="" role="img" aria-label="Reconstructed local spectrum"></figure>
+   <figure><figcaption>Component reconstruction · preview only</figcaption><img id="pca-reconstruction" alt="" role="img" aria-label="Reconstructed local spectrum"></figure>
   </div><p id="pca-sample-note" class="hint"></p></details>
   <details id="pca-reference" hidden><summary>Mean spectra and interpretation</summary><div class="pca-samples"><figure><figcaption>Average original spectrum<span class="settings-help"><button class="settings-help-button" type="button" aria-label="About average original spectrum">ⓘ</button><span class="settings-help-popup" role="tooltip">Average of the sampled original log-power spectra across all windows, before optional rotation/spacing smoothing and per-window normalization. A reference for shared background and reflections, not a phase map. This is not the FFT of the full image.</span></span></figcaption><img id="pca-raw-mean" alt="" role="img" aria-label="Mean original spectrum"></figure><figure><figcaption><span id="pca-mean-label">PCA baseline</span><span class="settings-help"><button class="settings-help-button" type="button" aria-label="About decomposition mean">ⓘ</button><span id="pca-mean-help" class="settings-help-popup" role="tooltip"></span></span></figcaption><img id="pca-mean" alt="" role="img" aria-label="Mean decomposition spectrum"></figure></div>
    <p>PCA components describe signed differences from the mean. NMF components are nonnegative spectral factors; neither is a crystal-phase assignment. One distorted lattice can occupy several components; two phases can share one. Group activity combines selected score magnitudes without aligning crystals. Smoothing may hide nearby reflections. Compare the original spectra and rerun with smoothing off before interpreting a boundary. Overlapping windows are correlated.</p>
@@ -241,5 +236,11 @@
    <p>Inspired by <a href="https://doi.org/10.1016/j.micron.2019.102800" target="_blank" rel="noopener">Jany, Janas &amp; Krok (2020)</a>. Includes PCA, Euclidean NMF and exploratory indexing of component combinations. NMF signal shares are not explained variance or phase fractions; a low reconstruction error does not establish correct separation.</p>
   </details>
  </div>
+ <dialog id="nmf-group-detail" aria-labelledby="nmf-group-label">
+  <header class="pca-inspector-header"><strong id="nmf-group-label">Crystal fit</strong><span id="nmf-group-source-help" class="settings-help" hidden><button class="settings-help-button" type="button" aria-label="About hypothesis sources">ⓘ</button><span id="nmf-group-source-note" class="settings-help-popup" role="tooltip"></span></span><button id="nmf-group-close" type="button" aria-label="Close crystal-fit inspector" title="Close (Escape)">×</button></header>
+  <div id="nmf-group-body"><p id="nmf-group-status" role="status"></p><div id="nmf-group-toolbar" class="pca-controls"></div>
+   <div id="nmf-group-content" hidden><figure><canvas id="nmf-group-spectrum" width="600" height="600" role="img" aria-label="Spectrum with detected peaks and candidate predictions"></canvas><figcaption>Crosses: peaks · solid: assigned · dotted: unassigned · dashed: below screen</figcaption></figure><div id="nmf-support"></div></div>
+  </div>
+ </dialog>
 </dialog>
 </body></html>

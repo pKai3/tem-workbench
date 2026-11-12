@@ -839,6 +839,8 @@ def make_handler(app):
                     self.send(app.batch.status())
                 elif url.path == '/api/pca':
                     self.send(app.pca.status(query['id'][0]))
+                elif url.path == '/api/pca/live':
+                    self.send(app.pca.live(query['id'][0],int(query.get('revision',[-1])[0]),int(query.get('windows',[0])[0]),query.get('generation',[''])[0]))
                 elif url.path == '/api/pca/result':
                     self.send(shared_spectra.summary(app.pca.completed(query['id'][0])))
                 elif url.path == '/api/window-size':
@@ -934,7 +936,7 @@ def make_handler(app):
                     self.send(lobe_detail(result,body['component'],body['side'],templates,body.get('options',{})))
                 elif self.path == '/api/pca/window-fit':
                     from pca_fitting import window_detail
-                    self.send(window_detail(app.pca.completed(body['id']),body['index'],body['model']))
+                    self.send(window_detail(app.pca.inspectable(body['id']),body['index'],body['model']))
                 elif self.path == '/api/pca/combination':
                     from pca_fitting import combination_detail
                     result=app.pca.inspectable(body['id'])

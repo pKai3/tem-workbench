@@ -397,6 +397,7 @@ def export(result, folder):
 class SharedSpectra:
     def __init__(self):
         self.lock=threading.RLock();self.thread=None;self.cancel=threading.Event();self.job=None;self.result=None
+        self.live_data={};self.live_revision=0;self.last_publish=0.;self.support_generation=None;self.pending_support=None
 
     def running(self):
         with self.lock:return bool(self.thread and self.thread.is_alive())
@@ -406,6 +407,7 @@ class SharedSpectra:
         with self.lock:
             if self.running():raise ValueError('Finish or cancel the current PCA first.')
             self.cancel=threading.Event();self.result=None;self.folder=Path(folder)
+            self.live_data={};self.live_revision=0;self.last_publish=0.;self.support_generation=None;self.pending_support=None
             self.job=dict(id=uuid.uuid4().hex,state='running',completed=0,total=p['count'],stage='Preparing',started=time.monotonic())
             job_id=self.job['id']
             def progress(done,total,stage):
@@ -440,15 +442,53 @@ class SharedSpectra:
             return self.result
 
     def inspectable(self,job_id):
-        """Completed source fits stay readable while original-window checks run."""
+        """Read immutable decomposition data plus safely published fit/map results."""
         with self.lock:
             self.status(job_id)
-            if (self.job['state']=='running' and self.job.get('operation')=='support'
-                    and self.result is not None and self.result.get('fit_status')=='complete'):
-                # Support writes only its own result/status. Do not expose a
-                # previous map or mutable stage status through source readers.
-                return {k:v for k,v in self.result.items() if k not in ('phase_support','phase_support_status')}
+            if self.job['state']=='running' and self.job.get('operation') in ('fit','support') and self.result is not None:
+                return {k:v for k,v in self.result.items() if k not in ('fits','fit_status','phase_support','phase_support_status')} | self.live_data
             return self.completed(job_id)
+
+    def live(self,job_id,revision=-1,window_count=0,generation=''):
+        with self.lock:
+            self.status(job_id)
+            if revision==self.live_revision:return dict(revision=revision,changed=False)
+            data=dict(self.live_data)
+            maps=data.get('phase_support')
+            if maps is not None:
+                offset=min(max(0,window_count),len(maps['windows'])) if generation==maps['generation'] else 0
+                data['phase_support']={**maps,'windows':maps['windows'][offset:],'window_offset':offset}
+            return dict(revision=self.live_revision,changed=True,**data)
+
+    def _bump_live(self):
+        self.live_revision+=1;self.job['result_revision']=self.live_revision
+        self.last_publish=time.monotonic()
+
+    def _publish_fits(self,force=False):
+        fits=self.result.get('fits')
+        if not fits:return
+        if not force and time.monotonic()-self.last_publish<.5:return
+        from nmf_fitting import compact
+        # Combination pools contain full search records until the subset ends.
+        # Publish compact JSON-safe records, leaving the numerical pool intact.
+        groups=[{**{k:v for k,v in group.items() if k!='candidates'},
+                 'candidates':[compact(m) for m in group['candidates']]} for group in fits['groups']]
+        self.live_data.update(fits=copy.deepcopy({**fits,'groups':groups}),fit_status=self.result.get('fit_status'))
+        self._bump_live()
+
+    def _publish_support(self,maps,force=False):
+        with self.lock:
+            self.pending_support=maps
+            previous=self.live_data.get('phase_support')
+            if not force and previous is not None and time.monotonic()-self.last_publish<.5:return
+            offset=len(previous['windows']) if previous else 0
+            header=copy.deepcopy({k:v for k,v in maps.items() if k not in ('models','windows')})
+            models=previous['models'] if previous else copy.deepcopy(maps['models'])
+            windows=(previous['windows'] if previous else [])+copy.deepcopy(maps['windows'][offset:])
+            self.live_data.update(phase_support=dict(header,models=models,windows=windows,
+                                  generation=self.support_generation,completed=len(windows),total=len(self.result['raw_spectra'])),
+                                  phase_support_status=self.result.get('phase_support_status'))
+            self._bump_live()
 
     def fit(self,job_id,templates,options):
         with self.lock:
@@ -462,12 +502,16 @@ class SharedSpectra:
             validate_options(result,options)
             self.cancel=threading.Event()
             result.pop('phase_support',None);result.pop('phase_support_status',None)
-            result['fit_status']='running'
+            result['fit_status']='running';result['fits']=None
+            self.live_data=dict(fits=None,fit_status='running',phase_support=None,phase_support_status=None)
             self.job.update(state='running',operation='fit',completed=0,total=2*len(result['components']) if pca else (1<<len(result['components']))-1,
                             stage='Preparing signed PCA features' if pca else 'Preparing exhaustive combinations',started=time.monotonic())
+            self._bump_live();self.last_publish=0.
             self.job.pop('elapsed_seconds',None);self.job.pop('error',None)
             def progress(done,total,stage):
-                with self.lock:self.job.update(completed=done,total=total,stage=stage)
+                with self.lock:
+                    self.job.update(completed=done,total=total,stage=stage)
+                    self._publish_fits()
             def run():
                 try:
                     fits=fit_groups(result,templates,options,self.cancel,progress)
@@ -478,7 +522,9 @@ class SharedSpectra:
                     LOG.exception('Component crystal fitting failed')
                     with self.lock:result['fit_status']='error: '+str(exc)
                 finally:
-                    with self.lock:self.job.update(state='complete',stage='Group fitting '+result.get('fit_status','finished'),elapsed_seconds=round(time.monotonic()-self.job['started'],1))
+                    with self.lock:
+                        self._publish_fits(force=True)
+                        self.job.update(state='complete',stage='Group fitting '+result.get('fit_status','finished'),elapsed_seconds=round(time.monotonic()-self.job['started'],1))
             self.thread=threading.Thread(target=run,name='component-crystal-fit',daemon=True);self.thread.start()
             return self.status(job_id)
 
@@ -494,22 +540,32 @@ class SharedSpectra:
             if not fits or fits['completed']!=fits['total']:
                 raise ValueError('Finish component crystal fitting first.')
             self.cancel=threading.Event()
-            result['phase_support_status']='running'
+            result['phase_support_status']='running';result.pop('phase_support',None)
+            self.support_generation=uuid.uuid4().hex;self.pending_support=None
+            self.live_data.update(phase_support=None,phase_support_status='running')
             self.job.update(state='running',operation='support',completed=0,total=len(result['raw_spectra']),
                             stage='Preparing phase maps',started=time.monotonic())
+            self._bump_live();self.last_publish=0.
             self.job.pop('elapsed_seconds',None);self.job.pop('error',None)
             def progress(done,total,stage):
                 with self.lock:self.job.update(completed=done,total=total,stage=stage)
             def run():
                 try:
-                    maps=build(result,templates,self.cancel,progress)
-                    with self.lock:result['phase_support']=maps;result['phase_support_status']='complete'
+                    maps=build(result,templates,self.cancel,progress,self._publish_support)
+                    with self.lock:
+                        result['phase_support_status']='complete'
+                        self.pending_support=maps
                 except CancelledError:
                     with self.lock:result['phase_support_status']='cancelled'
                 except Exception as exc:
                     LOG.exception('Original-window checking failed')
                     with self.lock:result['phase_support_status']='error: '+str(exc)
                 finally:
-                    with self.lock:self.job.update(state='complete',stage='Phase mapping '+result['phase_support_status'],elapsed_seconds=round(time.monotonic()-self.job['started'],1))
+                    with self.lock:
+                        if self.pending_support is not None:self._publish_support(self.pending_support,force=True)
+                        if self.live_data.get('phase_support') is not None:result['phase_support']=self.live_data['phase_support']
+                        self.pending_support=None
+                        self.live_data['phase_support_status']=result['phase_support_status'];self._bump_live()
+                        self.job.update(state='complete',stage='Phase mapping '+result['phase_support_status'],elapsed_seconds=round(time.monotonic()-self.job['started'],1))
             self.thread=threading.Thread(target=run,name='component-window-checks',daemon=True);self.thread.start()
             return self.status(job_id)

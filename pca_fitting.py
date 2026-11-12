@@ -213,7 +213,7 @@ def unique_models(result, cancel=None):
     return models
 
 
-def build(result, templates, cancel=None, progress=None):
+def build(result, templates, cancel=None, progress=None, publish=None):
     validate_options(result, {})
     fits = result.get('fits')
     if not fits or fits.get('kind') != 'pca_signed_lobes' or fits['completed'] != fits['total']:
@@ -223,6 +223,20 @@ def build(result, templates, cancel=None, progress=None):
     # support in the original windows. A repeated source is not a new geometry.
     models = unique_models(result,cancel)
     windows = []
+    support_scores={m['id']:[] for m in models}
+    maps=dict(kind='pca_signed_lobes', version=3, models=models, windows=windows,
+                phases=list(dict.fromkeys(t['phase'] for t in templates)),
+                counts={label:sum(w['label']==label for w in windows) for label in ('supported', 'unresolved')},
+                model_passing_counts={str(mid):len(values) for mid,values in support_scores.items()},
+                model_mean_support={str(mid):float(np.mean(values)) if values else 0. for mid,values in support_scores.items()},
+                parameters=dict(peak_fraction=fits['peak_fraction'], score_gate=False,
+                                tolerance_nm_inv=matching_width(result),
+                                omega_falloff_multiplier=result['settings'].get('omega_falloff_multiplier',1.),
+                                local_rotation_deg=LOCAL_ROTATION_DEG, local_scale_fraction=LOCAL_SCALE_FRACTION,
+                                minimum_profiles=4, minimum_prediction_coverage=.3, minimum_support=.2),
+                interpretation='Per-geometry support in all original unbroadened sampled windows, regardless of score sign or magnitude. Near duplicates across feature/combination sources keep the highest-ranked unchanged fit and all source links; each geometry is checked once. Global display ranking is passing-window count, then mean passing support. Resolved same-phase orientations remain separate. Counts across hypotheses overlap and must not be summed. Shared predictions alone do not establish coexistence.',
+                limitations='Same-image consistency, not independent validation or phase fractions. Lobes are deviations from the mean, not absolute intensity. Mean-present patterns may pass on either score side; drift or noise can also create lobes.')
+    if publish:publish(maps)
     for wi, spectrum in enumerate(result['raw_spectra']):
         check_cancel(cancel)
         peaks = detect_peaks(spectrum, result, fits['peak_fraction'])
@@ -236,24 +250,14 @@ def build(result, templates, cancel=None, progress=None):
                             peak_positions=[[p['profile_id'],p['qx'],p['qy']] for p in peaks],
                             candidates=candidates, label='supported' if passing else 'unresolved',
                             phases=list(dict.fromkeys(c['phase'] for c in passing))))
+        for candidate in passing:support_scores[candidate['model']].append(candidate['score'])
+        maps['counts'][windows[-1]['label']]+=1
+        maps['model_passing_counts']={str(mid):len(values) for mid,values in support_scores.items()}
+        maps['model_mean_support']={str(mid):float(np.mean(values)) if values else 0. for mid,values in support_scores.items()}
+        if publish:publish(maps)
         if progress: progress(wi+1, len(result['raw_spectra']), f'Checking original windows {wi+1}/{len(result["raw_spectra"])}')
     check_cancel(cancel)
-    support_scores={m['id']:[] for m in models}
-    for window in windows:
-        for candidate in window['candidates']:
-            if candidate['valid']:support_scores[candidate['model']].append(candidate['score'])
-    return dict(kind='pca_signed_lobes', version=3, models=models, windows=windows,
-                phases=list(dict.fromkeys(t['phase'] for t in templates)),
-                counts={label:sum(w['label']==label for w in windows) for label in ('supported', 'unresolved')},
-                model_passing_counts={str(mid):len(values) for mid,values in support_scores.items()},
-                model_mean_support={str(mid):float(np.mean(values)) if values else 0. for mid,values in support_scores.items()},
-                parameters=dict(peak_fraction=fits['peak_fraction'], score_gate=False,
-                                tolerance_nm_inv=matching_width(result),
-                                omega_falloff_multiplier=result['settings'].get('omega_falloff_multiplier',1.),
-                                local_rotation_deg=LOCAL_ROTATION_DEG, local_scale_fraction=LOCAL_SCALE_FRACTION,
-                                minimum_profiles=4, minimum_prediction_coverage=.3, minimum_support=.2),
-                interpretation='Per-geometry support in all original unbroadened sampled windows, regardless of score sign or magnitude. Near duplicates across feature/combination sources keep the highest-ranked unchanged fit and all source links; each geometry is checked once. Global display ranking is passing-window count, then mean passing support. Resolved same-phase orientations remain separate. Counts across hypotheses overlap and must not be summed. Shared predictions alone do not establish coexistence.',
-                limitations='Same-image consistency, not independent validation or phase fractions. Lobes are deviations from the mean, not absolute intensity. Mean-present patterns may pass on either score side; drift or noise can also create lobes.')
+    return maps
 
 
 def window_detail(result, index, model_id):
@@ -262,6 +266,8 @@ def window_detail(result, index, model_id):
         raise ValueError('Build PCA window checks first.')
     if type(index) is not int or not 0 <= index < len(result['raw_spectra']):
         raise ValueError('Choose an original sampled window.')
+    if index>=len(maps['windows']):
+        raise ValueError('This window has not been checked yet.')
     if type(model_id) is not int or not 0 <= model_id < len(maps['models']):
         raise ValueError('Choose a retained PCA fit.')
     model = maps['models'][model_id]

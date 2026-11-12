@@ -79,3 +79,12 @@ assert.ok(pca.hypothesisPools(overlap,pca.orderedHypotheses(overlap)).slice(1).e
 assert.deepEqual(pca.orderedHypotheses({models:[],windows:[],model_passing_counts:{}}),[]);
 assert.equal(JSON.stringify(benefitMap),before,'display ordering does not mutate fits or their scores');
 console.log('PCA hypothesis maps: global pool, local winner, independent/shared evidence, unresolved windows and combination labels passed.');
+
+// Live maps append completed windows, reset on a new run and never duplicate a prefix.
+const initial=pca.mergeLive(null,{generation:'a',models:maps.models,windows:[win],window_offset:0});
+const updated=pca.mergeLive(initial,{generation:'a',models:maps.models,windows:[shared],window_offset:1});
+assert.deepEqual(updated.windows,[win,shared]);assert.equal(initial.windows.length,1);
+assert.deepEqual(pca.mergeLive(updated,{...updated,windows:[shared],window_offset:1}).windows,[win,shared]);
+assert.deepEqual(pca.mergeLive(updated,{generation:'b',windows:[],window_offset:0}).windows,[]);
+assert.throws(()=>pca.mergeLive(initial,{generation:'a',windows:[],window_offset:2}),/earlier/);
+assert.equal(pca.mergeLive(updated,null),null);

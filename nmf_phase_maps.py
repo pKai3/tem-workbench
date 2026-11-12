@@ -105,7 +105,7 @@ def match_local(peaks, model, width, settings):
     return best
 
 
-def build(result, templates, cancel=None, progress=None):
+def build(result, templates, cancel=None, progress=None, publish=None):
     fits=result.get('fits')
     if result['plan'].get('method')!='nmf' or not fits or fits['completed']!=fits['total']:
         raise ValueError('Finish fitting all NMF combinations before building phase maps.')
@@ -131,6 +131,18 @@ def build(result, templates, cancel=None, progress=None):
             eligibility.append(common)
     phases=list(dict.fromkeys(t['phase'] for t in templates))
     windows=[];n=len(result['raw_spectra'])
+    counts={label:0 for label in ('single','multiple','ambiguous','unresolved')}
+    maps=dict(version=2,phases=phases,models=models,windows=windows,counts=counts,
+                passing_counts={phase:sum(any(c['phase']==phase and c['valid'] for c in w['candidates']) for w in windows) for phase in phases},
+                parameters=dict(peak_fraction=fraction,cooccurrence_fraction=cooccurrence,tolerance_nm_inv=tolerance,
+                                omega_falloff_multiplier=result['settings'].get('omega_falloff_multiplier',1.),
+                                minimum_profiles=4,minimum_predicted_coverage=.30,minimum_support_score=.20,
+                                minimum_spread_sine=.5,local_rotation_deg=LOCAL_ROTATION_DEG,local_scale_fraction=LOCAL_SCALE_FRACTION,unique_profiles=3,unique_fraction=.15,
+                                ambiguous_rank_gap=.08,ambiguous_shared_fraction=.6),
+                interpretation='Best passing locally refined group fit per phase (predicted-profile support minus chance and scale costs, not the group-search rank) in each original unbroadened sampled spectrum. Multiple phases require at least three distinct nonparallel profiles per phase and >15% of all detected profiles. Local adjustment is limited to ±3° rotation and ±3% uniform reciprocal scale (rotation only for fixed scale); scale drift adds a penalty without discounting the group cost. At least four profiles within one matching width and nonparallel directions are required. Extra observed peaks increase the chance allowance without diluting support. NMF activity is eligibility only. Overlapping groups are not summed.',
+                limitations='Same-image consistency, not independent validation or phase fractions. Original spectra are polar-sampled log power. Bounded group refinement may miss larger local drift; c/a and phase/zone identity stay fixed. Overlapping windows are correlated.',
+                nmf_converged=result.get('converged'))
+    if publish:publish(maps)
     for wi,spectrum in enumerate(result['raw_spectra']):
         check_cancel(cancel)
         peaks=detect_peaks(spectrum,result,fraction)
@@ -156,16 +168,10 @@ def build(result, templates, cancel=None, progress=None):
             if previous is None or (candidate['valid'],rank)>(previous['valid'],previous['score']):best[model['phase']]=candidate
         candidates=sorted(best.values(),key=lambda c:(-c['score'],c['model']))
         windows.append(dict(index=wi,peak_count=len(peaks),tested_models=tested,candidates=candidates,**classify(candidates,peaks)))
+        counts[windows[-1]['label']]+=1
+        for phase in phases:
+            if any(c['phase']==phase and c['valid'] for c in candidates):maps['passing_counts'][phase]+=1
+        if publish:publish(maps)
         if progress:progress(wi+1,n,f'Checking original windows {wi+1}/{n}')
     check_cancel(cancel)
-    counts={label:sum(w['label']==label for w in windows) for label in ('single','multiple','ambiguous','unresolved')}
-    return dict(version=2,phases=phases,models=models,windows=windows,counts=counts,
-                passing_counts={phase:sum(any(c['phase']==phase and c['valid'] for c in w['candidates']) for w in windows) for phase in phases},
-                parameters=dict(peak_fraction=fraction,cooccurrence_fraction=cooccurrence,tolerance_nm_inv=tolerance,
-                                omega_falloff_multiplier=result['settings'].get('omega_falloff_multiplier',1.),
-                                minimum_profiles=4,minimum_predicted_coverage=.30,minimum_support_score=.20,
-                                minimum_spread_sine=.5,local_rotation_deg=LOCAL_ROTATION_DEG,local_scale_fraction=LOCAL_SCALE_FRACTION,unique_profiles=3,unique_fraction=.15,
-                                ambiguous_rank_gap=.08,ambiguous_shared_fraction=.6),
-                interpretation='Best passing locally refined group fit per phase (predicted-profile support minus chance and scale costs, not the group-search rank) in each original unbroadened sampled spectrum. Multiple phases require at least three distinct nonparallel profiles per phase and >15% of all detected profiles. Local adjustment is limited to ±3° rotation and ±3% uniform reciprocal scale (rotation only for fixed scale); scale drift adds a penalty without discounting the group cost. At least four profiles within one matching width and nonparallel directions are required. Extra observed peaks increase the chance allowance without diluting support. NMF activity is eligibility only. Overlapping groups are not summed.',
-                limitations='Same-image consistency, not independent validation or phase fractions. Original spectra are polar-sampled log power. Bounded group refinement may miss larger local drift; c/a and phase/zone identity stay fixed. Overlapping windows are correlated.',
-                nmf_converged=result.get('converged'))
+    return maps

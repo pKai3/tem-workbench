@@ -52,7 +52,13 @@ class PcaCombinationTests(unittest.TestCase):
         group=fits['groups'][-1];best=group['candidates'][0]
         self.assertTrue(best['valid']);self.assertEqual(best['phase'],'BCC')
         self.assertEqual(group['completed_windows'],4);self.assertEqual(best['window'],0)
-        maps=fitting.build(r,t);r['phase_support']=maps
+        snapshots=[]
+        maps=fitting.build(r,t,publish=lambda m:snapshots.append(copy.deepcopy(m)));r['phase_support']=maps
+        self.assertEqual([len(m['windows']) for m in snapshots],list(range(5)))
+        self.assertEqual(maps,fitting.build(r,t))
+        self.assertEqual(sum(snapshots[2]['counts'].values()),2)
+        pending={**r,'phase_support':snapshots[1]}
+        with self.assertRaisesRegex(ValueError,'not been checked'):fitting.window_detail(pending,1,0)
         self.assertTrue(any(c['valid'] for c in maps['windows'][0]['candidates']))
         self.assertFalse(any(c['valid'] for c in maps['windows'][3]['candidates']))
         model=maps['models'][0]
@@ -137,9 +143,10 @@ class PcaCombinationTests(unittest.TestCase):
             try:
                 self.assertTrue(started.wait(2))
                 ready=manager.inspectable('test')
-                self.assertIs(ready['fits'],r['fits'])
-                self.assertNotIn('phase_support_status',ready)
-                self.assertNotIn('phase_support',ready)
+                self.assertEqual(ready['fits']['completed'],r['fits']['completed'])
+                self.assertIsNot(ready['fits'],r['fits'])
+                self.assertEqual(ready['phase_support_status'],'running')
+                self.assertIsNone(ready['phase_support'])
                 self.assertTrue(fitting.combination_detail(ready,[0,1],0,t)['candidates'])
                 self.assertEqual(fitting.lobe_detail(ready,0,'positive',t)['component'],0)
                 self.assertEqual(spectra.sample(ready,0,[0,1])['selected'],[0,1])
@@ -150,7 +157,7 @@ class PcaCombinationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):manager.inspectable('old')
                 # Cancelling checks must not make completed source fits unreadable.
                 manager.cancel.set()
-                self.assertIs(manager.inspectable('test')['fits'],r['fits'])
+                self.assertEqual(manager.inspectable('test')['fits']['completed'],r['fits']['completed'])
             finally:
                 release.set();manager.thread.join(10)
         self.assertEqual(json.dumps(r['fits']),before)
@@ -160,8 +167,8 @@ class PcaCombinationTests(unittest.TestCase):
         manager=spectra.SharedSpectra()
         manager.job=dict(id='current',state='running',operation='fit',started=time.monotonic())
         manager.result=dict(fit_status='running')
-        with self.assertRaises(ValueError):manager.inspectable('current')
-        manager.job['operation']='support'
+        self.assertNotIn('fits',manager.inspectable('current'))
+        manager.job['operation']='decomposition'
         with self.assertRaises(ValueError):manager.inspectable('current')
         manager.result=None
         with self.assertRaises(ValueError):manager.inspectable('current')

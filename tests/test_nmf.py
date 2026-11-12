@@ -164,7 +164,10 @@ class NmfTests(unittest.TestCase):
         json.dumps(detail,allow_nan=False)
 
         with patch.object(phase_maps,'search_candidates',side_effect=AssertionError('must not refit')):
-            support=phase_maps.build(r,[t])
+            snapshots=[]
+            support=phase_maps.build(r,[t],publish=lambda m:snapshots.append(copy.deepcopy(m)))
+            self.assertEqual([len(m['windows']) for m in snapshots],list(range(len(r['raw_spectra'])+1)))
+            self.assertEqual(support,phase_maps.build(r,[t]))
         self.assertEqual(support['counts']['single'],len(r['raw_spectra']))
         self.assertEqual(support['passing_counts']['BCC'],len(r['raw_spectra']))
         self.assertTrue(all(w['phases']==['BCC'] for w in support['windows']))

@@ -1013,14 +1013,25 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #nmf-fit-results {max-height:none;overflow:visible}
 .nmf-fit-results table {width:100%;font-size:12px}
 .nmf-fit-results th {position:sticky;top:0;background:#13212c;z-index:1}
-#nmf-group-detail {margin:16px 0;padding:12px;border:1px solid #385364;border-radius:8px}
-#nmf-group-detail[hidden],#nmf-group-content[hidden] {display:none}
+#nmf-group-detail{width:min(1700px,94vw);max-width:none;max-height:92vh;padding:16px;margin:auto;box-sizing:border-box;overflow:hidden;background:var(--panel,#111d28);color:var(--text,#d8e5f0);border:1px solid #536b7e;border-radius:10px}
+#nmf-group-detail[open]{display:flex;flex-direction:column}
+#nmf-group-detail::backdrop{background:#0009}
+.pca-inspector-header{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:0 0 10px;background:inherit;border-bottom:1px solid var(--line)}
+#nmf-group-label{overflow-wrap:anywhere}
+#nmf-group-close{flex:0 0 30px;width:30px;height:30px;min-height:30px;padding:0;margin-left:auto;font-size:22px}
+#nmf-group-body{min-height:0;overflow:auto;overscroll-behavior:contain}
+#nmf-group-status{margin:10px 0;font-size:12px}
+#nmf-group-toolbar{align-items:center;margin:10px 0;gap:10px}
+#nmf-group-toolbar p{margin:0}
+#nmf-group-toolbar button{margin:0}
+#nmf-group-toolbar>div{display:flex;flex-wrap:wrap;gap:6px}
+#nmf-group-detail:not([open]),#nmf-group-content[hidden],#nmf-group-source-help[hidden]{display:none}
 #nmf-group-content {display:flex;gap:18px;align-items:start}
 #nmf-group-content figure {margin:0;flex:0 1 34%;min-width:200px;max-width:520px}
 #nmf-group-spectrum {width:100%;display:block}
 #nmf-support {flex:1;min-width:0}
 #nmf-support button {margin:4px}
-#nmf-support .nmf-fit-results {max-height:500px}
+#nmf-support .nmf-fit-results {max-height:none;overflow:visible}
 #nmf-support table {min-width:0}
 #nmf-support td,#nmf-support th{padding:8px 4px}
 #nmf-support input[type=checkbox]{width:13px;height:13px;min-height:0;margin:0;padding:0}
@@ -1035,7 +1046,7 @@ html.pca-open,html.pca-open body{overflow:hidden}
 }
 #nmf-support .settings-help-popup{left:auto;right:0}
 #pca-overview canvas[role="button"],#pca-spectrum[role="button"] {cursor:pointer}
-@media(max-width:1450px){#nmf-group-content{flex-direction:column}#nmf-group-content figure{width:min(100%,420px);min-width:0}#nmf-support{width:100%}}
+@media(max-width:1200px){#nmf-group-content{flex-direction:column}#nmf-group-content figure{width:min(100%,420px);min-width:0}#nmf-support{width:100%}}
 @media(max-width:850px){.nmf-fit-results{max-height:none}}
 
 /* Compact component comparison: maps above spectra. */
