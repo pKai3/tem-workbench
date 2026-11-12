@@ -357,6 +357,10 @@ def export(result, folder):
               broadening='Gaussian in log radius and angle before decomposition; no orientation registration',
               source_settings='Window, taper, mean removal and fitting band used; peak detection/matching settings not used'),
               reference='Jany et al., Micron 130 (2020) 102800; doi:10.1016/j.micron.2019.102800')
+    meta.update(fits=result.get('fits'),fit_status=result.get('fit_status'),
+                phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'))
+    if result.get('fits') and result['plan'].get('method','pca')=='pca':
+        meta['conventions']['source_settings']='Decomposition uses taper, mean removal and fitting band. Signed-lobe indexing uses captured material/phase/scale settings; original-window checks do not gate by score sign.'
     if result['plan'].get('method')=='nmf':
         meta.update(contribution_share=result['contribution_share'].tolist(),iterations=result['iterations'],converged=result['converged'],relative_reconstruction_error=result['relative_reconstruction_error'],fits=result.get('fits'),fit_status=result.get('fit_status'),phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'))
         meta['conventions'].update(normalization='Per-window weighted norm, no centering; H rows have unit L1 sum',reconstruction='scores @ components; divide by area_weights and multiply window normalization',components='Nonnegative spectral factors; contribution shares are not phase fractions or explained variance',source_settings='Decomposition uses taper, mean removal and fitting band. Optional indexing uses captured material/phase/scale settings; see fits provenance.')
@@ -436,16 +440,20 @@ class SharedSpectra:
             return self.result
 
     def fit(self,job_id,templates,options):
-        from nmf_fitting import fit_groups, validate_options
         with self.lock:
             result=self.completed(job_id)
             if self.running():raise ValueError('Finish or cancel the current operation first.')
+            pca=result['plan'].get('method','pca')=='pca'
+            if pca:
+                from pca_fitting import fit_lobes as fit_groups, validate_options
+            else:
+                from nmf_fitting import fit_groups, validate_options
             validate_options(result,options)
             self.cancel=threading.Event()
             result.pop('phase_support',None);result.pop('phase_support_status',None)
             result['fit_status']='running'
-            self.job.update(state='running',operation='fit',completed=0,total=(1<<len(result['components']))-1,
-                            stage='Preparing exhaustive combinations',started=time.monotonic())
+            self.job.update(state='running',operation='fit',completed=0,total=2*len(result['components']) if pca else (1<<len(result['components']))-1,
+                            stage='Preparing signed PCA features' if pca else 'Preparing exhaustive combinations',started=time.monotonic())
             self.job.pop('elapsed_seconds',None);self.job.pop('error',None)
             def progress(done,total,stage):
                 with self.lock:self.job.update(completed=done,total=total,stage=stage)
@@ -456,24 +464,27 @@ class SharedSpectra:
                 except CancelledError:
                     with self.lock:result['fit_status']='cancelled'
                 except Exception as exc:
-                    LOG.exception('NMF group fitting failed')
+                    LOG.exception('Component crystal fitting failed')
                     with self.lock:result['fit_status']='error: '+str(exc)
                 finally:
                     with self.lock:self.job.update(state='complete',stage='Group fitting '+result.get('fit_status','finished'),elapsed_seconds=round(time.monotonic()-self.job['started'],1))
-            self.thread=threading.Thread(target=run,name='nmf-crystal-fit',daemon=True);self.thread.start()
+            self.thread=threading.Thread(target=run,name='component-crystal-fit',daemon=True);self.thread.start()
             return self.status(job_id)
 
     def support(self,job_id,templates):
-        from nmf_phase_maps import build
         with self.lock:
             result=self.completed(job_id)
             if self.running():raise ValueError('Finish or cancel the current operation first.')
+            if result['plan'].get('method','pca')=='pca':
+                from pca_fitting import build
+            else:
+                from nmf_phase_maps import build
             fits=result.get('fits')
             if not fits or fits['completed']!=fits['total']:
-                raise ValueError('Finish fitting all NMF combinations first.')
+                raise ValueError('Finish component crystal fitting first.')
             self.cancel=threading.Event()
             result['phase_support_status']='running'
-            self.job.update(state='running',operation='support',completed=0,total=len(fits['groups']),
+            self.job.update(state='running',operation='support',completed=0,total=len(result['raw_spectra']),
                             stage='Preparing phase maps',started=time.monotonic())
             self.job.pop('elapsed_seconds',None);self.job.pop('error',None)
             def progress(done,total,stage):
@@ -485,9 +496,9 @@ class SharedSpectra:
                 except CancelledError:
                     with self.lock:result['phase_support_status']='cancelled'
                 except Exception as exc:
-                    LOG.exception('NMF phase mapping failed')
+                    LOG.exception('Original-window checking failed')
                     with self.lock:result['phase_support_status']='error: '+str(exc)
                 finally:
                     with self.lock:self.job.update(state='complete',stage='Phase mapping '+result['phase_support_status'],elapsed_seconds=round(time.monotonic()-self.job['started'],1))
-            self.thread=threading.Thread(target=run,name='nmf-phase-maps',daemon=True);self.thread.start()
+            self.thread=threading.Thread(target=run,name='component-window-checks',daemon=True);self.thread.start()
             return self.status(job_id)

@@ -1207,3 +1207,14 @@ User asked about parallelization, then explicitly put it aside for later. No exe
 ### Next focus: PCA crystal-fitting pipeline — 12 November 2026
 
 User selected this as the next investigation after the signal-card changes, ahead of deferred parallelization. Start from the signed-lobe proposal in [method notes](local-fft-pca.md): inspect and fit positive/negative PCA features separately; retain component, side, phase, zone and orientation identities; test hypotheses against every original unbroadened window. Reuse candidate search and bounded local refinement, but not NMF's activity gate or best-model-per-phase collapse. The existing mean must remain available as a reference. Confirm behaviour with sign-flip, same-phase orientation, mean-present, noise and drift controls before interpreting a support map. This records the agreed next focus; signed-PCA fitting remains unimplemented in the current UI change.
+
+
+### Signed PCA crystal fitting and original-window checks — 12 November 2026
+
+Approved and implemented on `feature/local-fft-pca` after `ad9ad88`. Run PCA now progresses through decomposition, fitting each component's positive and negative features separately, and checking each retained orientation, including below-screen feature fits, against every original unbroadened sampled window. No score-sign/activity gate. Each side retains up to five distinct candidates per phase, including same-phase orientations; PCA support does not collapse to one model per phase or infer coexistence.
+
+Fit + / Fit − actions use the existing compact inspector. Window checks select a specific component/side/phase/zone/orientation, report support counts, and open original-window spectra with locally refined predictions. Refinement and support reuse the existing bounded ±3°/±3% mechanism (rotation only in fixed scale); feature rank remains distinct from original-window support. Signed arrays, means and reconstructions are preserved. Export provenance includes fits/checks and stage completion. NMF exhaustive combinations remain unchanged; execution stays single-worker.
+
+User explicitly chose **individual features first** after asking about PC 1 + 2. Score-weighted PCA combinations are a later follow-up; do not substitute arbitrary sums of loadings. Parallel execution remains deferred.
+
+Validation: synthetic signed-lobe and original-window controls cover same-phase orientations, two orientations on one side, sign reversal, zero-score mean-present patterns, weak amplitude, empty lobes, bounded drift, cancellation and numeric export. All 30 focused Python checks and 28 JavaScript suites pass. Browser checks cover the PCA/NMF pipelines, signed-side inspection, per-hypothesis selection, original-window overlays and narrow layouts. A two-PC ST 1203 smoke run checked 11 retained hypotheses across 324 original windows; this is not independent scientific validation. No release requested.

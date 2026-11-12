@@ -157,9 +157,9 @@
  <div class="pca-dialog-header">
   <div class="panel-head"><h2 id="pca-title">Local FFT PCA / NMF · experimental</h2><div class="pca-dialog-actions"><button id="pca-run" type="submit" form="pca-form" class="primary">Run NMF</button><button id="pca-cancel" type="button" disabled>Cancel</button><button id="pca-export" type="button" disabled>Export data</button><button id="pca-close" type="button" aria-label="Close PCA / NMF">×</button></div></div>
   <p id="pca-source" class="hint"></p>
- <p id="pca-status" role="status">Uses the current FFT window, taper, mean removal and fitting band. Optional crystal fitting follows NMF.</p>
+ <p id="pca-status" role="status">Uses the current FFT window, taper, mean removal and fitting band. Crystal fitting and original-window checks follow decomposition.</p>
  <progress id="pca-progress" max="1" value="0" aria-label="Analysis progress" hidden></progress>
-  <nav id="pca-navigation" role="tablist" aria-label="Decomposition results" hidden><button id="pca-tab-signals" type="button" role="tab" data-pca-tab="signals" aria-controls="pca-signals-panel" aria-selected="true">Signals</button><button id="pca-tab-fits" type="button" role="tab" data-pca-tab="fits" data-nmf-only aria-controls="pca-fits-panel" aria-selected="false">Crystal fits</button><button id="pca-tab-support" type="button" role="tab" data-pca-tab="support" data-nmf-only aria-controls="pca-support-panel" aria-selected="false">Phase support</button></nav>
+  <nav id="pca-navigation" role="tablist" aria-label="Decomposition results" hidden><button id="pca-tab-signals" type="button" role="tab" data-pca-tab="signals" aria-controls="pca-signals-panel" aria-selected="true">Signals</button><button id="pca-tab-fits" type="button" role="tab" data-pca-tab="fits" aria-controls="pca-fits-panel" aria-selected="false">Crystal fits</button><button id="pca-tab-support" type="button" role="tab" data-pca-tab="support" aria-controls="pca-support-panel" aria-selected="false">Phase support</button></nav>
  </div>
  <details id="pca-setup" open><summary>Analysis settings</summary>
  <form id="pca-form" class="pca-controls">
@@ -188,9 +188,9 @@
   </section>
   <section id="nmf-fitting" hidden>
    <section id="pca-fits-panel" data-pca-panel="fits" role="tabpanel" aria-labelledby="pca-tab-fits" hidden><h3>Crystal fits</h3>
-   <div class="pca-controls"><label title="Relative height above the median at the same reciprocal radius. Factor amplitudes do not use the ordinary FFT strength threshold.">Factor peak cutoff<input id="nmf-cutoff" type="number" min="0.01" max="1" step="0.01" value="0.20"></label>
+   <div class="pca-controls"><label title="Relative height above the median at the same reciprocal radius. Factor amplitudes do not use the ordinary FFT strength threshold."><span id="nmf-cutoff-label">Factor peak cutoff</span><input id="nmf-cutoff" type="number" min="0.01" max="1" step="0.01" value="0.20"></label>
     <button id="nmf-fit" type="button">Fit all combinations</button><span id="nmf-fit-count" class="hint"></span>
-    <span title="Every nonempty subset is tested using the material, enabled phases and scale settings captured at Run. Group weights are mean NMF coefficients in co-occurring windows, or global means if none. No co-occurrence filter is applied. Position and scale scoring only; no weak/missing-peak, brightness or double-diffraction adjustments. These ranks are not directly comparable to ordinary grid ranks.">ⓘ</span>
+    <span class="settings-help"><button class="settings-help-button" type="button" aria-label="About component crystal fitting">ⓘ</button><span id="nmf-fit-help" class="settings-help-popup" role="tooltip"></span></span>
    </div>
    <p id="nmf-fit-note" class="hint"></p>
    <section id="nmf-group-detail" hidden>
@@ -200,13 +200,13 @@
    </section>
    <div id="nmf-fit-results" class="nmf-fit-results"></div>
    </section>
-   <section id="pca-support-panel" data-pca-panel="support" role="tabpanel" aria-labelledby="pca-tab-support" hidden><div class="pca-controls"><h3>Phase support</h3><button id="nmf-build-map" type="button">Build phase maps</button></div>
+   <section id="pca-support-panel" data-pca-panel="support" role="tabpanel" aria-labelledby="pca-tab-support" hidden><div class="pca-controls"><h3 id="nmf-support-heading">Phase support</h3><button id="nmf-build-map" type="button">Build phase maps</button></div>
    <p id="nmf-map-status" class="hint" role="status"></p>
    <section id="nmf-phase-panel" hidden>
-    <div class="pca-controls"><label>Phase<select id="nmf-map-phase"><option value="all">All phases</option></select></label><label>Map opacity<input id="nmf-map-opacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
-     <span tabindex="0" title="Group fits are checked against every eligible original window with up to ±3° local rotation and ±3% uniform scale adjustment (rotation only in fixed-scale mode). Cell proportions stay fixed; scale drift adds a penalty. One best passing model per phase; overlapping groups are never summed. Blended cells require distinct nonparallel peaks for every included phase. Pink means close competing explanations of shared peaks. Phase-specific views include passing fits even when they compete. Colours are not phase fractions.">ⓘ</span>
+    <div class="pca-controls"><label><span id="nmf-map-phase-label">Phase</span><select id="nmf-map-phase"><option value="all">All phases</option></select></label><label>Map opacity<input id="nmf-map-opacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+     <span class="settings-help"><button class="settings-help-button" type="button" aria-label="About original-window checks">ⓘ</button><span id="nmf-map-help" class="settings-help-popup" role="tooltip"></span></span>
     </div>
-    <div id="nmf-phase-content"><figure><canvas id="nmf-phase-map" width="700" height="700" tabindex="0" role="img" aria-label="Phase support map; click or use arrow keys to inspect a window"></canvas><figcaption id="nmf-map-key"></figcaption></figure><div><p id="nmf-map-counts"></p><p id="nmf-map-window"></p><div id="nmf-map-evidence" class="nmf-fit-results"></div><p class="hint">Click a cell to select its original window. Group buttons open Crystal fits.</p></div></div>
+    <div id="nmf-phase-content"><figure><canvas id="nmf-phase-map" width="700" height="700" tabindex="0" role="img" aria-label="Phase support map; click or use arrow keys to inspect a window"></canvas><figcaption id="nmf-map-key"></figcaption></figure><div><p id="nmf-map-counts"></p><p id="nmf-map-window"></p><div id="nmf-map-evidence" class="nmf-fit-results"></div><p class="hint">Click a cell to select its original window. Fit buttons open their spectrum overlays.</p></div></div>
     <p class="hint">Same-image support, not phase fractions. Overlapping windows are correlated.</p>
    </section>
    </section>
@@ -218,7 +218,7 @@
   </div><p id="pca-sample-note" class="hint"></p></details>
   <details><summary>Mean spectra and interpretation</summary><div class="pca-samples"><figure><figcaption>Original mean spectrum</figcaption><img id="pca-raw-mean" alt="" role="img" aria-label="Mean original spectrum"></figure><figure><figcaption id="pca-mean-label">Mean PCA input</figcaption><img id="pca-mean" alt="" role="img" aria-label="Mean decomposition spectrum"></figure></div>
    <p>PCA components describe signed differences from the mean. NMF components are nonnegative spectral factors; neither is a crystal-phase assignment. One distorted lattice can occupy several components; two phases can share one. Group activity combines selected score magnitudes without aligning crystals. Smoothing may hide nearby reflections. Compare the original spectra and rerun with smoothing off before interpreting a boundary. Overlapping windows are correlated.</p>
-   <p>Sampling uses full square physical windows across this image, ignoring the current ROI/polygon. Decomposition does not use detector thresholds or crystal fitting. Optional NMF indexing uses captured material and scale settings plus its own relative peak cutoff. Colours and map values are not phase fractions.</p>
+   <p>Sampling uses full square physical windows across this image, ignoring the current ROI/polygon. Decomposition does not use detector thresholds or crystal fitting. Component indexing uses captured material and scale settings plus its own relative peak cutoff. PCA fits positive and negative deviations separately and checks every original window without a score-sign gate. Colours and map values are not phase fractions.</p>
    <p>Inspired by <a href="https://doi.org/10.1016/j.micron.2019.102800" target="_blank" rel="noopener">Jany, Janas &amp; Krok (2020)</a>. Includes PCA, Euclidean NMF and exploratory indexing of component combinations. NMF signal shares are not explained variance or phase fractions; a low reconstruction error does not establish correct separation.</p>
   </details>
  </div>

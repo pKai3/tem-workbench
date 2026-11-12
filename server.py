@@ -214,7 +214,7 @@ class Workbench:
     def fit_nmf(self, body, support=False):
         with self.lock, self.job_lock:
             if self.closing or self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running():
-                raise ValueError('Finish or cancel other analysis before fitting NMF groups.')
+                raise ValueError('Finish or cancel other analysis before fitting components.')
             result=self.pca.completed(body['id'])
             templates=copy.deepcopy(self.engine.templates_for(result['settings']))
             return self.pca.support(body['id'],templates) if support else self.pca.fit(body['id'],templates,body.get('options',{}))
@@ -926,6 +926,15 @@ def make_handler(app):
                     with app.lock:
                         templates=copy.deepcopy(app.engine.templates_for(result['settings']))
                     self.send(group_detail(result,body['components'],templates,body.get('options',{})))
+                elif self.path == '/api/pca/lobe':
+                    from pca_fitting import lobe_detail
+                    result=app.pca.completed(body['id'])
+                    with app.lock:
+                        templates=copy.deepcopy(app.engine.templates_for(result['settings']))
+                    self.send(lobe_detail(result,body['component'],body['side'],templates,body.get('options',{})))
+                elif self.path == '/api/pca/window-fit':
+                    from pca_fitting import window_detail
+                    self.send(window_detail(app.pca.completed(body['id']),body['index'],body['model']))
                 elif self.path == '/api/pca/cancel':
                     with app.pca.lock:
                         app.pca.status(body['id'])
