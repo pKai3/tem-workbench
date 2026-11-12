@@ -206,14 +206,26 @@
    <section id="pca-support-panel" data-pca-panel="support" role="tabpanel" aria-labelledby="pca-tab-support" hidden><div class="pca-controls"><h3 id="nmf-support-heading">Phase support</h3><button id="nmf-build-map" type="button">Build phase maps</button></div>
    <p id="nmf-map-status" class="hint" role="status"></p>
    <section id="nmf-phase-panel" hidden>
-    <div class="pca-controls"><label id="pca-map-mode-label" hidden>Display<select id="pca-map-mode"><option value="best">Best local match</option><option value="all">All locally supported</option><option value="single">Single hypothesis</option></select></label>
-     <label id="pca-map-top-label" hidden>Top hypotheses<select id="pca-map-top"><option value="3">3</option></select></label>
+    <div class="pca-controls"><label id="pca-map-mode-label" hidden>Display<select id="pca-map-mode"><option value="best">Best local match</option><option value="all">All locally supported</option></select></label>
      <label id="nmf-map-select-label"><span id="nmf-map-phase-label">Phase</span><select id="nmf-map-phase"><option value="all">All phases</option></select></label>
      <label id="pca-map-colour-label" hidden>Colour by<select id="pca-map-colour"><option value="phase">Phase</option><option value="hypothesis">Hypothesis</option></select></label><label>Map opacity<input id="nmf-map-opacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
      <label id="pca-map-symbols-label" hidden><input id="pca-map-symbols" type="checkbox" checked>Solution symbols</label>
      <span class="settings-help"><button class="settings-help-button" type="button" aria-label="About original-window checks">ⓘ</button><span id="nmf-map-help" class="settings-help-popup" role="tooltip"></span></span>
     </div>
-    <div id="nmf-phase-content"><figure><canvas id="nmf-phase-map" width="700" height="700" tabindex="0" role="img" aria-label="Phase support map; click or use arrow keys to inspect a window"></canvas><figcaption id="nmf-map-key"></figcaption></figure><div><p id="nmf-map-counts"></p><p id="nmf-map-window"></p><div id="nmf-map-evidence" class="nmf-fit-results"></div><p class="hint">Click a cell to select its original window. Fit buttons open their spectrum overlays.</p></div></div>
+    <div id="nmf-phase-content">
+     <figure><canvas id="nmf-phase-map" width="700" height="700" tabindex="0" role="img" aria-label="Phase support map; click or use arrow keys to inspect a window"></canvas><figcaption id="nmf-map-key"></figcaption></figure>
+     <aside id="nmf-map-sidebar"><p id="nmf-map-counts" role="status"></p>
+      <section id="pca-hypotheses" hidden aria-label="Map hypotheses">
+       <div class="pca-controls">
+        <label>Sort hypotheses<select id="pca-map-sort"><option value="benefit">Added benefit</option><option value="better">Better fits</option><option value="passing">Passing windows</option></select></label>
+        <label id="pca-map-top-label">Select top<select id="pca-map-top"><option value="3">3</option></select></label>
+        <span class="settings-help"><button class="settings-help-button" type="button" aria-label="About hypothesis selection">ⓘ</button><span class="settings-help-popup" role="tooltip">Added benefit chooses each next hypothesis by the number of newly supported or better-fitting windows, recalculated after every addition. Better fits prioritizes improvements to already-supported windows, then new support. Passing windows sorts by total passing count, then mean passing score. The list’s New and Better percentages describe adding each row after all rows above it, regardless of ticks. All percentages use all checked windows; Better counts any strictly higher local score, not its size. Equal scores and failed fits do not count. Select top ticks the first N; tick boxes for a custom pool or click a hypothesis name to show only it. Sorting preserves a custom selection. Selection changes the display, not the fitted results.</span></span>
+       </div>
+       <div id="pca-hypothesis-list" tabindex="0" aria-label="Hypothesis selection list"></div>
+      </section>
+     </aside>
+     <div id="nmf-window-detail"><p id="nmf-map-window"></p><div id="nmf-map-evidence" class="nmf-fit-results"></div><p class="hint">Click a cell to select its original window. Fit buttons open their spectrum overlays.</p></div>
+    </div>
     <p class="hint">Same-image support, not phase fractions. Overlapping windows are correlated.</p>
    </section>
    </section>

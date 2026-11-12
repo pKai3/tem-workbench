@@ -51,4 +51,31 @@ assert.deepEqual(symbols.map(s=>[s.model.id,s.symbol,s.count]),[[0,'●',1],[1,'
 assert.equal(registry.has(2),false,'nonwinning solutions need no symbol');
 assert.deepEqual(pca.winningSolutions(maps,[pca.localHypotheses(win,[0])],palette,registry).map(s=>s.symbol),['●'],'changing the pool preserves existing symbol identities');
 assert.deepEqual(pca.winningSolutions(maps,[{winner:null}],palette,registry),[]);
+// A broadly passing redundant model must not hide useful local alternatives.
+const benefitMap={models:[0,1,2,3].map(id=>({id,phase:'HCP'})),
+ model_passing_counts:{0:6,1:5,2:3,3:2},model_mean_support:{0:.6,1:.5,2:.6,3:.9},
+ windows:Array.from({length:8},(_,i)=>({candidates:[
+  ...(i<6?[{model:0,valid:true,score:.6}]:[]),
+  ...(i<5?[{model:1,valid:true,score:.5}]:[]),
+  ...([0,6,7].includes(i)?[{model:2,valid:true,score:i===0?.8:.5}]:[]),
+  ...([1,2].includes(i)?[{model:3,valid:true,score:.9}]:[]),
+  {model:1,valid:false,score:2.}
+ ]}))};
+const before=JSON.stringify(benefitMap);
+assert.deepEqual(pca.orderedHypotheses(benefitMap,'passing').map(m=>m.id),[0,1,2,3]);
+const beneficial=pca.orderedHypotheses(benefitMap);
+assert.deepEqual(beneficial.map(m=>m.id),[0,2,3,1]);
+assert.deepEqual(pca.orderedHypotheses(benefitMap,'better').map(m=>m.id),[0,3,2,1],
+ 'better-fit sorting prefers existing improvements before new coverage, seeding with total passing support');
+assert.deepEqual(pca.hypothesisPools(benefitMap,beneficial),[
+ {count:1,supported:6,newlySupported:6,improved:0},
+ {count:2,supported:8,newlySupported:2,improved:1},
+ {count:3,supported:8,newlySupported:0,improved:2},
+ {count:4,supported:8,newlySupported:0,improved:0}]);
+const overlap={...benefitMap,windows:benefitMap.windows.map(w=>({candidates:w.candidates.map(c=>c.model===1?{...c,valid:true,score:1.}:c)}))};
+assert.equal(pca.orderedHypotheses(overlap)[0].id,1);
+assert.ok(pca.hypothesisPools(overlap,pca.orderedHypotheses(overlap)).slice(1).every(p=>p.improved===0&&p.newlySupported===0),
+ 'incremental gains are recomputed against the best score already selected');
+assert.deepEqual(pca.orderedHypotheses({models:[],windows:[],model_passing_counts:{}}),[]);
+assert.equal(JSON.stringify(benefitMap),before,'display ordering does not mutate fits or their scores');
 console.log('PCA hypothesis maps: global pool, local winner, independent/shared evidence, unresolved windows and combination labels passed.');
