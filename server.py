@@ -925,6 +925,8 @@ def make_handler(app):
                     self.send(app.fit_nmf(body))
                 elif self.path == '/api/pca/support':
                     self.send(app.fit_nmf(body,support=True))
+                elif self.path == '/api/pca/map':
+                    self.send(app.pca.stability_map(body['id'],body.get('options',{})))
                 elif self.path == '/api/pca/group-preview':
                     from nmf_fitting import group_preview
                     self.send(group_preview(app.pca.inspectable(body['id']), body['components']))

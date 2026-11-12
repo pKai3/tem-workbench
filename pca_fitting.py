@@ -31,17 +31,18 @@ def lobe_spectrum(result, component, side):
 
 def fit_lobes(result, templates, options, cancel=None, progress=None):
     fraction = validate_options(result, options)
-    total = 2 * len(result['components'])
+    ids = feature_components(result, options)
+    total = 2 * len(ids)
     records = []
     fits = dict(kind='pca_signed_lobes', version=2, groups=records, total=total,
-                completed=0, peak_fraction=fraction, candidates_per_phase=5,
+                completed=0, peak_fraction=fraction, candidates_per_phase=5, feature_components=ids,
                 tolerance_nm_inv=matching_width(result),
                 scoring='Position minus chance allowance minus scale cost; uniform profile weights. Lobe fit is a hypothesis, not original-window support. No weak/missing, brightness or double-diffraction adjustments.',
                 grouping='Positive and negative loadings divided by reciprocal-area weights, clipped separately at zero. No offset, mean addition, score-sign gate or combination of opposite lobes.',
                 validation='Every retained orientation, including below-screen feature fits, is checked against every original unbroadened window. PCA sign is arbitrary; flipping loading and scores swaps side labels only.')
     result['fits'] = fits
     if progress:progress(0,total,'Fitting individual PCA features')
-    for component in range(len(result['components'])):
+    for component in ids:
         for side in ('positive', 'negative'):
             check_cancel(cancel)
             done = len(records)
@@ -68,14 +69,24 @@ def lobe_detail(result, component, side, templates, options=None):
                 peak_fraction=fraction, g_max=result['plan']['g_max'],tolerance_nm_inv=matching_width(result))
 
 
+def feature_components(result, options):
+    ids=options.get('feature_components',list(range(len(result['components']))))
+    if not isinstance(ids,list) or not ids or any(type(i) is not int or not 0<=i<len(result['components']) for i in ids):
+        raise ValueError('Select at least one computed PC for fitting.')
+    return sorted(set(ids))
+
+
 def combination_options(result, options):
     validate_options(result,options)
+    feature_components(result,options)
     mode=options.get('combination_mode','none')
     if mode not in ('none','together','all'):
         raise ValueError('Choose individual features, selected PCs together, or all subsets.')
-    ids=options.get('combination_components',list(range(len(result['components']))))
+    ids=options.get('combination_components',feature_components(result,options))
     if not isinstance(ids,list) or not ids or any(type(i) is not int or not 0<=i<len(result['components']) for i in ids):
         raise ValueError('Choose retained PCA components for combination fitting.')
+    if 'feature_components' in options and not set(ids)<=set(feature_components(result,options)):
+        raise ValueError('Combination PCs must be selected for fitting.')
     return mode,sorted(set(ids))
 
 
@@ -100,7 +111,7 @@ def fit_features(result, templates, options, cancel=None, progress=None):
     """
     mode,ids=combination_options(result,options)
     k=len(ids);count=(2**k-k-1 if mode=='all' else int(k>=2)) if mode!='none' else 0
-    total=2*len(result['components'])+count*len(result['scores'])
+    total=2*len(feature_components(result,options))+count*len(result['scores'])
     metadata=dict(version=3,total=total,combination_mode=mode,combination_components=ids,
                   combination_count=count,combination_windows=len(result['scores']))
     def report(done,ignored,stage):

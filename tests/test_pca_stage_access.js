@@ -8,7 +8,7 @@ function setup(){
  const $=id=>{if(!nodes.has(id))nodes.set(id,element());return nodes.get(id)};
  const result={decomposition:'pca',components:[],plan:{count:4,g_min:2.5,g_max:10},mean:{image:'mean'},raw_mean:{image:'raw'},explained:.8,fit_status:'complete',fits:{completed:4,total:4,groups:[]}};
  const context=vm.createContext({assert,$,job:{id:'job',state:'running',operation:'support'},pipeline:{stage:'support'},data:result,
-  selected:new Set(),expandedSignals:new Set(),section:'fits',index:0,epoch:1,groupEpoch:2,sampleEpoch:0,showAllSignals:true,liveRevision:0,snapshot:{file_id:'image'},sourceImage:null,
+  selected:new Set(),expandedSignals:new Set(),section:'fits',index:0,epoch:1,groupEpoch:2,sampleEpoch:0,fitComponents:null,liveRevision:0,snapshot:{file_id:'image'},sourceImage:null,
   PcaView:require('../web/shared-spectra.js'),Image:class{},document:{createElement:element},phaseColors:{},
   renderSpectrumPreviews(){},restoreView(){},rememberViewer(){},inspectorControls(){},sampledSpectrumUrl:spec=>spec.image,drawComponentFitOverlay(){},inspectorRender:null,el:(tag,attrs)=>{Object.entries(attrs);return element()},
   isPca:()=>true,sourceLabel:()=> 'PC 1+',showSection(section){context.section=section},controls(){},drawMap(){},showFits(){},showPhaseMaps(){},drawPhaseMap(){},
@@ -21,6 +21,14 @@ function setup(){
  return {context,$,requests,timers,pending,run:s=>vm.runInContext(s,context)};
 }
 async function main(){
+ const selection=setup();selection.$('pca-combination-mode').value='together';selection.$('pca-count').value='16';
+ vm.runInContext(slice('  function combinationOptions(){','  function clearResults(){'),selection.context);
+ selection.context.data=null;
+ assert.equal(selection.run('combinationOptions().feature_components'),undefined,'new runs use actual computed PCs, even when fewer than requested are available');
+ selection.context.data={components:[{}, {}, {}]};selection.context.fitComponents=new Set([0,2]);
+ assert.equal(selection.run('JSON.stringify(combinationOptions().feature_components)'),'[0,2]');
+ assert.equal(selection.run('JSON.stringify(combinationOptions().combination_components)'),'[0,2]');
+ selection.context.fitComponents.clear();assert.throws(()=>selection.run('combinationOptions()'),/Select at least one PC/);
  const live=setup();
  const opened=live.run("inspectGroup({component:0,side:'positive',components:[0]})");
  assert.equal(live.requests[0].path,'pca/lobe');assert.equal(live.$('nmf-group-detail').open,true);

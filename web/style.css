@@ -992,7 +992,6 @@ html.pca-open,html.pca-open body{overflow:hidden}
 .pca-controls #pca-map-top{width:18em;max-width:100%}
 .pca-controls #pca-map-symbols-label{flex-direction:row;align-items:center;gap:6px;min-height:36px}
 #pca-map-symbols{width:13px;height:13px;min-height:0;margin:0;padding:0}
-#pca-combination-components{width:16ch;max-width:100%}
 .pca-controls [hidden]{display:none}.pca-controls input[type=number]{width:110px}.pca-controls label{display:flex;flex-direction:column;gap:5px;min-width:0}
 .pca-controls select{max-width:100%;min-width:0}
 .pca-local-selection{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0;font-size:12px}
@@ -1066,7 +1065,7 @@ html.pca-open,html.pca-open body{overflow:hidden}
 
 /* Compact component comparison: maps above spectra. */
 #pca-overview{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:14px;align-items:flex-start}
-#pca-overview[hidden],#pca-summary-view[hidden],#pca-top-label[hidden]{display:none}
+#pca-overview[hidden],#pca-summary-view[hidden]{display:none}
 .pca-signal{flex:0 0 240px;min-width:0;max-width:100%;padding:10px;background:#0b151f;border:1px solid #304354;border-radius:8px}
 .pca-signal.expanded{flex-basis:420px}
 .pca-signal canvas{display:block;width:100%;aspect-ratio:1;background:#050a0f}
@@ -1077,7 +1076,6 @@ html.pca-open,html.pca-open body{overflow:hidden}
 .pca-mini-key{font-size:11px;margin:6px 0 12px}
 .pca-colourbar{display:block;height:7px;border-radius:3px;margin:5px 0}
 
-#pca-top-label{display:flex;align-items:end;gap:8px}#pca-top-label .hint{align-self:center;margin:0}
 
 .pca-mini-map{cursor:crosshair}.pca-mini-map:focus-visible{outline:2px solid #61d7d1;outline-offset:2px}
 
@@ -1118,3 +1116,15 @@ html.pca-open,html.pca-open body{overflow:hidden}
 @media(max-width:1000px){#nmf-phase-content,#nmf-phase-content.pca-hypotheses-layout{grid-template-columns:1fr;}#nmf-phase-content>figure,#nmf-map-sidebar,#nmf-window-detail,#nmf-phase-content.pca-hypotheses-layout>#nmf-window-detail{grid-column:1;grid-row:auto}}
 
 .pca-display-field[hidden]{display:none}
+
+/* Signal selection belongs to the signal; display never hides computed PCs. */
+.pca-card-header{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.pca-card-header .pca-signal-heading{flex:1;min-width:0;margin:0}
+.pca-fit-check{display:flex;align-items:center;flex:none;cursor:pointer;padding:4px}
+.pca-fit-check input,.pca-check input{width:13px;height:13px;min-height:0;margin:0;padding:0}
+#pca-dialog .pca-check{display:flex;flex-direction:row;align-items:center;gap:6px;min-height:36px}
+.pca-mapping-controls{gap:8px}
+.pca-mapping-controls select{max-width:190px}
+#pca-aggregation-status.error{color:#ff9cb0}
+
+.pca-stability-ramp{display:inline-block;width:130px;height:8px;border-radius:3px;vertical-align:middle;margin:0 8px}

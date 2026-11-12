@@ -146,11 +146,30 @@ const PcaView={
   return Math.max(0,Math.min(1,(value-range.low)/Math.max(range.high-range.low,1e-20)));
  },
  topCount(value,total){return Math.max(1,Math.min(total,Math.floor(Number(value)||1)))},
- nearest(plan,x,y){
-  const [w,h]=plan.window_pixels;
-  const closest=(values,v)=>values.reduce((best,a,i)=>Math.abs(a-v)<Math.abs(values[best]-v)?i:best,0);
-  return closest(plan.ys,y-h/2)*plan.xs.length+closest(plan.xs,x-w/2);
+ signalRasterCache:new WeakMap(),
+ signalRaster(plan){
+  if(this.signalRasterCache.has(plan))return this.signalRasterCache.get(plan);
+  const rois=this.windows(plan),[h,w]=plan.image_shape,width=100,height=Math.max(1,Math.round(100*h/w)),indices=[];
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+   const px=(x+.5)*w/width,py=(y+.5)*h/height;let best=-1,distance=Infinity;
+   rois.forEach((r,i)=>{if(px<r.x||px>=r.x+r.w||py<r.y||py>=r.y+r.h)return;const d=(px-r.x-r.w/2)**2+(py-r.y-r.h/2)**2;if(d<distance){distance=d;best=i}});indices.push(best);
+  }
+  const raster={width,height,indices};this.signalRasterCache.set(plan,raster);return raster;
+ },
+ windows(plan){
+  if(plan.samples)return plan.samples.map(s=>s.roi);
+  const [w,h]=plan.window_pixels;return plan.ys.flatMap(y=>plan.xs.map(x=>({x,y,w,h})));
+ },
+ nearest(plan,x,y,indices=null){
+  const windows=this.windows(plan),ids=indices||windows.map((_,i)=>i);
+  return ids.reduce((best,i)=>{const r=windows[i],b=windows[best];return !b||(r.x+r.w/2-x)**2+(r.y+r.h/2-y)**2<(b.x+b.w/2-x)**2+(b.y+b.h/2-y)**2?i:best},-1);
+ },
+ neighbour(plan,index,direction){
+  const windows=this.windows(plan),r=windows[index],dx={ArrowLeft:-1,ArrowRight:1}[direction]||0,dy={ArrowUp:-1,ArrowDown:1}[direction]||0;
+  let best=index,distance=Infinity;
+  windows.forEach((w,i)=>{const x=w.x-r.x,y=w.y-r.y,along=x*dx+y*dy,across=Math.abs(x*dy-y*dx);if(along<=0||across>along*.6)return;const d=along+2*across;if(d<distance){best=i;distance=d}});return best;
  }
+
 };
 // Adapt the sampled spectrum's scalar raster to the main FFT contrast renderer.
 const sampledSpectrumCache=new WeakMap();
@@ -185,8 +204,9 @@ function drawComponentFitOverlay(overlay,detail,chosen){
 if(typeof module!=='undefined')module.exports=PcaView;
 if(typeof document!=='undefined'){
  const initPca=()=>{
-  let snapshot=null,context='',job=null,data=null,selected=new Set(),index=0,epoch=0,sampleEpoch=0,pollTimer=null,sourceImage=null,exporting=false,groupEpoch=0,showAllSignals=true,pipeline=null,cancelRequested=false,liveRevision=0;
-  let inspectorRender=null,sampleImages=null;
+  let snapshot=null,context='',job=null,data=null,selected=new Set(),index=0,epoch=0,sampleEpoch=0,pollTimer=null,sourceImage=null,exporting=false,groupEpoch=0,pipeline=null,cancelRequested=false,liveRevision=0;
+  let inspectorRender=null,sampleImages=null,fitComponents=null;
+  let aggregateView=null,aggregateKey="",aggregatePending="",aggregateError="",aggregateEpoch=0,mapHit=null,preferredMapDisplay="hex";
   let restoreEpoch=0,pendingView=null;
   const dialog=$('pca-dialog'),form=$('pca-form');
   let section='signals';
@@ -204,6 +224,7 @@ if(typeof document!=='undefined'){
    const mapAvailable=Boolean(data&&section==='signals');
    $('pca-inspect').hidden=!mapAvailable;$('pca-reference').hidden=!data||section!=='signals';
    if(mapAvailable)inspect();
+   if(section==='support'&&data)drawPhaseMap();
    if(scroll)dialog.scrollTop=0;
   }
   for(const button of dialog.querySelectorAll('[data-pca-tab]'))button.onclick=()=>showSection(button.dataset.pcaTab,true);
@@ -225,17 +246,18 @@ if(typeof document!=='undefined'){
    $('nmf-fit').disabled=!data||running()||exporting;$('nmf-cutoff').disabled=running()||exporting;
    $('pca-cancel').disabled=!running();$('pca-export').disabled=!data||running()||exporting;
    const pca=$('pca-method').value==='pca';for(const id of ['pca-combination-scope','pca-combination-help'])$(id).hidden=!pca;
-   $('pca-combination-selection').hidden=!pca||$('pca-combination-mode').value==='none';
+   for(const check of dialog.querySelectorAll('.pca-fit-check input'))check.disabled=running()||exporting;
+   $('pca-refit-selected').hidden=!data||!isPca();$('pca-refit-selected').disabled=running()||exporting||!fitComponents?.size;
+   if(data&&isPca()&&!running()&&fitComponents){const fitted=data.fits?.feature_components||data.components.map(c=>c.index);$('pca-fit-selection-note').textContent=!fitComponents.size?'Select at least one PC for fitting.':fitted.length!==fitComponents.size||fitted.some(i=>!fitComponents.has(i))?'Selection changed · refit to update crystal fits and mapping.':''}
   }
   function combinationOptions(){
-   const text=$('pca-combination-mode').value==='none'?'':$('pca-combination-components').value.trim(),k=data?.components.length||Number($('pca-count').value);
-   if(text&&!/^\d+(?:\s*,\s*\d+)*$/.test(text))throw new Error('Enter PCA component numbers separated by commas, for example 1,2,3.');
-   const ids=text?[...new Set(text.split(',').map(v=>Number(v)-1))]:Array.from({length:k},(_,i)=>i);
-   if(ids.some(i=>i<0||i>=k))throw new Error(`Choose computed PCs 1–${k}.`);
-   return {combination_mode:$('pca-combination-mode').value,combination_components:ids};
+   if(!data&&!fitComponents)return {combination_mode:$('pca-combination-mode').value};
+   const k=data?.components.length||Number($('pca-count').value),ids=fitComponents?[...fitComponents].filter(i=>i<k).sort((a,b)=>a-b):Array.from({length:k},(_,i)=>i);
+   if(!ids.length)throw new Error('Select at least one PC for fitting on the Signals cards.');
+   return {combination_mode:$('pca-combination-mode').value,combination_components:ids,feature_components:ids};
   }
-  function clearResults(){closeInspector();liveRevision=0;spectrumEpoch++;groupPreviews.clear();data=null;selected.clear();$('pca-results').hidden=true;$('pca-navigation').hidden=true;$('pca-setup').open=true;sampleEpoch++;groupEpoch++;sourceImage=null;controls()}
-  function options(){return {method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value}}
+  function clearResults(){aggregateEpoch++;aggregateView=null;aggregateKey=aggregatePending=aggregateError="";mapHit=null;fitComponents=null;closeInspector();liveRevision=0;spectrumEpoch++;groupPreviews.clear();data=null;selected.clear();$('pca-results').hidden=true;$('pca-navigation').hidden=true;$('pca-setup').open=true;sampleEpoch++;groupEpoch++;sourceImage=null;controls()}
+  function options(){return {method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),layout:$('pca-sampling').value,passes:Number($('pca-passes').value),sample_edges:$('pca-rim').checked,components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value}}
   const palette=signed=>$('pca-palette').value==='auto'?(signed?'rdbu':$('palette').value):$('pca-palette').value;
   const sharedPca=()=>data?.decomposition!=='nmf'&&$('pca-scale-shared').getAttribute('aria-pressed')==='true';
   let sharedRanges=null;
@@ -258,13 +280,12 @@ if(typeof document!=='undefined'){
    if(sourceImage?.complete&&sourceImage.naturalWidth)ctx.drawImage(sourceImage,ox,oy,width*scale,height*scale);
    const range=signed?(sharedPca()?sharedRanges.map:PcaView.signedRange(values)):PcaView.mapRange(values,$('pca-contrast').value==='variation'),[w,h]=p.window_pixels,[dx,dy]=[p.spacing_nm[0]/p.pixel_nm[0],p.spacing_nm[1]/p.pixel_nm[1]];
    ctx.globalAlpha=Number($('pca-opacity').value);
-   for(let y=0;y<p.ys.length;y++)for(let x=0;x<p.xs.length;x++){
-    const colour=PcaView.palette((values[y][x]-range.low)/Math.max(range.high-range.low,1e-20),palette(signed)),cx=p.xs[x]+w/2,cy=p.ys[y]+h/2;
-    const left=Math.max(0,cx-dx/2),top=Math.max(0,cy-dy/2),right=Math.min(width,cx+dx/2),bottom=Math.min(height,cy+dy/2);
-    ctx.fillStyle=`rgb(${colour.join(',')})`;ctx.fillRect(ox+left*scale,oy+top*scale,(right-left)*scale+.2,(bottom-top)*scale+.2);
-   }
+   const flat=values.flat(),raster=PcaView.signalRaster(p),layer=document.createElement('canvas');layer.width=raster.width;layer.height=raster.height;
+   const paint=layer.getContext('2d'),pixels=paint.createImageData(layer.width,layer.height);
+   raster.indices.forEach((i,pixel)=>{if(i<0)return;const colour=PcaView.palette((flat[i]-range.low)/Math.max(range.high-range.low,1e-20),palette(signed));pixels.data.set([...colour,255],pixel*4)});
+   paint.putImageData(pixels,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(layer,ox,oy,width*scale,height*scale);
    ctx.globalAlpha=1;
-   if(outline){const iy=Math.floor(index/p.xs.length),ix=index%p.xs.length;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+p.xs[ix]*scale,oy+p.ys[iy]*scale,w*scale,h*scale)}
+   if(outline){const r=PcaView.windows(p)[index];ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+r.x*scale,oy+r.y*scale,w*scale,h*scale)}
    return range;
   }
   function rangeKey(container,range,signed){
@@ -274,8 +295,8 @@ if(typeof document!=='undefined'){
   }
   function drawOverview(){
    const box=$('pca-overview');box.replaceChildren();
-   const count=PcaView.topCount($('pca-top').value,data.components.length),signed=data.decomposition!=='nmf';
-   for(const c of data.components.slice(0,count)){
+   const signed=data.decomposition!=='nmf';
+   for(const c of data.components){
     const card=document.createElement('article');card.className='pca-signal';card.classList.toggle('expanded',expandedSignals.has(c.index));
     const title=document.createElement('button');title.type='button';title.className='pca-signal-heading';title.dataset.signal=String(c.index);title.textContent=`${signed?'PC':'NMF'} ${c.index+1} · ${(100*c.variance).toFixed(1)}% ${signed?'variance':'signal share'}`;
     title.style.setProperty('--signal-share',`${Math.max(0,Math.min(1,c.variance))*100}%`);title.setAttribute('aria-expanded',String(expandedSignals.has(c.index)));
@@ -287,7 +308,10 @@ if(typeof document!=='undefined'){
     label.classList.add('pca-spectrum-heading');
     for(const side of signed?['positive','negative']:[null]){const fits=document.createElement('button');fits.type='button';fits.className='pca-card-fits';fits.textContent=side?'Fit '+(side==='positive'?'+':'−'):'Fits';fits.setAttribute('aria-label',side?`Inspect ${side} features of PC ${c.index+1}`:`Inspect crystal fits for NMF ${c.index+1}`);fits.onclick=()=>side?inspectLobe(c.index,side):inspectComponent(c.index);label.append(fits)}
     const spectrum=document.createElement('canvas');spectrum.setAttribute('role','img');spectrum.setAttribute('aria-label',title.textContent+' spectrum');spectrumCanvas(spectrum,c);if(!signed)componentAction(spectrum,c.index);
-    card.append(title,map,key,label,spectrum);
+    const heading=document.createElement('div');heading.className='pca-card-header';heading.append(title);
+    if(signed){const choice=document.createElement('label'),check=document.createElement('input');choice.className='pca-fit-check';check.type='checkbox';check.checked=fitComponents?.has(c.index)??true;check.disabled=running()||exporting;check.setAttribute('aria-label',`Use PC ${c.index+1} in fitting`);choice.title='Use this PC’s positive/negative features and selected combinations in the next fit. Display and decomposition stay unchanged.';
+     check.onchange=()=>{if(!fitComponents)fitComponents=new Set(data.components.map(c=>c.index));if(check.checked)fitComponents.add(c.index);else fitComponents.delete(c.index);controls()};choice.append(check);heading.append(choice)}
+    card.append(heading,map,key,label,spectrum);
     if(signed){const spectralKey=document.createElement('div');spectralKey.className='pca-mini-key';rangeKey(spectralKey,spectrumDisplay(c).range,true);card.append(spectralKey)}
     box.append(card);
    }
@@ -325,7 +349,7 @@ if(typeof document!=='undefined'){
    sharedRanges=data.decomposition==='nmf'?null:PcaView.sharedPcaRanges(data);
    const overview=$('pca-layout').value==='overview';
    $('pca-signal-scale-label').hidden=data.decomposition==='nmf'||!overview;
-   $('pca-overview').hidden=!overview;$('pca-summary-view').hidden=overview;$('pca-top-label').hidden=!overview;
+   $('pca-overview').hidden=!overview;$('pca-summary-view').hidden=overview;
    const mode=$('pca-layout').value;
    $('pca-map-group-label').hidden=mode!=='group';
    $('pca-map-contrast-label').hidden=overview&&data.decomposition!=='nmf';
@@ -348,17 +372,17 @@ if(typeof document!=='undefined'){
   function showResult(r,{keepInspector=false}={}){
    const first=!data;
    if(first){$('pca-setup').open=false;section='signals';expandedSignals.clear();$('pca-layout').value='overview'}
-   data=r;$('pca-top').max=String(r.components.length);$('pca-top').value=String(showAllSignals?r.components.length:PcaView.topCount($('pca-top').value,r.components.length));$('pca-available').textContent=`of ${r.components.length} computed`;
+   data=r;if(first&&!fitComponents)fitComponents=new Set(r.fits?.feature_components||snapshot?.fit_options?.feature_components||r.components.map(c=>c.index));
    if(first||!keepInspector)closeInspector();if(first){selected=new Set(r.components.map(c=>c.index));index=Math.floor(r.plan.count/2)}
    $('pca-results').hidden=false;$('pca-navigation').hidden=false;$('pca-group').replaceChildren();$('pca-map-group').replaceChildren();
    const pca=r.decomposition==='pca';
    $('pca-smoothed-input').hidden=!(r.plan.angular_sigma_deg>0||r.plan.spacing_sigma_percent>0);
-   $('pca-tab-support').textContent=pca?'Window checks':'Phase support';
-   $('nmf-support-heading').textContent=pca?'Original-window checks':'Phase support';
+   $('pca-tab-support').textContent='Mapping';
+   $('nmf-support-heading').textContent='Mapping';
    $('nmf-fit').textContent=pca?'Fit selected scope':'Fit all combinations';
-   $('nmf-build-map').textContent=pca?'Check original windows':'Build phase maps';
+   $('nmf-build-map').textContent='Update mapping';
    $('nmf-cutoff-label').textContent='Peak cutoff';
-   $('nmf-fit-help').textContent=pca?'Individual positive/negative features are fitted separately. Selected combinations reconstruct the mean plus actual signed scores times loadings at each sampled window. Up to five distinct candidates per phase per source/subset are retained, with an exact source window. Open Analysis settings to change the selected PCs or scope. Original-window support is checked separately.':'Every nonempty NMF subset is fitted with captured phase and scale settings. Weighted sums use mean coefficients in co-occurring windows, or global means if none. Ranks use position minus scale cost, without main-analysis photometric penalties.';
+    $('nmf-fit-help').textContent=pca?'Individual positive/negative features are fitted separately. Selected combinations reconstruct the mean plus actual signed scores times loadings at each sampled window. Up to five distinct candidates per phase per source/subset are retained, with an exact source window. Select PCs on the Signals cards; choose combination fitting in Analysis settings. Original-window support is checked separately.':'Every nonempty NMF subset is fitted with captured phase and scale settings. Weighted sums use mean coefficients in co-occurring windows, or global means if none. Ranks use position minus scale cost, without main-analysis photometric penalties.';
    $('nmf-fit-help').textContent+=' Peak cutoff is the fraction of the strongest maximum above the median at the same reciprocal radius: default 0.35. Higher values reject more weak/background maxima. The saved cutoff applies to features, combinations and original-window checks; it is not a distance or an absolute brightness threshold. Matching uses the same native FFT taper-response width as ordinary FFT fits; optional decomposition smoothing does not widen it.';
    $('nmf-map-phase-label').textContent='Phase';
    $('nmf-map-help').textContent=pca?'The ticked hypotheses form the map pool. Best local match colours each square by its highest-support passing member; all locally supported shows every passing pool member. No passing member means unresolved. A white corner marks close competing explanations of shared peaks. Multiple patterns require at least three unique nonparallel profiles and over 15% of detected profiles per pattern. Passing overlays alone are not proof of coexistence or phase fractions. All hypotheses are checked against every original unbroadened window with ±3°/±3% refinement (rotation only for fixed scale), regardless of PCA score.':'Group fits are checked in eligible original windows with bounded local rotation and scale refinement. One best passing model per phase. Blended cells require separate nonparallel evidence. Pink marks competing explanations; colours are not phase fractions.';
@@ -434,19 +458,19 @@ if(typeof document!=='undefined'){
    poll(serial);
   }
   const viewerKey=()=>`tem-pca-viewer:${config?.state_namespace||'default'}`;
-  const viewControlIds=['pca-layout','pca-top','pca-palette','pca-opacity','pca-contrast','pca-map-mode','pca-map-colour','pca-map-sort','pca-map-top','nmf-map-phase','nmf-map-opacity'];
+  const viewControlIds=['pca-layout','pca-palette','pca-opacity','pca-contrast','pca-map-mode','pca-map-colour','pca-map-sort','pca-map-top','nmf-map-phase','nmf-map-opacity','pca-map-metric','pca-map-display'];
   function savedViewer(){try{const saved=readPreference(viewerKey(),null);return typeof saved==='string'?JSON.parse(saved):saved}catch{return null}}
   function rememberViewer(){
    if(!job?.id||!snapshot||pendingView)return;
    writePreference(viewerKey(),{id:job.id,file_id:snapshot.file_id,open:dialog.open,section,index,
-    selected:[...selected],hypotheses:[...selectedHypotheses],manualPool,showAllSignals,shared:sharedPca(),
+    selected:[...selected],hypotheses:[...selectedHypotheses],manualPool,fitComponents:fitComponents?[...fitComponents]:null,normalise:$('pca-map-normalize').checked,shared:sharedPca(),
     controls:Object.fromEntries(viewControlIds.map(id=>[id,$(id).value]))});
   }
   function restoreView(){
    if(!pendingView||!data)return;
    const view=pendingView;
    for(const [id,value] of Object.entries(view.controls||{}))if(viewControlIds.includes(id)&&$(id).value!==String(value))$(id).value=String(value);
-   index=Math.max(0,Math.min(data.plan.count-1,Number(view.index)||0));showAllSignals=view.showAllSignals!==false;
+   index=Math.max(0,Math.min(data.plan.count-1,Number(view.index)||0));if(view.fitComponents)fitComponents=new Set(view.fitComponents.filter(i=>i<data.components.length));$('pca-map-normalize').checked=!!view.normalise;
    const ids=(view.selected||[]).filter(i=>data.components.some(c=>c.index===i));if(ids.length)selected=new Set(ids);
    for(const check of dialog.querySelectorAll('#pca-group input,#pca-map-group input'))check.checked=selected.has(Number(check.value));
    $('pca-scale-shared').setAttribute('aria-pressed',String(!!view.shared));$('pca-scale-individual').setAttribute('aria-pressed',String(!view.shared));
@@ -455,7 +479,7 @@ if(typeof document!=='undefined'){
     if(view.manualPool){manualPool=true;selectedHypotheses.clear();for(const id of view.hypotheses||[])if(data.phase_support.models.some(m=>m.id===id))selectedHypotheses.add(id)}
     else selectTopHypotheses(Number(view.controls?.['pca-map-top'])||3);
    }
-   drawMap();
+   controls();drawMap();
    // A saved map selection is applied after the first map snapshot arrives.
    if(data.phase_support||view.section!=='support'||!running())pendingView=null;
   }
@@ -472,11 +496,11 @@ if(typeof document!=='undefined'){
     job=retained.job;snapshot=retained.viewer;context=sourceContext();cancelRequested=false;
     pipeline=job.automatic&&job.state==='running'?{stage:job.operation}:null;
     pendingView=view;
-    const fields={method:'pca-method',window_nm:'pca-window',spacing_nm:'pca-spacing',components:'pca-count',angular_sigma_deg:'pca-angle',spacing_sigma_percent:'pca-scale',normalization:'pca-normalization'};
+    const fields={method:'pca-method',window_nm:'pca-window',spacing_nm:'pca-spacing',components:'pca-count',angular_sigma_deg:'pca-angle',spacing_sigma_percent:'pca-scale',normalization:'pca-normalization',layout:'pca-sampling',passes:'pca-passes'};
     for(const [key,id] of Object.entries(fields))if(snapshot.options[key]!==undefined)$(id).value=snapshot.options[key];
     $('nmf-cutoff').value=snapshot.fit_options.peak_fraction??.35;
     $('pca-combination-mode').value=snapshot.fit_options.combination_mode??'together';
-    $('pca-combination-components').value=(snapshot.fit_options.combination_components||[]).map(i=>i+1).join(',');
+    $('pca-rim').checked=snapshot.options.sample_edges??false;
     $('pca-run').textContent='Run '+$('pca-method').value.toUpperCase();
     $('pca-source').textContent=`${meta.name} · retained run · ${snapshot.settings.g_min}–${snapshot.settings.g_max} nm⁻¹ · ${snapshot.settings.fft_window} window`;
     if(reopen&&view?.open&&!dialog.open){dialog.showModal();document.documentElement.classList.add('pca-open')}
@@ -521,8 +545,7 @@ if(typeof document!=='undefined'){
   $('pca-cancel').onclick=async()=>{cancelRequested=true;pipeline=null;if(!job?.id)return;try{await api('pca/cancel',{id:job.id});notify('Cancelling after the current FFT, matrix step or template fit…')}catch(e){notify(e.message,true)}};
   $('pca-close').onclick=()=>dialog.close();dialog.addEventListener('close',()=>{closeInspector();document.documentElement.classList.remove('pca-open')});
   for(const id of ['pca-opacity','pca-contrast','pca-layout','pca-palette'])$(id).addEventListener('input',drawMap);
-  $('pca-top').addEventListener('input',()=>{showAllSignals=false;drawMap()});
-  $('pca-show-all').onclick=()=>{if(!data)return;showAllSignals=true;$('pca-top').value=String(data.components.length);drawMap()};
+  $('pca-refit-selected').onclick=()=>{$('pca-fit-selection-note').textContent='';$('nmf-fit').click()};
   function refreshWindowSelection(canvas){
    if(section==='signals')$('pca-inspect').open=true;
    const component=canvas.dataset.component;drawMap();
@@ -533,11 +556,13 @@ if(typeof document!=='undefined'){
    const scale=Math.min(box.width/w,box.height/h),ox=(box.width-w*scale)/2,oy=(box.height-h*scale)/2;
    const x=(event.clientX-box.left-ox)/scale,y=(event.clientY-box.top-oy)/scale;
    if(x<0||y<0||x>w||y>h)return;
-   index=PcaView.nearest(p,x,y);refreshWindowSelection(canvas);
+   const hit=canvas.id==='nmf-phase-map'&&$('pca-map-metric').value!=='raw'?aggregateCell(x,y):null;
+   if(canvas.id==='nmf-phase-map'&&$('pca-map-metric').value!=='raw'&&!hit)return;
+   index=hit?Number(hit.region_id):PcaView.nearest(p,x,y,canvas.id==='nmf-phase-map'?data.phase_support.windows.map(w=>w.index):null);if(index>=0)refreshWindowSelection(canvas);
   };
   function stepMapWindow(event){
-   if(!canInspect())return;const dx={ArrowLeft:-1,ArrowRight:1,ArrowUp:-data.plan.xs.length,ArrowDown:data.plan.xs.length}[event.key];
-   if(dx===undefined)return;event.preventDefault();index=Math.max(0,Math.min(data.plan.count-1,index+dx));refreshWindowSelection(event.currentTarget);
+   if(!canInspect()||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;
+   event.preventDefault();index=PcaView.neighbour(data.plan,index,event.key);refreshWindowSelection(event.currentTarget);
   };
   $('pca-map').onclick=selectMapWindow;$('pca-map').onkeydown=stepMapWindow;
   function componentFitColumns(original=false){
@@ -582,8 +607,8 @@ if(typeof document!=='undefined'){
   function showFits(){
    const box=$('nmf-fit-results');box.replaceChildren();
    const fits=data?.fits;
-   $('nmf-fit-count').textContent=isPca()?(fits?.combination_count?`${2*data.components.length} sides + ${fits.combination_count} combinations × ${fits.combination_windows} windows`:`${2*(data?.components.length||0)} signed sides`):`${2**(data?.components.length||0)-1} combinations`;
-   $('nmf-fit-note').textContent=fits?`${fits.completed}/${fits.total} ${isPca()?'source fits':'combinations'} · ${data.fit_status||'complete'}. ${isPca()?'Feature and reconstruction fits are hypotheses; see Window checks for original-data support.':'Position − scale ranks; main-analysis photometric penalties are not used.'}`:isPca()?'Individual features and the selected combination scope will be fitted.':'Every nonempty combination will be fitted. Results remain experimental.';
+   $('nmf-fit-count').textContent=isPca()?(fits?.combination_count?`${2*(fits?.feature_components?.length??data.components.length)} sides + ${fits.combination_count} combinations × ${fits.combination_windows} windows`:`${2*(fits?.feature_components?.length??data?.components.length??0)} signed sides`):`${2**(data?.components.length||0)-1} combinations`;
+   $('nmf-fit-note').textContent=fits?`${fits.completed}/${fits.total} ${isPca()?'source fits':'combinations'} · ${data.fit_status||'complete'}. ${isPca()?'Feature and reconstruction fits are hypotheses; see Mapping for original-data support.':'Position − scale ranks; main-analysis photometric penalties are not used.'}`:isPca()?'Individual features and the selected combination scope will be fitted.':'Every nonempty combination will be fitted. Results remain experimental.';
    if(!fits)return;
    const sorted=fits.groups.filter(g=>g.completed_windows!==0||g.candidates.length).sort((a,b)=>(b.candidates[0]?.score??-Infinity)-(a.candidates[0]?.score??-Infinity));
    const table=document.createElement('table');componentFitHeader(table,{source:true});
@@ -742,10 +767,11 @@ if(typeof document!=='undefined'){
   function showPhaseMaps(){
    const maps=data?.phase_support;
    $('nmf-phase-panel').hidden=!maps;
-   $('nmf-map-status').textContent=data?.phase_support_status?`${isPca()?'Window checks':'Phase mapping'}: ${data.phase_support_status}${maps?' · '+maps.windows.length+'/'+(maps.total??data.plan.count)+' windows checked':''}`:'';
+   $('nmf-map-status').textContent=data?.phase_support_status?`Mapping: ${data.phase_support_status}${maps?' · '+maps.windows.length+'/'+(maps.total??data.plan.count)+' windows checked':''}`:'';
    $('nmf-map-status').classList.toggle('error',String(data?.phase_support_status).startsWith('error'));
    const select=$('nmf-map-phase'),previous=select.value;
    if(!maps)return;
+   if([...select.options].map(o=>o.value).join(',')!==['all',...maps.phases].join(','))select.replaceChildren(new Option('All phases','all'),...maps.phases.map(p=>new Option(p,p)));select.value=[...select.options].some(o=>o.value===previous)?previous:'all';
    if(isPca()){
     const identity=maps.generation||maps.models;const reset=symbolModels!==identity;if(reset){solutionSymbols.clear();symbolModels=identity}
     orderHypotheses(maps,reset);
@@ -756,20 +782,78 @@ if(typeof document!=='undefined'){
    if([...select.options].map(o=>o.value).join(',')!==['all',...maps.phases].join(','))select.replaceChildren(new Option('All phases','all'),...maps.phases.map(p=>new Option(p,p)));select.value=[...select.options].some(o=>o.value===previous)?previous:'all';
    $('nmf-map-counts').textContent=`${maps.windows.length}/${maps.total??data.plan.count} windows checked · ${maps.counts.single} single · ${maps.counts.multiple} separately supported multiple · ${maps.counts.ambiguous} ambiguous · ${maps.counts.unresolved} unresolved${maps.nmf_converged===false?' · NMF reached iteration limit':''}`;
   }
+  function requestAggregate(maps,ids,colour){
+   ids=[...ids].sort((a,b)=>a-b);
+   const key=JSON.stringify([job.id,maps.generation,maps.windows.length,ids,colour]);
+   if(aggregateKey===key)return aggregateView;
+   if(aggregatePending!==key){
+    aggregatePending=key;aggregateError='';const serial=++aggregateEpoch,jobId=job.id;
+    api('pca/map',{id:jobId,options:{models:ids,colour_by:colour}}).then(value=>{
+     if(serial!==aggregateEpoch||job?.id!==jobId)return;
+     aggregateView=value;aggregateKey=key;aggregatePending='';drawPhaseMap();
+    }).catch(error=>{if(serial===aggregateEpoch){aggregateError=error.message;drawPhaseMap()}});
+   }
+   return null;
+  }
+  function aggregateCell(x,y){
+   if(!mapHit||!mapHit.data.footprints.some(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h))return null;
+   const {data:a,hex}=mapHit,[height,width]=data.plan.image_shape;
+   if(!hex){const ix=Math.floor(x/width*a.width),iy=Math.floor(y/height*a.height);return a.cells.find(c=>c.x===ix&&c.y===iy)}
+   return a.hex.cells.reduce((best,c)=>!best||((c.cx-x)/a.hex.radius_x)**2+((c.cy-y)/a.hex.radius_y)**2<((best.cx-x)/a.hex.radius_x)**2+((best.cy-y)/a.hex.radius_y)**2?c:best,null);
+  }
+  function paintAggregate(ctx,a,metric,colourBy,phase,scale,ox,oy){
+   const canvas=$('nmf-phase-map'),[height,width]=data.plan.image_shape,hex=$('pca-map-display').value==='hex';
+   const cells=hex?a.hex.cells:a.cells,keys=colourBy==='phase'&&phase!=='all'?a.keys.filter(k=>k===phase):a.keys;
+   const colours=Object.fromEntries(keys.map(k=>[k,colourBy==='hypothesis'?PcaView.hypothesisColour(data.phase_support.models.find(m=>String(m.id)===k),'hypothesis'):PcaView.phaseColours[k]||[210,210,210]]));
+   const colourHex=rgb=>'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
+   const field=metric==='strength'?'passing_strength':metric==='spread'?'spread':'support';
+   const maximum=metric==='samples'?Math.max(1,...cells.map(c=>c.samples)):$('pca-map-normalize').checked?cells.reduce((maximum,c)=>keys.reduce((value,k)=>Math.max(value,c.phases[k]?.[field]||0),maximum),1e-20):1;
+   const layer=document.createElement('canvas');layer.width=hex?canvas.width:a.width;layer.height=hex?canvas.height:a.height;const paint=layer.getContext('2d'),pixels=paint.createImageData(layer.width,layer.height);
+   const pixel=(x,y,rgba)=>pixels.data.set(rgba,4*(y*layer.width+x));
+   for(const c of cells){
+    if(metric==='spread'&&c.passes<2)continue;
+    let colour,value;
+    if(metric==='best'){
+     const available=keys.filter(k=>c.phases[k].fit_presence>0).sort((a,b)=>c.phases[b].rank-c.phases[a].rank);
+     const winner=available[0];colour=winner?colourHex(colours[winner]):'#596778';value=winner?c.phases[winner].support:0;
+    }else if(metric==='samples'){colour='#00d9e8';value=c.samples/maximum}
+    else {const blend=blendSupport(keys.map(k=>[colourHex(colours[k]),c.phases[k]?.[field]||0]));colour=blend.colour;value=blend.value/maximum}
+    const rgba=[1,3,5].map(i=>parseInt(colour.slice(i,i+2),16));rgba.push(Math.round(255*(.15+.85*Math.max(0,Math.min(1,value)))));
+    if(hex){
+     const cx=ox+c.cx*scale,cy=oy+c.cy*scale,rx=a.hex.radius_x*scale,ry=a.hex.radius_y*scale;
+     for(let y=Math.max(0,Math.floor(cy-ry));y<Math.min(layer.height,Math.ceil(cy+ry));y++)for(let x=Math.max(0,Math.floor(cx-rx));x<Math.min(layer.width,Math.ceil(cx+rx));x++){
+      const dx=Math.abs(x+.5-cx)/rx,dy=Math.abs(y+.5-cy)/ry;
+      if(dx<=Math.sqrt(3)/2+1e-8&&dy<=1-dx/Math.sqrt(3)+1e-8)pixel(x,y,rgba);
+     }
+    }else pixel(c.x,c.y,rgba);
+   }
+   paint.putImageData(pixels,0,0);ctx.save();ctx.beginPath();for(const r of a.footprints)ctx.rect(ox+r.x*scale,oy+r.y*scale,r.w*scale,r.h*scale);ctx.clip();
+   ctx.globalAlpha=Number($('nmf-map-opacity').value);ctx.imageSmoothingEnabled=true;
+   if(hex)ctx.drawImage(layer,0,0);else ctx.drawImage(layer,ox,oy,width*scale,height*scale);
+   ctx.restore();
+   mapHit={data:a,hex,keys,metric};
+  }
   function drawPhaseMap(){
+   if(section!=='support')return;
    const maps=data?.phase_support;if(!maps)return;
+   const metric=$('pca-map-metric').value,raw=metric==='raw';mapHit=null;
+   const display=$('pca-map-display');display.querySelector('[value=centres]').hidden=!raw;if(raw){if(display.value!=='centres')preferredMapDisplay=display.value;display.value='centres'}else if(display.value==='centres')display.value=preferredMapDisplay;
+   display.disabled=raw;$('pca-map-mode-label').hidden=!isPca()||!raw;
+   $('pca-normalize-label').hidden=!['strength','frequency'].includes(metric);
+   $('pca-map-metric').querySelector('[value=spread]').disabled=(data.plan.grid?.passes||1)<2;
+   if(metric==='spread'&&(data.plan.grid?.passes||1)<2){$('pca-map-metric').value='frequency';drawPhaseMap();return}
    for(const [phase,hex]of Object.entries(phaseColors))PcaView.phaseColours[phase]=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
    const canvas=$('nmf-phase-map'),ctx=canvas.getContext('2d'),p=data.plan,[height,width]=p.image_shape;
    const scale=Math.min(canvas.width/width,canvas.height/height),ox=(canvas.width-width*scale)/2,oy=(canvas.height-height*scale)/2;
    ctx.fillStyle='#050a0f';ctx.fillRect(0,0,canvas.width,canvas.height);
    if(sourceImage?.complete&&sourceImage.naturalWidth)ctx.drawImage(sourceImage,ox,oy,width*scale,height*scale);
    const pca=isPca(),mode=$('pca-map-mode').value,colourBy=$('pca-map-colour').value;
-   for(const id of ['pca-map-mode-label','pca-map-colour-label','pca-map-symbols-label'])$(id).hidden=!pca;
-   $('pca-hypotheses').hidden=!pca;$('nmf-map-select-label').hidden=pca;$('nmf-phase-content').classList.toggle('pca-hypotheses-layout',pca);
+   $('pca-map-colour-label').hidden=!pca;$('pca-map-symbols-label').hidden=!pca||!raw;
+   $('pca-hypotheses').hidden=!pca;$('nmf-map-select-label').hidden=pca&&(raw||colourBy==='hypothesis');$('nmf-phase-content').classList.toggle('pca-hypotheses-layout',pca);
    const [w,h]=p.window_pixels,[dx,dy]=[p.spacing_nm[0]/p.pixel_nm[0],p.spacing_nm[1]/p.pixel_nm[1]],phase=$('nmf-map-phase').value;
    const pool=pca?hypothesisOrder.filter(m=>selectedHypotheses.has(m.id)):[],ids=pool.map(m=>m.id),single=pca&&pool.length===1,model=single?pool[0]:null;
    const local=pca?maps.windows.map(win=>PcaView.localHypotheses(win,ids)):[];
-   const winning=pca?PcaView.winningSolutions(maps,local,ZONE_SYMBOLS,solutionSymbols):[],showSymbols=pca&&$('pca-map-symbols').checked;
+   const winning=pca?PcaView.winningSolutions(maps,local,ZONE_SYMBOLS,solutionSymbols):[],showSymbols=pca&&raw&&$('pca-map-symbols').checked;
    if(pca){
     const top=$('pca-map-top');top.value=manualPool?'custom':String(pool.length);top.querySelector('[value="custom"]').textContent=`Custom (${pool.length})`;
     const winners=new Set(winning.map(entry=>entry.model.id));
@@ -779,9 +863,13 @@ if(typeof document!=='undefined'){
      row.querySelector('.pca-hypothesis-symbol').textContent=showSymbols&&winners.has(id)?solutionSymbols.get(id)+' ':'';
     }
    }
+   const aggregated=raw?null:requestAggregate(maps,pca?ids:maps.models.map(m=>m.id),pca?colourBy:'phase');
+   const status=$('pca-aggregation-status');status.hidden=raw||!!aggregated;status.textContent=aggregateError||'Updating map…';status.classList.toggle('error',!!aggregateError);
+   if(aggregated)paintAggregate(ctx,aggregated,metric,pca?colourBy:'phase',phase,scale,ox,oy);
    ctx.globalAlpha=Number($('nmf-map-opacity').value);
-   for(const win of maps.windows){
-    const ix=win.index%p.xs.length,iy=Math.floor(win.index/p.xs.length),cx=p.xs[ix]+w/2,cy=p.ys[iy]+h/2;
+   const rois=PcaView.windows(p);
+   if(raw)for(const win of maps.windows){
+    const r=rois[win.index],cx=r.x+w/2,cy=r.y+h/2;
     const left=Math.max(0,cx-dx/2),top=Math.max(0,cy-dy/2),right=Math.min(width,cx+dx/2),bottom=Math.min(height,cy+dy/2);
     const state=local[win.index],shown=pca?(mode==='best'?(state.winner?[state.winner]:[]):state.passing):[];
     const colours=pca?[...new Map(shown.map(c=>[colourBy==='phase'?c.phase:c.model,PcaView.hypothesisColour(maps.models[c.model],colourBy)])).values()]:[PcaView.supportColour(win,phase)];
@@ -796,19 +884,25 @@ if(typeof document!=='undefined'){
      const x=ox+cx*scale,y=oy+cy*scale;ctx.strokeText(symbol,x,y,size*1.4);ctx.fillText(symbol,x,y,size*1.4);ctx.restore();
     }
    }
-   ctx.globalAlpha=1;const iy=Math.floor(index/p.xs.length),ix=index%p.xs.length;
-   ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+p.xs[ix]*scale,oy+p.ys[iy]*scale,w*scale,h*scale);
+   ctx.globalAlpha=1;const roi=rois[index];
+   ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+roi.x*scale,oy+roi.y*scale,w*scale,h*scale);
    const key=$('nmf-map-key');key.replaceChildren();
-   const legend=pca?[...new Map(pool.map(m=>[colourBy==='phase'?m.phase:m.id,{label:colourBy==='phase'?(m.phase==='OMEGA'?'ω':m.phase):hypothesisIdentity(m),colour:PcaView.hypothesisColour(m,colourBy)}])).values()]:
+   let legend=pca?[...new Map(pool.map(m=>[colourBy==='phase'?m.phase:m.id,{label:colourBy==='phase'?(m.phase==='OMEGA'?'ω':m.phase):hypothesisIdentity(m),colour:PcaView.hypothesisColour(m,colourBy)}])).values()]:
     (phase==='all'?[...maps.phases,'Ambiguous','Unresolved']:[phase,'Below / inactive']).map(name=>({label:name,colour:PcaView.phaseColours[name]||(name==='Ambiguous'?[230,155,170]:[140,150,160])}));
    if(pca)legend.push({label:'Unresolved',colour:[140,150,160]});
+   if(!raw&&aggregated){legend=metric==='samples'?[{label:'Sampling density',colour:[0,217,232]}]:mapHit.keys.map(k=>({label:aggregated.colour_by==='hypothesis'?hypothesisIdentity(maps.models.find(m=>String(m.id)===k)):k,colour:aggregated.colour_by==='hypothesis'?PcaView.hypothesisColour(maps.models.find(m=>String(m.id)===k),'hypothesis'):PcaView.phaseColours[k]||[210,210,210]}))}
    if(maps.windows.length<(maps.total??p.count))key.append(document.createTextNode('Uncoloured: not checked yet · '));
    for(const entry of legend){const item=document.createElement('span');item.textContent='● '+entry.label+'  ';item.style.color=`rgb(${entry.colour})`;key.append(item)}
    function legendHelp(host,label,text,id,iconOnly=false){
-    const help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');help.className='settings-help';button.type='button';button.className=iconOnly?'settings-help-button':'pca-legend-help pca-ambiguity-key';button.textContent=iconOnly?'ⓘ':label;button.setAttribute('aria-label','About '+label.toLowerCase());button.setAttribute('aria-describedby',id);popup.className='settings-help-popup';popup.id=id;popup.setAttribute('role','tooltip');popup.textContent=text;help.append(button,popup);host.append(help);
+    const help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');help.className='settings-help';button.type='button';button.className=iconOnly?'settings-help-button':'pca-legend-help'+(id==='pca-map-ambiguity-help'?' pca-ambiguity-key':'');button.textContent=iconOnly?'ⓘ':label+(id==='pca-map-ambiguity-help'?'':' ⓘ');button.setAttribute('aria-label','About '+label.toLowerCase());button.setAttribute('aria-describedby',id);popup.className='settings-help-popup';popup.id=id;popup.setAttribute('role','tooltip');popup.textContent=text;help.append(button,popup);host.append(help);
    }
-   if(pca&&!single)legendHelp(key,'Competing explanations','Small white corner triangles flag competing explanations: multiple hypotheses in the selected pool pass in that window, explain mostly the same peaks, and have similar support scores. In Best local match, the square colour and symbol still show the highest-support passing fit. The interpretation is ambiguous; this does not establish that the phases coexist.','pca-map-ambiguity-help');
-   if(!pca&&phase==='all')key.append(document.createTextNode('Blended: separate evidence for multiple phases'));
+   if(raw&&pca&&!single)legendHelp(key,'Competing explanations','Small white corner triangles flag competing explanations: multiple hypotheses in the selected pool pass in that window, explain mostly the same peaks, and have similar support scores. In Best local match, the square colour and symbol still show the highest-support passing fit. The interpretation is ambiguous; this does not establish that the phases coexist.','pca-map-ambiguity-help');
+   if(raw&&!pca&&phase==='all')key.append(document.createTextNode('Blended: separate evidence for multiple phases'));
+   if(!raw){
+    if(legend.length===2&&['strength','frequency'].includes(metric)){const ramp=document.createElement('span');ramp.className='pca-stability-ramp';const colours=Object.fromEntries(legend.map(e=>[e.label,'#'+e.colour.map(v=>v.toString(16).padStart(2,'0')).join('')]));ramp.style.background=supportBlendGradient(legend.map(e=>e.label),colours);ramp.title='Colour blends relative support between the two displayed entries. Opacity indicates support; not phase proportions.';key.append(ramp)}
+    const labels={strength:'Match score',frequency:'Match frequency',best:'Best match',spread:'Placement sensitivity',samples:'Sampling density'};
+    legendHelp(key,labels[metric],`Each location combines completed original windows covering it, weighted toward their centres. Each placement pass is normalized separately, then passes are averaged equally. Match frequency counts passing support; Match score averages the best passing local score, with failed/missing fits as zero. Best match uses highest average available score, faded by passing frequency. Placement sensitivity is the range of passing frequencies across at least two passes. Density counts contributing windows. Colours blend relative support, not phase fractions. Unchecked/unsampled areas stay blank. Continuous display interpolates the sampled map, not the FFTs. Click to inspect a real contributing window. ${$('pca-map-normalize').checked?'Opacity is relative to the strongest displayed value, with one factor across phases.':'Opacity uses a fixed 0–1 scale, multiplied by the slider.'}`,'pca-stability-help');
+   }
    if(showSymbols&&winning.length){
     const group=document.createElement('div');group.className='zone-legend-group pca-solution-key';
     for(const entry of winning){
@@ -844,6 +938,12 @@ if(typeof document!=='undefined'){
    }
    if(!win.candidates.length){const note=document.createElement('p');note.textContent='No eligible group fit matched this window.';box.append(note)}
   }
+  for(const id of ['pca-map-metric','pca-map-display','pca-map-normalize'])$(id).onchange=drawPhaseMap;
+  $('nmf-phase-map').onmousemove=event=>{
+   const canvas=event.currentTarget,box=canvas.getBoundingClientRect(),[h,w]=data?.plan.image_shape||[1,1],scale=Math.min(box.width/w,box.height/h);
+   const cell=aggregateCell((event.clientX-box.left-(box.width-w*scale)/2)/scale,(event.clientY-box.top-(box.height-h*scale)/2)/scale);
+   canvas.title=cell?`${cell.samples} windows · ${cell.passes} ${cell.passes===1?'pass':'passes'} · `+mapHit.keys.map(k=>`${mapHit.data.colour_by==='hypothesis'?hypothesisIdentity(data.phase_support.models.find(m=>String(m.id)===k)):k}: ${(100*cell.phases[k].support).toFixed(1)}% passing · score ${cell.phases[k].passing_strength.toFixed(3)}`).join(' · '):'';
+  };
   $('nmf-map-phase').onchange=drawPhaseMap;
   $('pca-map-mode').onchange=drawPhaseMap;
   $('pca-map-top').onchange=()=>{selectTopHypotheses(Number($('pca-map-top').value));drawPhaseMap()};
@@ -854,7 +954,7 @@ if(typeof document!=='undefined'){
   $('nmf-phase-map').onclick=selectMapWindow;$('nmf-phase-map').onkeydown=stepMapWindow;
   for(const [id,stage] of [['nmf-build-map','support'],['nmf-fit','fit']])$(id).onclick=async()=>{
    if(!data||running())return;const serial=++epoch;cancelRequested=false;
-   try{await startStage(stage,serial)}
+   try{pipeline={stage,cutoff:Number($('nmf-cutoff').value)};await startStage(stage,serial)}
    catch(e){if(serial===epoch){pipeline=null;job={...job,state:'complete'};controls();notify(e.message,true)}}
   };
   $('pca-export').onclick=async()=>{

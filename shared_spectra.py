@@ -24,6 +24,7 @@ import numpy as np
 from scipy import fft, ndimage, linalg
 from PIL import Image
 import analysis_core as core
+import overlap_maps
 
 VERSION = 'local-fft-components-v2'
 RADIAL_BINS, ANGULAR_BINS = 96, 180
@@ -70,6 +71,15 @@ def plan(info, settings, options):
         raise ValueError(f'{count} windows exceed the PCA memory budget (maximum {MAX_MATRIX_BYTES//(RADIAL_BINS*ANGULAR_BINS*4)}). Increase centre spacing.')
     xs = ((width-w-(nx-1)*dx)//2 + np.arange(nx)*dx).astype(int)
     ys = ((height-h-(ny-1)*dy)//2 + np.arange(ny)*dy).astype(int)
+    sampling = {}
+    if any(key in options for key in ('layout', 'passes', 'sample_edges')):
+        samples, grid = overlap_maps.sampling(info, dict(window_nm=window, spacing_nm=spacing,
+            layout=options.get('layout', 'hex'), passes=options.get('passes', 1),
+            sample_edges=options.get('sample_edges', True)))
+        count = len(samples)
+        if count < 4 or count*RADIAL_BINS*ANGULAR_BINS*4 > MAX_MATRIX_BYTES:
+            raise ValueError(f'{count} windows including passes/rim exceed the supported range (4–{MAX_MATRIX_BYTES//(RADIAL_BINS*ANGULAR_BINS*4)}). Increase centre spacing or reduce placement passes.')
+        sampling = dict(samples=samples, grid=grid)
     n_components = number(options, 'components', 8, 1, 16)
     if int(n_components) != n_components:
         raise ValueError('Component count must be an integer.')
@@ -80,7 +90,7 @@ def plan(info, settings, options):
     if normalization not in ('unit_norm', 'none'):
         raise ValueError('Choose unit norm or no spectral normalization.')
     return dict(method=method,window_pixels=[w,h], window_nm=[w*sx,h*sy], spacing_nm=[dx*sx,dy*sy],
-                xs=xs.tolist(), ys=ys.tolist(), map_shape=[ny,nx], count=count,
+                xs=xs.tolist(), ys=ys.tolist(), map_shape=[1,count] if sampling else [ny,nx], count=count, **sampling,
                 pixel_nm=[sx,sy], image_shape=[height,width], g_min=inner,g_max=outer,
                 components=min(int(n_components),count-1),
                 antialias_sigma_nm_inv=.5*max(outer*math.pi/ANGULAR_BINS,outer*math.log(outer/inner)/RADIAL_BINS),
@@ -206,13 +216,21 @@ def decompose_nmf(matrix, components, cancel=None, progress=None, iterations=300
                 relative_reconstruction_error=float(np.linalg.norm(residual)/np.sqrt(energy)))
 
 
+def window_samples(p):
+    """Explicit ROI/pass records, with compatibility for retained rectangular runs."""
+    if 'samples' in p:return p['samples']
+    w,h=p['window_pixels']
+    return [dict(roi=dict(x=x,y=y,w=w,h=h),pass_id=0) for y in p['ys'] for x in p['xs']]
+
+
 def compute(array, info, settings, options, cancel=None, progress=None):
     p=plan(info,settings,options)
     r,a,weights=axes(p)
     raw=np.empty((p['count'],RADIAL_BINS*ANGULAR_BINS),np.float32)
     matrix=np.empty_like(raw);norms=np.empty(p['count'],np.float32)
     positions=[];w,h=p['window_pixels']
-    for i,(y,x) in enumerate((y,x) for y in p['ys'] for x in p['xs']):
+    for i,sample in enumerate(window_samples(p)):
+        x,y=sample['roi']['x'],sample['roi']['y']
         check_cancel(cancel)
         spectrum=local_spectrum(array[y:y+h,x:x+w],p,settings,r,a)
         feature,norm=features(spectrum,p,weights)
@@ -398,6 +416,7 @@ class SharedSpectra:
         self.lock=threading.RLock();self.thread=None;self.cancel=threading.Event();self.job=None;self.result=None
         self.live_data={};self.live_revision=0;self.last_publish=0.;self.support_generation=None;self.pending_support=None
         self.viewer=None
+        self.map_cache={}
 
     def running(self):
         with self.lock:return bool(self.thread and self.thread.is_alive())
@@ -409,6 +428,7 @@ class SharedSpectra:
             self.cancel=threading.Event();self.result=None;self.folder=Path(folder)
             self.live_data={};self.live_revision=0;self.last_publish=0.;self.support_generation=None;self.pending_support=None
             self.viewer=copy.deepcopy(viewer)
+            self.map_cache.clear()
             pipeline=copy.deepcopy(pipeline)
             self.job=dict(id=uuid.uuid4().hex,state='running',operation='decomposition',automatic=pipeline is not None,
                           completed=0,total=p['count'],stage='Preparing',started=time.monotonic())
@@ -449,6 +469,22 @@ class SharedSpectra:
         with self.lock:
             if not self.job:return None
             return dict(job=self.status(self.job['id']),viewer=copy.deepcopy(self.viewer))
+
+    def stability_map(self, job_id, options):
+        from component_maps import aggregate
+        with self.lock:
+            result=self.inspectable(job_id)
+            maps=result.get('phase_support') or {}
+            cache_key=(job_id,maps.get('generation'),len(maps.get('windows',[])),
+                       json.dumps(options,sort_keys=True))
+            if cache_key in self.map_cache:return self.map_cache[cache_key]
+        # Aggregation is read-only; never hold up worker progress while rendering.
+        value=aggregate(result,options)
+        with self.lock:
+            if self.job and self.job['id']==job_id:
+                if len(self.map_cache)>=4:self.map_cache.pop(next(iter(self.map_cache)))
+                self.map_cache[cache_key]=value
+        return value
 
     def completed(self,job_id):
         with self.lock:

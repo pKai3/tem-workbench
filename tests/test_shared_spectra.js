@@ -42,3 +42,9 @@ assert.equal(pca.spectrumLevel(254,[-1,1],8,common.spectrum)+pca.spectrumLevel(0
 assert.deepEqual(pca.signedRange([[0,0]]),{low:-1e-20,high:1e-20});
 assert.equal(JSON.stringify(signals),before,'display changes preserve decomposition data');
 console.log('PCA shared contrast: amplitude, zero, sign symmetry, stable bounds and unchanged data passed.');
+
+const irregular={window_pixels:[10,10],samples:[{roi:{x:0,y:0,w:10,h:10}},{roi:{x:10,y:0,w:10,h:10}},{roi:{x:5,y:9,w:10,h:10}},{roi:{x:0,y:0,w:10,h:10},pass_id:1}]};
+assert.equal(pca.nearest(irregular,14,4),1);
+assert.equal(pca.neighbour(irregular,0,'ArrowRight'),1);
+assert.equal(pca.neighbour(irregular,0,'ArrowDown'),2);
+assert.equal(pca.nearest(irregular,14,9,[0,2]),2);
