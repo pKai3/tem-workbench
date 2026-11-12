@@ -288,7 +288,7 @@ def summary(result):
     return dict(plan=p,source_name=result['source'].get('name','Image'),
                 source_hash=result['source'].get('sha256_pixels'),method=VERSION,
                 algorithm=result['algorithm'],components=components,decomposition=p.get('method','pca'),
-                fit_status=result.get('fit_status'),fits=result.get('fits'),
+                fit_status=result.get('fit_status'),fits=result.get('fits'),phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'),
                 iterations=result.get('iterations'),converged=result.get('converged'),
                 relative_reconstruction_error=result.get('relative_reconstruction_error'),
                 mean=spectrum_image((result['scores'].mean(axis=0)@result['components'] if nmf else result['mean'])/w,p),
@@ -358,7 +358,7 @@ def export(result, folder):
               source_settings='Window, taper, mean removal and fitting band used; peak detection/matching settings not used'),
               reference='Jany et al., Micron 130 (2020) 102800; doi:10.1016/j.micron.2019.102800')
     if result['plan'].get('method')=='nmf':
-        meta.update(contribution_share=result['contribution_share'].tolist(),iterations=result['iterations'],converged=result['converged'],relative_reconstruction_error=result['relative_reconstruction_error'],fits=result.get('fits'),fit_status=result.get('fit_status'))
+        meta.update(contribution_share=result['contribution_share'].tolist(),iterations=result['iterations'],converged=result['converged'],relative_reconstruction_error=result['relative_reconstruction_error'],fits=result.get('fits'),fit_status=result.get('fit_status'),phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'))
         meta['conventions'].update(normalization='Per-window weighted norm, no centering; H rows have unit L1 sum',reconstruction='scores @ components; divide by area_weights and multiply window normalization',components='Nonnegative spectral factors; contribution shares are not phase fractions or explained variance',source_settings='Decomposition uses taper, mean removal and fitting band. Optional indexing uses captured material/phase/scale settings; see fits provenance.')
         meta['nmf_reference']='Lee & Seung, Algorithms for Non-negative Matrix Factorization, NIPS 2000 (2001), https://proceedings.neurips.cc/paper/2000/file/f9d1152547c0bde01830b7e8bd60024c-Paper.pdf'
     metadata=json.dumps(meta,allow_nan=False,indent=2)
@@ -424,7 +424,10 @@ class SharedSpectra:
     def status(self,job_id):
         with self.lock:
             if not self.job or self.job['id']!=job_id:raise ValueError('This PCA job is no longer in memory.')
-            return {k:v for k,v in self.job.items() if k!='started'}|dict(elapsed_seconds=self.job.get('elapsed_seconds',round(time.monotonic()-self.job['started'],1)))
+            status={k:v for k,v in self.job.items() if k!='started'}|dict(elapsed_seconds=self.job.get('elapsed_seconds',round(time.monotonic()-self.job['started'],1)))
+            # Do not advertise completion until the worker can safely be replaced.
+            if status['state']!='running' and self.running():status['state']='running'
+            return status
 
     def completed(self,job_id):
         with self.lock:
@@ -439,6 +442,7 @@ class SharedSpectra:
             if self.running():raise ValueError('Finish or cancel the current operation first.')
             validate_options(result,options)
             self.cancel=threading.Event()
+            result.pop('phase_support',None);result.pop('phase_support_status',None)
             result['fit_status']='running'
             self.job.update(state='running',operation='fit',completed=0,total=(1<<len(result['components']))-1,
                             stage='Preparing exhaustive combinations',started=time.monotonic())
@@ -457,4 +461,33 @@ class SharedSpectra:
                 finally:
                     with self.lock:self.job.update(state='complete',stage='Group fitting '+result.get('fit_status','finished'),elapsed_seconds=round(time.monotonic()-self.job['started'],1))
             self.thread=threading.Thread(target=run,name='nmf-crystal-fit',daemon=True);self.thread.start()
+            return self.status(job_id)
+
+    def support(self,job_id,templates):
+        from nmf_phase_maps import build
+        with self.lock:
+            result=self.completed(job_id)
+            if self.running():raise ValueError('Finish or cancel the current operation first.')
+            fits=result.get('fits')
+            if not fits or fits['completed']!=fits['total']:
+                raise ValueError('Finish fitting all NMF combinations first.')
+            self.cancel=threading.Event()
+            result['phase_support_status']='running'
+            self.job.update(state='running',operation='support',completed=0,total=len(fits['groups']),
+                            stage='Preparing phase maps',started=time.monotonic())
+            self.job.pop('elapsed_seconds',None);self.job.pop('error',None)
+            def progress(done,total,stage):
+                with self.lock:self.job.update(completed=done,total=total,stage=stage)
+            def run():
+                try:
+                    maps=build(result,templates,self.cancel,progress)
+                    with self.lock:result['phase_support']=maps;result['phase_support_status']='complete'
+                except CancelledError:
+                    with self.lock:result['phase_support_status']='cancelled'
+                except Exception as exc:
+                    LOG.exception('NMF phase mapping failed')
+                    with self.lock:result['phase_support_status']='error: '+str(exc)
+                finally:
+                    with self.lock:self.job.update(state='complete',stage='Phase mapping '+result['phase_support_status'],elapsed_seconds=round(time.monotonic()-self.job['started'],1))
+            self.thread=threading.Thread(target=run,name='nmf-phase-maps',daemon=True);self.thread.start()
             return self.status(job_id)

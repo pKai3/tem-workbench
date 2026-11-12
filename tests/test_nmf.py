@@ -11,6 +11,7 @@ from unittest.mock import patch
 import numpy as np
 import shared_spectra as spectra
 import nmf_fitting as fitting
+import nmf_phase_maps as phase_maps
 import scale_fitting
 import analysis_core as core
 from test_shared_spectra import INFO, SETTINGS, OPTIONS
@@ -27,6 +28,20 @@ def factor_result(k=2):
 
 
 class NmfTests(unittest.TestCase):
+    def test_phase_support_requires_separate_evidence(self):
+        peaks=[dict(profile_id=i,qx=np.cos(i),qy=np.sin(i)) for i in range(8)]
+        a=dict(model=0,phase='HCP',valid=True,score=.6,coverage=.75,profiles=[0,1,2,3,4,5])
+        b=dict(model=1,phase='BCC',valid=True,score=.58,coverage=.75,profiles=[0,1,2,3,4,5])
+        self.assertEqual(phase_maps.classify([a,b],peaks)['label'],'ambiguous')
+        a.update(profiles=[0,1,2,3],coverage=.5)
+        b.update(profiles=[4,5,6,7],coverage=.5)
+        self.assertEqual(phase_maps.classify([a,b],peaks)['label'],'multiple')
+        self.assertEqual(phase_maps.classify([a],peaks)['label'],'single')
+        a.update(coverage=.4)
+        self.assertEqual(phase_maps.classify([a],peaks)['label'],'unresolved')
+        a.update(valid=False)
+        self.assertEqual(phase_maps.classify([a],peaks)['label'],'unresolved')
+
     def test_nonnegative_repeatable_reconstruction(self):
         rng=np.random.default_rng(5)
         # Distinct spectral supports and anchor windows make this identifiable.
@@ -104,6 +119,13 @@ class NmfTests(unittest.TestCase):
         self.assertEqual(len(detail['candidates'][0]['matches']),best['matched_profile_count'])
         json.dumps(detail,allow_nan=False)
 
+        with patch.object(phase_maps,'search_candidates',side_effect=AssertionError('must not refit')):
+            support=phase_maps.build(r,[t])
+        self.assertEqual(support['counts']['single'],len(r['raw_spectra']))
+        self.assertEqual(support['passing_counts']['BCC'],len(r['raw_spectra']))
+        self.assertTrue(all(w['phases']==['BCC'] for w in support['windows']))
+        json.dumps(support,allow_nan=False)
+
         r['settings'].update(scale_mode='auto_uniform',scale_penalty_strength=.1)
         best=fitting.fit_groups(r,[t],{})['groups'][-1]['candidates'][0]
         self.assertIn('scale_penalty',best)
@@ -143,12 +165,16 @@ class NmfTests(unittest.TestCase):
         self.assertIs(manager.completed('test'),r)
         manager.fit('test',[],{});manager.thread.join(5)
         self.assertEqual(r['fit_status'],'complete');self.assertEqual(r['fits']['completed'],3)
+        manager.support('test',[]);manager.thread.join(5)
+        self.assertEqual(r['phase_support_status'],'complete')
+        self.assertEqual(r['phase_support']['counts']['unresolved'],len(r['raw_spectra']))
         with tempfile.TemporaryDirectory() as folder:
             files=spectra.export(r,folder)['files']
             with np.load(files[0],allow_pickle=False) as saved:
                 meta=json.loads(str(saved['metadata']))
                 self.assertEqual(meta['plan']['method'],'nmf');self.assertEqual(meta['fits']['completed'],3)
                 np.testing.assert_allclose(saved['scores']@saved['components'],r['scores']@r['components'])
+                self.assertEqual(meta['phase_support'],r['phase_support'])
                 self.assertEqual(meta,json.loads(Path(files[1]).read_text()))
 
 if __name__=='__main__':unittest.main()

@@ -106,7 +106,7 @@ def fit_groups(result, templates, options, cancel=None, progress=None):
             (lambda done,total_templates:progress(mask-1,total,f'Group {mask}/{total} · template {done}/{total_templates}')) if progress else None)
         candidates=core.retain(candidates,topn=1)
         record=dict(components=ids,coefficients=coefficients.tolist(),cooccurring_windows=common,
-                    peak_count=len(peaks),candidates=[compact(m) for m in candidates],support_checks=[])
+                    peak_count=len(peaks),candidates=[dict(compact(m),predicted_nodes=m['predicted_nodes']) for m in candidates],support_checks=[])
         if candidates:
             best=candidates[0]
             for index in windows:
