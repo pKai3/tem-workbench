@@ -1132,3 +1132,10 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-aggregation-status.error{color:#ff9cb0}
 
 .pca-stability-ramp{display:inline-block;width:130px;height:8px;border-radius:3px;vertical-align:middle;margin:0 8px}
+
+#pca-batch-panel{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:12px;min-width:0}
+#pca-batch-panel[hidden]{display:none}#pca-batch-hide{margin-left:auto}
+#pca-batch-files{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:6px 12px;max-height:240px;overflow:auto}
+#pca-batch-files label{display:flex;flex-direction:row;align-items:center;gap:7px;min-width:0;font-size:12px}
+#pca-batch-files input{flex:none;width:auto}#pca-batch-files span{overflow-wrap:anywhere}
+#pca-batch-results{overflow-wrap:anywhere;font-size:12px}

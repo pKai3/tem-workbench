@@ -9,7 +9,7 @@ function setup(){
  const result={decomposition:'pca',components:[],plan:{count:4,g_min:2.5,g_max:10},mean:{image:'mean'},raw_mean:{image:'raw'},explained:.8,fit_status:'complete',fits:{completed:4,total:4,groups:[]}};
  const context=vm.createContext({assert,$,job:{id:'job',state:'running',operation:'support'},pipeline:{stage:'support'},data:result,
   selected:new Set(),expandedSignals:new Set(),section:'fits',index:0,epoch:1,groupEpoch:2,sampleEpoch:0,fitComponents:null,liveRevision:0,snapshot:{file_id:'image'},sourceImage:null,
-  PcaView:require('../web/shared-spectra.js'),Image:class{},document:{createElement:element},phaseColors:{},
+  PcaView:require('../web/shared-spectra.js'),Image:class{},document:{createElement:element},phaseColors:{},createComponentBatch:()=>({busy:()=>false,controls(){}}),
   renderSpectrumPreviews(){},restoreView(){},rememberViewer(){},inspectorControls(){},sampledSpectrumUrl:spec=>spec.image,drawComponentFitOverlay(){},inspectorRender:null,el:(tag,attrs)=>{Object.entries(attrs);return element()},
   isPca:()=>true,sourceLabel:()=> 'PC 1+',showSection(section){context.section=section},controls(){},drawMap(){},showFits(){},showPhaseMaps(){},drawPhaseMap(){},
   notify(message){context.notice=message},setTimeout(fn){timers.push(fn)},pollTimer:null,

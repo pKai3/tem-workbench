@@ -44,6 +44,7 @@ import adaptive_refinement
 import overlap_maps
 from window_size_probe import WindowSizeProbe
 import shared_spectra
+from component_batch import ComponentBatch
 import folder_paths
 from preview_files import PreviewBatch, sidecar_path
 from workbench_project import Project
@@ -88,8 +89,12 @@ class Workbench:
         self.batch = BatchGrids(self)
         self.window_probe = WindowSizeProbe()
         self.pca = shared_spectra.SharedSpectra()
+        self.component_batch = ComponentBatch(self)
         self.watch_stop = threading.Event()
         self.watch_thread = None
+
+    def component_batch_running(self):
+        return bool(getattr(self, 'component_batch', None) and self.component_batch.running())
 
 
     def catalogue_status(self):
@@ -104,7 +109,7 @@ class Workbench:
             while not self.watch_stop.wait(15):
                 try:
                     # Never mutate an active grid's source or interrupt a batch.
-                    if self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running() or self.pca.running():
+                    if self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running() or self.pca.running() or self.component_batch_running():
                         continue
                     with self.lock:
                         self.engine.catalog()
@@ -115,7 +120,7 @@ class Workbench:
 
     def set_sources(self, sources, output):
         with self.lock, self.job_lock:
-            if self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running() or self.pca.running():
+            if self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running() or self.pca.running() or self.component_batch_running():
                 raise ValueError('Finish or cancel the current analysis job before changing sources.')
             if self.preview_batch and self.preview_status()['state']=='running':
                 raise ValueError('Finish PNG preview generation before changing sources.')
@@ -159,7 +164,7 @@ class Workbench:
 
     def config_info(self):
         files = self.engine.catalog()
-        return {'sources': self.engine.sources, 'file_tracking': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'shared_spectra_pca': True, 'component_workers': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'sources': self.engine.sources, 'file_tracking': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'shared_spectra_pca': True, 'component_workers': True, 'component_batch': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'source_name_autosave': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'diffraction_processed_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -173,7 +178,7 @@ class Workbench:
 
     def set_folders(self, data, output):
         with self.lock, self.job_lock:
-            if self.batch.running():
+            if self.batch.running() or self.component_batch_running():
                 raise ValueError('Finish or cancel batch grids before changing folders.')
             if self.preview_batch and self.preview_status()['state'] == 'running':
                 raise ValueError('Finish or cancel PNG preview generation before changing folders.')
@@ -191,7 +196,7 @@ class Workbench:
         with self.lock, self.job_lock:
             if self.closing or self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()):
                 raise ValueError('Finish or cancel the grid or batch before checking window size.')
-            if self.pca.running():
+            if self.pca.running() or self.component_batch_running():
                 raise ValueError('Finish or cancel PCA first.')
             if self.window_probe.running():
                 raise ValueError('Finish or cancel the current window size check first.')
@@ -204,7 +209,7 @@ class Workbench:
 
     def start_pca(self, body):
         with self.lock, self.job_lock:
-            if self.closing or self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running():
+            if self.closing or self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running() or self.component_batch_running():
                 raise ValueError('Finish or cancel the grid, batch or size check before PCA.')
             item = self.engine.load(body['file_id'])
             _, settings = self.engine.validate(item, body['roi'], body.get('settings', {}))
@@ -217,7 +222,7 @@ class Workbench:
 
     def fit_nmf(self, body, support=False):
         with self.lock, self.job_lock:
-            if self.closing or self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running():
+            if self.closing or self.batch.running() or (self.grid_thread and self.grid_thread.is_alive()) or self.window_probe.running() or self.component_batch_running():
                 raise ValueError('Finish or cancel other analysis before fitting components.')
             result=self.pca.completed(body['id'])
             templates=copy.deepcopy(self.engine.templates_for(result['settings']))
@@ -290,7 +295,7 @@ class Workbench:
         workers = worker_count(workers)
         settings = copy.deepcopy(settings)
         engine = engine or self.engine  # Snapshot even if the open image changes.
-        if getattr(self, 'pca', None) and self.pca.running():
+        if (getattr(self, 'pca', None) and self.pca.running()) or self.component_batch_running():
             raise ValueError('Finish or cancel PCA first.')
         if getattr(self, 'window_probe', None) and self.window_probe.running():
             raise ValueError('Finish or cancel the window size check first.')
@@ -492,6 +497,8 @@ class Workbench:
             self.jobs[job_id]['cancel'] = True
 
     def close(self):
+        if self.component_batch_running():
+            self.component_batch.cancel_run(self.component_batch.data['id'])
         if getattr(self, 'pca', None):
             self.pca.cancel.set()
         if getattr(self, 'watch_stop', None):
@@ -510,6 +517,8 @@ class Workbench:
             self.pca.thread.join()
         if getattr(self, 'batch', None) and self.batch.thread:
             self.batch.thread.join()
+        if getattr(self, 'component_batch', None) and self.component_batch.thread:
+            self.component_batch.thread.join()
 
     @staticmethod
     def best_zones(region):
@@ -845,6 +854,8 @@ def make_handler(app):
                     self.send(app.batch.status())
                 elif url.path == '/api/pca':
                     self.send(app.pca.status(query['id'][0]))
+                elif url.path == '/api/pca/batch':
+                    self.send(app.component_batch.status())
                 elif url.path == '/api/pca/current':
                     self.send(app.pca.current())
                 elif url.path == '/api/pca/live':
@@ -868,7 +879,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/app.js': ROOT/'web/app.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/component-batch.js': ROOT/'web/component-batch.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
@@ -895,7 +906,7 @@ def make_handler(app):
                     self.send(app.rename_source(body['source_id'], body['name']))
                 elif self.path == '/api/refresh-files':
                     with app.lock:
-                        if app.batch.running() or (app.grid_thread and app.grid_thread.is_alive()) or app.window_probe.running() or app.pca.running():
+                        if app.batch.running() or (app.grid_thread and app.grid_thread.is_alive()) or app.window_probe.running() or app.pca.running() or app.component_batch_running():
                             raise ValueError('Finish or cancel analysis before refreshing sources.')
                         app.engine.catalog()
                         self.send(app.catalogue_status())
@@ -921,6 +932,13 @@ def make_handler(app):
                 elif self.path == '/api/raster-calibration':
                     with app.lock:
                         self.send(app.engine.calibrate_raster(body['file_id'], body))
+                elif self.path == '/api/pca/batch/preview':
+                    with app.lock:
+                        self.send({'files': app.engine.catalog()})
+                elif self.path == '/api/pca/batch/start':
+                    self.send(app.component_batch.start(body))
+                elif self.path == '/api/pca/batch/cancel':
+                    self.send(app.component_batch.cancel_run(body['id']))
                 elif self.path == '/api/pca':
                     self.send(app.start_pca(body))
                 elif self.path == '/api/pca/fit':

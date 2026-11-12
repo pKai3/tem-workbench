@@ -1,24 +1,11 @@
-# TEM Workbench 1.0.32
+# TEM Workbench
 
-- Show polygon area and reconcile implementation follow-ups
-- Add paired FFT masks and phase-preserving inverse reconstruction
-- Keep selected FFT palette in inverse FFT editor
-- Expand inverse FFT workspace with live selection and wipe comparison
-- Add All selection for inverse FFT mask pairs
-- Update inverse FFT during mask drags and lock background scrolling
-- Add raw and processed FFT display toggle to inverse FFT workspace
-- Improve iFFT comparison, hover previews and live selection updates
-- Fix iFFT workspace initialization with production SVG helper
-- Add adjustable Tukey FFT window and clarify mean removal
-- Update Tukey previews live and default to 50 percent taper
-- Group material controls in a persistent collapsible section
-- Detect spots for full-image inverse FFT masks
-- Show TEM loading animation during inverse FFT computation
-- Delay inverse FFT loading indicator by 200 ms
-- Keep responsive iFFT drags clear and show source FFT before reconstruction
-- Match saved regions panel styling and delay iFFT spinner 400 ms
-- Explain empty inverse FFT reconstruction before masks are added
-- Hide unloaded iFFT image placeholder text
-- Fix verification fixtures after changing FFT window defaults
+- Add the experimental Local FFT PCA/NMF workspace, with signed PCA features, NMF factors, score-weighted component combinations and crystal-fit inspection.
+- Check proposed orientations against original image windows and display selectable hypothesis maps, overlapping support, hexagonal sampling and image-edge coverage.
+- Reuse the main interface's spectrum colours, peak markers and animation; add map PNG export and retain active or finished analyses across browser reloads.
+- Run PCA/NMF fitting and mapping with selectable workers. Four workers were about 2.2× faster on the 447-window example, with identical output.
+- Add independent-image PCA/NMF batches with captured settings, per-image NPZ/JSON exports, a saved progress manifest, failure reporting, cancellation and background progress.
+
+PCA/NMF remains experimental: components and map support are not measured phase fractions. Each batch image has its own decomposition; component numbers do not align across images. Browser reloads reconnect to active jobs; restarting Workbench stops them.
 
 Use **Check for updates → Install update and restart**.

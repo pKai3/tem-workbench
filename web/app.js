@@ -2195,7 +2195,8 @@ async function cancelProgressJob(kind){
  clearTimeout(card.confirmTimer);card.confirming=false;card.cancelling=true;syncJobCancel(card);
  const id=card.data.id;
  try{
-  if(kind==='grid'){await api('cancel',{job_id:id});if(jobId===id)$('cancel-grid').disabled=true}
+  if(card.data.cancelHandler)await card.data.cancelHandler();
+  else if(kind==='grid'){await api('cancel',{job_id:id});if(jobId===id)$('cancel-grid').disabled=true}
   else renderBatch(await api('batch/cancel',{}));
  }catch(e){card.cancelling=false;syncJobCancel(card);message(e.message,true)}
 }
@@ -2245,6 +2246,7 @@ function reconnectJobProgress(kind){
 }
 async function returnToJob(kind){
  const card=jobProgressCards.get(kind),id=card?.data.sourceId;if(!card)return;
+ if(card.data.openHandler){await card.data.openHandler();return}
  for(const dialog of [...document.querySelectorAll('dialog:modal')].reverse())dialog.close();
  if(id&&config?.files.some(f=>f.id===id)){
   if(fileId!==id||!meta){clearFileSearch();$('file').value=id;await openFile();if(fileId!==id)return}

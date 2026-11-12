@@ -24,6 +24,16 @@ Close the workspace without cancelling to let a run finish, including after a pa
 
 Sampling and decomposition still use one worker. Parallel stages use spawned processes with one numerical-library thread each. Original sampled arrays are shared read-only through temporary memory maps. Work in flight is bounded by worker count; fitting and mapping results are published in their original order to preserve candidate retention, stable IDs and incremental viewer updates. Exact repeated PCA peak configurations still share one cached search. Cancellation signals all workers, retains the published prefix and closes the pool before a new stage or run can start. The app also waits for cleanup on normal shutdown. Worker choices change execution only, not fitting/scoring or the sampled data.
 
+## Independent-image batches
+
+**Batch…** beside Run opens image selection. Filter by name, folder or sample and select the images to run. The batch captures the displayed decomposition settings, peak cutoff, combination mode, worker count and the workspace's material/phase/fitting settings once. Every image gets its own decomposition, all its computed components, crystal hypotheses and original-window map. Windows and spacing use the entered physical nm values; calibration, Nyquist limits and sampling/memory limits are checked separately for each image. Uncalibrated, diffraction or unreadable images are reported as failures and the remaining queue continues.
+
+Images run sequentially, using the chosen workers for each image's fitting and mapping. A separate analysis manager preserves the interactive result, and only one batch image's spectra are retained in memory. No component numbers or hypothesis IDs are matched across different images.
+
+Each image automatically exports NPZ and JSON to its source's configured output folder, inside a unique `components_…` subfolder. The global output folder contains the batch's atomic `batch.json` checkpoint with requested settings, selected images, per-image status, resolved sampling and export paths. Export transfer failures retain local copies through the ordinary export recovery mechanism and report their locations. Failed export preparation is an image error; it is never labelled successfully saved.
+
+The background progress card reconnects after a page reload and opens the batch panel. Cancel stops the current pipeline, exports available partial results and leaves later images unstarted. Grid, size-check and interactive PCA/NMF mutations are blocked during a batch; ordinary image inspection remains available. Completed results and errors remain listed in the batch panel. Browser closure does not stop the queue; Workbench shutdown cancels and waits for worker cleanup. Restart/resume, reopening exported results in the viewer, batch PNG production and cross-image decomposition/alignment remain future work. Window support is not a phase fraction or independent validation.
+
 ## Representation and equations
 
 For each sampled window, mean subtraction (if enabled) precedes the selected Hann/Tukey/rectangular aperture. The spectrum is

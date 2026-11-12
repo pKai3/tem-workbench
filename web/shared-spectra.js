@@ -243,18 +243,25 @@ if(typeof document!=='undefined'){
   const inspector=$('nmf-group-detail');
   function closeInspector(){groupEpoch++;inspectorRender=null;if(inspector.open)inspector.close()}
   inspector.addEventListener('close',()=>{groupEpoch++});
+  let batchUi=null;
+  batchUi=createComponentBatch(()=>{
+   if(!snapshot)throw new Error('Open a calibrated image to capture fitting settings first.');
+   return {settings:snapshot.settings,options:options(),fit_options:{...workerOptions(),peak_fraction:Number($('nmf-cutoff').value),combination_mode:$('pca-combination-mode').value}};
+  },running,()=>controls());
   function controls(){
-   for(const field of form.querySelectorAll('input,select'))field.disabled=running()||exporting;
-   $('pca-workers').disabled=running()||exporting||!config?.component_workers;
+   const blocked=running()||Boolean(batchUi?.busy());
+   batchUi?.controls();
+   for(const field of form.querySelectorAll('input,select'))field.disabled=blocked||exporting;
+   $('pca-workers').disabled=blocked||exporting||!config?.component_workers;
    $('pca-workers').options[0].textContent=`Auto (${config?.grid_workers_default||1})`;
-   $('pca-run').disabled=running()||exporting||!snapshot;
+   $('pca-run').disabled=blocked||exporting||!snapshot;
    $('pca-progress').hidden=!running();
-   $('nmf-build-map').disabled=!data?.fits||data.fits.completed!==data.fits.total||running()||exporting;
-   $('nmf-fit').disabled=!data||running()||exporting;$('nmf-cutoff').disabled=running()||exporting;
-   $('pca-cancel').disabled=!running();$('pca-export').disabled=!data||running()||exporting;
+   $('nmf-build-map').disabled=!data?.fits||data.fits.completed!==data.fits.total||blocked||exporting;
+   $('nmf-fit').disabled=!data||blocked||exporting;$('nmf-cutoff').disabled=blocked||exporting;
+   $('pca-cancel').disabled=!running();$('pca-export').disabled=!data||blocked||exporting;
    const pca=$('pca-method').value==='pca';for(const id of ['pca-combination-scope','pca-combination-help'])$(id).hidden=!pca;
-   for(const check of dialog.querySelectorAll('.pca-fit-check input'))check.disabled=running()||exporting;
-   $('pca-refit-selected').hidden=!data||!isPca();$('pca-refit-selected').disabled=running()||exporting||!fitComponents?.size;
+   for(const check of dialog.querySelectorAll('.pca-fit-check input'))check.disabled=blocked||exporting;
+   $('pca-refit-selected').hidden=!data||!isPca();$('pca-refit-selected').disabled=blocked||exporting||!fitComponents?.size;
    if(data&&isPca()&&!running()&&fitComponents){const fitted=data.fits?.feature_components||data.components.map(c=>c.index);$('pca-fit-selection-note').textContent=!fitComponents.size?'Select at least one PC for fitting.':fitted.length!==fitComponents.size||fitted.some(i=>!fitComponents.has(i))?'Selection changed · refit to update crystal fits and mapping.':''}
    updateMapStatus($('pca-map-metric').value==='raw');
    updateMapExportControls();
@@ -533,6 +540,7 @@ if(typeof document!=='undefined'){
   dialog.addEventListener('close',rememberViewer);
   $('open-pca').onclick=async()=>{
    dialog.showModal();document.documentElement.classList.add('pca-open');
+   batchUi.refresh();
    if(await reconnect())return;
    if(!meta||isDiffraction()||!config?.shared_spectra_pca){snapshot=null;controls();notify(!config?.shared_spectra_pca?'Restart the feature-branch backend to enable this workspace.':'Select a calibrated real-space image for local FFT PCA / NMF.',true);return}
    if(!running()&&context!==sourceContext()){
