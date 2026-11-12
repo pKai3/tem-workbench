@@ -206,7 +206,7 @@ if(typeof document!=='undefined'){
  const initPca=()=>{
   let snapshot=null,context='',job=null,data=null,selected=new Set(),index=0,epoch=0,sampleEpoch=0,pollTimer=null,sourceImage=null,exporting=false,groupEpoch=0,pipeline=null,cancelRequested=false,liveRevision=0;
   let inspectorRender=null,sampleImages=null,fitComponents=null;
-  let aggregateView=null,aggregateKey="",aggregatePending="",aggregateError="",aggregateEpoch=0,mapHit=null,preferredMapDisplay="hex";
+  let aggregateView=null,aggregateKey="",aggregateFamily="",aggregatePending="",aggregateError="",aggregateEpoch=0,mapHit=null,preferredMapDisplay="hex";
   let restoreEpoch=0,pendingView=null;
   const dialog=$('pca-dialog'),form=$('pca-form');
   let section='signals';
@@ -256,7 +256,7 @@ if(typeof document!=='undefined'){
    if(!ids.length)throw new Error('Select at least one PC for fitting on the Signals cards.');
    return {combination_mode:$('pca-combination-mode').value,combination_components:ids,feature_components:ids};
   }
-  function clearResults(){aggregateEpoch++;aggregateView=null;aggregateKey=aggregatePending=aggregateError="";mapHit=null;fitComponents=null;closeInspector();liveRevision=0;spectrumEpoch++;groupPreviews.clear();data=null;selected.clear();$('pca-results').hidden=true;$('pca-navigation').hidden=true;$('pca-setup').open=true;sampleEpoch++;groupEpoch++;sourceImage=null;controls()}
+  function clearResults(){aggregateEpoch++;aggregateView=null;aggregateKey=aggregateFamily=aggregatePending=aggregateError="";mapHit=null;fitComponents=null;closeInspector();liveRevision=0;spectrumEpoch++;groupPreviews.clear();data=null;selected.clear();$('pca-results').hidden=true;$('pca-navigation').hidden=true;$('pca-setup').open=true;sampleEpoch++;groupEpoch++;sourceImage=null;controls()}
   function options(){return {method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),layout:$('pca-sampling').value,passes:Number($('pca-passes').value),sample_edges:$('pca-rim').checked,components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value}}
   const palette=signed=>$('pca-palette').value==='auto'?(signed?'rdbu':$('palette').value):$('pca-palette').value;
   const sharedPca=()=>data?.decomposition!=='nmf'&&$('pca-scale-shared').getAttribute('aria-pressed')==='true';
@@ -784,16 +784,22 @@ if(typeof document!=='undefined'){
   }
   function requestAggregate(maps,ids,colour){
    ids=[...ids].sort((a,b)=>a-b);
+   const family=JSON.stringify([job.id,maps.generation,ids,colour]);
    const key=JSON.stringify([job.id,maps.generation,maps.windows.length,ids,colour]);
-   if(aggregateKey===key)return aggregateView;
+   if(aggregateKey===key){
+    if(aggregatePending){aggregateEpoch++;aggregatePending='';aggregateError=''}
+    return aggregateView;
+   }
    if(aggregatePending!==key){
     aggregatePending=key;aggregateError='';const serial=++aggregateEpoch,jobId=job.id;
     api('pca/map',{id:jobId,options:{models:ids,colour_by:colour}}).then(value=>{
      if(serial!==aggregateEpoch||job?.id!==jobId)return;
-     aggregateView=value;aggregateKey=key;aggregatePending='';drawPhaseMap();
+     aggregateView=value;aggregateKey=key;aggregateFamily=family;aggregatePending='';drawPhaseMap();
     }).catch(error=>{if(serial===aggregateEpoch){aggregateError=error.message;drawPhaseMap()}});
    }
-   return null;
+   // New checked windows may replace the same view without blanking it first.
+   // A different run, hypothesis pool or colour grouping must wait for its own map.
+   return aggregateFamily===family?aggregateView:null;
   }
   function aggregateCell(x,y){
    if(!mapHit||!mapHit.data.footprints.some(r=>x>=r.x&&x<r.x+r.w&&y>=r.y&&y<r.y+r.h))return null;
@@ -864,7 +870,7 @@ if(typeof document!=='undefined'){
     }
    }
    const aggregated=raw?null:requestAggregate(maps,pca?ids:maps.models.map(m=>m.id),pca?colourBy:'phase');
-   const status=$('pca-aggregation-status');status.hidden=raw||!!aggregated;status.textContent=aggregateError||'Updating map…';status.classList.toggle('error',!!aggregateError);
+   const status=$('pca-aggregation-status');status.hidden=raw||(!aggregatePending&&!aggregateError);status.textContent=aggregateError||'Updating map…';status.classList.toggle('error',!!aggregateError);
    if(aggregated)paintAggregate(ctx,aggregated,metric,pca?colourBy:'phase',phase,scale,ox,oy);
    ctx.globalAlpha=Number($('nmf-map-opacity').value);
    const rois=PcaView.windows(p);
