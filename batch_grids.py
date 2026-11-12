@@ -175,6 +175,7 @@ class BatchGrids:
         if result.get('job_id'):
             try:
                 job=self.app.status(result['job_id']);result['current_grid']={k:job[k] for k in ('state','processed','pending','execution')}
+                if job.get('component_progress'):result['current_grid']['component_progress']=job['component_progress']
             except ValueError:pass
         with self.lock:
             live=copy.deepcopy(self.live)
@@ -229,6 +230,9 @@ class BatchGrids:
             opacity=float(options.get('opacity',.2))
             if not math.isfinite(opacity) or not 0<=opacity<=1:raise ValueError('Map opacity must be between 0 and 1.')
             png_exports(options, options.get('settings',{}).get('enabled_phases',['HCP','BCC','FCC']))
+            if options.get('component') is not None:
+                if not options.get('overlap') or not isinstance(options['component'],dict) or options['component'].get('method') not in ('pca','nmf'):
+                    raise ValueError('Component batches require PCA/NMF and overlapping sampling settings.')
             json.dumps(options,allow_nan=False)
             if count not in range(2,25) or not 0<minimum<100000:raise ValueError('Invalid grid size or stopping limit.')
             engine=Engine(copy.deepcopy(app.config));engine.catalog()
@@ -264,7 +268,9 @@ class BatchGrids:
                             roi=dict(x=0,y=0,w=info['width'],h=info['height'])
                             _,settings=engine.validate(item,roi,options.get('settings',{}))
                             if self.cancel.is_set():break
-                            started=app.grid(item,settings,count,bool(options.get('adaptive',True)),minimum,bool(options.get('check_passing',False)),options.get('workers',0),batch=True,engine=engine,overlap=options.get('overlap'))
+                            grid_options=dict(batch=True,engine=engine,overlap=options.get('overlap'))
+                            if options.get('component') is not None:grid_options['component']=options['component']
+                            started=app.grid(item,settings,count,bool(options.get('adaptive',True)),minimum,bool(options.get('check_passing',False)),options.get('workers',0),**grid_options)
                             with self.lock:
                                 self.data['job_id']=started['id'];self.live['job_id']=started['id']
                             while app.grid_thread.is_alive():
@@ -274,11 +280,19 @@ class BatchGrids:
                             job['saved_at']=datetime.now().astimezone().isoformat()
                             job['limits']=json.loads((Path(__file__).parent/'engine_provenance.json').read_text())['limits']
                             stem=safe_name(row['sample'])+'_'+safe_name(info['name'])+'_'+uuid.uuid4().hex[:6]
-                            kind='overlap_map' if job.get('grid',{}).get('mode')=='overlap' else 'grid'
+                            kind=job['grid']['component_method']+'_map' if job['grid'].get('component_method') else 'overlap_map' if job.get('grid',{}).get('mode')=='overlap' else 'grid'
                             image_folder=engine.output_for(key)/folder.name if engine.output_for(key)!=Path(app.config['output_root']).resolve() else folder
                             image_folder.mkdir(parents=True, exist_ok=True)
+                            if options.get('component') is not None:
+                                import shared_spectra
+                                with app.job_lock:
+                                    component_result=app.jobs[started['id']].pop('_component_result',None)
+                                if component_result is not None:
+                                    job['component_export']=shared_spectra.export(component_result,image_folder)
+                                component_result=None
                             target=image_folder/(stem+'_'+kind+'.json');target.write_text(json.dumps(job,indent=2,allow_nan=False))
                             summary=summarize(job,row['sample']);summary['data_file']=os.path.relpath(target,folder) if target.drive==folder.drive else str(target)
+                            if 'component_export' in job:summary['component_export']=job['component_export']
                             folder_key=row.get('folder','.')+'/image'
                             summary['source_folder']=summary_folder(folder_key,[],False)
                             summary['source_project']=row.get('source_name','')
@@ -303,6 +317,13 @@ class BatchGrids:
                                 with self.lock:self.data['failures'].append(dict(file_id=key,stage='grid',error=job['error']))
                         except Exception as error:
                             with self.lock:self.data['failures'].append(dict(file_id=key,stage='analysis',error=str(error)))
+                        finally:
+                            if options.get('component') is not None:
+                                component_result=None
+                                with app.job_lock:
+                                    current=app.jobs.get(self.data.get('job_id'),{})
+                                    current.pop('_component_result',None)
+                                engine.loaded.clear()
                         with self.lock:self.data['finished']+=1
                         self.write(folder)
                     with self.lock:self.data.update(state='cancelled' if self.cancel.is_set() else 'complete',current=None,job_id=None)

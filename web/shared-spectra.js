@@ -243,14 +243,20 @@ if(typeof document!=='undefined'){
   const inspector=$('nmf-group-detail');
   function closeInspector(){groupEpoch++;inspectorRender=null;if(inspector.open)inspector.close()}
   inspector.addEventListener('close',()=>{groupEpoch++});
-  let batchUi=null;
-  batchUi=createComponentBatch(()=>{
-   if(!snapshot)throw new Error('Open a calibrated image to capture fitting settings first.');
-   return {settings:snapshot.settings,options:options(),fit_options:{...workerOptions(),peak_fraction:Number($('nmf-cutoff').value),combination_mode:$('pca-combination-mode').value}};
-  },running,()=>controls());
+  $('pca-batch-open').onclick=()=>{
+   $('grid-mode').value=$('pca-method').value;
+   restoreComponentControls({options:options(),fit_options:{combination_mode:$('pca-combination-mode').value,peak_fraction:Number($('nmf-cutoff').value)}});
+   const dimensions=meta?overlapDimensions(overlapRequest(),meta):null;
+   // Retain image/window-relative batch sizing when the inspector still shows
+   // that source's resolved dimensions. An intentional edit becomes fixed nm.
+   if(!dimensions||Math.abs(dimensions.width-Number($('pca-window').value))>1e-6){$('map-size-mode').value='fixed_nm';$('map-window').value=$('pca-window').value}
+   if(!dimensions||Math.abs(dimensions.spacing-Number($('pca-spacing').value))>1e-6){$('map-spacing-mode').value='fixed_nm';$('map-spacing').value=$('pca-spacing').value}
+   for(const [target,source]of [['map-layout','pca-sampling'],['map-passes','pca-passes'],['grid-workers','pca-workers']])$(target).value=$(source).value;
+   $('map-sample-edges').checked=$('pca-rim').checked;
+   updateGridSizeNote();rememberBasicControls();dialog.close();$('batch-panel').open=true;$('batch-panel').scrollIntoView({block:'start'});
+  };
   function controls(){
-   const blocked=running()||Boolean(batchUi?.busy());
-   batchUi?.controls();
+   const blocked=running()||batchRunning||isGridRunning();
    for(const field of form.querySelectorAll('input,select'))field.disabled=blocked||exporting;
    $('pca-workers').disabled=blocked||exporting||!config?.component_workers;
    $('pca-workers').options[0].textContent=`Auto (${config?.grid_workers_default||1})`;
@@ -540,13 +546,18 @@ if(typeof document!=='undefined'){
   dialog.addEventListener('close',rememberViewer);
   $('open-pca').onclick=async()=>{
    dialog.showModal();document.documentElement.classList.add('pca-open');
-   batchUi.refresh();
    if(await reconnect())return;
    if(!meta||isDiffraction()||!config?.shared_spectra_pca){snapshot=null;controls();notify(!config?.shared_spectra_pca?'Restart the feature-branch backend to enable this workspace.':'Select a calibrated real-space image for local FFT PCA / NMF.',true);return}
    if(!running()&&context!==sourceContext()){
     context=sourceContext();snapshot=JSON.parse(JSON.stringify(requestBody()));job=null;clearResults();
     const physical=Math.min(meta.width*meta.pixel_x_nm,meta.height*meta.pixel_y_nm);
     $('pca-window').value=(physical*.1).toFixed(3);$('pca-spacing').value=(physical*.05).toFixed(3);
+    if(componentGridMode()){
+     const sampling=overlapRequest(),size=overlapDimensions(sampling,meta);$('pca-method').value=componentGridMode();
+     $('pca-window').value=size.width;$('pca-spacing').value=size.spacing;
+     $('pca-sampling').value=sampling.layout;$('pca-passes').value=sampling.passes;$('pca-rim').checked=sampling.sample_edges;
+     $('pca-workers').value=$('grid-workers').value;
+    }
     $('pca-source').textContent=`${meta.name} · whole image · ${snapshot.settings.g_min}–${snapshot.settings.g_max} nm⁻¹ · ${snapshot.settings.fft_window} window`;
     notify('Uses the current FFT window and fitting band. Run continues through crystal fitting and original-window checks.');
    }
@@ -775,7 +786,7 @@ if(typeof document!=='undefined'){
    if(!hypothesisOrder.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No retained hypotheses.';box.append(empty)}
   }
   function orderHypotheses(maps,reset=false){
-   const top=$('pca-map-top'),count=reset?3:manualPool?selectedHypotheses.size:Number(top.value);
+   const top=$('pca-map-top'),count=reset?(snapshot?.mapping_pool==='all'?maps.models.length:3):manualPool?selectedHypotheses.size:Number(top.value);
    hypothesisOrder=PcaView.orderedHypotheses(maps,$('pca-map-sort').value);poolSummaries=PcaView.hypothesisPools(maps,hypothesisOrder);
    const custom=new Option('Custom selection','custom');custom.disabled=true;
    if(top.options.length!==poolSummaries.length+2)top.replaceChildren(custom,new Option('None','0'),...poolSummaries.map(pool=>new Option(String(pool.count),String(pool.count))));

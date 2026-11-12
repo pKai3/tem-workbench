@@ -18,7 +18,7 @@ function setup(current=job(),remembered=null,last=image.id){
   clearFileSearch(){ $('source-filter').value='';context.filtersCleared=true; },
   projectFiles:()=>context.config.files.filter(f=>!$('source-filter').value||f.id==='other-image'),
   async openFile(){context.sourceRequest++;context.fileId=$('file').value;context.meta={...image,id:context.fileId};context.jobId=null;context.grid=null;storage.set('tem-grid-session:project',null)},
-  applyRegionSettings(settings){context.restored=settings},rememberBasicControls(){},updateGridSizeNote(){},
+  restoreComponentControls(value){context.component=value},applyRegionSettings(settings){context.restored=settings},rememberBasicControls(){},updateGridSizeNote(){},
   schedule(){},message(text){context.notice=text},reportJobError(){},updatePenaltyControls(){},
   drawGrid(){context.drawn=context.grid},isDiffraction:()=>false,hideRegionPreview(){},
   updateGridProgress(status){context.progress=status},clearJobProgress(){context.progress=null},reconnectJobProgress(){context.reconnecting=true},
@@ -83,6 +83,10 @@ async function main(){
  const legacyOverlap=setup({...overlapping,grid:{...overlapping.grid,sample_edges:undefined}});
  legacyOverlap.$('map-sample-edges').checked=true;await legacyOverlap.run('openInitialImage()');
  assert.equal(legacyOverlap.$('map-sample-edges').checked,false);
+
+ const component=setup({...job(),component:{method:'pca',options:{components:2}},grid:{mode:'overlap',component_method:'pca',window_nm:5,spacing_nm:2.5},component_progress:{stage:'Fitting features',completed:2,total:8}});
+ await component.run('openInitialImage()');assert.equal(component.$('grid-mode').value,'pca');assert.equal(component.context.component.options.components,2);
+ assert.equal(component.$('grid-progress').hidden,false);assert.equal(component.$('grid-progress').value,2);assert.match(component.$('grid-status').textContent,/Fitting features/);
 
  // An older image-open reply must not reclaim the page after the user switches image.
  const switched=setup();let openReply;

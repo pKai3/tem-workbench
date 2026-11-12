@@ -135,7 +135,8 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
                 round((roi['x']+roi['w'])*w/source['width'])-1,round((roi['y']+roi['h'])*h/source['height'])-1),fill=255)
         layer.putalpha(ImageChops.multiply(layer.getchannel('A'),mask))
     elif view == 'raw':
-        radius=max(2,job['grid']['spacing_nm']/source['pixel_x_nm']*.168*w/source['width'])
+        # Same source-pixel size as the browser's mapCentreMarkerSize × .6.
+        radius=max(5,job['grid']['spacing_nm']/source['pixel_x_nm']*.28)*.6*w/source['width']
         for region in job['regions']:
             roi=region['roi'];x=(roi['x']+roi['w']/2)*w/source['width'];y=(roi['y']+roi['h']/2)*h/source['height']
             c=colors.get(region['classification']['label'],'#596778')
@@ -161,7 +162,8 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     titles=dict(support='Match frequency'+(' · '+phase if phase else ' · all phases'),hex='Best match · averaged hex grid',hex_support='Match frequency · hex grid',
         strength='Match score'+(' · '+phase if phase else ' · all phases'),hex_strength='Match score · hex grid'+(' · '+phase if phase else ''),
         spread='Placement sensitivity · '+str(phase),samples='Sampling density',separate='Multiple-structure support',raw='Individual windows · classification circles')
-    draw.text((40,h+85),titles[view],font=title,fill='white')
+    method=job['grid'].get('component_method')
+    draw.text((40,h+85),(method.upper()+' · ' if method else '')+titles[view],font=title,fill='white')
     g=job['grid']
     draw.text((40,h+120),f"{g['window_nm']:.2f} nm windows · {g['spacing_nm']:.2f} nm spacing · {g['passes']} {'pass' if g['passes']==1 else 'passes'} · {g['layout']} centres",font=font,fill='#a4adba')
     legend=[(p,color(p)) for p in ([phase] if phase else phases)]
@@ -194,7 +196,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
                 alpha=opacity*(.15+.85*j/99)
                 ramp=tuple(round(12*(1-alpha)+v*alpha) for v in rgb)
                 draw.line((x+j,y+25,x+j,y+38),fill=ramp)
-            draw.text((x+108,y+22),'low → high' if view=='samples' else '0 → 1 rank' if strength_view else '0 → 100%',font=font,fill='#a4adba')
+            draw.text((x+108,y+22),'low to high' if view=='samples' else '0–1 rank' if strength_view else '0–100%',font=font,fill='#a4adba')
         x+=length
     if blend_key:
         y=max(y+55,h+215)

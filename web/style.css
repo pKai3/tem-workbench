@@ -1139,3 +1139,9 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-batch-files label{display:flex;flex-direction:row;align-items:center;gap:7px;min-width:0;font-size:12px}
 #pca-batch-files input{flex:none;width:auto}#pca-batch-files span{overflow-wrap:anywhere}
 #pca-batch-results{overflow-wrap:anywhere;font-size:12px}
+#component-grid-controls{margin:10px 0}
+#component-grid-controls[hidden]{display:none}
+.component-grid-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end}
+.component-grid-fields label{min-width:0}
+.component-grid-fields input,.component-grid-fields select{width:100%;min-width:0}
+#grid-progress{width:100%;height:6px;accent-color:var(--cyan);margin-top:10px}

@@ -174,7 +174,7 @@ function restoreBasicControls(){
  for(const id of BASIC_FLAGS)if(typeof saved[id]==='boolean')$(id).checked=saved[id];
  if(!saved['fft-window']&&typeof saved['fft-hann']==='boolean')saved['fft-window']=saved['fft-hann']?'hann':'none';
  if(saved['map-passes']==='7')saved['map-passes']='9';
- for(const [id,choices]of Object.entries({'fft-window':['hann','tukey','none'],'grid-mode':['standard','overlap'],'map-layout':['hex','square'],'map-size-mode':['fixed_nm','image_percent'],'map-spacing-mode':['fixed_nm','window_percent'],'map-passes':['1','3','9']}))if(choices.includes(saved[id]))$(id).value=saved[id];
+ for(const [id,choices]of Object.entries({'fft-window':['hann','tukey','none'],'grid-mode':['standard','overlap','pca','nmf'],'map-layout':['hex','square'],'map-size-mode':['fixed_nm','image_percent'],'map-spacing-mode':['fixed_nm','window_percent'],'map-passes':['1','3','9']}))if(choices.includes(saved[id]))$(id).value=saved[id];
  if(['manual','auto','geometry'].includes(saved['fft-strength-mode']))$('fft-strength-mode').value=saved['fft-strength-mode'];
  if(['titanium','iron','unknown','custom'].includes(saved.material))$('material').value=saved.material;
  setPhaseSelection(Array.isArray(saved.enabled_phases)&&saved.enabled_phases.every(phase=>PHASES.includes(phase))?saved.enabled_phases:materialPhases());
@@ -1470,15 +1470,50 @@ $('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onch
 };$('palette').onchange=()=>{writePreference('tem-palette',$('palette').value);drawFFT()};
 const oldPalette=readPreference('tem-palette',null),savedPalette=({ice:'viridis',violet:'plasma',green:'viridis'})[oldPalette]||oldPalette;if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;
 const BATCH_PNG_VIEWS={standard:[['classification','Classification + zone labels']],overlap:[['support_all','Match frequency · all phases'],['support_phases','Match frequency · each phase'],['strength_all','Match score · all phases'],['strength_phases','Match score · each phase'],['hex','Best match · averaged hex grid'],['hex_support','Match frequency · hex grid'],['hex_strength','Match score · hex grid'],['spread_phases','Placement sensitivity · each phase'],['samples','Sampling density'],['separate','Multiple-structure support'],['raw','Individual windows · classification circles']]};
+function componentGridMode(){return ['pca','nmf'].includes($('grid-mode').value)?$('grid-mode').value:null}
+const COMPONENT_FIELDS={'pca-count':'components','pca-normalization':'normalization','pca-combination-mode':'combination_mode','nmf-cutoff':'peak_fraction','pca-angle':'angular_sigma_deg','pca-scale':'spacing_sigma_percent'};
+function componentRequest(){
+ const method=componentGridMode();if(!method)return null;
+ const values=Object.fromEntries(Object.entries(COMPONENT_FIELDS).map(([id,key])=>{const input=$('grid-'+id)||$(id);return [key,input.tagName==='SELECT'?input.value:Number(input.value)]}));
+ const {combination_mode,peak_fraction,...options}=values;
+ return {method,options,fit_options:{combination_mode,peak_fraction}};
+}
+function restoreComponentControls(component){
+ if(!component)return;
+ const values={...component.options,...component.fit_options};
+ for(const [id,key]of Object.entries(COMPONENT_FIELDS))if(values[key]!=null){$(id).value=values[key];if($('grid-'+id))$('grid-'+id).value=values[key]}
+}
+function syncComponentGridControls(){
+ const method=componentGridMode();$('component-grid-controls').hidden=!method;
+ $('window-size-smoothing').closest('label').hidden=Boolean(method);$('window-size-check').hidden=Boolean(method);
+ if($('grid-pca-combination-mode'))$('grid-pca-combination-mode').closest('label').hidden=method!=='pca';
+ if(!trackedGrid&&!gridStarting)$('grid-status').textContent=method?'Run grid to discover hypotheses and check original windows.':overlapRequest()?'Run grid to analyse overlapping windows.':'Run grid to analyse image regions.';
+}
+document.addEventListener('DOMContentLoaded',()=>{
+ const saved=readPreference('tem-component-grid-options',{});
+ for(const [id,key]of Object.entries(COMPONENT_FIELDS)){
+  const original=$(id),label=document.createElement('label'),input=original.cloneNode(true);
+  if(saved[key]!=null)original.value=saved[key];input.id='grid-'+id;input.value=original.value;
+  const titles={'pca-count':'Components','pca-normalization':'Normalize spectra','pca-combination-mode':'PCA combinations','nmf-cutoff':'Peak cutoff','pca-angle':'Rotation σ, °','pca-scale':'Spacing σ, %'};
+  const heading=document.createElement('span');heading.className='settings-heading-label';heading.textContent=titles[id];
+  label.append(heading,input);$('component-grid-fields').append(label);
+  const help=id==='pca-count'?$('component-grid-help').textContent:original.closest('label').title||original.title||(id==='pca-combination-mode'?'Fit individual signed features, plus selected PCs together or all their combinations. All combinations can take much longer.':'');
+  if(help){const h=elHTML('span','');h.className='settings-help';h.innerHTML='<button type="button" class="settings-help-button" aria-label="About '+titles[id]+'">ⓘ</button><span class="settings-help-popup" role="tooltip"></span>';h.lastChild.textContent=help;heading.append(h)}
+  const remember=()=>writePreference('tem-component-grid-options',Object.fromEntries(Object.entries(COMPONENT_FIELDS).map(([field,k])=>[k,$(field).value])));
+  input.addEventListener('input',()=>{original.value=input.value;remember()});
+  original.addEventListener('input',()=>{input.value=original.value;remember()});
+ }
+ syncComponentGridControls();
+});
 let batchPngSelections=readPreference('tem-batch-png-views',{});
 if(!batchPngSelections||typeof batchPngSelections!=='object'||Array.isArray(batchPngSelections))batchPngSelections={};
 function batchPngViews(){
- const mode=$('grid-mode').value==='overlap'?'overlap':'standard',choices=BATCH_PNG_VIEWS[mode];
+ const mode=$('grid-mode').value!=='standard'?'overlap':'standard',choices=BATCH_PNG_VIEWS[mode];
  const saved=batchPngSelections[mode];
  return Array.isArray(saved)?choices.map(([id])=>id).filter(id=>saved.includes(id)):[choices[0][0]];
 }
 function updateBatchPngControls(){
- const mode=$('grid-mode').value==='overlap'?'overlap':'standard',selected=batchPngViews(),box=$('batch-png-options');
+ const mode=$('grid-mode').value!=='standard'?'overlap':'standard',selected=batchPngViews(),box=$('batch-png-options');
  box.hidden=!$('batch-png').checked;box.replaceChildren();
  for(const [id,text]of BATCH_PNG_VIEWS[mode]){
   const label=document.createElement('label');label.className='check';
@@ -1492,7 +1527,7 @@ function updateBatchPngControls(){
 }
 $('batch-png').onchange=updateBatchPngControls;
 function overlapRequest(){
- if($('grid-mode').value!=='overlap')return null;
+ if($('grid-mode').value==='standard')return null;
  const size_mode=$('map-size-mode').value,spacing_mode=$('map-spacing-mode').value;
  return {size_mode,spacing_mode,layout:$('map-layout').value,passes:Number($('map-passes').value),sample_edges:$('map-sample-edges').checked,
   ...(size_mode==='image_percent'?{window_percent:Number($('map-window-percent').value)}:{window_nm:Number($('map-window').value)}),
@@ -1503,6 +1538,7 @@ function overlapDimensions(o,info){
  return {width,spacing:o.spacing_mode==='window_percent'?width*o.spacing_percent/100:o.spacing_nm};
 }
 function checkOverlapCapability(){
+ if(componentGridMode()&&!config?.component_grid)throw new Error('Restart TEM Workbench and reload to enable PCA/NMF in Automatic grid.');
  const o=overlapRequest();
  if(o?.sample_edges&&!config?.overlap_rim_sampling)throw new Error('Restart TEM Workbench and reload to enable rim sampling.');
  if(o&&!config?.independent_overlap_spacing&&((o.size_mode==='image_percent')!==(o.spacing_mode==='window_percent')))throw new Error('Restart TEM Workbench and reload to enable independent centre spacing.');
@@ -1611,6 +1647,7 @@ function updateOverlapSizePreview(){
  if(validWindow&&Number.isFinite(spacing)&&spacing>0&&(o.spacing_mode!=='window_percent'||(o.spacing_percent>=1&&o.spacing_percent<=100)))spacingOutput.textContent=`≈ ${spacing.toFixed(2)} nm`;
 }
 function updateGridSizeNote(){
+ syncComponentGridControls();
  if(typeof updateWindowSizeCheck==='function')updateWindowSizeCheck();
  syncZoneToggle();scheduleOverlapPreview();
  const overlap=Boolean(overlapRequest());$('overlap-controls').hidden=!overlap;
@@ -1745,9 +1782,10 @@ function renderZoneLegend(found){
 }
 function renderOverlapSummary(container){
  const a=grid.aggregation;
- const title=document.createElement('h3');title.textContent='Overlapping map results';container.append(title);
+ const title=document.createElement('h3');title.textContent=grid.grid.component_method?grid.grid.component_method.toUpperCase()+' map results':'Overlapping map results';container.append(title);
  const text=document.createElement('p');text.className='hint';
  text.textContent=`${grid.processed} / ${grid.grid.sample_count} windows · ${grid.grid.passes} placement pass(es) · ${grid.state}. `+(a?`${a.coverage_percent.toFixed(1)}% approximate sampled image coverage. `:'Aggregation appears when the run stops. ')+ 'Match frequency includes weaker passing phases and components supported by a passing β + ω fit; linked components share one joint rank. Phases can overlap. It is not a phase fraction or a probability. Failed and missing fits count as no passing support.';
+ if(grid.grid.component_method)text.textContent=`${grid.processed} / ${grid.grid.sample_count} original windows checked · ${grid.grid.passes} placement ${grid.grid.passes===1?'pass':'passes'} · ${grid.state}. `+(a?`${a.coverage_percent.toFixed(1)}% sampled image coverage. `:'')+'All discovered hypotheses; one best passing score per phase per window. Support is not phase fraction.';
  container.append(text);
  if(!a)return;
  const table=document.createElement('table'),head=document.createElement('tr');
@@ -1955,7 +1993,7 @@ $('map-normalize').checked=readPreference('tem-map-normalize',true)!==false;
 $('map-normalize').onchange=()=>{writePreference('tem-map-normalize',$('map-normalize').checked);if(grid?.grid.mode==='overlap')drawOverlapMap()};
 function syncZoneToggle(){
  // Display controls follow the existing map, or the selected mode before a run.
- $('show-zones').closest('label').hidden=(grid?.grid.mode??$('grid-mode').value)==='overlap';
+ $('show-zones').closest('label').hidden=(grid?.grid.mode??$('grid-mode').value)!=='standard'&&Boolean(grid?.grid.mode||overlapRequest());
 }
 function syncMapOpacityControl(){
  const available=!isDiffraction()&&!overlapPlanning()&&$('show-grid').checked&&grid?.regions.some(r=>r.leaf);
@@ -2047,7 +2085,8 @@ function gridMatchesSource(job){
 function restoreGridControls(job){
  applyRegionSettings(job.settings);
  const options=job.grid,overlap=options.mode==='overlap';
- $('grid-mode').value=overlap?'overlap':'standard';
+ $('grid-mode').value=options.component_method||(overlap?'overlap':'standard');
+ restoreComponentControls(job.component);
  if(overlap){
   $('map-sample-edges').checked=options.sample_edges===true;
   for(const [id,key,fallback]of [['map-size-mode','size_mode','fixed_nm'],['map-spacing-mode','spacing_mode','fixed_nm'],['map-layout','layout','hex'],['map-passes','passes',1]])$(id).value=options[key]??fallback;
@@ -2092,8 +2131,11 @@ function reconnectGridToImage(){
 function gridStatus(status=grid){
  const grid=status;
  if(!grid)return;
+ const progress=grid.component_progress,bar=$('grid-progress');bar.hidden=grid.state!=='running';
+ if(progress?.total){bar.max=progress.total;bar.value=progress.completed||0}else{bar.max=Math.max(1,grid.processed+grid.pending);bar.value=grid.processed}
  reportJobError('grid',grid.id,grid.error?'Grid stopped: '+grid.error:'');
  $('grid-status').textContent=`${grid.processed} regions analysed · ${grid.pending} pending · ${grid.cancelling?'stopping':grid.state}${grid.execution?` · ${grid.execution.workers} worker${grid.execution.workers===1?'':'s'} · ${grid.execution.elapsed_seconds.toFixed(1)} s${grid.execution.status?' · '+grid.execution.status:''}`:''}${grid.error?' — '+grid.error:''}`+(grid.rescore?` · reweighted in ${(grid.rescore.elapsed_ms/1000).toFixed(2)} s using cached fits`:'');
+ if(progress&&grid.state==='running')$('grid-status').textContent=`${grid.grid.component_method.toUpperCase()} · ${progress.stage} · ${progress.completed||0}/${progress.total||0} · ${grid.execution.elapsed_seconds.toFixed(1)} s`;
 }
 let gridPollTimer=null;
 async function poll(id){
@@ -2128,7 +2170,7 @@ $('run-grid').onclick=async()=>{
   gridStarting=true;
   rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
   hideRegionPreview();$('run-grid').disabled=true;$('clear-grid').disabled=true;$('cancel-grid').disabled=true;
-  const d=await api('grid',{...requestBody(),count:Number($('grid-count').value),adaptive:$('adaptive').checked,minimum_nm:Number($('grid-min').value),check_passing:$('adaptive').checked&&$('check-passing').checked,workers:Number($('grid-workers').value),overlap:overlapRequest()});
+  const d=await api('grid',{...requestBody(),count:Number($('grid-count').value),adaptive:$('adaptive').checked,minimum_nm:Number($('grid-min').value),check_passing:$('adaptive').checked&&$('check-passing').checked,workers:Number($('grid-workers').value),overlap:overlapRequest(),component:componentRequest()});
   gridStarting=false;trackedGrid=null;jobId=d.id;rememberGrid(jobId);grid=null;drawGrid();$('cancel-grid').disabled=false;$('save-grid').disabled=true;
   $('scale-penalty').disabled=true;$('scale-penalty-slider').disabled=true;$('peak-evidence-weight').disabled=true;$('peak-evidence-slider').disabled=true;$('missing-peak-weight').disabled=true;$('missing-peak-slider').disabled=true;poll(jobId);
  }catch(e){gridStarting=false;$('run-grid').disabled=batchRunning||isDiffraction();message(e.message,true);updatePenaltyControls()}
@@ -2140,6 +2182,7 @@ $('clear-grid').onclick=()=>{
  jobId=null;trackedGrid=null;rememberGrid(null);clearJobProgress('grid');grid=null;drawGrid();
  $('run-grid').disabled=batchRunning||isDiffraction();$('cancel-grid').disabled=true;
  $('grid-status').textContent='Grid cleared. Run grid to create a new map.';
+ $('grid-progress').hidden=true;
  if(id&&running)api('cancel',{job_id:id}).catch(e=>message(e.message,true));
 };
 const exportButtonTimers=new Map();
@@ -2227,9 +2270,10 @@ function setJobProgress(kind,data){
 }
 function updateGridProgress(status){
  const count=Number(status.processed)||0,total=count+(Number(status.pending)||0),running=status.state==='running';
+ const progress=status.component_progress;
  setJobProgress('grid',{id:status.id,state:status.state,cancelling:status.cancelling,sourceId:status.source.id,name:status.source.name||status.source.id,
-  title:'Grid · '+(status.cancelling?'stopping':status.state),detail:`${count} analysed${running?' · '+(total-count)+' pending':''}`,
-  fraction:total?count/total:running?null:1,tooltip:status.execution?`${status.execution.workers} workers · ${status.execution.elapsed_seconds.toFixed(1)} s.`:'Grid analysis continues while you browse.'});
+  title:(status.grid?.component_method?.toUpperCase()||'Grid')+' · '+(status.cancelling?'stopping':status.state),detail:progress&&running?`${progress.stage} · ${progress.completed||0}/${progress.total||0}`:`${count} analysed${running?' · '+(total-count)+' pending':''}`,
+  fraction:progress&&running?(progress.total?progress.completed/progress.total:null):total?count/total:running?null:1,tooltip:status.execution?`${status.execution.workers} workers · ${status.execution.elapsed_seconds.toFixed(1)} s.`:'Grid analysis continues while you browse.'});
 }
 function updateBatchProgress(data){
  const finished=Number(data.finished)||0,total=Number(data.total)||0,current=data.current_grid;
@@ -2238,7 +2282,7 @@ function updateBatchProgress(data){
  const sourceId=data.live_grid?.source.id||data.selected_file_ids?.[finished];
  setJobProgress('batch',{id:data.started_at||data.output_directory,state:data.state,sourceId,
   title:'Batch · '+data.state,name:data.current||data.live_grid?.source.name||'Batch grids',
-  detail:`${finished}/${total} images${current?' · '+count+' regions analysed':''}`,fraction:total?(finished+fraction)/total:null,
+  detail:`${finished}/${total} images${current?.component_progress?' · '+current.component_progress.stage:current?' · '+count+' regions analysed':''}`,fraction:total?(finished+fraction)/total:null,
   tooltip:$('batch-eta').textContent||'The current image updates as the batch advances.'});
 }
 function reconnectJobProgress(kind){
@@ -2543,7 +2587,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.fft_tukey&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('OMEGA')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}$('fft-mean').disabled=!config.fft_processing;if(!config.fft_processing)$('fft-mean').checked=true;updateFFTWindowControls();$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();await openInitialImage();}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;for(const mode of ['pca','nmf'])$('grid-mode').querySelector('option[value='+mode+']').disabled=!config.component_grid;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.fft_tukey&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('OMEGA')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}$('fft-mean').disabled=!config.fft_processing;if(!config.fft_processing)$('fft-mean').checked=true;updateFFTWindowControls();$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();await openInitialImage();}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 // Reuse the displayed spectrum and overlays; hovering never requests analysis.
@@ -4095,7 +4139,8 @@ function showBatchHover(row,x,y){
  },180);
 }
 function batchFolder(row){if(row.folder!==undefined)return row.folder;return row.id.includes('/')?row.id.slice(0,row.id.lastIndexOf('/')):'.'}
-function populateBatchFolders(rows=batchFiles){
+function batchProjectFiles(){const id=$('batch-project').value;return batchFiles.filter(row=>!id||(row.source_id||'demo')===id)}
+function populateBatchFolders(rows=batchProjectFiles()){
  const folders=new Set();
  for(const row of rows){const path=batchFolder(row);folders.add(path);if(path!=='.'){const parts=path.split('/');for(let i=1;i<parts.length;i++)folders.add(parts.slice(0,i).join('/'))}}
  const host=$('batch-folder-list');host.replaceChildren();
@@ -4121,14 +4166,14 @@ function matchesBatchFolders(row){
 }
 function matchingBatchFiles(){
  const terms=$('batch-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
- return batchFiles.filter(row=>matchesBatchFolders(row)&&terms.every(term=>`${row.sample} ${row.name} ${batchFolder(row)}`.toLocaleLowerCase().includes(term)));
+ return batchProjectFiles().filter(row=>matchesBatchFolders(row)&&terms.every(term=>`${row.sample} ${row.name} ${batchFolder(row)}`.toLocaleLowerCase().includes(term)));
 }
 function syncBatchSelection(){
  const eligible=batchFiles.filter(row=>row.eligible),selected=eligible.filter(row=>batchSelected.has(row.id)).length;
  $('batch-selection-count').textContent=batchFiles.length?`${selected} / ${eligible.length} eligible images selected${batchReviewReady?'':' · Review again after changing the cutoff'}`:'';
  $('batch-start').disabled=batchRunning||!batchReviewReady||selected===0;
  const shown=matchingBatchFiles().filter(row=>row.eligible),shownSelected=shown.filter(row=>batchSelected.has(row.id)).length;
- if(($('batch-search').value.trim()||batchFolderSelection!==null)&&batchFiles.length)$('batch-selection-count').textContent+=` · ${shownSelected} / ${shown.length} eligible matches selected · Selection buttons apply to matches`;
+ if(($('batch-project').value||$('batch-search').value.trim()||batchFolderSelection!==null)&&batchFiles.length)$('batch-selection-count').textContent+=` · ${shownSelected} / ${shown.length} eligible matches selected · Selection buttons apply to matches`;
  $('batch-select-only').disabled=!shown.length;
  $('batch-select-all').disabled=!shown.length||shownSelected===shown.length;
  $('batch-deselect-all').disabled=shownSelected===0;
@@ -4180,12 +4225,18 @@ function batchOptions(){return {cutoff:Number($('batch-cutoff').value)*1000,incl
 $('batch-preview').onclick=async()=>{
  try{
   if(!config.batch_grids)throw new Error('Restart TEM Workbench to enable batch grids.');
-  const data=await api('batch/preview',batchOptions());batchFiles=data.files;populateBatchFolders();batchSelected.clear();
+  const data=await api('batch/preview',batchOptions());batchFiles=data.files;
+  const project=$('batch-project'),selected=project.options.length>1?project.value:$('source-filter').value;
+  const projects=new Map(batchFiles.map(row=>[row.source_id||'demo',row.source_name||'Demo']));
+  project.replaceChildren(new Option('All projects',''),...[...projects].map(([id,name])=>new Option(name,id)));
+  project.value=projects.has(selected)?selected:'';
+  populateBatchFolders();batchSelected.clear();
   for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);
   batchReviewReady=true;renderBatchFiles();
   $('batch-status').textContent=`${batchFiles.filter(r=>r.eligible).length} eligible images. Tick one or more parent folders to select their eligible images, including subfolders. Flatten subfolders combines them in the folder summaries. Click a name or preview to select/deselect; hover to enlarge. Missing previews can be generated under Data Sources and Outputs. Calibration and sampling are checked when each image loads.`;
  }catch(e){message(e.message,true)}
 };
+$('batch-project').onchange=()=>{batchFolderSelection=null;populateBatchFolders();batchSelected.clear();for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);renderBatchFiles()};
 $('batch-cutoff').onchange=()=>{batchReviewReady=false;syncBatchSelection();$('batch-status').textContent='Review images again after changing the cutoff.'};
 function batchTimeEstimate(data,now=Date.now()){
  if(data.state!=='running')return null;
@@ -4219,6 +4270,8 @@ function renderBatch(data){
  reportJobError('batch',[data.output_directory,data.failures?.length||0],error);
  const running=data.state==='running';batchRunning=running;$('batch-cancel').disabled=!running;$('batch-preview').disabled=running;syncBatchSelection();
  $('batch-status').textContent=`${data.state} · ${data.finished||0}/${data.total||0} images · ${data.current||''}${data.current_grid?' · '+data.current_grid.processed+' regions analysed':''}${data.failures?.length?' · '+data.failures.length+' failure(s)':''}${data.error?' · '+data.error:''}${data.output_directory?' · Saved to '+data.output_directory:''}`;
+ const progress=data.current_grid?.component_progress;
+ if(progress&&running)$('batch-status').textContent+=` · ${progress.stage} ${progress.completed||0}/${progress.total||0}`;
  renderBatchTimeEstimate(data);
  updateBatchProgress(data);
  $('run-grid').disabled=running||isGridRunning()||!meta||isDiffraction();
@@ -4294,7 +4347,7 @@ $('batch-start').onclick=async()=>{
   const file_ids=batchFiles.filter(row=>row.eligible&&batchSelected.has(row.id)).map(row=>row.id);
   if(!file_ids.length)throw new Error('Select at least one image.');
   $('batch-start').disabled=true;
-  renderBatch(await api('batch/start',{...batchOptions(),file_ids,summary_folders:batchFolderSelection===null?[]:[...batchFolderSelection],flatten_folders:$('batch-flatten-folders').checked,settings:settings(),overlap:overlapRequest(),count:Number($('grid-count').value),minimum_nm:Number($('grid-min').value),adaptive:$('adaptive').checked,check_passing:$('check-passing').checked,workers:Number($('grid-workers').value),export_png:$('batch-png').checked,png_views,colors:{...colors},opacity:Number($('grid-opacity').value)/100}));
+  renderBatch(await api('batch/start',{...batchOptions(),file_ids,summary_folders:batchFolderSelection===null?[]:[...batchFolderSelection],flatten_folders:$('batch-flatten-folders').checked,settings:settings(),overlap:overlapRequest(),component:componentRequest(),count:Number($('grid-count').value),minimum_nm:Number($('grid-min').value),adaptive:$('adaptive').checked,check_passing:$('check-passing').checked,workers:Number($('grid-workers').value),export_png:$('batch-png').checked,png_views,colors:{...colors},opacity:Number($('grid-opacity').value)/100}));
  }catch(e){syncBatchSelection();message(e.message,true)}
 };
 $('batch-cancel').onclick=async()=>{try{renderBatch(await api('batch/cancel',{}))}catch(e){message(e.message,true)}};

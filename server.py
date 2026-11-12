@@ -164,7 +164,7 @@ class Workbench:
 
     def config_info(self):
         files = self.engine.catalog()
-        return {'sources': self.engine.sources, 'file_tracking': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'shared_spectra_pca': True, 'component_workers': True, 'component_batch': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'sources': self.engine.sources, 'file_tracking': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'shared_spectra_pca': True, 'component_workers': True, 'component_batch': True, 'component_grid': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'source_name_autosave': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'diffraction_processed_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -290,7 +290,10 @@ class Workbench:
         LOG.info('Saved region deleted: %s (%s)', deleted['region']['name'], deleted['region']['id'])
         return deleted
 
-    def grid(self, item, settings, count, adaptive, minimum, check_passing=False, workers=0, batch=False, engine=None, overlap=None):
+    def grid(self, item, settings, count, adaptive, minimum, check_passing=False, workers=0, batch=False, engine=None, overlap=None, component=None):
+        if component is not None:
+            import component_grid
+            return component_grid.start(self, item, settings, workers, batch, engine or self.engine, overlap, component)
         requested_workers = workers
         workers = worker_count(workers)
         settings = copy.deepcopy(settings)
@@ -541,7 +544,7 @@ class Workbench:
             result = {k: v for k, v in job.items() if k not in ['cancel', 'regions'] and not k.startswith('_')}
             result['cancelling'] = bool(job['cancel'] and job['state'] == 'running')
             regions = list(job['regions'])
-            result['can_rescore'] = (job['state'] != 'running' and
+            result['can_rescore'] = (not job.get('component') and job['state'] != 'running' and
                                      all('_fit_cache' in r for r in regions))
             result['regions'] = ([{k: v for k, v in r.items() if not k.startswith('_')} for r in regions] if full else
                                  [{'id': r['id'], 'roi': r['roi'], 'label': r['classification']['label'],
@@ -559,6 +562,8 @@ class Workbench:
                 raise ValueError('This grid is no longer in memory.')
             if job['state'] == 'running':
                 raise ValueError('Finish or cancel the grid before adjusting its penalty.')
+            if job.get('component'):
+                raise ValueError('Rerun PCA/NMF mapping to apply changed fitting settings.')
             if job['settings'].get('material') == 'unknown':
                 strength = 0.
             missing_weight = peak_evidence.missing_weight(job['settings']) if missing_weight is None else peak_evidence.validate_missing_weight(missing_weight)
@@ -760,7 +765,7 @@ class Workbench:
             if self.jobs.get(body['job_id'], {}).get('state') == 'running':
                 raise ValueError('Finish or cancel the grid before saving.')
             result = self.status(body['job_id'], full=True)
-            kind = 'overlap_map' if result['grid'].get('mode') == 'overlap' else 'grid'
+            kind = result['grid']['component_method']+'_map' if result['grid'].get('component_method') else 'overlap_map' if result['grid'].get('mode') == 'overlap' else 'grid'
         else:
             with self.lock:
                 item = self.engine.load(body['file_id'])
@@ -1049,7 +1054,7 @@ def make_handler(app):
                     with app.lock:
                         item=app.engine.load(body['file_id'])
                         _, settings=app.engine.validate(item, body['roi'], body.get('settings', {}))
-                        started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)), body.get('workers', 0), overlap=body.get('overlap'))
+                        started = app.grid(item, settings, int(body.get('count', 20)), bool(body.get('adaptive', True)), float(body.get('minimum_nm', 5)), bool(body.get('check_passing', False)), body.get('workers', 0), overlap=body.get('overlap'), component=body.get('component'))
                     self.send(started)
                 elif self.path == '/api/rescore-grid':
                     self.send(app.rescore(body['job_id'], body['scale_penalty_strength'], body.get('peak_evidence_weight'), body.get('ca_penalty_strength'), body.get('peak_evidence_half_weight_nm_inv'), body.get('missing_peak_weight'), body.get('brightness_grouping_weight'), body.get('double_diffraction_weight')))
