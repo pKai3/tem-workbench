@@ -1109,3 +1109,9 @@ Validation: focused mixed-node tests check unchanged beta/shared qualities, wide
 Implemented on the experimental branch: “Top signals” view shows the first X components in existing variance/contribution order, with compact spatial maps above spectra. Clicking a component heading returns to single-signal inspection. Colour choices: automatic, red–blue, purple–green, Viridis, Magma and greyscale, applied to component maps and spectra. Signed PCA ranges remain symmetric about zero; NMF map contrast and opacity remain adjustable. Component spectra include a compact display-only raster; full-precision exports and decomposition/matching remain unchanged.
 
 Validation: 15 focused Python tests, JavaScript checks and browser exercises with the latest 0274 PCA/NMF exports passed. Checked palette changes, component-count limits, return to single-signal inspection and a narrow viewport without horizontal overflow. No release requested.
+
+12 November follow-up: comparison defaults to all computed components and has an All button plus “of N computed” beside the count. An explicit Top signals count remains a display preference; the Components control explains that increasing the decomposition count requires rerunning. No four-view cap or analysis change.
+
+Multi-map inspection: clicking any compact spatial map selects the same sampled window across all maps and updates the original/broadened/reconstructed spectrum comparison. A white window outline is shared across maps; focused maps support arrow-key navigation without leaving comparison mode.
+
+Validation: PCA and NMF browser checks cover All/count controls through 16 signals, compact-map selection, linked sample requests, arrow-key focus retention, palette changes and narrow-screen layout.

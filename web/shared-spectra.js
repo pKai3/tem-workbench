@@ -36,7 +36,7 @@ const PcaView={
 if(typeof module!=='undefined')module.exports=PcaView;
 if(typeof document!=='undefined'){
  const initPca=()=>{
-  let snapshot=null,context='',job=null,data=null,selected=new Set(),index=0,epoch=0,sampleEpoch=0,pollTimer=null,sourceImage=null,exporting=false,groupEpoch=0;
+  let snapshot=null,context='',job=null,data=null,selected=new Set(),index=0,epoch=0,sampleEpoch=0,pollTimer=null,sourceImage=null,exporting=false,groupEpoch=0,showAllSignals=true;
   const dialog=$('pca-dialog'),form=$('pca-form');
   const sourceContext=()=>JSON.stringify([fileId,meta?.sha256_pixels,meta?.pixel_x_nm,meta?.pixel_y_nm,settings()]);
   const notify=(message,error=false)=>{$('pca-status').textContent=message;$('pca-status').classList.toggle('error',error)};
@@ -86,8 +86,8 @@ if(typeof document!=='undefined'){
     const card=document.createElement('article');card.className='pca-signal';
     const title=document.createElement('button');title.type='button';title.textContent=`${signed?'PC':'NMF'} ${c.index+1} · ${(100*c.variance).toFixed(1)}% ${signed?'variance':'contribution'}`;
     title.onclick=()=>{$('pca-component').value=String(c.index);$('pca-map-mode').value='component';$('pca-layout').value='single';drawMap()};
-    const map=document.createElement('canvas');map.width=map.height=350;map.setAttribute('aria-label',title.textContent+' spatial map');map.setAttribute('role','img');
-    const key=document.createElement('div');key.className='pca-mini-key';const range=paintMap(map,c.scores,signed);rangeKey(key,range,signed);
+    const map=document.createElement('canvas');map.width=map.height=350;map.setAttribute('aria-label',title.textContent+' spatial map');map.setAttribute('role','img');map.className='pca-mini-map';map.dataset.component=String(c.index);map.tabIndex=0;map.title='Click a location to inspect its spectrum; arrow keys move between windows';map.onclick=selectMapWindow;map.onkeydown=stepMapWindow;
+    const key=document.createElement('div');key.className='pca-mini-key';const range=paintMap(map,c.scores,signed,true);rangeKey(key,range,signed);
     const label=document.createElement('div');label.className='hint';label.textContent=`Spectrum · ±${data.plan.g_max} nm⁻¹`;
     const spectrum=document.createElement('canvas');spectrum.setAttribute('role','img');spectrum.setAttribute('aria-label',title.textContent+' spectrum');spectrumCanvas(spectrum,c);
     card.append(title,map,key,label,spectrum);box.append(card);
@@ -119,7 +119,7 @@ if(typeof document!=='undefined'){
    }catch(e){if(serial===sampleEpoch)notify(e.message,true)}
   }
   function showResult(r){
-   data=r;$('pca-top').max=String(r.components.length);$('pca-top').value=String(PcaView.topCount($('pca-top').value,r.components.length));groupEpoch++;$('nmf-group-detail').hidden=true;selected=new Set(r.components.map(c=>c.index));index=Math.floor(r.plan.count/2);
+   data=r;$('pca-top').max=String(r.components.length);$('pca-top').value=String(showAllSignals?r.components.length:PcaView.topCount($('pca-top').value,r.components.length));$('pca-available').textContent=`of ${r.components.length} computed`;groupEpoch++;$('nmf-group-detail').hidden=true;selected=new Set(r.components.map(c=>c.index));index=Math.floor(r.plan.count/2);
    $('pca-results').hidden=false;$('pca-component').replaceChildren();$('pca-group').replaceChildren();$('pca-scree').replaceChildren();
    r.components.forEach(c=>{
     const opt=document.createElement('option');opt.value=String(c.index);opt.textContent=`${r.decomposition==='nmf'?'NMF':'PC'} ${c.index+1}`;$('pca-component').append(opt);
@@ -169,18 +169,25 @@ if(typeof document!=='undefined'){
   $('pca-method').onchange=()=>{$('pca-run').textContent='Run '+$('pca-method').value.toUpperCase()};
   $('pca-cancel').onclick=async()=>{if(!job?.id)return;try{await api('pca/cancel',{id:job.id});notify('Cancelling after the current FFT, matrix step or template fit…')}catch(e){notify(e.message,true)}};
   $('pca-close').onclick=()=>dialog.close();dialog.addEventListener('close',()=>document.documentElement.classList.remove('pca-open'));
-  for(const id of ['pca-map-mode','pca-component','pca-opacity','pca-contrast','pca-layout','pca-top','pca-palette'])$(id).addEventListener('input',drawMap);
-  $('pca-map').onclick=event=>{
+  for(const id of ['pca-map-mode','pca-component','pca-opacity','pca-contrast','pca-layout','pca-palette'])$(id).addEventListener('input',drawMap);
+  $('pca-top').addEventListener('input',()=>{showAllSignals=false;drawMap()});
+  $('pca-show-all').onclick=()=>{if(!data)return;showAllSignals=true;$('pca-top').value=String(data.components.length);drawMap()};
+  function refreshWindowSelection(canvas){
+   const component=canvas.dataset.component;drawMap();
+   const target=component===undefined?$('pca-map'):$('pca-overview').querySelector(`[data-component="${component}"]`);target?.focus({preventScroll:true});inspect();
+  }
+  function selectMapWindow(event){
    if(!data||running())return;const canvas=event.currentTarget,box=canvas.getBoundingClientRect(),p=data.plan,[h,w]=p.image_shape;
    const scale=Math.min(box.width/w,box.height/h),ox=(box.width-w*scale)/2,oy=(box.height-h*scale)/2;
    const x=(event.clientX-box.left-ox)/scale,y=(event.clientY-box.top-oy)/scale;
    if(x<0||y<0||x>w||y>h)return;
-   index=PcaView.nearest(p,x,y);drawMap();inspect();
+   index=PcaView.nearest(p,x,y);refreshWindowSelection(canvas);
   };
-  $('pca-map').onkeydown=event=>{
+  function stepMapWindow(event){
    if(!data||running())return;const dx={ArrowLeft:-1,ArrowRight:1,ArrowUp:-data.plan.xs.length,ArrowDown:data.plan.xs.length}[event.key];
-   if(dx===undefined)return;event.preventDefault();index=Math.max(0,Math.min(data.plan.count-1,index+dx));drawMap();inspect();
+   if(dx===undefined)return;event.preventDefault();index=Math.max(0,Math.min(data.plan.count-1,index+dx));refreshWindowSelection(event.currentTarget);
   };
+  $('pca-map').onclick=selectMapWindow;$('pca-map').onkeydown=stepMapWindow;
   function showFits(){
    const box=$('nmf-fit-results');box.replaceChildren();
    const fits=data?.fits;
