@@ -179,7 +179,7 @@
   <div id="pca-overview" hidden></div>
   <div class="pca-views" id="pca-single">
    <figure><figcaption>Spatial variation · click a sampled location</figcaption><canvas id="pca-map" width="700" height="700" tabindex="0" aria-label="Component spatial map; arrow keys select a window"></canvas><div id="pca-map-key" class="hint"></div></figure>
-   <figure><figcaption id="pca-spectrum-label">Component spectrum · blue negative, red positive</figcaption><canvas id="pca-spectrum" width="256" height="256" role="img" aria-label="Selected component spectrum"></canvas><div id="pca-band" class="hint"></div></figure>
+   <figure><figcaption id="pca-spectrum-label">Component spectrum · blue negative, red positive</figcaption><canvas id="pca-spectrum" width="256" height="256" role="img" aria-label="Selected component spectrum"></canvas><div id="pca-band" class="hint"></div><button id="nmf-inspect-component" type="button" hidden>Inspect crystal fits</button></figure>
   </div>
   <details id="pca-inspect" open><summary id="pca-sample-label">Selected window</summary><div class="pca-samples">
    <figure><figcaption>Original spectrum</figcaption><img id="pca-original" alt="" role="img" aria-label="Original local spectrum"></figure>
@@ -192,8 +192,12 @@
     <span title="Every nonempty subset is tested using the material, enabled phases and scale settings captured at Run. Group weights are mean NMF coefficients in co-occurring windows, or global means if none. No co-occurrence filter is applied. Position and scale scoring only; no weak/missing-peak, brightness or double-diffraction adjustments. These ranks are not directly comparable to ordinary grid ranks.">ⓘ</span>
    </div>
    <p id="nmf-fit-note" class="hint"></p>
+   <section id="nmf-group-detail" hidden>
+    <div class="pca-controls"><strong id="nmf-group-label"></strong><button id="nmf-group-close" type="button">Close inspector</button></div>
+    <p id="nmf-group-status" role="status"></p>
+    <div id="nmf-group-content" hidden><figure><canvas id="nmf-group-spectrum" width="600" height="600" role="img" aria-label="NMF spectrum with detected peaks and candidate predictions"></canvas><figcaption>White crosses: detected profiles · coloured diamonds: predictions · dashed: below screen</figcaption></figure><div id="nmf-support"></div></div>
+   </section>
    <div id="nmf-fit-results" class="nmf-fit-results"></div>
-   <div id="nmf-group-detail" hidden><figure><figcaption id="nmf-group-label"></figcaption><img id="nmf-group-spectrum" alt="Combined NMF spectrum"></figure><div id="nmf-support"></div></div>
   </section>
   <details><summary>Mean spectra and interpretation</summary><div class="pca-samples"><figure><figcaption>Original mean spectrum</figcaption><img id="pca-raw-mean" alt="" role="img" aria-label="Mean original spectrum"></figure><figure><figcaption id="pca-mean-label">Mean PCA input</figcaption><img id="pca-mean" alt="" role="img" aria-label="Mean decomposition spectrum"></figure></div>
    <p>PCA components describe signed differences from the mean. NMF components are nonnegative spectral factors; neither is a crystal-phase assignment. One distorted lattice can occupy several components; two phases can share one. Group activity combines selected score magnitudes without aligning crystals. Smoothing may hide nearby reflections. Compare the original spectra and rerun with smoothing off before interpreting a boundary. Overlapping windows are correlated.</p>

@@ -48,7 +48,7 @@ if(typeof document!=='undefined'){
    $('nmf-fit').disabled=!data||running()||exporting;$('nmf-cutoff').disabled=running()||exporting;
    $('pca-cancel').disabled=!running();$('pca-export').disabled=!data||running()||exporting;
   }
-  function clearResults(){data=null;selected.clear();$('pca-results').hidden=true;sampleEpoch++;sourceImage=null;controls()}
+  function clearResults(){data=null;selected.clear();$('pca-results').hidden=true;sampleEpoch++;groupEpoch++;sourceImage=null;controls()}
   function options(){return {method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value}}
   const palette=signed=>$('pca-palette').value==='auto'?(signed?'rdbu':'viridis'):$('pca-palette').value;
   function spectrumCanvas(canvas,component){
@@ -85,11 +85,11 @@ if(typeof document!=='undefined'){
    for(const c of data.components.slice(0,count)){
     const card=document.createElement('article');card.className='pca-signal';
     const title=document.createElement('button');title.type='button';title.textContent=`${signed?'PC':'NMF'} ${c.index+1} · ${(100*c.variance).toFixed(1)}% ${signed?'variance':'contribution'}`;
-    title.onclick=()=>{$('pca-component').value=String(c.index);$('pca-map-mode').value='component';$('pca-layout').value='single';drawMap()};
+    title.onclick=()=>{if(!signed){inspectComponent(c.index);return}$('pca-component').value=String(c.index);$('pca-map-mode').value='component';$('pca-layout').value='single';drawMap()};
     const map=document.createElement('canvas');map.width=map.height=350;map.setAttribute('aria-label',title.textContent+' spatial map');map.setAttribute('role','img');map.className='pca-mini-map';map.dataset.component=String(c.index);map.tabIndex=0;map.title='Click a location to inspect its spectrum; arrow keys move between windows';map.onclick=selectMapWindow;map.onkeydown=stepMapWindow;
     const key=document.createElement('div');key.className='pca-mini-key';const range=paintMap(map,c.scores,signed,true);rangeKey(key,range,signed);
     const label=document.createElement('div');label.className='hint';label.textContent=`Spectrum · ±${data.plan.g_max} nm⁻¹`;
-    const spectrum=document.createElement('canvas');spectrum.setAttribute('role','img');spectrum.setAttribute('aria-label',title.textContent+' spectrum');spectrumCanvas(spectrum,c);
+    const spectrum=document.createElement('canvas');spectrum.setAttribute('role','img');spectrum.setAttribute('aria-label',title.textContent+' spectrum');spectrumCanvas(spectrum,c);if(!signed)componentAction(spectrum,c.index);
     card.append(title,map,key,label,spectrum);box.append(card);
    }
   }
@@ -102,6 +102,7 @@ if(typeof document!=='undefined'){
    const range=paintMap($('pca-map'),values,signed,true);rangeKey($('pca-map-key'),range,signed);
    $('pca-contrast').disabled=overview?data.decomposition!=='nmf':signed;
    spectrumCanvas($('pca-spectrum'),data.components[component]);
+   $('nmf-inspect-component').hidden=data.decomposition!=='nmf';componentAction($('pca-spectrum'),component);
    $('pca-spectrum-label').textContent=data.decomposition==='nmf'?`NMF ${component+1} spectrum · nonnegative`:`PC ${component+1} spectrum · signed, zero at colour midpoint`;
    if(overview)drawOverview();
    for(const b of $('pca-scree').children)b.setAttribute('aria-pressed',String(Number(b.dataset.index)===component));
@@ -207,17 +208,63 @@ if(typeof document!=='undefined'){
    const page=()=>{appendRows(sorted.slice(shown,shown+100));shown+=100;more.hidden=shown>=sorted.length;more.textContent=`Show next ${Math.min(100,sorted.length-shown)} combinations`};
    more.onclick=page;page();box.append(table,more);
   }
+  function componentAction(canvas,component){
+   const enabled=data?.decomposition==='nmf';canvas.setAttribute('role',enabled?'button':'img');canvas.tabIndex=enabled?0:-1;
+   canvas.title=enabled?'Inspect detected peaks and crystal fits':'';
+   canvas.onclick=enabled?()=>inspectComponent(component):null;
+   canvas.onkeydown=enabled?event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();inspectComponent(component)}}:null;
+  }
+  function inspectComponent(component){
+   const group=data?.fits?.groups.find(g=>g.components.length===1&&g.components[0]===component);
+   inspectGroup(group||{components:[component],support_checks:[]});
+  }
+  $('nmf-inspect-component').onclick=()=>inspectComponent(Number($('pca-component').value));
+  $('nmf-group-close').onclick=()=>{groupEpoch++;$('nmf-group-detail').hidden=true};
   async function inspectGroup(group){
-   if(running())return;const serial=++groupEpoch;
+   if(!data||running())return;const serial=++groupEpoch,jobId=job.id;
+   const pane=$('nmf-group-detail'),status=$('nmf-group-status');pane.hidden=false;$('nmf-group-content').hidden=true;
+   $('nmf-group-label').textContent=`NMF ${group.components.map(i=>i+1).join(' + ')} · crystal fits`;
+   status.textContent='Detecting peaks and fitting candidates…';status.classList.remove('error');pane.scrollIntoView({block:'nearest'});
    try{
-    const detail=await api('pca/group',{id:job.id,components:group.components});if(serial!==groupEpoch)return;
-    $('nmf-group-detail').hidden=false;$('nmf-group-spectrum').src=detail.spectrum.image;
-    $('nmf-group-label').textContent=`Components ${group.components.map(i=>i+1).join(' + ')} · combined spectrum`;
+    const detail=await api('pca/group',{id:jobId,components:group.components,options:{peak_fraction:Number($('nmf-cutoff').value)}});
+    if(serial!==groupEpoch||job?.id!==jobId)return;
+    status.textContent=`${detail.peaks.length} detected profiles · cutoff ${detail.peak_fraction} · searching ${detail.phases.join(' + ')||'no phases'} · ${detail.cooccurring_windows} co-occurring windows`;
+    $('nmf-group-content').hidden=false;
     const support=$('nmf-support');support.replaceChildren();
-    const note=document.createElement('p');note.textContent=detail.cooccurring_windows?`${detail.cooccurring_windows} co-occurring windows. Checks below reuse the original spectra without refitting.`:'No co-occurring windows: global mean coefficients used. Treat this fit as hypothetical.';support.append(note);
-    for(const check of group.support_checks){const b=document.createElement('button');b.type='button';b.textContent=`Window ${check.window+1}: ${check.matched}/${check.peak_count} matched (${(100*check.coverage).toFixed(0)}%)`;b.onclick=()=>{index=check.window;selected=new Set(group.components);for(const input of $('pca-group').querySelectorAll('input'))input.checked=selected.has(Number(input.value));$('pca-map-mode').value='group';drawMap();inspect()};support.append(b)}
-    for(const model of group.candidates){const line=document.createElement('p');line.textContent=`${model.phase} [${model.zone_3index.join(' ')}] · rank ${model.score.toFixed(3)} · ${model.valid?'passes':'below'} positional screen${model.scale_note?' · '+model.scale_note:''}`;support.append(line)}
-   }catch(e){if(serial===groupEpoch)notify(e.message,true)}
+    const note=document.createElement('p');note.className='hint';note.textContent='NMF position − scale scoring. Select individual fits below.';
+    note.title='Uses the material and scale settings captured at Run, and the saved combination cutoff when available. Uniform peak weights; no weak/missing-peak, brightness or double-diffraction scoring. Up to five distinct fits per phase are retained. Neither components nor co-occurrence imply separate phases.';support.append(note);
+    if(!detail.cooccurring_windows){const warning=document.createElement('p');warning.textContent='No co-occurring windows: this sum uses global means and is hypothetical.';support.append(warning)}
+    const chosen=new Set(detail.candidates.length?[0]:[]),canvas=$('nmf-group-spectrum'),ctx=canvas.getContext('2d'),img=new Image();
+    const colours={BCC:'#36ff58',HCP:'#79bcff',OMEGA:'#ffb54a',FCC:'#ff79c6',ORT:'#66dfbc'};
+    const xy=q=>[(q[0]/detail.g_max+1)*canvas.width/2,(1-q[1]/detail.g_max)*canvas.height/2];
+    function draw(){
+     if(serial!==groupEpoch||!img.complete||!img.naturalWidth)return;
+     ctx.drawImage(img,0,0,canvas.width,canvas.height);
+     for(const i of chosen){const m=detail.candidates[i];ctx.strokeStyle=colours[m.phase]||'#ddd';ctx.lineWidth=1.8;ctx.setLineDash(m.valid?[]:[4,3]);
+      for(const node of m.predicted_nodes)for(const sign of [1,-1]){const [x,y]=xy(node.q.map(v=>v*sign));ctx.beginPath();ctx.moveTo(x,y-7);ctx.lineTo(x+7,y);ctx.lineTo(x,y+7);ctx.lineTo(x-7,y);ctx.closePath();ctx.stroke()}}
+     ctx.strokeStyle='#fff';ctx.lineWidth=1.3;ctx.setLineDash([]);
+     for(const peak of detail.peaks)for(const sign of [1,-1]){const [x,y]=xy([sign*peak.qx,sign*peak.qy]);ctx.beginPath();ctx.moveTo(x-4,y);ctx.lineTo(x+4,y);ctx.moveTo(x,y-4);ctx.lineTo(x,y+4);ctx.stroke()}
+    }
+    img.onload=draw;img.src=detail.spectrum.image;
+    const buttons=document.createElement('div'),checks=[];
+    for(const [text,select] of [['Best fit',()=>detail.candidates.length?[0]:[]],['All passing',()=>detail.candidates.flatMap((m,i)=>m.valid?[i]:[])],['Peaks only',()=>[]]]){const button=document.createElement('button');button.type='button';button.textContent=text;button.onclick=()=>{chosen.clear();select().forEach(i=>chosen.add(i));checks.forEach((c,i)=>c.checked=chosen.has(i));draw()};buttons.append(button)}
+    support.append(buttons);
+    if(!detail.candidates.length){const empty=document.createElement('p');empty.textContent='No candidate survived the search gates. This does not establish that the phase is absent.';empty.title='The search seeds from the strongest 16 profiles, rejects initial coverage below 20%, and needs enough compatible reflections. Diffuse maxima can crowd out useful seeds.';support.append(empty)}
+    else{
+     const wrap=document.createElement('div');wrap.className='nmf-fit-results';const table=document.createElement('table'),head=table.createTHead().insertRow();
+     ['Show','Candidate / rotation','Rank','Screen','Matched','Coverage','RMS, nm⁻¹','Cell, nm'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th)});
+     const body=table.createTBody();
+     detail.candidates.forEach((m,i)=>{const row=body.insertRow(),check=document.createElement('input');check.type='checkbox';check.checked=chosen.has(i);check.setAttribute('aria-label',`Overlay ${m.phase} [${m.zone_3index.join(' ')}] ${m.rotation_deg.toFixed(1)} degrees`);check.onchange=()=>{if(check.checked)chosen.add(i);else chosen.delete(i);draw()};row.insertCell().append(check);checks.push(check);
+      const name=row.insertCell();name.textContent=`${m.phase} [${m.zone_3index.join(' ')}] · ${m.rotation_deg.toFixed(1)}°`;name.style.color=colours[m.phase]||'#ddd';
+      const rank=row.insertCell();rank.textContent=m.score.toFixed(4);rank.title=`Position ${(m.position_score??m.score).toFixed(4)} − scale ${(m.scale_penalty??0).toFixed(4)}`;
+      row.insertCell().textContent=m.valid?'Pass':m.rejection_reasons.join('; ')||'Below screen';
+      row.insertCell().textContent=`${m.matched_profile_count}/${detail.peaks.length}`;
+      row.insertCell().textContent=`${(100*m.coverage).toFixed(0)}%`;row.insertCell().textContent=m.rms_nm_inv.toFixed(3);
+      const cell=row.insertCell();cell.textContent=['a','b','c'].filter(a=>m['fitted_'+a+'_nm']!=null).map(a=>`${a} ${m['fitted_'+a+'_nm'].toFixed(4)}`).join(' · ')||'—';cell.title=m.scale_note||'';
+     });wrap.append(table);support.append(wrap);
+    }
+    for(const check of group.support_checks||[]){const b=document.createElement('button');b.type='button';b.textContent=`Window ${check.window+1}: ${check.matched}/${check.peak_count} matched`;b.title='Check of the best combination model against the original window, without refitting';b.onclick=()=>{index=check.window;selected=new Set(group.components);for(const input of $('pca-group').querySelectorAll('input'))input.checked=selected.has(Number(input.value));$('pca-map-mode').value='group';drawMap();inspect()};support.append(b)}
+   }catch(e){if(serial===groupEpoch){status.textContent=e.message;status.classList.add('error')}}
   }
   $('nmf-fit').onclick=async()=>{
    if(!data||running())return;const serial=++epoch;groupEpoch++;sampleEpoch++;

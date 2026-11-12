@@ -93,10 +93,37 @@ class NmfTests(unittest.TestCase):
         self.assertGreater(group['support_checks'][0]['coverage'],.9)
         self.assertLessEqual(group['peak_count'],len(q))
         json.dumps(fits,allow_nan=False)
+        detail=fitting.group_detail(r,[1,0,1],[t],{'peak_fraction':.99})
+        self.assertEqual(detail['components'],[0,1])
+        self.assertEqual(detail['peak_fraction'],fits['peak_fraction'])
+        self.assertEqual(len(detail['peaks']),group['peak_count'])
+        self.assertEqual(detail['phases'],['BCC'])
+        self.assertAlmostEqual(detail['candidates'][0]['score'],best['score'])
+        self.assertEqual(detail['candidates'][0]['rejection_reasons'],[])
+        self.assertTrue(detail['candidates'][0]['predicted_nodes'])
+        self.assertEqual(len(detail['candidates'][0]['matches']),best['matched_profile_count'])
+        json.dumps(detail,allow_nan=False)
+
         r['settings'].update(scale_mode='auto_uniform',scale_penalty_strength=.1)
         best=fitting.fit_groups(r,[t],{})['groups'][-1]['candidates'][0]
         self.assertIn('scale_penalty',best)
         self.assertAlmostEqual(best['fitted_a_nm'],.33,delta=.01)
+
+    def test_inspector_no_fit_validation_and_reasons(self):
+        r=factor_result()
+        detail=fitting.group_detail(r,[0],[],{'peak_fraction':.3})
+        self.assertTrue(detail['peaks'])
+        self.assertEqual(detail['candidates'],[])
+        self.assertEqual(detail['peak_fraction'],.3)
+        self.assertNotIn('fits',r)  # Inspection does not replace exhaustive results.
+        for ids in ([],[-1],[True],[2],'0'):
+            with self.assertRaises(ValueError):fitting.group_detail(r,ids,[])
+        model=dict(matched_profile_count=6,nonparallel_spread_sine=1.,coverage=6/17,
+                   position_score=.2176,score=.19958)
+        self.assertEqual(fitting.screen_reasons(model),['Rank ≤ 0.20'])
+        model.update(coverage=.27,position_score=.18,score=.16)
+        self.assertIn('Peak coverage ≤ 30%',fitting.screen_reasons(model))
+        self.assertIn('Position score ≤ 0.20',fitting.screen_reasons(model))
 
     def test_export_and_background_fit_cancel_preserve_factors(self):
         y,x=np.indices((512,512));image=np.cos(2*np.pi*.04*4*x)+np.cos(2*np.pi*.04*5*y)*(x>256)

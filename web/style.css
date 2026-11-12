@@ -980,13 +980,17 @@ html.pca-open,html.pca-open body{overflow:hidden}
 .nmf-fit-results {overflow:auto;max-height:420px}
 .nmf-fit-results table {width:100%;font-size:12px}
 .nmf-fit-results th {position:sticky;top:0;background:#13212c;z-index:1}
-#nmf-group-detail {display:flex;gap:20px;align-items:center;margin-top:12px}
-#nmf-group-detail[hidden] {display:none}
-#nmf-group-detail figure {margin:0;max-width:320px;flex:1}
-#nmf-group-spectrum {width:100%}
-#nmf-support {flex:1}
+#nmf-group-detail {margin:16px 0;padding:12px;border:1px solid #385364;border-radius:8px}
+#nmf-group-detail[hidden],#nmf-group-content[hidden] {display:none}
+#nmf-group-content {display:flex;gap:18px;align-items:start}
+#nmf-group-content figure {margin:0;flex:1;min-width:200px;max-width:520px}
+#nmf-group-spectrum {width:100%;display:block}
+#nmf-support {flex:1;min-width:0}
 #nmf-support button {margin:4px}
-@media(max-width:750px){#nmf-group-detail{flex-direction:column}}
+#nmf-support .nmf-fit-results {max-height:500px}
+#nmf-support table {min-width:650px}
+#pca-overview canvas[role="button"],#pca-spectrum[role="button"] {cursor:pointer}
+@media(max-width:850px){#nmf-group-content{flex-direction:column}#nmf-support{width:100%}}
 
 /* Compact component comparison: maps above spectra. */
 #pca-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;align-items:start}

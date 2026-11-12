@@ -917,7 +917,10 @@ def make_handler(app):
                     self.send(app.fit_nmf(body))
                 elif self.path == '/api/pca/group':
                     from nmf_fitting import group_detail
-                    self.send(group_detail(app.pca.completed(body['id']),body['components']))
+                    result=app.pca.completed(body['id'])
+                    with app.lock:
+                        templates=copy.deepcopy(app.engine.templates_for(result['settings']))
+                    self.send(group_detail(result,body['components'],templates,body.get('options',{})))
                 elif self.path == '/api/pca/cancel':
                     with app.pca.lock:
                         app.pca.status(body['id'])

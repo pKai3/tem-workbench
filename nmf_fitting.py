@@ -68,6 +68,23 @@ def compact(model):
     return out
 
 
+def search_candidates(result, peaks, templates, cancel=None, progress=None):
+    """Shared search for exhaustive summaries and on-demand inspection."""
+    p=result['plan'];s=result['settings']
+    tolerance=max(.1,1/min(p['window_nm']))
+    candidates=[]
+    for ti,template in enumerate(templates):
+        check_cancel(cancel)
+        if progress:progress(ti+1,len(templates))
+        args=dict(bcc_a=s.get('bcc_a',.330),fcc_a=s.get('fcc_a',.417),g_min=p['g_min'],g_max=p['g_max'],omega_falloff_multiplier=s.get('omega_falloff_multiplier',1.))
+        if s.get('scale_mode','fixed')=='fixed':
+            found=core.search(peaks,[template],s.get('scale',1.),tolerance,**args)
+        else:
+            found=scale_fitting.search(peaks,[template],tolerance,s['scale_mode'],scale_penalty_strength=s.get('scale_penalty_strength',.1),ca_penalty_strength=s.get('ca_penalty_strength',.1),**args)
+        candidates.extend(found)
+    return candidates
+
+
 def fit_groups(result, templates, options, cancel=None, progress=None):
     fraction=validate_options(result,options);p=result['plan'];s=result['settings']
     count=len(result['components']);total=(1<<count)-1
@@ -84,16 +101,9 @@ def fit_groups(result, templates, options, cancel=None, progress=None):
         check_cancel(cancel)
         ids=[i for i in range(count) if mask & (1<<i)]
         spectrum,coefficients,common,windows=group_spectrum(result,ids)
-        peaks=detect_peaks(spectrum,result,fraction);candidates=[]
-        for ti,template in enumerate(templates):
-            check_cancel(cancel)
-            if progress:progress(mask-1,total,f'Group {mask}/{total} · template {ti+1}/{len(templates)}')
-            args=dict(bcc_a=s.get('bcc_a',.330),fcc_a=s.get('fcc_a',.417),g_min=p['g_min'],g_max=p['g_max'],omega_falloff_multiplier=s.get('omega_falloff_multiplier',1.))
-            if s.get('scale_mode','fixed')=='fixed':
-                found=core.search(peaks,[template],s.get('scale',1.),tolerance,**args)
-            else:
-                found=scale_fitting.search(peaks,[template],tolerance,s['scale_mode'],scale_penalty_strength=s.get('scale_penalty_strength',.1),ca_penalty_strength=s.get('ca_penalty_strength',.1),**args)
-            candidates.extend(found)
+        peaks=detect_peaks(spectrum,result,fraction)
+        candidates=search_candidates(result,peaks,templates,cancel,
+            (lambda done,total_templates:progress(mask-1,total,f'Group {mask}/{total} · template {done}/{total_templates}')) if progress else None)
         candidates=core.retain(candidates,topn=1)
         record=dict(components=ids,coefficients=coefficients.tolist(),cooccurring_windows=common,
                     peak_count=len(peaks),candidates=[compact(m) for m in candidates],support_checks=[])
@@ -111,8 +121,29 @@ def fit_groups(result, templates, options, cancel=None, progress=None):
     return fits
 
 
-def group_detail(result, ids):
+def screen_reasons(model):
+    reasons=[]
+    if model['matched_profile_count']<4:reasons.append('Fewer than 4 matched profiles')
+    if model['nonparallel_spread_sine']<=.5:reasons.append('Limited independent directions')
+    if model['coverage']<=.30:reasons.append('Peak coverage ≤ 30%')
+    if model.get('position_score',model['score'])<=.20:reasons.append('Position score ≤ 0.20')
+    if model['score']<=.20:reasons.append('Rank ≤ 0.20')
+    return reasons
+
+
+def group_detail(result, ids, templates, options=None):
     if not isinstance(ids,list) or not ids or any(type(i) is not int or not 0<=i<len(result['components']) for i in ids):
         raise ValueError('Choose a valid component group.')
-    spectrum,coefficients,common,windows=group_spectrum(result,sorted(set(ids)))
-    return dict(spectrum=spectrum_image(spectrum,result['plan']),cooccurring_windows=common,windows=windows)
+    ids=sorted(set(ids))
+    # An existing combination table must reproduce its saved detection cutoff.
+    fraction=validate_options(result, result.get('fits') or options or {})
+    spectrum,coefficients,common,windows=group_spectrum(result,ids)
+    peaks=detect_peaks(spectrum,result,fraction)
+    candidates=core.retain(search_candidates(result,peaks,templates),topn=5)
+    models=[dict(**compact(m),rejection_reasons=screen_reasons(m),
+                 predicted_nodes=m['predicted_nodes'],matches=m['matches']) for m in candidates]
+    return dict(spectrum=spectrum_image(spectrum,result['plan']),components=ids,
+                coefficients=coefficients.tolist(),cooccurring_windows=common,windows=windows,
+                peaks=peaks,candidates=models,peak_fraction=fraction,
+                phases=list(dict.fromkeys(t['phase'] for t in templates)),
+                g_max=result['plan']['g_max'],tolerance_nm_inv=max(.1,1/min(result['plan']['window_nm'])))
