@@ -1190,3 +1190,20 @@ The NMF inspector distinguishes assigned predictions (solid) from unassigned pre
 Signed PCA lobe fitting is **proposed, not implemented**: preserve both signs, retain separate same-phase orientations, and validate hypotheses against all original windows, including opposite-sign/mean-present signals. See [method and proposal details](local-fft-pca.md). This does not approve the separate automatic component-count roadmap item or the general export follow-up.
 
 Validation: focused shared-range checks cover amplitude, sign symmetry, stable ranges, zero fields and unchanged source data; all 28 JavaScript suites pass. Browser verification covers PCA/NMF navigation, local controls and responsive layout. No release requested.
+
+
+### Signal-card layout simplification — 12 November 2026
+
+Implemented after `a6a8d4e`: signal cards pack from the left at a consistent compact width. Header buttons show horizontal variance/signal-share fills on the actual 0–100% scale; the redundant variance/share disclosure is removed. Header clicks expand or restore the card in place. Removed the separate “Inspect one signal” layout; group activity and residual maps remain accessible as compact views, and NMF spectra/Fits buttons retain crystal-inspector access. No changes to decomposition, ranking or parallelism.
+
+Confirmed current concurrency: one PCA/NMF analysis worker, sequential stages/windows/groups, one FFT worker and standard-server numerical threads capped at one. Automatic-grid worker settings do not control this pipeline. Validation covers card packing, horizontal percentage fills, expansion, PCA/NMF group navigation and narrow layouts.
+
+
+### PCA/NMF parallel execution — deferred 12 November 2026
+
+User asked about parallelization, then explicitly put it aside for later. No execution changes in this update. A future evaluation can compare bounded parallel combination fitting and original-window support checks against their serial baseline, preserving deterministic results, cancellation and memory bounds. Benchmark overhead before parallelizing already-short PCA runs. This is deferred work, not an instruction to implement it now.
+
+
+### Next focus: PCA crystal-fitting pipeline — 12 November 2026
+
+User selected this as the next investigation after the signal-card changes, ahead of deferred parallelization. Start from the signed-lobe proposal in [method notes](local-fft-pca.md): inspect and fit positive/negative PCA features separately; retain component, side, phase, zone and orientation identities; test hypotheses against every original unbroadened window. Reuse candidate search and bounded local refinement, but not NMF's activity gate or best-model-per-phase collapse. The existing mean must remain available as a reference. Confirm behaviour with sign-flip, same-phase orientation, mean-present, noise and drift controls before interpreting a support map. This records the agreed next focus; signed-PCA fitting remains unimplemented in the current UI change.
