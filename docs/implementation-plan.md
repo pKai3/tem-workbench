@@ -522,6 +522,19 @@ Map display follow-up: blue–cyan–yellow sequential colours for NMF activity/
 
 The normal checkout is `/Users/bcsinger/Documents/GitHub/tem-workbench` on `feature/local-fft-pca`. The clean obsolete temporary worktree was removed at the user's request. No release or merge is requested for this change.
 
+### Automatic useful-signal count — planned, 12 November 2026
+
+User requested adding this to the roadmap; implementation is deferred. Proposed first pass: recommend a useful component count for PCA/NMF, with manual override and every computed component still available. Do not silently discard components or interpret the recommendation as a phase count.
+
+- Combine spectral structure (peaks/arcs versus diffuse speckle), spatial organization, repeatability under sampling changes, and the additional structured residual explained by each component. Show concise reasons and uncertainty; thresholds and the final selection method require validation.
+- PCA: compute a bounded larger set once, then assess how many components to retain. Evaluate noise-based dimensionality estimation against our actual preprocessing rather than using a fixed cumulative-variance percentage.
+- NMF: compare several factor counts and repeated initializations using reconstruction quality and stability. Report convergence, progress and cancellation; do not mistake incomplete optimization for evidence that a count is unsuitable. This costs more than PCA selection because each count needs refitting.
+- Protect weak/localized beta and omega signals: low total variance alone must not exclude them, and successful crystal indexing must not be a prerequisite. Rotation, lattice distortion and background can produce useful components without representing additional phases. Assess both signs of PCA components.
+- Account for correlations introduced by overlapping windows and angular/radial broadening. Spatial smoothness alone is insufficient; validation/resampling must avoid treating overlapping observations as independent evidence. Keep decomposition-count recommendations separate from the display count and exhaustive matching-subset selection.
+- Validate with synthetic noise, weak minority patterns, gradual rotation/spacing drift, and known-region examples such as 1203 and 0274. Compare recommendations with human inspection and retained residual structure before adopting automatic defaults.
+
+Candidate methodological references: [Minka, automatic PCA dimensionality](https://tminka.github.io/papers/pca/) and [Brunet et al., NMF stability/model selection](https://pmc.ncbi.nlm.nih.gov/articles/PMC384712/). These motivate evaluation; neither is yet selected or validated for this workflow.
+
 ## Window-size check and blended support — 3 November 2026
 
 **Implemented:** Suggest window size sits beside Search mode. It tests 5%, 7.5%, 10% and 15% of the shorter image side at five paired locations, using the selected manual, auto geometry or auto rank settings. A separate cancellable job keeps the source/settings snapshot; grid and batch starts are blocked until it finishes. No map runs automatically. Equal X/Y calibration and at least two usable sizes are required; unsupported sizes are skipped rather than silently clamped.
