@@ -279,6 +279,10 @@ def window_detail(result, index, model_id):
     for axis in 'abc':
         key = 'fitted_'+axis+'_nm'
         if fitted.get(key) is not None: fitted[key] /= candidate['local_scale']
+    # Report the locally refined cell relative to the same material reference.
+    # The c/a ratio is unchanged by the uniform local refinement.
+    for key in ('scale_a','scale_b','scale_c','shared_scale','overall_prediction_scale'):
+        if fitted.get(key) is not None: fitted[key] *= candidate['local_scale']
     return dict(kind='pca_window', component=model['component'], components=model['components'],side=model['side'], sources=model.get('sources',[]),window=index,
                 spectrum=spectrum_image(result['raw_spectra'][index], result['plan']), peaks=peaks,
                 candidates=[fitted], phases=[model['phase']], component_score=candidate['component_score'],

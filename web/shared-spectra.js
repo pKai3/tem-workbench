@@ -370,21 +370,58 @@ if(typeof document!=='undefined'){
    if(dx===undefined)return;event.preventDefault();index=Math.max(0,Math.min(data.plan.count-1,index+dx));refreshWindowSelection(event.currentTarget);
   };
   $('pca-map').onclick=selectMapWindow;$('pca-map').onkeydown=stepMapWindow;
+  function componentFitColumns(original=false){
+   const overrides={
+    rank:[original?'Support ↓':'Rank ↓',`Position − scale cost${original?' (source fit + local refinement)':''}. Highest first; not a phase probability. Main-analysis weak-peak, missing-prediction, brightness and DD terms are not used here.`],
+    peaks:['Matched\nprofiles','Assigned / detected profiles. Opposite spots count once. Original-window checks count only close assignments; feature search also admits displaced assignments with decreasing credit.'],
+    coverage:['Coverage\nObserved | predicted','Assigned / detected profiles | assigned / predicted profiles. These are unweighted profile counts, not the main interface’s allowed / DD coverage.'],
+    cost:['Scale\ncost',original?'Source-fit scale cost plus the local-refinement scale cost, subtracted from position.':'Scale cost subtracted from position.'],
+   };
+   return FIT_COLUMNS.map(([key,label,help])=>[key,...(overrides[key]||[label,help])]);
+  }
+  function componentFitHeader(table,{original=false,show=false,source=false}={}){
+   table.className='model-table component-fit-table'+(show?' fit-table':'');
+   const head=table.createTHead().insertRow();
+   for(const [key,label,help] of [...(show?[['show','Show','Toggle this overlay']]:[]),...componentFitColumns(original)]){
+    const cell=document.createElement('th');cell.scope='col';cell.className='col-'+key;cell.dataset.column=key;cell.textContent=key==='candidate'&&source?'Source / candidate\nZone axis':label;cell.title=help;
+    if(key==='rank'){
+     cell.setAttribute('aria-sort','descending');cell.title='';
+     const host=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');host.className='settings-help';button.type='button';button.className='settings-help-button';button.textContent='ⓘ';button.setAttribute('aria-label',original?'About window support score':'About component fit rank');popup.className='settings-help-popup';popup.setAttribute('role','tooltip');popup.textContent=help;host.append(button,popup);cell.append(host);
+    }
+    head.append(cell);
+   }
+  }
+  function componentFitCells(row,m,peakCount,{original=false}={}){
+   const assigned=m?(m.matches?new Set(m.matches.map(match=>match.node_index)).size:m.matched_profile_count):0;
+   const total=m?.predicted_nodes?.length??m?.predicted_visible_band_node_count;
+   const values={candidate:m?`${m.phase==='OMEGA'?'ω':m.phase} ${zoneLabel(m)}\n${m.rotation_deg.toFixed(1)}°`:'No fit',rank:m?.score?.toFixed(3)??'—',screen:m?(m.valid?'Pass':'Below'):'—',
+    peaks:m?`${m.matched_profile_count}/${peakCount}`:`0/${peakCount}`,coverage:m?`${(100*m.coverage).toFixed(0)}% | ${total?(100*assigned/total).toFixed(0)+'%':'—'}`:'—',rms:m?.rms_nm_inv?.toFixed(3)??'—',
+    position:m?(m.position_score??m.score).toFixed(3):'—',cost:m?((m.scale_penalty??0)+(original?(m.local_scale_penalty??0):0)).toFixed(3):'—',
+    dimensions:m?fittedDimensions(m).replaceAll(' / ','\n'):'—',scale:m?scalePercentages(m).replaceAll(' / ','\n'):'—'};
+   for(const [key,label,help] of componentFitColumns(original)){
+    const cell=row.insertCell();cell.className='col-'+key;cell.dataset.column=key;cell.dataset.label=label.replaceAll('\n',' ');cell.textContent=values[key];cell.title=help;
+    if(!m)continue;
+    if(key==='candidate')cell.style.color=phaseColors[m.phase]||'#ddd';
+    if(key==='screen')cell.title=m.valid?'Passes the screen':m.rejection_reasons?.join('; ')||'Below screen';
+    if(key==='coverage')cell.title=`Observed-profile coverage | ${assigned} of ${total??'unknown'} predicted profiles assigned. Opposite spots count once.${original?' Only close assignments are counted.':' Unassigned predictions do not incur a missing-peak cost in this screen.'}`;
+    if(key==='peaks'&&m.position_matching?.distance_scale_nm_inv)cell.title+=` Match ${original?'≤':'<'} ${(m.position_matching.distance_scale_nm_inv*(original?1:4)).toFixed(3)} nm⁻¹.`;
+    if(key==='cost')cell.title+=` Source ${(m.scale_penalty??0).toFixed(4)}${original?' + local '+(m.local_scale_penalty??0).toFixed(4):''}.`;
+    if(key==='dimensions'||key==='scale')cell.title=scaleDetails(m)+(m.scale_note?' · '+m.scale_note:'')+' · '+help;
+   }
+  }
   function showFits(){
    const box=$('nmf-fit-results');box.replaceChildren();
    const fits=data?.fits;
    $('nmf-fit-note').textContent=fits?`${fits.completed}/${fits.total} ${isPca()?'source fits':'combinations'} · ${data.fit_status||'complete'}. ${isPca()?'Feature and reconstruction fits are hypotheses; see Window checks for original-data support.':'Position − scale ranks; main-analysis photometric penalties are not used.'}`:isPca()?'Individual features and the selected combination scope will be fitted.':'Every nonempty combination will be fitted. Results remain experimental.';
    if(!fits)return;
    const sorted=[...fits.groups].sort((a,b)=>(b.candidates[0]?.score??-Infinity)-(a.candidates[0]?.score??-Infinity));
-   const table=document.createElement('table'),head=table.createTHead().insertRow();
-   ['Source','Best crystal / zone / rotation','Rank','Screen','Matched','Coverage','RMS, nm⁻¹','Cell, nm',...(isPca()?[]:['Co-occurring windows'])].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th)});
+   const table=document.createElement('table');componentFitHeader(table,{source:true});
    const body=table.createTBody();
    function appendRows(records){for(const group of records){
     const row=body.insertRow(),model=group.candidates[0];
-    const cell=row.insertCell(),button=document.createElement('button');button.type='button';button.textContent=isPca()?sourceLabel(group):group.components.map(i=>i+1).join(' + ');cell.append(button);button.title=isPca()?(group.kind==='combination'?`Inspect the score-weighted reconstruction from window ${group.window+1}`:'Inspect this signed feature’s crystal hypotheses'):'Show this group’s activity map and combined spectrum';button.onclick=()=>isPca()?inspectGroup(group):selectGroupMap(group);
-    if(!isPca()){const inspectButton=document.createElement('button');inspectButton.type='button';inspectButton.textContent='Fits';inspectButton.title='Inspect crystal fits for this group';inspectButton.onclick=()=>inspectGroup(group);cell.append(inspectButton)}
-    const cells=[model?`${model.phase} [${model.zone_3index.join(' ')}] · ${model.rotation_deg.toFixed(1)}°`:'No fit',model?.score?.toFixed(3)??'—',model?(model.valid?'Pass':'Below'):'—',model?`${model.matched_profile_count}/${group.peak_count}`:`0/${group.peak_count}`,model?`${(100*model.coverage).toFixed(0)}%`:'—',model?.rms_nm_inv?.toFixed(3)??'—',model?['a','b','c'].filter(a=>model['fitted_'+a+'_nm']!=null).map(a=>`${a} ${model['fitted_'+a+'_nm'].toFixed(4)}`).join(' · '):'—',String(group.cooccurring_windows)];
-    (isPca()?cells.slice(0,-1):cells).forEach(t=>row.insertCell().textContent=t);if(!isPca()&&!group.cooccurring_windows)row.title='These factors never exceed 20% of their own maximum together. This is a mathematical combination, not an observed shared pattern.';
+    componentFitCells(row,model,group.peak_count);
+    const cell=row.querySelector('.col-candidate'),actions=document.createElement('div'),button=document.createElement('button');actions.className='component-fit-source';button.type='button';button.textContent=isPca()?sourceLabel(group):'NMF '+group.components.map(i=>i+1).join(' + ');actions.append(button);cell.prepend(actions);button.title=isPca()?(group.kind==='combination'?`Inspect the score-weighted reconstruction from window ${group.window+1}`:'Inspect this signed feature’s crystal hypotheses'):'Show this group’s activity map and combined spectrum';button.onclick=()=>isPca()?inspectGroup(group):selectGroupMap(group);
+    if(!isPca()){const inspectButton=document.createElement('button');inspectButton.type='button';inspectButton.textContent='Fits';inspectButton.title='Inspect crystal fits for this group';inspectButton.onclick=()=>inspectGroup(group);actions.append(inspectButton);const count=document.createElement('span');count.className='hint';count.textContent=`${group.cooccurring_windows} co-occurring windows`;count.title='Windows where all selected factors exceed 20% of their own maximum; not proof of coexisting phases.';actions.append(count)}
    }}
    let shown=0;const more=document.createElement('button');more.type='button';
    const page=()=>{appendRows(sorted.slice(shown,shown+100));shown+=100;more.hidden=shown>=sorted.length;more.textContent=`Show next ${Math.min(100,sorted.length-shown)} combinations`};
@@ -435,7 +472,7 @@ if(typeof document!=='undefined'){
     if(detail.tolerance_nm_inv)helpText.textContent+=original?` Counted matches must lie within ${detail.tolerance_nm_inv.toFixed(3)} nm⁻¹ (one native FFT taper-response width, including any omega multiplier). Farther assignments contribute decreasing positional credit out to ${(4*detail.tolerance_nm_inv).toFixed(3)} nm⁻¹ but do not count toward the four-profile minimum. Opposite spots count as one profile.`:` The base matching width is ${detail.tolerance_nm_inv.toFixed(3)} nm⁻¹, from the native FFT taper response. Search assignments extend to four widths with decreasing positional credit; omega uses its configured multiplier. Original-window match counts require one width. Opposite spots count as one profile.`;
     if(!isPca()&&!detail.cooccurring_windows){const warning=document.createElement('p');warning.textContent='No co-occurring windows: this sum uses global means and is hypothetical.';support.append(warning)}
     const chosen=new Set(detail.candidates.length?[0]:[]),canvas=$('nmf-group-spectrum'),ctx=canvas.getContext('2d'),img=new Image();
-    const colours={BCC:'#36ff58',HCP:'#79bcff',OMEGA:'#ffb54a',FCC:'#ff79c6',ORT:'#66dfbc'};
+    const colours=phaseColors;
     const xy=q=>[(q[0]/detail.g_max+1)*canvas.width/2,(1-q[1]/detail.g_max)*canvas.height/2];
     function draw(){
      if(serial!==groupEpoch||!img.complete||!img.naturalWidth)return;
@@ -453,20 +490,10 @@ if(typeof document!=='undefined'){
     support.append(buttons);
     if(!detail.candidates.length){const empty=document.createElement('p');empty.textContent='No candidate survived the search gates. This does not establish that the phase is absent.';empty.title='The search seeds from the strongest 16 profiles, rejects initial coverage below 20%, and needs enough compatible reflections. Diffuse maxima can crowd out useful seeds.';support.append(empty)}
     else{
-     const wrap=document.createElement('div');wrap.className='nmf-fit-results';const table=document.createElement('table'),head=table.createTHead().insertRow();
-     ['Show','Candidate / rotation',original?'Support':'Rank','Screen','Matched profiles','Coverage: observed | predicted'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th)});
+     const wrap=document.createElement('div');wrap.className='nmf-fit-results';const table=document.createElement('table');componentFitHeader(table,{original,show:true});
      const body=table.createTBody();
-     detail.candidates.forEach((m,i)=>{const row=body.insertRow(),check=document.createElement('input');check.type='checkbox';check.checked=chosen.has(i);check.setAttribute('aria-label',`Overlay ${m.phase} [${m.zone_3index.join(' ')}] ${m.rotation_deg.toFixed(1)} degrees`);check.onchange=()=>{if(check.checked)chosen.add(i);else chosen.delete(i);draw()};row.insertCell().append(check);checks.push(check);
-      const name=row.insertCell(),meta=document.createElement('details'),summary=document.createElement('summary'),metrics=document.createElement('p');meta.className='nmf-candidate-meta';summary.textContent=`${m.phase} [${m.zone_3index.join(' ')}] · ${m.rotation_deg.toFixed(1)}°`;summary.style.color=colours[m.phase]||'#ddd';
-      const cell=['a','b','c'].filter(a=>m['fitted_'+a+'_nm']!=null).map(a=>`${a} ${m['fitted_'+a+'_nm'].toFixed(4)}`).join(' · ')||'—';
-      metrics.textContent=`RMS ${m.rms_nm_inv.toFixed(3)} nm⁻¹ · Cell ${cell} nm${m.scale_note?' · '+m.scale_note:''}${m.valid?'':' · '+m.rejection_reasons.join('; ')}`;meta.append(summary,metrics);name.append(meta);
-      if(m.position_matching?.distance_scale_nm_inv)metrics.textContent+=` · Match ${original?'≤':'<'} ${(m.position_matching.distance_scale_nm_inv*(original?1:4)).toFixed(3)} nm⁻¹`;
-      const rank=row.insertCell();rank.textContent=m.score.toFixed(4);rank.title=`Position ${(m.position_score??m.score).toFixed(4)} − scale ${(m.scale_penalty??0).toFixed(4)}${original?' − local scale '+(m.local_scale_penalty??0).toFixed(4):''}`;
-      const screen=row.insertCell();screen.textContent=m.valid?'Pass':'Below';screen.title=m.valid?'Passes the partial-match screen':m.rejection_reasons.join('; ')||'Below screen';
-      row.insertCell().textContent=`${m.matched_profile_count}/${detail.peaks.length}`;
-      const assigned=new Set(m.matches.map(match=>match.node_index)).size,total=m.predicted_nodes.length,coverage=row.insertCell();
-      coverage.textContent=`${(100*m.coverage).toFixed(0)}% | ${total?(100*assigned/total).toFixed(0):'—'}%`;
-      coverage.title=`Observed-profile coverage | ${assigned} of ${total} predicted profiles assigned. Opposite spots count once.${original?' Only close assignments are shown.':' Unassigned predictions do not incur a missing-peak cost in this screen.'}`;
+     detail.candidates.forEach((m,i)=>{const row=body.insertRow(),check=document.createElement('input');check.type='checkbox';check.checked=chosen.has(i);check.setAttribute('aria-label',`Overlay ${m.phase} [${m.zone_3index.join(' ')}] ${m.rotation_deg.toFixed(1)} degrees`);check.onchange=()=>{if(check.checked)chosen.add(i);else chosen.delete(i);draw()};const toggle=row.insertCell();toggle.className='col-show';toggle.dataset.column='show';toggle.append(check);checks.push(check);
+      componentFitCells(row,m,detail.peaks.length,{original});
      });wrap.append(table);support.append(wrap);
     }
     for(const check of group.support_checks||[]){const b=document.createElement('button');b.type='button';b.textContent=`Window ${check.window+1}: ${check.matched}/${check.peak_count} matched`;b.title='Check of the best combination model against the original window, without refitting';b.onclick=()=>{index=check.window;selectGroupMap(group)};support.append(b)}

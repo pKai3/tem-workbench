@@ -160,6 +160,11 @@ class PcaFittingTests(unittest.TestCase):
         self.assertTrue(m['valid']);self.assertGreaterEqual(m['matched_profile_count'],4)
         self.assertLessEqual(abs(m['rotation_adjustment_deg']),3)
         self.assertLessEqual(abs(m['local_scale']-1),.03+1e-8)
+        source=r['phase_support']['models'][candidate['model']]
+        self.assertAlmostEqual(m['fitted_a_nm'],source['fitted_a_nm']/m['local_scale'])
+        self.assertAlmostEqual(m['scale_a'],source['scale_a']*m['local_scale'])
+        self.assertAlmostEqual(m['fitted_a_nm']*m['scale_a'],source['fitted_a_nm']*source['scale_a'])
+        self.assertAlmostEqual(m['score'],m['position_score']-m['scale_penalty']-m['local_scale_penalty'])
         self.assertTrue(m['matches']);json.dumps(detail,allow_nan=False)
         for wi,mi in [(True,0),(-1,0),(0,True),(0,999)]:
             with self.assertRaises(ValueError):fitting.window_detail(r,wi,mi)

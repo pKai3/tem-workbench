@@ -9,6 +9,17 @@ from test_pca_fitting import synthetic
 
 
 class ComponentPeakDefaultsTests(unittest.TestCase):
+    def test_compact_fit_retains_cell_ratio_and_axis_observability(self):
+        # A hidden c axis must remain unconstrained; a visible ratio must survive
+        # compact summaries so all views describe the same reference-cell change.
+        for phase,extra in [('HCP',dict(scale_a=1.02,scale_c=.98,overall_prediction_scale=1.,
+                                       ca_ratio_multiplier=1.02/.98,overall_scale_penalty=.01,ca_ratio_penalty=.02)),
+                            ('ORT',dict(scale_a=1.02,scale_b=.99,scale_c=None,axis_observable=[True,True,False]))]:
+            model=dict(phase=phase,scale_mode='auto_hcp_ratio',fitted_a_nm=.3,**extra)
+            before=dict(model)
+            self.assertEqual(fitting.compact(model),model)
+            self.assertEqual(model,before)
+
     def test_default_rejects_weak_background_maxima_without_dropping_lattice_peaks(self):
         result,_,_=synthetic()
         signal=np.zeros((spectra.RADIAL_BINS,spectra.ANGULAR_BINS))

@@ -1006,7 +1006,7 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-inspect .pca-samples{grid-template-columns:repeat(3,minmax(0,180px));justify-content:start;max-width:none;margin:10px 0}
 #pca-inspect .pca-samples figcaption{font-size:11px}
 @media(max-width:500px){#pca-inspect .pca-samples{grid-template-columns:minmax(0,280px)}}
-.nmf-fit-results {overflow:auto;max-height:420px}
+.nmf-fit-results {overflow:auto;max-height:420px;container-type:inline-size}
 .nmf-fit-results table {width:100%;font-size:12px}
 .nmf-fit-results th {position:sticky;top:0;background:#13212c;z-index:1}
 #nmf-group-detail {margin:16px 0;padding:12px;border:1px solid #385364;border-radius:8px}
@@ -1017,15 +1017,22 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #nmf-support {flex:1;min-width:0}
 #nmf-support button {margin:4px}
 #nmf-support .nmf-fit-results {max-height:500px}
-#nmf-support table {min-width:480px}
+#nmf-support table {min-width:0}
 #nmf-support td,#nmf-support th{padding:8px 4px}
 #nmf-support input[type=checkbox]{width:13px;height:13px;min-height:0;margin:0;padding:0}
-#nmf-support .nmf-candidate-meta{border:0;margin:0;padding:0}
-#nmf-support .nmf-candidate-meta summary{font-size:12px}
-#nmf-support .nmf-candidate-meta p{font-size:11px;line-height:1.5;max-width:240px}
+.component-fit-table .component-fit-source{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:5px;white-space:normal}
+.component-fit-source button{font-size:11px;padding:4px 6px;min-height:0}
+.component-fit-source .hint{flex-basis:100%;font-size:10px}
+.component-fit-table th{white-space:pre-line}
+#nmf-support .settings-help-button{margin:0 0 0 4px}
+@container(max-width:800px){
+ .component-fit-table tr>[data-column]{width:auto;min-width:0;border-bottom:0;padding:6px 3px}
+ .component-fit-table tbody :is(.col-position,.col-cost,.col-dimensions,.col-scale){padding:2px 3px 8px;text-align:left;font-size:10.5px}
+}
 #nmf-support .settings-help-popup{left:auto;right:0}
 #pca-overview canvas[role="button"],#pca-spectrum[role="button"] {cursor:pointer}
-@media(max-width:850px){#nmf-group-content{flex-direction:column}#nmf-group-content figure{width:min(100%,360px);min-width:0}#nmf-support{width:100%}.nmf-fit-results{max-height:none}}
+@media(max-width:1450px){#nmf-group-content{flex-direction:column}#nmf-group-content figure{width:min(100%,420px);min-width:0}#nmf-support{width:100%}}
+@media(max-width:850px){.nmf-fit-results{max-height:none}}
 
 /* Compact component comparison: maps above spectra. */
 #pca-overview{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:14px;align-items:flex-start}
