@@ -969,10 +969,18 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-close{margin-left:auto;width:30px;padding:0;font-size:20px}
 #pca-source{margin:4px 0;overflow-wrap:anywhere}
 #pca-status{font-size:12px;line-height:1.4;margin:6px 0}
-#pca-navigation{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}
+#pca-navigation{display:flex;align-items:stretch;width:max-content;max-width:100%;margin:8px 0 0}
 #pca-navigation[hidden],#pca-navigation [hidden],#pca-dialog [data-pca-panel][hidden]{display:none}
-#pca-navigation button{min-height:32px;padding:6px 12px;font-size:12px;background:transparent}
-#pca-navigation button[aria-selected=true]{background:#29475e;border-color:#61d7d1}
+/* Two inset silhouettes keep a border around each connected process arrow. */
+#pca-navigation button{--step-border:#39495c;--step-fill:#172332;--step-shape:polygon(0 0,calc(100% - 12px) 0,100% 50%,calc(100% - 12px) 100%,0 100%,12px 50%);position:relative;isolation:isolate;flex:0 1 auto;min-width:0;min-height:36px;padding:7px 24px 7px 26px;border:0;border-radius:0;font-size:12px;line-height:1.35;white-space:normal;background:transparent}
+#pca-navigation button+button{margin-left:-10px}
+#pca-navigation button:first-child{--step-shape:polygon(0 0,calc(100% - 12px) 0,100% 50%,calc(100% - 12px) 100%,0 100%);padding-left:12px}
+#pca-navigation button::before,#pca-navigation button::after{content:"";position:absolute;pointer-events:none;clip-path:var(--step-shape)}
+#pca-navigation button::before{inset:0;z-index:-2;background:var(--step-border)}
+#pca-navigation button::after{inset:1px;z-index:-1;background:var(--step-fill)}
+#pca-navigation button:hover{--step-border:var(--cyan);--step-fill:#203447}
+#pca-navigation button[aria-selected=true]{--step-border:#61d7d1;--step-fill:#29475e}
+#pca-navigation button:focus-visible{outline:none;filter:drop-shadow(0 0 2px var(--cyan));text-decoration:underline;text-underline-offset:3px}
 #pca-setup{margin:12px 0 0}
 #pca-form{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));align-items:end}
 #pca-form input[type=number],#pca-form select{width:100%;min-width:0}

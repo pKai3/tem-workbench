@@ -1324,3 +1324,9 @@ Validation: browser checks confirm matching computed border/radius/padding, work
 Follow-up to `9fafd3c`: keep the boxed Analysis settings and output tabs inside the sticky workspace header so they remain accessible while scrolling through signals, crystal fits or window checks. Action buttons stay grouped on the left.
 
 Verified by scrolling populated Signals and Window checks at desktop and 720 px widths: the settings box and tabs remain visible in the header.
+
+### Process-shaped PCA/NMF navigation — completed 12 November 2026
+
+Follow-up to `ea0809f`: present Signals → Crystal fits → Window checks (Phase support for NMF) as connected arrow-shaped tabs in the sticky header. Retain selected-step colour, keyboard navigation and a distinct focus indicator. This communicates the analysis sequence without changing stage execution or access to results.
+
+Validation: browser checks confirm connected arrow outlines, selected-state contrast and arrow-key navigation with visible focus at desktop and 720 px widths. No analysis changes or release.
