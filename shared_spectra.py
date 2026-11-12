@@ -262,13 +262,25 @@ def spectrum_image(polar,p,signed=False,limits=None):
     return encoded(values,valid,signed,limits)
 
 
+def component_image(polar, p, signed):
+    """Compact display raster; numeric exports retain full precision."""
+    import base64
+    values, valid = cartesian(polar, p)
+    result = encoded(values, valid, signed)
+    lo, hi = result['limits']
+    raster = np.rint(np.clip((values-lo)/max(hi-lo, 1e-20), 0, 1)*254).astype(np.uint8)
+    raster[~valid] = 255
+    result.update(raster=base64.b64encode(raster.tobytes()).decode(), size=raster.shape[0])
+    return result
+
+
 def summary(result):
     p=result['plan'];w=result['area_weights'].ravel();nmf=p.get('method')=='nmf'
     components=[]
     for i,(spectrum,ratio) in enumerate(zip(result['components'],result.get('contribution_share',result['explained_variance_ratio']))):
         scores=result['scores'][:,i].reshape(p['map_shape'])
         components.append(dict(index=i,variance=float(ratio),scores=scores.tolist(),
-                               spectrum=spectrum_image(spectrum/w,p,not nmf)))
+                               spectrum=component_image(spectrum/w,p,not nmf)))
     return dict(plan=p,source_name=result['source'].get('name','Image'),
                 source_hash=result['source'].get('sha256_pixels'),method=VERSION,
                 algorithm=result['algorithm'],components=components,decomposition=p.get('method','pca'),

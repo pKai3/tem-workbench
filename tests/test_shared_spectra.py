@@ -105,6 +105,20 @@ class SharedSpectraTests(unittest.TestCase):
                 self.assertEqual(saved['positions'].shape,(r['plan']['count'],4))
                 self.assertEqual(meta,json.loads(Path(files[1]).read_text()))
 
+    def test_component_display_raster_preserves_sign_and_exclusions(self):
+        import base64
+        r=self.result;p=r['plan']
+        polar=r['components'][0]/r['area_weights'].ravel()
+        values,valid=pca.cartesian(polar,p)
+        display=pca.component_image(polar,p,True)
+        raster=np.frombuffer(base64.b64decode(display['raster']),np.uint8).reshape(values.shape)
+        self.assertTrue(np.all(raster[~valid]==255))
+        self.assertTrue(np.all(raster[valid]<255))
+        lo,hi=display['limits']
+        self.assertEqual(lo,-hi)
+        recovered=lo+raster[valid].astype(float)/254*(hi-lo)
+        np.testing.assert_allclose(recovered,values[valid],atol=(hi-lo)/508+1e-12)
+
     def test_server_start_uses_validated_source_snapshot_and_guards_jobs(self):
         from types import SimpleNamespace
         from server import Workbench

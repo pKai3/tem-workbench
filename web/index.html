@@ -170,13 +170,16 @@
  <progress id="pca-progress" max="1" value="0" aria-label="Analysis progress" hidden></progress>
  <div id="pca-results" hidden>
   <div id="pca-scree" aria-label="Explained variance by component"></div>
-  <div class="pca-controls"><label>Map<select id="pca-map-mode"><option value="component">Selected component</option><option value="group">Selected group activity</option><option value="residual">Unexplained variation</option></select></label>
+  <div class="pca-controls"><label>View<select id="pca-layout"><option value="single">Inspect one signal</option><option value="overview">Top signals</option></select></label><label id="pca-top-label" hidden>Top signals<input id="pca-top" type="number" min="1" max="16" step="1" value="5"></label>
+   <label>Colour scale<select id="pca-palette"><option value="auto">Automatic</option><option value="rdbu">Red–blue</option><option value="purplegreen">Purple–green</option><option value="viridis">Viridis</option><option value="magma">Magma</option><option value="grey">Greyscale</option></select></label>
+   <label>Map<select id="pca-map-mode"><option value="component">Selected component</option><option value="group">Selected group activity</option><option value="residual">Unexplained variation</option></select></label>
    <label>Component<select id="pca-component"></select></label><label title="Display only. Enhance variation stretches the 2nd–98th percentile within the current map; even small differences become visible. Colours are relative contributions, not phase identities or confidence.">Map contrast<select id="pca-contrast"><option value="variation">Enhance variation</option><option value="full">Full range from zero</option></select></label><label>Map opacity<input id="pca-opacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
    <span title="NMF group activity adds contributions; PCA uses sqrt(sum of squared scores). Neither is phase abundance. Selected components also determine the reconstruction below.">Reconstruction / group:</span><span id="pca-group"></span>
   </div>
-  <div class="pca-views">
+  <div id="pca-overview" hidden></div>
+  <div class="pca-views" id="pca-single">
    <figure><figcaption>Spatial variation · click a sampled location</figcaption><canvas id="pca-map" width="700" height="700" tabindex="0" aria-label="Component spatial map; arrow keys select a window"></canvas><div id="pca-map-key" class="hint"></div></figure>
-   <figure><figcaption id="pca-spectrum-label">Component spectrum · blue negative, red positive</figcaption><img id="pca-spectrum" alt="" role="img" aria-label="Selected component spectrum"><div id="pca-band" class="hint"></div></figure>
+   <figure><figcaption id="pca-spectrum-label">Component spectrum · blue negative, red positive</figcaption><canvas id="pca-spectrum" width="256" height="256" role="img" aria-label="Selected component spectrum"></canvas><div id="pca-band" class="hint"></div></figure>
   </div>
   <details id="pca-inspect" open><summary id="pca-sample-label">Selected window</summary><div class="pca-samples">
    <figure><figcaption>Original spectrum</figcaption><img id="pca-original" alt="" role="img" aria-label="Original local spectrum"></figure>

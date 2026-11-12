@@ -21,6 +21,12 @@ const PcaView={
   const stops=[[25,20,85],[35,90,180],[15,185,195],[150,220,90],[255,240,90]],x=t*4,i=Math.min(3,Math.floor(x));
   return stops[i].map((v,c)=>Math.round(v+(stops[i+1][c]-v)*(x-i)));
  },
+ palette(t,name){
+  const palettes={rdbu:[[33,102,172],[146,197,222],[247,247,247],[244,165,130],[178,24,43]],purplegreen:[[118,42,131],[194,165,207],[247,247,247],[166,219,160],[27,120,55]],viridis:[[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]],magma:[[0,0,4],[81,18,124],[183,55,121],[252,137,97],[252,253,191]],grey:[[0,0,0],[255,255,255]]};
+  const stops=palettes[name]||palettes.viridis,x=Math.max(0,Math.min(1,t))*(stops.length-1),i=Math.min(stops.length-2,Math.floor(x));
+  return stops[i].map((v,c)=>Math.round(v+(stops[i+1][c]-v)*(x-i)));
+ },
+ topCount(value,total){return Math.max(1,Math.min(total,Math.floor(Number(value)||1)))},
  nearest(plan,x,y){
   const [w,h]=plan.window_pixels;
   const closest=(values,v)=>values.reduce((best,a,i)=>Math.abs(a-v)<Math.abs(values[best]-v)?i:best,0);
@@ -44,27 +50,60 @@ if(typeof document!=='undefined'){
   }
   function clearResults(){data=null;selected.clear();$('pca-results').hidden=true;sampleEpoch++;sourceImage=null;controls()}
   function options(){return {method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value}}
-  function drawMap(){
-   if(!data)return;
-   const p=data.plan,[height,width]=p.image_shape,canvas=$('pca-map'),ctx=canvas.getContext('2d');
-   const scale=Math.min(canvas.width/width,canvas.height/height),ox=(canvas.width-width*scale)/2,oy=(canvas.height-height*scale)/2;
+  const palette=signed=>$('pca-palette').value==='auto'?(signed?'rdbu':'viridis'):$('pca-palette').value;
+  function spectrumCanvas(canvas,component){
+   const spec=component.spectrum,ctx=canvas.getContext('2d');
+   if(!spec.raster){const img=new Image();img.onload=()=>ctx.drawImage(img,0,0,canvas.width,canvas.height);img.src=spec.image;return}
+   canvas.width=canvas.height=spec.size;
+   const bytes=atob(spec.raster),pixels=ctx.createImageData(spec.size,spec.size),lut=Array.from({length:255},(_,i)=>PcaView.palette(i/254,palette(data.decomposition!=='nmf')));
+   for(let i=0;i<bytes.length;i++){const v=bytes.charCodeAt(i),c=v===255?[5,10,15]:lut[v];pixels.data.set([...c,255],i*4)}
+   ctx.putImageData(pixels,0,0);
+  }
+  function paintMap(canvas,values,signed,outline=false){
+   const p=data.plan,[height,width]=p.image_shape,ctx=canvas.getContext('2d'),scale=Math.min(canvas.width/width,canvas.height/height),ox=(canvas.width-width*scale)/2,oy=(canvas.height-height*scale)/2;
    ctx.fillStyle='#050a0f';ctx.fillRect(0,0,canvas.width,canvas.height);
    if(sourceImage?.complete&&sourceImage.naturalWidth)ctx.drawImage(sourceImage,ox,oy,width*scale,height*scale);
-   const mode=$('pca-map-mode').value,component=Number($('pca-component').value),ids=[...selected],values=PcaView.values(data,mode,component,ids),signed=mode==='component'&&data.decomposition!=='nmf';
-   const high=Math.max(...values.flat().map(Math.abs),1e-20),range=PcaView.mapRange(values,$('pca-contrast').value==='variation'),[w,h]=p.window_pixels,[dx,dy]=[p.spacing_nm[0]/p.pixel_nm[0],p.spacing_nm[1]/p.pixel_nm[1]];
+   const high=Math.max(...values.flat().map(Math.abs),1e-20),range=signed?{low:-high,high}:PcaView.mapRange(values,$('pca-contrast').value==='variation'),[w,h]=p.window_pixels,[dx,dy]=[p.spacing_nm[0]/p.pixel_nm[0],p.spacing_nm[1]/p.pixel_nm[1]];
    ctx.globalAlpha=Number($('pca-opacity').value);
    for(let y=0;y<p.ys.length;y++)for(let x=0;x<p.xs.length;x++){
-    const colour=signed?PcaView.colour(values[y][x],high,true):PcaView.mapColour(values[y][x],range.low,range.high),cx=p.xs[x]+w/2,cy=p.ys[y]+h/2;
+    const colour=PcaView.palette((values[y][x]-range.low)/Math.max(range.high-range.low,1e-20),palette(signed)),cx=p.xs[x]+w/2,cy=p.ys[y]+h/2;
     const left=Math.max(0,cx-dx/2),top=Math.max(0,cy-dy/2),right=Math.min(width,cx+dx/2),bottom=Math.min(height,cy+dy/2);
     ctx.fillStyle=`rgb(${colour.join(',')})`;ctx.fillRect(ox+left*scale,oy+top*scale,(right-left)*scale+.2,(bottom-top)*scale+.2);
    }
    ctx.globalAlpha=1;
-   const iy=Math.floor(index/p.xs.length),ix=index%p.xs.length;
-   ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+p.xs[ix]*scale,oy+p.ys[iy]*scale,w*scale,h*scale);
-   $('pca-map-key').textContent=signed?`Blue −${high.toPrecision(3)} · dark 0 · red +${high.toPrecision(3)} · score`:`Blue ${range.low.toPrecision(3)} → cyan → yellow ${range.high.toPrecision(3)} · ${mode==='group'?'group activity':mode==='component'?'component contribution':'residual norm'}${range.uniform?' · uniform across windows':$('pca-contrast').value==='variation'?' · enhanced 2–98% range; extremes clipped':''}`;
-   $('pca-contrast').disabled=signed;
-   $('pca-spectrum').src=data.components[component].spectrum.image;
-   $('pca-spectrum-label').textContent=data.decomposition==='nmf'?`NMF ${component+1} spectrum · nonnegative`:`PC ${component+1} spectrum · blue − / red +`;
+   if(outline){const iy=Math.floor(index/p.xs.length),ix=index%p.xs.length;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+p.xs[ix]*scale,oy+p.ys[iy]*scale,w*scale,h*scale)}
+   return range;
+  }
+  function rangeKey(container,range,signed){
+   const bar=document.createElement('span');bar.className='pca-colourbar';bar.style.background=`linear-gradient(to right,${Array.from({length:9},(_,i)=>`rgb(${PcaView.palette(i/8,palette(signed)).join(',')})`).join(',')})`;
+   const text=document.createElement('span');text.textContent=`${range.low.toPrecision(3)}${signed?' · 0 ·':' →'} ${range.high.toPrecision(3)}${range.uniform?' · uniform':''}`;
+   container.replaceChildren(bar,text);
+  }
+  function drawOverview(){
+   const box=$('pca-overview');box.replaceChildren();
+   const count=PcaView.topCount($('pca-top').value,data.components.length),signed=data.decomposition!=='nmf';
+   for(const c of data.components.slice(0,count)){
+    const card=document.createElement('article');card.className='pca-signal';
+    const title=document.createElement('button');title.type='button';title.textContent=`${signed?'PC':'NMF'} ${c.index+1} · ${(100*c.variance).toFixed(1)}% ${signed?'variance':'contribution'}`;
+    title.onclick=()=>{$('pca-component').value=String(c.index);$('pca-map-mode').value='component';$('pca-layout').value='single';drawMap()};
+    const map=document.createElement('canvas');map.width=map.height=350;map.setAttribute('aria-label',title.textContent+' spatial map');map.setAttribute('role','img');
+    const key=document.createElement('div');key.className='pca-mini-key';const range=paintMap(map,c.scores,signed);rangeKey(key,range,signed);
+    const label=document.createElement('div');label.className='hint';label.textContent=`Spectrum · ±${data.plan.g_max} nm⁻¹`;
+    const spectrum=document.createElement('canvas');spectrum.setAttribute('role','img');spectrum.setAttribute('aria-label',title.textContent+' spectrum');spectrumCanvas(spectrum,c);
+    card.append(title,map,key,label,spectrum);box.append(card);
+   }
+  }
+  function drawMap(){
+   if(!data)return;
+   const overview=$('pca-layout').value==='overview';
+   $('pca-overview').hidden=!overview;$('pca-single').hidden=overview;$('pca-top-label').hidden=!overview;
+   $('pca-map-mode').disabled=overview;$('pca-component').disabled=overview;
+   const mode=$('pca-map-mode').value,component=Number($('pca-component').value),values=PcaView.values(data,mode,component,[...selected]),signed=mode==='component'&&data.decomposition!=='nmf';
+   const range=paintMap($('pca-map'),values,signed,true);rangeKey($('pca-map-key'),range,signed);
+   $('pca-contrast').disabled=overview?data.decomposition!=='nmf':signed;
+   spectrumCanvas($('pca-spectrum'),data.components[component]);
+   $('pca-spectrum-label').textContent=data.decomposition==='nmf'?`NMF ${component+1} spectrum · nonnegative`:`PC ${component+1} spectrum · signed, zero at colour midpoint`;
+   if(overview)drawOverview();
    for(const b of $('pca-scree').children)b.setAttribute('aria-pressed',String(Number(b.dataset.index)===component));
   }
   async function inspect(){
@@ -80,7 +119,7 @@ if(typeof document!=='undefined'){
    }catch(e){if(serial===sampleEpoch)notify(e.message,true)}
   }
   function showResult(r){
-   data=r;groupEpoch++;$('nmf-group-detail').hidden=true;selected=new Set(r.components.map(c=>c.index));index=Math.floor(r.plan.count/2);
+   data=r;$('pca-top').max=String(r.components.length);$('pca-top').value=String(PcaView.topCount($('pca-top').value,r.components.length));groupEpoch++;$('nmf-group-detail').hidden=true;selected=new Set(r.components.map(c=>c.index));index=Math.floor(r.plan.count/2);
    $('pca-results').hidden=false;$('pca-component').replaceChildren();$('pca-group').replaceChildren();$('pca-scree').replaceChildren();
    r.components.forEach(c=>{
     const opt=document.createElement('option');opt.value=String(c.index);opt.textContent=`${r.decomposition==='nmf'?'NMF':'PC'} ${c.index+1}`;$('pca-component').append(opt);
@@ -130,7 +169,7 @@ if(typeof document!=='undefined'){
   $('pca-method').onchange=()=>{$('pca-run').textContent='Run '+$('pca-method').value.toUpperCase()};
   $('pca-cancel').onclick=async()=>{if(!job?.id)return;try{await api('pca/cancel',{id:job.id});notify('Cancelling after the current FFT, matrix step or template fit…')}catch(e){notify(e.message,true)}};
   $('pca-close').onclick=()=>dialog.close();dialog.addEventListener('close',()=>document.documentElement.classList.remove('pca-open'));
-  for(const id of ['pca-map-mode','pca-component','pca-opacity','pca-contrast'])$(id).addEventListener('input',drawMap);
+  for(const id of ['pca-map-mode','pca-component','pca-opacity','pca-contrast','pca-layout','pca-top','pca-palette'])$(id).addEventListener('input',drawMap);
   $('pca-map').onclick=event=>{
    if(!data||running())return;const canvas=event.currentTarget,box=canvas.getBoundingClientRect(),p=data.plan,[h,w]=p.image_shape;
    const scale=Math.min(box.width/w,box.height/h),ox=(box.width-w*scale)/2,oy=(box.height-h*scale)/2;
