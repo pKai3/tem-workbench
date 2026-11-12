@@ -10,6 +10,7 @@ import time
 
 import overlap_maps
 import shared_spectra
+from hypothesis_selection import automatic_pool, SORTS
 from component_execution import selected_workers
 
 LOG = logging.getLogger('tem_workbench')
@@ -59,7 +60,11 @@ def regions(result, model_ids=None):
         candidates = [c for c in window['candidates'] if model_ids is None or c['model'] in model_ids]
         if result['plan']['method'] == 'pca' or 'peak_positions' in window:
             peaks = [dict(profile_id=i, qx=x, qy=y) for i, x, y in window.get('peak_positions', [])]
-            state = classify(candidates, peaks)
+            if window.get('scoring_version')=='native-fft-window-v1':
+                from component_validation import classify as native_classify
+                for p,weight in zip(peaks,window['peak_weights']):p['weight']=weight
+                state=native_classify(candidates,peaks)
+            else:state = classify(candidates, peaks)
         else:
             state = window
         phases = set(state.get('phases', []))
@@ -70,7 +75,7 @@ def regions(result, model_ids=None):
         for candidate in candidates:
             source = models[candidate['model']]
             local.append({k: source[k] for k in ('phase', 'zone_3index')}
-                         | candidate | dict(score_basis='original_window_support'))
+                         | candidate | dict(score_basis=candidate.get('score_basis','original_window_support')))
         output.append(dict(id=str(window['index']), roi=sample['roi'], pass_id=sample.get('pass_id', 0),
                            rim=sample.get('rim', False), leaf=True, depth=0, elapsed_ms=0.,
                            classification=dict(label=label), models=local,
@@ -78,36 +83,45 @@ def regions(result, model_ids=None):
     return output
 
 
-def select_pool(app, job_id, model_ids):
+def select_pool(app, job_id, model_ids, selection="manual", sort="coverage"):
     """Change the displayed hypothesis pool, preserving all retained checks."""
     result = app.pca.inspectable(job_id)
     maps = result.get('phase_support') or {}
     available = {m['id'] for m in maps.get('models', [])}
     if not isinstance(model_ids, list) or any(type(i) is not int or i not in available for i in model_ids):
         raise ValueError('Choose hypotheses from this component analysis.')
+    if selection not in ('auto','manual') or sort not in SORTS:
+        raise ValueError('Choose Auto or a manual hypothesis pool and supported order.')
     ids = sorted(set(model_ids))
-    LOG.info('Component grid %s pool: %s/%s hypotheses; ids=%s',job_id[:8],len(ids),len(available),ids)
     with app.job_lock:
         job = app.jobs.get(job_id)
         if not job or not job.get('component'):
             raise ValueError('This analysis is not the current component grid.')
+        job['_component_selection'] = dict(mode=selection,sort=sort)
         job['_component_models'] = ids
         revision = job['_pool_revision'] = job.get('_pool_revision', 0) + 1
     while True:
+        maps = result.get('phase_support') or {}
+        available = {m['id'] for m in maps.get('models', [])}
+        if selection == 'auto':
+            ids = sorted(automatic_pool(maps, sort))
         mapped = regions(result, ids)
         aggregate = overlap_maps.aggregate({**job, 'regions': mapped})
         with app.job_lock:
             if job['_pool_revision'] != revision:
                 break
             if len(mapped) >= job['processed']:
+                job['_component_models'] = ids
                 job.update(regions=mapped, aggregation=aggregate,
                            component_hypotheses=hypothesis_summary(result),
-                           component_pool=dict(models=ids, available=len(available)),
+                           component_pool=dict(models=ids, available=len(available),selection=selection,sort=sort),
                            interpretation='Selected hypotheses checked against original windows. One best passing score per phase per window; all checks remain in the retained component analysis. Overlapping support is not phase fraction.')
                 break
         # Mapping advanced while this selection was aggregating. Never replace
         # a newer (especially final) snapshot with an earlier partial map.
         result = app.pca.inspectable(job_id)
+    LOG.info('Component grid %s pool: %s, %s order; %s/%s hypotheses; ids=%s',
+             job_id[:8],selection,sort,len(ids),len(available),ids)
     return app.status(job_id)
 
 
@@ -122,7 +136,7 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
         manager = shared_spectra.SharedSpectra() if batch else app.pca
         info = copy.deepcopy(item['info'])
         viewer = dict(file_id=info['id'], roi=dict(x=0, y=0, w=info['width'], h=info['height']),
-                      settings=settings, options=options, fit_options=fit_options, mapping_pool='all')
+                      settings=settings, options=options, fit_options=fit_options, mapping_pool='auto')
         started = manager.start({**item, 'info': info}, settings, options, engine.output_for(info['id']),
                                 viewer=viewer, pipeline=dict(templates=engine.templates_for(settings), options=fit_options))
         job = dict(id=started['id'], state='running', source=info, _batch=batch,
@@ -130,7 +144,7 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
                    grid={**sampling, 'component_method': options['method']}, component=copy.deepcopy(component),
                    regions=[], active_windows=[], processed=0, pending=planned['count'], error=None, cancel=False,
                    execution=dict(workers=planned['workers'], requested_workers=workers, elapsed_seconds=0.),
-                   interpretation='All discovered hypotheses checked against original windows. One best passing score per phase per window; overlapping support is not phase fraction.')
+                   interpretation='Auto selects a compact pool retaining at least 99% of available passing-window coverage. All discovered hypotheses remain checked and retained; overlapping support is not phase fraction.')
         app.jobs = {job['id']: job}
 
         def work():
@@ -146,10 +160,12 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
                     result = None
                     try: result = manager.inspectable(job['id'])
                     except ValueError: pass  # Sampling/decomposition has no map yet.
-                    count = len(((result or {}).get('phase_support') or {}).get('windows', []))
+                    maps=(result or {}).get('phase_support') or {}
+                    count = len(maps.get('windows', []))
                     if result is not None and count != previous and (not running or time.monotonic()-last_map >= 1.):
                         with app.job_lock:
-                            ids = job.get('_component_models')
+                            choice=job.get('_component_selection',dict(mode='auto',sort='coverage'))
+                            ids = automatic_pool(maps,choice['sort']) if choice['mode']=='auto' else job.get('_component_models')
                             revision = job.get('_pool_revision', 0)
                         mapped = regions(result, ids)
                         aggregate = overlap_maps.aggregate({**job, 'regions': mapped})
@@ -159,7 +175,7 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
                             available = len((result.get('phase_support') or {}).get('models', []))
                             job.update(regions=mapped, aggregation=aggregate, processed=count, pending=planned['count']-count,
                                        component_hypotheses=hypothesis_summary(result),
-                                       component_pool=dict(models=ids, available=available))
+                                       component_pool=dict(models=ids, available=available,selection=choice['mode'],sort=choice['sort']))
                         previous=count;last_map=time.monotonic()
                     if not running:
                         complete = bool(result and result.get('phase_support_status') == 'complete')

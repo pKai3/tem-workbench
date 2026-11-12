@@ -66,12 +66,14 @@ def detect_peaks(spectrum, result, fraction):
 
 
 def compact(model):
-    keys=('phase','template_id','zone_3index','rotation_deg','score','valid','coverage',
+    keys=('phase','template_id','mirror','zone_3index','rotation_deg','score','valid','coverage',
           'matched_profile_count','predicted_visible_band_node_count','rms_nm_inv',
           'fitted_a_nm','fitted_b_nm','fitted_c_nm','scale_penalty','position_score','scale_mode',
           'scale_a','scale_b','scale_c','shared_scale','scale_note','axis_observable',
           'overall_prediction_scale','ca_ratio_multiplier','overall_scale_penalty','ca_ratio_penalty',
-          'position_matching','fitting_band_nm_inv')
+          'position_matching','fitting_band_nm_inv','scale_parameter_count','c_axis_visible',
+          'weak_peak_bonus','missing_peak_penalty','brightness_bonus','double_diffraction_bonus',
+          'position_valid','nonparallel_spread_sine','chance_density_penalty')
     out={k:model[k] for k in keys if k in model}
     if 'fitted_a_nm' not in out and model.get('nominal_a_nm'):
         for axis in 'abc':
@@ -126,7 +128,7 @@ def fit_groups(result, templates, options, cancel=None, progress=None):
                         peak_count=len(peaks),candidates=[dict(compact(m),predicted_nodes=m['predicted_nodes']) for m in candidates],support_checks=[])
             if candidates:
                 best=candidates[0]
-                for index in windows:
+                for index in (windows if '_source_image' not in result else []):
                     observed=detect_peaks(result['raw_spectra'][index],result,fraction)
                     width=tolerance*(s.get('omega_falloff_multiplier',1.) if best['phase']=='OMEGA' else 1.)
                     check=core.score_prediction_nodes(observed,best['predicted_nodes'],width)

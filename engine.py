@@ -501,7 +501,7 @@ class Engine:
             raise ValueError('Polygon selections apply to real-space FFT images only.')
         return region_masks.validate(roi), values
 
-    def _fit_spectrum(self, s, settings, templates, can_index, context, prediction_cache=None):
+    def _fit_spectrum(self, s, settings, templates, can_index, context, prediction_cache=None, hypotheses=None):
         """Compare one detected profile set; the FFT pixels are already prepared."""
         if context is not None:
             context = core.matching_context(s, context)
@@ -510,7 +510,7 @@ class Engine:
         if not can_index:
             models = []
         elif settings['scale_mode'] == 'fixed':
-            models = core.search(s['peaks'], templates, settings['scale'], tol, bcc_a=settings['bcc_a'], candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'], omega_falloff_multiplier=settings.get('omega_falloff_multiplier', 1.))
+            models = core.search(s['peaks'], templates, settings['scale'], tol, bcc_a=settings['bcc_a'], candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'], omega_falloff_multiplier=settings.get('omega_falloff_multiplier', 1.), hypotheses=hypotheses)
             for model in candidates:
                 model.update({'scale_mode': 'fixed', 'scale_a': settings['scale'],
                               'scale_c': settings['scale'] if model['phase'] in HEX_PHASES else None,
@@ -525,7 +525,7 @@ class Engine:
                                           settings['scale_mode'], bcc_a=settings['bcc_a'],
                                           scale_penalty_strength=settings['scale_penalty_strength'],
                                           ca_penalty_strength=settings['ca_penalty_strength'],
-                                          candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'], prediction_cache=prediction_cache, omega_falloff_multiplier=settings.get('omega_falloff_multiplier', 1.))
+                                          candidate_sink=candidates, fcc_a=settings['fcc_a'], g_max=settings['g_max'], g_min=settings['g_min'], prediction_cache=prediction_cache, omega_falloff_multiplier=settings.get('omega_falloff_multiplier', 1.), hypotheses=hypotheses)
         if can_index:
             s['weak_maxima'] = context['maxima']
             s['prediction_evidence_context'] = {k: context[k] for k in ('radius', 'position_scale', 'position_matching', 'g_min', 'g_max', 'x_limit', 'y_limit')}
@@ -557,12 +557,14 @@ class Engine:
             anchors.append(current)
         return anchors
 
-    def analyze(self, item, roi, settings, images=True, cache_candidates=False, cancel_event=None):
+    def analyze(self, item, roi, settings, images=True, cache_candidates=False, cancel_event=None, hypotheses=None):
         roi, settings = self.validate(item, roi, settings)
         started = time.perf_counter()
         x, y, w, h = [roi[k] for k in ['x', 'y', 'w', 'h']]
         info = item['info']
         direct = info.get('image_kind') == 'diffraction'
+        if direct and hypotheses is not None:
+            raise ValueError('Component proposals require real-space FFT windows.')
         crop = item['array'][y:y+h, x:x+w]
         if direct:
             s, context = diffraction.spectrum(crop, settings['diffraction'], cache=item.setdefault('_diffraction_cache', {}), g_max=settings['g_max'])
@@ -622,8 +624,8 @@ class Engine:
                         selected_geometry = geometry
                     continue
                 context = peak_evidence.for_peaks(weak_candidates, peaks) if can_index else None
-                trial_models, trial_candidates = self._fit_spectrum(trial, settings, templates, can_index, context, prediction_cache)
-                trial_joint = diffraction_fitting.fft_related(trial, settings, context, trial_candidates, cancel_event)
+                trial_models, trial_candidates = self._fit_spectrum(trial, settings, templates, can_index, context, prediction_cache, **({} if auto_strength or hypotheses is None else dict(hypotheses=hypotheses)))
+                trial_joint = diffraction_fitting.fft_related(trial, settings, context, trial_candidates, cancel_event) if hypotheses is None or auto_strength else None
                 ranked = trial_models + ([trial_joint['fit']] if trial_joint else [])
                 passing = [m for m in ranked if m['valid']]
                 leader = max(passing or ranked, key=lambda m: m['score'], default=None)
@@ -653,6 +655,10 @@ class Engine:
                     'selection': ('geometry_supported' if best[0][0] else 'no_geometry') if geometry_auto else ('passing' if best[0][0] else 'below_threshold' if models else 'no_fit'),
                     'trials': attempts if auto_strength else [],
                 }
+        if hypotheses is not None:
+            if auto_strength:
+                models, candidates = self._fit_spectrum(s, settings, templates, can_index, context, hypotheses=hypotheses)
+            return dict(spectrum=s, models=models, candidates=candidates, settings=settings)
         tol = max(.10, core.peak_width(s))
         forbidden_reflections.annotate(models, s, tol, settings['g_min'], settings['g_max'])
         double_diffraction.annotate(models, s, tol, settings['g_min'], settings['g_max'])

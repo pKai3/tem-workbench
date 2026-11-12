@@ -7,6 +7,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import numpy as np
 from PIL import Image
@@ -71,10 +72,13 @@ class ComponentGridTests(unittest.TestCase):
         self.assertEqual(job['processed'],4);self.assertEqual(job['pending'],0)
         self.assertFalse(job['can_rescore']);self.assertEqual(self.app.grid_summary()['grid']['component_method'],'pca')
         self.assertEqual(self.app.pca.current()['viewer']['file_id'],'a')
-        expected=component_maps.aggregate(self.app.pca.result,{})
+        auto_ids=component_grid.automatic_pool(self.app.pca.result['phase_support'])
+        self.assertEqual(job['component_pool']['selection'],'auto')
+        self.assertEqual(job['component_pool']['models'],auto_ids)
+        expected=component_maps.aggregate(self.app.pca.result,dict(models=auto_ids))
         self.assertEqual([c['phases'] for c in job['aggregation']['cells']],[c['phases'] for c in expected['cells']])
         for row,window in zip(job['regions'],self.app.pca.result['phase_support']['windows']):
-            self.assertEqual([m['score'] for m in row['models']],[m['score'] for m in window['candidates']])
+            self.assertEqual([m['score'] for m in row['models']],[m['score'] for m in window['candidates'] if m['model'] in auto_ids])
         with self.assertRaisesRegex(ValueError,'Rerun PCA/NMF'):self.app.rescore(job['id'],.1)
         json.dumps(job,allow_nan=False)
         # Main-window pool edits leave the retained full PCA checks intact;
@@ -100,9 +104,29 @@ class ComponentGridTests(unittest.TestCase):
         self.assertTrue(all(r['component_display']==dict(winner=None,passing=[],label='unresolved') for r in empty['regions']))
         all_ids=[m['id'] for m in retained['models']]
         restored=component_grid.select_pool(self.app,job['id'],all_ids)
-        self.assertEqual(restored['aggregation'],job['aggregation'])
+        self.assertEqual(restored['component_pool']['models'],all_ids)
+        automatic=component_grid.select_pool(self.app,job['id'],[],selection='auto')
+        self.assertEqual(automatic['aggregation'],job['aggregation'])
+        self.assertEqual(automatic['component_pool']['selection'],'auto')
         for invalid in ([999999],[True],'all'):
             with self.assertRaises(ValueError):component_grid.select_pool(self.app,job['id'],invalid)
+
+    def test_auto_selection_recomputes_when_mapping_advances_during_aggregation(self):
+        first=dict(phase_support=dict(models=[dict(id=0),dict(id=1)],windows=[
+            dict(candidates=[dict(model=0,score=.5,valid=True)])]))
+        latest=copy.deepcopy(first)
+        latest['phase_support']['windows'].append(dict(candidates=[dict(model=1,score=.5,valid=True)]))
+        job=dict(component=True,processed=2)
+        app=SimpleNamespace(job_lock=threading.RLock(),jobs={'job':job},status=lambda _:job,
+                            pca=SimpleNamespace(inspectable=lambda _:latest))
+        with patch.object(app.pca,'inspectable',side_effect=[first,latest]), \
+             patch.object(component_grid,'regions',side_effect=lambda r,ids:[list(ids) for _ in r['phase_support']['windows']]), \
+             patch.object(component_grid,'hypothesis_summary',return_value={}), \
+             patch.object(component_grid.overlap_maps,'aggregate',side_effect=lambda j:j['regions']):
+            status=component_grid.select_pool(app,'job',[],selection='auto')
+        self.assertEqual(status['component_pool']['models'],[0,1])
+        self.assertEqual(status['_component_models'],[0,1])
+        self.assertEqual(status['regions'],[[0,1],[0,1]])
 
     def test_existing_batch_exports_multiple_map_products_and_numeric_results(self):
         original=self.app.pca
@@ -122,6 +146,7 @@ class ComponentGridTests(unittest.TestCase):
                     with Image.open(folder/name) as png:self.assertGreater(png.width,1000);png.verify()
                 for name in row['component_export']['files']:self.assertTrue(Path(name).is_file())
                 saved=json.loads((folder/row['data_file']).read_text());self.assertEqual(saved['grid']['component_method'],method)
+                self.assertEqual(saved['component_pool']['selection'],'auto')
             self.assertTrue((folder/'folders.csv').is_file())
             self.assertNotIn('_component_result',next(iter(self.app.jobs.values())))
 

@@ -967,7 +967,7 @@ def make_handler(app):
                     self.send(app.pca.stability_map(body['id'],body.get('options',{})))
                 elif self.path == '/api/grid/component-pool':
                     from component_grid import select_pool
-                    self.send(select_pool(app, body['id'], body['models']))
+                    self.send(select_pool(app, body['id'], body['models'], body.get('selection','manual'),body.get('sort','coverage')))
                 elif self.path == '/api/pca/group-preview':
                     from nmf_fitting import group_preview
                     self.send(group_preview(app.pca.inspectable(body['id']), body['components']))

@@ -8,6 +8,7 @@ import logging
 import numpy as np
 import analysis_core as core
 from component_execution import ComponentPool, selected_workers
+from component_validation import native_input
 from shared_spectra import check_cancel
 from nmf_fitting import detect_peaks, search_candidates, group_spectrum, compact, matching_width
 
@@ -108,6 +109,9 @@ def match_local(peaks, model, width, settings):
 
 
 def window_task(result, templates, context, wi, cancel):
+    if native_input(result):
+        from component_validation import window
+        return window(result,context['models'],wi,cancel)
     models,eligibility,fraction=(context[k] for k in ('models','eligibility','fraction'))
     spectrum=result['raw_spectra'][wi];tolerance=matching_width(result)
     check_cancel(cancel)
@@ -201,6 +205,12 @@ def build(result, templates, cancel=None, progress=None, publish=None):
                 interpretation='Distinct group geometries checked in original unbroadened spectra. Near duplicates keep the highest-ranked unchanged representative and all source groups; eligibility is the union of those groups, never summed support. All eligible hypotheses are retained for selectable map pools. Multiple patterns require at least three distinct nonparallel profiles per pattern and >15% of all detected profiles. Local adjustment is limited to ±3° rotation and ±3% uniform reciprocal scale (rotation only for fixed scale); scale drift adds a penalty without discounting the group cost. At least four profiles within one matching width and nonparallel directions are required. NMF activity is eligibility only, not phase presence.',
                 limitations='Same-image consistency, not independent validation or phase fractions. Original spectra are polar-sampled log power. Bounded group refinement may miss larger local drift; c/a and phase/zone identity stay fixed. Overlapping windows are correlated.',
                 nmf_converged=result.get('converged'))
+    from component_validation import VERSION
+    maps['scoring_version']=VERSION if native_input(result) else 'legacy-polar-v1'
+    if native_input(result):
+        maps['interpretation']='NMF groups propose seeds. Every retained hypothesis is fitted in every native original-window FFT with the ordinary detector, refinement and full ranking/screen rules; factor activity does not reject native evidence.'
+        maps['limitations']='Hypothesis discovery remains limited to NMF group proposals. Same-image support, not independent validation or phase fractions.'
+        maps['parameters']=dict(peak_fraction=fraction, feature_peak_fraction=fraction, window_detection='ordinary_fft', scoring_version=VERSION)
     if publish:publish(maps)
     workers=selected_workers(result.get('execution',fits),result['plan'].get('workers',1))[1]
     context=dict(models=models,eligibility=np.asarray(eligibility),fraction=fraction)

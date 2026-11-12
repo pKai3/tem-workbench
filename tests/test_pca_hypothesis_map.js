@@ -88,3 +88,39 @@ assert.deepEqual(pca.mergeLive(updated,{...updated,windows:[shared],window_offse
 assert.deepEqual(pca.mergeLive(updated,{generation:'b',windows:[],window_offset:0}).windows,[]);
 assert.throws(()=>pca.mergeLive(initial,{generation:'a',windows:[],window_offset:2}),/earlier/);
 assert.equal(pca.mergeLive(updated,null),null);
+
+// Coverage-first is a separate default: one new window beats many improvements.
+const coverageMap={models:[0,1,2].map(id=>({id})),model_passing_counts:{0:5,1:4,2:1},model_mean_support:{0:.5,1:.9,2:.4},windows:Array.from({length:6},(_,i)=>({candidates:[
+ ...(i<5?[{model:0,valid:true,score:.5}]:[]),
+ ...(i<4?[{model:1,valid:true,score:.9}]:[]),
+ ...(i===5?[{model:2,valid:true,score:.4}]:[])
+]}))};
+assert.deepEqual(pca.orderedHypotheses(coverageMap).map(m=>m.id),[0,2,1]);
+assert.deepEqual(pca.orderedHypotheses(coverageMap,'benefit').map(m=>m.id),[0,1,2]);
+assert.deepEqual(pca.orderedHypotheses(coverageMap,'passing').map(m=>m.id),[0,1,2]);
+const html=require('node:fs').readFileSync(require('node:path').join(__dirname,'../web/index.html'),'utf8');
+for(const id of ['pca-map-sort','component-map-sort'])assert.match(html,new RegExp(`id="${id}"><option value="coverage">New windows first</option>`));
+
+// Native maps carry ordinary classifier decisions; browser does no re-screening.
+const nativeWindow={candidates:[{model:0,valid:true,score:.8},{model:1,valid:true,score:.7},{model:2,valid:true,score:.6}],
+ pool_comparisons:{0:{label:'single',ambiguous:[1],multiple:[2]},1:{label:'unresolved',ambiguous:[],multiple:[]},2:{label:'single',ambiguous:[],multiple:[]}}};
+assert.equal(pca.localHypotheses(nativeWindow,[0,1]).label,'ambiguous');
+assert.equal(pca.localHypotheses(nativeWindow,[0,1,2]).label,'multiple');
+assert.equal(pca.localHypotheses(nativeWindow,[1]).label,'unresolved');
+assert.equal(pca.localHypotheses(nativeWindow,[0]).label,'single');
+assert.equal(pca.localHypotheses(nativeWindow,[]).label,'unresolved');
+
+// Auto retains 99% of attainable coverage, not 99% of all sampled windows.
+const automatic={models:[{id:0},{id:1},{id:2}],windows:Array.from({length:200},(_,i)=>({candidates:[
+ ...(i<99?[{model:0,valid:true,score:.5}]:[]),
+ ...(i===99?[{model:1,valid:true,score:.4}]:[]),
+ {model:2,valid:false,score:1}
+]}))};
+const snapshot=JSON.stringify(automatic);
+assert.equal(pca.autoHypothesisCount(automatic),1);
+assert.equal(pca.autoHypothesisCount({...automatic,windows:automatic.windows.slice(90)}),2);
+assert.equal(pca.autoHypothesisCount({models:[],windows:[]}),0);
+assert.equal(pca.autoHypothesisCount({models:[{id:0}],windows:[{candidates:[]}]}),0);
+assert.equal(pca.autoHypothesisCount(coverageMap),2);
+assert.equal(pca.autoHypothesisCount(coverageMap,pca.orderedHypotheses(coverageMap,'benefit')),3);
+assert.equal(JSON.stringify(automatic),snapshot);

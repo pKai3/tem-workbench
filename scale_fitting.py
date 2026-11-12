@@ -282,7 +282,7 @@ def _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min):
     return result
 
 
-def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10., g_min=3., ca_penalty_strength=DEFAULT_CA_PENALTY, prediction_cache=None, omega_falloff_multiplier=1.):
+def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_strength=DEFAULT_SCALE_PENALTY, candidate_sink=None, fcc_a=.417, g_max=10., g_min=3., ca_penalty_strength=DEFAULT_CA_PENALTY, prediction_cache=None, omega_falloff_multiplier=1., hypotheses=None):
     if mode not in MODES[1:]:
         raise ValueError('Unknown automatic scale mode.')
     strength = float(scale_penalty_strength)
@@ -299,10 +299,12 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
     candidates = []
     base_tol = tol
     for template in templates:
+        proposals = None if hypotheses is None else [m for m in hypotheses if m['template_id']==template['id']]
+        if proposals == []:continue
         tol = base_tol * (omega_falloff_multiplier if template['phase'] == 'OMEGA' else 1.)
         if template['phase'] == 'ORT' and mode != 'auto_uniform':
             from orthorhombic import fit as fit_orthorhombic
-            for result in fit_orthorhombic(peaks, template, tol, g_min, g_max):
+            for result in fit_orthorhombic(peaks, template, tol, g_min, g_max, hypotheses=proposals):
                 result['scale_mode'] = mode
                 penalize(result, result['scale_a'], result['scale_c'], strength, ca_penalty_strength)
                 candidates.append(result)
@@ -311,10 +313,12 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
                   float(template['c_direction'] @ template['c_direction']) > 1e-10)
         if len(template['q']) < 4:
             continue
-        seeds = _seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min, prediction_cache)
-        for seed in seeds:
+        seeds = (_seed_candidates(peaks, template, tol, bcc_a, double, tree, observed, weights, fcc_a, g_max, g_min, prediction_cache) if proposals is None else
+                 [(m['score'],np.radians(m['rotation_deg']),m.get('scale_a',m.get('shared_scale',1.)),m.get('scale_c') or m.get('scale_a',m.get('shared_scale',1.))) for m in proposals])
+        for si,seed in enumerate(seeds):
             result = _refine(peaks, template, seed, tol, bcc_a, double, fcc_a, g_max, g_min)
             if result:
+                if proposals is not None:result['source_hypothesis']=proposals[si]['id']
                 # Rank each positional fit before penalty-dependent retention.
                 result['scale_mode'] = mode
                 penalize(result, result['scale_a'], result['scale_c'] if double else None, strength, ca_penalty_strength)

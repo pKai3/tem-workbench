@@ -67,8 +67,11 @@ class ComponentPool:
                     else:out[key] = value
                 return out
             keys = ['plan', 'settings']
-            if mapping:keys += ['raw_spectra', 'scores', 'radii', 'angles']
+            if mapping:
+                keys += ['raw_spectra', 'scores', 'radii', 'angles']
+                if '_source_image' in result:keys += ['source', '_source_image']
             inputs = shared({key:result[key] for key in keys}, 'input')
+            if 'method_version' in result:inputs['method_version']=result['method_version']
             self.executor = ProcessPoolExecutor(max_workers=self.workers, mp_context=process,
                 initializer=_initialize, initargs=(inputs, templates, shared(self.context, 'context'), self.stop))
         except BaseException:

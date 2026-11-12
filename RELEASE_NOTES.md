@@ -1,12 +1,10 @@
-# TEM Workbench 1.0.34
+# TEM Workbench — next release
 
-- Run PCA and NMF stability maps from Automatic grid, with the familiar sampling, progress, project/subfolder batch selection and map PNG exports.
-- Add an Accepted hypotheses selector and collapsible hypothesis table to the main window. Selection, opacity and shared map controls stay linked to the detailed inspector and survive browser reloads.
-- Fix Best match maps becoming weaker when more hypotheses are included. Colours and opacity now follow the strongest average passing evidence, consistently in the viewer and exports.
-- Merge near-duplicate NMF crystal geometries across signal groups, retaining their source information. NMF now uses the same selectable hypothesis pools as PCA and can inspect each fit against its original window.
-- Hide the PCA/NMF inspector button for ordinary grid methods.
-- Expand local logs with settings and actions, analysis stages and timing, batch progress, exports, reconnections and browser errors. Repeated polling and large image/spectrum payloads are omitted.
+- Use the ordinary FFT detector, rotation/scale refinement, scoring and acceptance rules when checking PCA/NMF hypotheses against original image windows. Original-window inspectors now show the native FFT and the same rank and cell measurements as ordinary fitting.
+- Add **New windows first** as the default hypothesis order and **Auto** as the default pool size. Auto keeps the smallest leading pool retaining at least 99% of attainable passing-window coverage. Counts and manual checkboxes remain available; selection stays linked between the main map and detailed inspector, and applies to batch map exports.
+- Match the ordinary grid's 10,000-window capacity for PCA and NMF, including placement passes and rim sampling.
+- Keep individual-window symbols and winner counts consistent between main and detailed maps. Distinct orientations of the same zone retain separate symbols, and rejected alternatives cannot hide a passing winner.
 
-PCA/NMF remains experimental: map support is not a phase fraction. Similar rotation angles can still represent different lattice dimensions; merging compares predicted geometry, not angle alone. Restarting Workbench stops retained jobs; rerun NMF mapping after updating to use the merged hypotheses.
+Rerun PCA/NMF after updating to use native-window validation. Existing results are not silently rescored. Component spectra still generate hypotheses from their relative features; their amplitudes are not native image brightness. Mapping remains experimental and is not a phase-fraction measurement. Auto may omit small regions within its 1% allowance; use explicit selection when those matter.
 
 Use **Check for updates → Install update and restart**.

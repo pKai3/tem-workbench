@@ -54,6 +54,15 @@ class Orthorhombic(unittest.TestCase):
         self.assertTrue(m['valid']);self.assertEqual(m['axis_observable'],[True,True,False])
         self.assertIsNone(m['fitted_c_nm']);self.assertEqual(m['scale_parameter_count'],2)
 
+    def test_component_seed_uses_same_refinement(self):
+        t=self.template([1,1,1]);peaks=self.peaks(t,[1.03,.98,1.06])
+        ordinary=fitting.search(peaks,[t],.08,'auto_hcp_ratio',scale_penalty_strength=0)[0]
+        seed=dict(ordinary,id=23,scale_b=1.)
+        checked=fitting.search(peaks,[t],.08,'auto_hcp_ratio',scale_penalty_strength=0,hypotheses=[seed])[0]
+        self.assertEqual(checked['source_hypothesis'],23)
+        self.assertAlmostEqual(checked['score'],ordinary['score'],places=7)
+        self.assertAlmostEqual(checked['scale_b'],.98,places=5)
+
     def test_partially_identifiable_zone_still_fits(self):
         t=self.template([1,1,0])
         m=fitting.search(self.peaks(t,[1.02,.98,1.04]),[t],.08,'auto_hcp_ac',scale_penalty_strength=0)[0]

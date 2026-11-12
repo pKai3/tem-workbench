@@ -218,19 +218,23 @@ def additional_orientation_seeds(angles, scores, support, initial, limit=2):
   if len(extra)>=limit:break
  return extra
 
-def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a=.417,g_max=10.,g_min=3.,omega_falloff_multiplier=1.):
+def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a=.417,g_max=10.,g_min=3.,omega_falloff_multiplier=1.,hypotheses=None):
  if len(peaks)<4:return []
  O=np.array([[p['qx'],p['qy']] for p in peaks]);w=np.array([p['weight'] for p in peaks]);og=np.linalg.norm(O,axis=1);oa=np.arctan2(O[:,1],O[:,0]);tree=cKDTree(np.r_[O,-O]);candidates=[]
  base_tol=tol
  for T in templates:
   tol=base_tol*(omega_falloff_multiplier if T['phase']=='OMEGA' else 1.)
-  qs=T['q']*({'BCC':.330/bcc_a,'FCC':.417/fcc_a}.get(T['phase'],1));g=np.linalg.norm(qs,axis=1)*scale;ta=np.arctan2(qs[:,1],qs[:,0]);pairs=np.argwhere(abs(og[:min(16,len(og)),None]-g[None,:])<matching_radius(tol))
-  if not len(pairs):continue
-  angles=np.unique(np.round(((oa[pairs[:,0]]-ta[pairs[:,1]])%np.pi)/np.radians(.5))*np.radians(.5));cs=np.cos(angles);sn=np.sin(angles);P=np.empty((len(angles),len(qs),2));P[:,:,0]=scale*(cs[:,None]*qs[None,:,0]-sn[:,None]*qs[None,:,1]);P[:,:,1]=scale*(sn[:,None]*qs[None,:,0]+cs[:,None]*qs[None,:,1]);dist,ind=tree.query(P.reshape(-1,2));dist=dist.reshape(len(angles),-1);ind=ind.reshape(len(angles),-1)%len(O);vals=positional_quality(dist,tol);vals[:,(g<g_min)|(g>g_max)]=0;support=np.zeros((len(angles),len(O)));np.maximum.at(support,(np.repeat(np.arange(len(angles)),len(qs)),ind.ravel()),vals.ravel());quick=support@w/w.sum()
-  initial=list(np.argsort(quick)[-2:])
-  for ai in initial+additional_orientation_seeds(angles,quick,support,initial):
-   if quick[ai]<.2:continue
-   ang=float(angles[ai]);r=score_hypothesis(peaks,T,qs,scale,ang,tol,g_max,g_min)
+  qs=T['q']*({'BCC':.330/bcc_a,'FCC':.417/fcc_a}.get(T['phase'],1))
+  if hypotheses is None:
+   g=np.linalg.norm(qs,axis=1)*scale;ta=np.arctan2(qs[:,1],qs[:,0]);pairs=np.argwhere(abs(og[:min(16,len(og)),None]-g[None,:])<matching_radius(tol))
+   if not len(pairs):continue
+   angles=np.unique(np.round(((oa[pairs[:,0]]-ta[pairs[:,1]])%np.pi)/np.radians(.5))*np.radians(.5));cs=np.cos(angles);sn=np.sin(angles);P=np.empty((len(angles),len(qs),2));P[:,:,0]=scale*(cs[:,None]*qs[None,:,0]-sn[:,None]*qs[None,:,1]);P[:,:,1]=scale*(sn[:,None]*qs[None,:,0]+cs[:,None]*qs[None,:,1]);dist,ind=tree.query(P.reshape(-1,2));dist=dist.reshape(len(angles),-1);ind=ind.reshape(len(angles),-1)%len(O);vals=positional_quality(dist,tol);vals[:,(g<g_min)|(g>g_max)]=0;support=np.zeros((len(angles),len(O)));np.maximum.at(support,(np.repeat(np.arange(len(angles)),len(qs)),ind.ravel()),vals.ravel());quick=support@w/w.sum()
+   initial=list(np.argsort(quick)[-2:])
+   starts=[(float(angles[ai]),None) for ai in initial+additional_orientation_seeds(angles,quick,support,initial) if quick[ai]>=.2]
+  else:
+   starts=[(np.radians(m["rotation_deg"]),m["id"]) for m in hypotheses if m["template_id"]==T["id"]]
+  for ang,source in starts:
+   r=score_hypothesis(peaks,T,qs,scale,ang,tol,g_max,g_min)
    if r:
     # Continuous in-plane rotation refinement at the SAME fixed shared scale.
     # No radial scale, affine distortion or phase-specific metric refinement is allowed.
@@ -243,6 +247,7 @@ def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a
      rr=score_hypothesis(peaks,T,qs,scale,ang+delta,tol,g_max,g_min)
      if rr and rr['score']>=r['score']:r=rr;ang+=delta
      else:break
+    if source is not None:r['source_hypothesis']=source
     r['nominal_a_nm']={'BCC':bcc_a,'FCC':fcc_a,'HCP':T.get('reference_a_nm',.295),'OMEGA':T.get('reference_a_nm',.4614),'ORT':T.get('reference_a_nm',.3)}[T['phase']];r['nominal_c_nm']=T.get('reference_c_nm',.468) if T['phase'] in ('HCP','OMEGA','ORT') else None;r['nominal_b_nm']=T.get('reference_b_nm');candidates.append(r)
  if candidate_sink is not None:candidate_sink.extend(candidates)
  return retain(candidates,topn)

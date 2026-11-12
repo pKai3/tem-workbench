@@ -12,6 +12,7 @@ from shared_spectra import check_cancel, number, spectrum_image
 from nmf_fitting import detect_peaks, search_candidates, compact, screen_reasons, matching_width, DEFAULT_PEAK_FRACTION
 from nmf_phase_maps import match_local, LOCAL_ROTATION_DEG, LOCAL_SCALE_FRACTION
 from component_execution import ComponentPool, search_task, selected_workers
+from component_validation import native_input
 
 
 def validate_options(result, options):
@@ -236,6 +237,11 @@ def unique_models(result, cancel=None):
 
 
 def window_task(result, templates, context, wi, cancel):
+    if native_input(result):
+        from component_validation import window
+        checked=window(result,context['models'],wi,cancel)
+        checked['label']='supported' if any(c['valid'] for c in checked['candidates']) else 'unresolved'
+        return checked
     models=context['models'];spectrum=result['raw_spectra'][wi]
     check_cancel(cancel)
     peaks = detect_peaks(spectrum, result, context['fraction'])
@@ -274,6 +280,12 @@ def build(result, templates, cancel=None, progress=None, publish=None):
                                 minimum_profiles=4, minimum_prediction_coverage=.3, minimum_support=.2),
                 interpretation='Per-geometry support in all original unbroadened sampled windows, regardless of score sign or magnitude. Near duplicates across feature/combination sources keep the highest-ranked unchanged fit and all source links; each geometry is checked once. Global display ranking is passing-window count, then mean passing support. Resolved same-phase orientations remain separate. Counts across hypotheses overlap and must not be summed. Shared predictions alone do not establish coexistence.',
                 limitations='Same-image consistency, not independent validation or phase fractions. Lobes are deviations from the mean, not absolute intensity. Mean-present patterns may pass on either score side; drift or noise can also create lobes.')
+    from component_validation import VERSION
+    maps['scoring_version']=VERSION if native_input(result) else 'legacy-polar-v1'
+    if native_input(result):
+        maps['interpretation']='Component features propose seeds. Every hypothesis is fitted to native original-window FFT peaks by the ordinary detector, refinement, scale penalties, weak/missing evidence, brightness and DD rules. No PCA score gate.'
+        maps['limitations']='Hypothesis discovery remains limited to the selected features. Same-image support, not independent validation or phase fractions.'
+        maps['parameters']=dict(peak_fraction=fits['peak_fraction'], feature_peak_fraction=fits['peak_fraction'], window_detection='ordinary_fft', scoring_version=VERSION)
     if publish:publish(maps)
     workers=selected_workers(result.get('execution',fits),result['plan'].get('workers',1))[1]
     with ComponentPool(result,templates,workers,cancel,dict(models=models,fraction=fits['peak_fraction']),mapping=True) as pool:
@@ -301,6 +313,20 @@ def window_detail(result, index, model_id):
     if type(model_id) is not int or not 0 <= model_id < len(maps['models']):
         raise ValueError('Choose a retained component fit.')
     model = maps['models'][model_id]
+    if maps.get('scoring_version') == 'native-fft-window-v1':
+        from component_validation import analyze, candidate, spectrum_image as native_image
+        analysis=analyze(result,maps['models'],index)
+        options=[m for m in analysis['candidates'] if m['source_hypothesis']==model_id]
+        fit=max(options,key=lambda m:(m['valid'],m['score']),default=None)
+        checked=candidate(fit,model,result,index);s=analysis['spectrum']
+        fitted={**model,**(fit or {}),**checked,'matches':fit['matches'] if fit else [],
+                'predicted_nodes':fit['predicted_nodes'] if fit else [],'matched_profile_count':len(checked['profiles'])}
+        return dict(kind='pca_window' if result['plan']['method']=='pca' else 'nmf_window',
+                    component=model.get('component'),components=model['components'],side=model.get('side'),sources=model.get('sources',[]),window=index,
+                    spectrum=native_image(s,result['plan']['g_max']),peaks=s['peaks'],candidates=[fitted],
+                    phases=[model['phase']],component_score=checked['component_score'],
+                    peak_fraction=analysis['settings']['threshold'],g_max=result['plan']['g_max'],
+                    tolerance_nm_inv=(fit or {}).get('position_matching',{}).get('distance_scale_nm_inv',core.matching_parameters(s)['distance_scale_nm_inv']*(result['settings'].get('omega_falloff_multiplier',1.) if model['phase']=='OMEGA' else 1.)),scoring_version=maps['scoring_version'])
     peaks = detect_peaks(result['raw_spectra'][index], result, maps['parameters']['peak_fraction'])
     local = _local(result, peaks, model)
     candidate = _candidate(result, index, model, local)

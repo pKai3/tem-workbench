@@ -11,7 +11,7 @@ function setup(){
   selected:new Set(),expandedSignals:new Set(),section:'fits',index:0,epoch:1,groupEpoch:2,sampleEpoch:0,fitComponents:null,liveRevision:0,snapshot:{file_id:'image'},sourceImage:null,
   PcaView:require('../web/shared-spectra.js'),Image:class{},document:{createElement:element},phaseColors:{},createComponentBatch:()=>({busy:()=>false,controls(){}}),
   renderSpectrumPreviews(){},restoreView(){},rememberViewer(){},inspectorControls(){},sampledSpectrumUrl:spec=>spec.image,drawComponentFitOverlay(){},inspectorRender:null,el:(tag,attrs)=>{Object.entries(attrs);return element()},
-  isPca:()=>true,sourceLabel:()=> 'PC 1+',showSection(section){context.section=section},controls(){},drawMap(){},showFits(){},showPhaseMaps(){},drawPhaseMap(){},
+  nativeValidation:()=>false,isPca:()=>true,sourceLabel:()=> 'PC 1+',showSection(section){context.section=section},controls(){},drawMap(){},showFits(){},showPhaseMaps(){},drawPhaseMap(){},
   notify(message){context.notice=message},setTimeout(fn){timers.push(fn)},pollTimer:null,
   async api(path,body){requests.push({path,body});if(context.networkError)throw context.networkError;if(path==='pca/lobe')return new Promise(resolve=>pending.push(resolve));if(path.startsWith('pca/live'))return context.nextLive;if(path.startsWith('pca/result'))return {...result,phase_support_status:'complete'};return context.nextJob},
  });

@@ -28,7 +28,7 @@ import analysis_core as core
 import overlap_maps
 from component_execution import selected_workers
 
-VERSION = 'local-fft-components-v2'
+VERSION = 'local-fft-components-v3'
 RADIAL_BINS, ANGULAR_BINS = 96, 180
 RESIDUAL_BLOCK_BYTES = 8 * 1024**2
 LOG = logging.getLogger('tem_workbench')
@@ -260,7 +260,7 @@ def compute(array, info, settings, options, cancel=None, progress=None):
     result=(decompose_nmf(matrix,p['components'],cancel,progress) if p['method']=='nmf' else decompose(matrix,p['components'],cancel))
     result.update(plan=p,raw_spectra=raw,normalizations=norms,positions=np.asarray(positions),
                   radii=r,angles=a,area_weights=weights,source=copy.deepcopy(info),settings=copy.deepcopy(settings),
-                  method_version=VERSION)
+                  method_version=VERSION, _source_image=np.asarray(array).copy())
     return result
 
 
@@ -322,7 +322,7 @@ def summary(result):
         components.append(dict(index=i,variance=float(ratio),scores=scores.tolist(),
                                spectrum=component_image(spectrum/w,p,not nmf)))
     return dict(plan=p,source_name=result['source'].get('name','Image'),
-                source_hash=result['source'].get('sha256_pixels'),method=VERSION,
+                source_hash=result['source'].get('sha256_pixels'),method=result.get('method_version','local-fft-components-v2'),
                 algorithm=result['algorithm'],components=components,decomposition=p.get('method','pca'),
                 execution=result.get('execution'),fit_status=result.get('fit_status'),fits=result.get('fits'),phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'),
                 iterations=result.get('iterations'),converged=result.get('converged'),
@@ -384,7 +384,7 @@ def export(result, folder):
     from batch_grids import safe_name
     folder=Path(folder)
     stem=time.strftime('%Y%m%d_%H%M%S_')+safe_name(result['source'].get('name','image'))+'_'+result['plan'].get('method','pca')+'_'+uuid.uuid4().hex[:6]
-    meta=dict(method=VERSION,source=result['source'],processing=result['settings'],plan=result['plan'],
+    meta=dict(method=result.get('method_version','local-fft-components-v2'),source=result['source'],processing=result['settings'],plan=result['plan'],
               algorithm=result['algorithm'],explained_variance_ratio=result['explained_variance_ratio'].tolist(),
               conventions=dict(spectra='log(1 + abs(FFT)**2 / number_of_pixels); conjugate averaged',
               angular_domain='[0, pi), radians; qy up',normalization='per-window weighted norm before centering',
@@ -397,6 +397,8 @@ def export(result, folder):
                 phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'))
     if result.get('fits') and result['plan'].get('method','pca')=='pca':
         meta['conventions']['source_settings']='Decomposition uses taper, mean removal and fitting band. Signed-lobe indexing uses captured material/phase/scale settings; original-window checks do not gate by score sign.'
+    if (result.get('phase_support') or {}).get('scoring_version')=='native-fft-window-v1':
+        meta['conventions']['original_window_validation']='Native pixels use ordinary FFT detection, weights, refinement, scale bounds and full ranking/pass rules. Feature cutoff applies only to proposal discovery.'
     if result['plan'].get('method')=='nmf':
         meta.update(contribution_share=result['contribution_share'].tolist(),iterations=result['iterations'],converged=result['converged'],relative_reconstruction_error=result['relative_reconstruction_error'],fits=result.get('fits'),fit_status=result.get('fit_status'),phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'))
         meta['conventions'].update(normalization='Per-window weighted norm, no centering; H rows have unit L1 sum',reconstruction='scores @ components; divide by area_weights and multiply window normalization',components='Nonnegative spectral factors; contribution shares are not phase fractions or explained variance',source_settings='Decomposition uses taper, mean removal and fitting band. Optional indexing uses captured material/phase/scale settings; see fits provenance.')
@@ -631,6 +633,8 @@ class SharedSpectra:
     def support(self,job_id,templates,_within_pipeline=False,workers=None):
         with self.lock:
             result=self._stage_result(job_id,_within_pipeline)
+            from component_validation import native_input
+            native_input(result)  # Fail before discarding an older completed map.
             if result['plan'].get('method','pca')=='pca':
                 from pca_fitting import build
             else:
