@@ -1199,9 +1199,15 @@ Implemented after `a6a8d4e`: signal cards pack from the left at a consistent com
 Confirmed current concurrency: one PCA/NMF analysis worker, sequential stages/windows/groups, one FFT worker and standard-server numerical threads capped at one. Automatic-grid worker settings do not control this pipeline. Validation covers card packing, horizontal percentage fills, expansion, PCA/NMF group navigation and narrow layouts.
 
 
-### PCA/NMF parallel execution — deferred 12 November 2026
+### PCA/NMF parallel execution — completed 12 November 2026
 
-User asked about parallelization, then explicitly put it aside for later. No execution changes in this update. A future evaluation can compare bounded parallel combination fitting and original-window support checks against their serial baseline, preserving deterministic results, cancellation and memory bounds. Benchmark overhead before parallelizing already-short PCA runs. This is deferred work, not an instruction to implement it now.
+Initially deferred at the user's request while individual PCA feature fitting was completed. The proposed evaluation was bounded parallel combination fitting and original-window support checks against their serial baseline, preserving deterministic results, cancellation and memory bounds, with startup overhead measured before parallelizing short runs.
+
+Approved 12 November 2026, after `12871db`: parallelize PCA/NMF crystal fitting and original-window mapping, with a Workers selector matching the normal grid. Approved scope: bounded spawn processes, shared read-only sampled inputs, ordered result publication, cancellation/cleanup and serial-equivalence checks. Sampling and decomposition remain single-worker; no fit/scoring changes are approved. This approval supersedes the initial deferral above.
+
+Completed 12 November 2026: added the independent Workers selector (Auto, 1, 2, 4, 8, 10, 12, 14, 16), preserved through reload and applied to new runs, refits and mapping updates. Auto follows the grid's up-to-four-worker default. PCA lobe/combination and NMF group searches share a bounded spawn pool; original-window checks use read-only memory-mapped sampled arrays. The coordinator commits in stable order and retains the same exact-peak cache, candidate retention and hypothesis identities. Cancellation/error paths close workers and temporary storage; normal backend shutdown waits for cleanup. Sampling and decomposition remain serial.
+
+Validation: seven real spawn tests show identical serial/parallel PCA fits and maps in fixed/fitted scale modes, identical NMF combinations/eligibility/maps, unchanged source arrays, ordered progress, shared read-only inputs, cancellation, worker failure cleanup and backend shutdown waiting for worker cleanup. The 447-window Ti 0274 replay with two PCs, their combined reconstruction and HCP/BCC search produced identical complete fit/map output: one worker took 29.55 s fitting + 5.43 s mapping; four took 13.27 s + 2.47 s (about 2.2× faster including pool startup). Browser checks cover completed PCA/NMF runs, worker choices, live progress, reload recovery, mapping-only worker changes and cancellation. All JavaScript suites pass; the 505-test Python run passes with 14 platform skips after rerunning two export checks with temporary staging and one process-inspection check with required local access. The additional shutdown test passes in the final seven-test worker suite. No release or version bump.
 
 
 ### Next focus: PCA crystal-fitting pipeline — 12 November 2026

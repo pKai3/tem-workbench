@@ -5,17 +5,19 @@ Original-window checks preserve distinct retained orientations and never use
 PCA score sign or magnitude as an eligibility gate.
 """
 import itertools
-from collections import OrderedDict
+from contextlib import nullcontext
 import numpy as np
 import analysis_core as core
 from shared_spectra import check_cancel, number, spectrum_image
 from nmf_fitting import detect_peaks, search_candidates, compact, screen_reasons, matching_width, DEFAULT_PEAK_FRACTION
 from nmf_phase_maps import match_local, LOCAL_ROTATION_DEG, LOCAL_SCALE_FRACTION
+from component_execution import ComponentPool, search_task, selected_workers
 
 
 def validate_options(result, options):
     if result['plan'].get('method', 'pca') != 'pca':
         raise ValueError('Signed feature fitting requires PCA.')
+    selected_workers(options, result['plan'].get('workers', 1))
     return number(options, 'peak_fraction', DEFAULT_PEAK_FRACTION, .01, 1)
 
 
@@ -29,12 +31,13 @@ def lobe_spectrum(result, component, side):
     return np.maximum(loading if side == 'positive' else -loading, 0)
 
 
-def fit_lobes(result, templates, options, cancel=None, progress=None):
+def fit_lobes(result, templates, options, cancel=None, progress=None, _pool=None):
     fraction = validate_options(result, options)
     ids = feature_components(result, options)
     total = 2 * len(ids)
     records = []
     fits = dict(kind='pca_signed_lobes', version=2, groups=records, total=total,
+                workers=selected_workers(options,result['plan'].get('workers',1))[0],
                 completed=0, peak_fraction=fraction, candidates_per_phase=5, feature_components=ids,
                 tolerance_nm_inv=matching_width(result),
                 scoring='Position minus chance allowance minus scale cost; uniform profile weights. Lobe fit is a hypothesis, not original-window support. No weak/missing, brightness or double-diffraction adjustments.',
@@ -42,13 +45,16 @@ def fit_lobes(result, templates, options, cancel=None, progress=None):
                 validation='Every retained orientation, including below-screen feature fits, is checked against every original unbroadened window. PCA sign is arbitrary; flipping loading and scores swaps side labels only.')
     result['fits'] = fits
     if progress:progress(0,total,'Fitting individual PCA features')
-    for component in ids:
-        for side in ('positive', 'negative'):
-            check_cancel(cancel)
-            done = len(records)
-            peaks = detect_peaks(lobe_spectrum(result, component, side), result, fraction)
-            candidates = core.retain(search_candidates(result, peaks, templates, cancel,
-                (lambda n, count: progress(done, total, f'PC {component+1} {side} · template {n}/{count}')) if progress else None), topn=5)
+    def tasks():
+        for component in ids:
+            for side in ('positive', 'negative'):
+                check_cancel(cancel)
+                yield dict(component=component, side=side, topn=5,
+                           peaks=detect_peaks(lobe_spectrum(result, component, side), result, fraction))
+    workers=selected_workers(options,result['plan'].get('workers',1))[1]
+    with (nullcontext(_pool) if _pool else ComponentPool(result,templates,workers,cancel)) as pool:
+        for task,candidates,_ in pool.map(search_task,tasks()):
+            component,side,peaks=task['component'],task['side'],task['peaks']
             records.append(dict(component=component, components=[component], side=side,
                                 peak_count=len(peaks), candidates=[dict(compact(m), predicted_nodes=m['predicted_nodes']) for m in candidates]))
             fits['completed'] = len(records)
@@ -109,6 +115,13 @@ def fit_features(result, templates, options, cancel=None, progress=None):
     Keep bounded per-subset hypothesis pools rather than duplicating full fits
     for every window. Each representative records the exact proposal window.
     """
+    combination_options(result,options)
+    workers=selected_workers(options,result['plan'].get('workers',1))[1]
+    with ComponentPool(result,templates,workers,cancel) as pool:
+        return _fit_features(result,templates,options,cancel,progress,pool)
+
+
+def _fit_features(result, templates, options, cancel, progress, executor):
     mode,ids=combination_options(result,options)
     k=len(ids);count=(2**k-k-1 if mode=='all' else int(k>=2)) if mode!='none' else 0
     total=2*len(feature_components(result,options))+count*len(result['scores'])
@@ -117,33 +130,31 @@ def fit_features(result, templates, options, cancel=None, progress=None):
     def report(done,ignored,stage):
         if result.get('fits'):result['fits'].update(metadata)
         if progress:progress(done,total,stage)
-    fits=fit_lobes(result,templates,options,cancel,report)
+    fits=fit_lobes(result,templates,options,cancel,report,_pool=executor)
     fits.update(version=3,total=total,combination_mode=mode,combination_components=ids,
                 combination_count=count,combination_windows=len(result['scores']),
                 combination_reconstruction='(mean + scores[window, selected] @ loadings[selected]) / area_weights * window_normalization; no offset or sign reversal. Negative reconstruction residuals remain in the data; detector uses positive radial-baseline excess.',
                 combination_retention='Every requested subset/window searched; up to five distinct hypotheses per phase per subset. Exact repeated ordered peak positions reuse search results. Representative geometry and its source window are retained unchanged.')
     if not count:return fits
     subsets=(itertools.chain.from_iterable(itertools.combinations(ids,size) for size in range(2,k+1)) if mode=='all' else [ids])
-    cache=OrderedDict();searches=0;hits=0
+    searches=0;hits=0
     for subset in subsets:
         subset=list(subset)
         group=dict(kind='combination',components=subset,component=None,side=None,window=0,
                    completed_windows=0,total_windows=len(result['scores']),peak_count=0,candidates=[])
         fits['groups'].append(group)
-        for wi in range(len(result['scores'])):
-            check_cancel(cancel)
-            spectrum,coefficients=combination_spectrum(result,subset,wi)
-            peaks=detect_peaks(spectrum,result,fits['peak_fraction'])
+        def tasks():
+            for wi in range(len(result['scores'])):
+                check_cancel(cancel)
+                spectrum,coefficients=combination_spectrum(result,subset,wi)
+                yield dict(window=wi,coefficients=coefficients,topn=5,
+                           peaks=detect_peaks(spectrum,result,fits['peak_fraction']))
+        for task,found,hit in executor.map(search_task,tasks(),key=lambda t:tuple((p['qx'],p['qy']) for p in t['peaks'])):
+            wi,coefficients,peaks=task['window'],task['coefficients'],task['peaks']
             if wi==0:group['peak_count']=len(peaks)
-            key=tuple((p['qx'],p['qy']) for p in peaks)
             stage=f'PC {" + ".join(str(i+1) for i in subset)} · window {wi+1}/{len(result["scores"])}'
-            if key in cache:
-                found=cache.pop(key);cache[key]=found;hits+=1
-            else:
-                found=core.retain(search_candidates(result,peaks,templates,cancel,
-                    (lambda done,n:report(fits['completed'],total,f'{stage} · template {done}/{n}')) if progress else None),topn=5)
-                searches+=1;cache[key]=found
-                if len(cache)>128:cache.popitem(last=False)
+            if hit:hits+=1
+            else:searches+=1
             proposals=[dict(m,window=wi,coefficients=coefficients.tolist(),peak_count=len(peaks)) for m in found]
             pool=core.retain(group['candidates']+proposals,topn=5)
             group['candidates']=pool
@@ -224,6 +235,22 @@ def unique_models(result, cancel=None):
     return models
 
 
+def window_task(result, templates, context, wi, cancel):
+    models=context['models'];spectrum=result['raw_spectra'][wi]
+    check_cancel(cancel)
+    peaks = detect_peaks(spectrum, result, context['fraction'])
+    candidates = []
+    for model in models:
+        check_cancel(cancel)
+        candidates.append(_candidate(result, wi, model, _local(result, peaks, model)))
+    candidates.sort(key=lambda c:(-c['score'], c['model']))
+    passing = [c for c in candidates if c['valid']]
+    return dict(index=wi, peak_count=len(peaks), tested_models=len(models),
+                        peak_positions=[[p['profile_id'],p['qx'],p['qy']] for p in peaks],
+                        candidates=candidates, label='supported' if passing else 'unresolved',
+                        phases=list(dict.fromkeys(c['phase'] for c in passing)))
+
+
 def build(result, templates, cancel=None, progress=None, publish=None):
     validate_options(result, {})
     fits = result.get('fits')
@@ -248,25 +275,17 @@ def build(result, templates, cancel=None, progress=None, publish=None):
                 interpretation='Per-geometry support in all original unbroadened sampled windows, regardless of score sign or magnitude. Near duplicates across feature/combination sources keep the highest-ranked unchanged fit and all source links; each geometry is checked once. Global display ranking is passing-window count, then mean passing support. Resolved same-phase orientations remain separate. Counts across hypotheses overlap and must not be summed. Shared predictions alone do not establish coexistence.',
                 limitations='Same-image consistency, not independent validation or phase fractions. Lobes are deviations from the mean, not absolute intensity. Mean-present patterns may pass on either score side; drift or noise can also create lobes.')
     if publish:publish(maps)
-    for wi, spectrum in enumerate(result['raw_spectra']):
-        check_cancel(cancel)
-        peaks = detect_peaks(spectrum, result, fits['peak_fraction'])
-        candidates = []
-        for model in models:
-            check_cancel(cancel)
-            candidates.append(_candidate(result, wi, model, _local(result, peaks, model)))
-        candidates.sort(key=lambda c:(-c['score'], c['model']))
-        passing = [c for c in candidates if c['valid']]
-        windows.append(dict(index=wi, peak_count=len(peaks), tested_models=len(models),
-                            peak_positions=[[p['profile_id'],p['qx'],p['qy']] for p in peaks],
-                            candidates=candidates, label='supported' if passing else 'unresolved',
-                            phases=list(dict.fromkeys(c['phase'] for c in passing))))
-        for candidate in passing:support_scores[candidate['model']].append(candidate['score'])
-        maps['counts'][windows[-1]['label']]+=1
-        maps['model_passing_counts']={str(mid):len(values) for mid,values in support_scores.items()}
-        maps['model_mean_support']={str(mid):float(np.mean(values)) if values else 0. for mid,values in support_scores.items()}
-        if publish:publish(maps)
-        if progress: progress(wi+1, len(result['raw_spectra']), f'Checking original windows {wi+1}/{len(result["raw_spectra"])}')
+    workers=selected_workers(result.get('execution',fits),result['plan'].get('workers',1))[1]
+    with ComponentPool(result,templates,workers,cancel,dict(models=models,fraction=fits['peak_fraction']),mapping=True) as pool:
+        for _,window,_ in pool.map(window_task,range(len(result['raw_spectra']))):
+            windows.append(window);wi=window['index']
+            passing=[c for c in window['candidates'] if c['valid']]
+            for candidate in passing:support_scores[candidate['model']].append(candidate['score'])
+            maps['counts'][windows[-1]['label']]+=1
+            maps['model_passing_counts']={str(mid):len(values) for mid,values in support_scores.items()}
+            maps['model_mean_support']={str(mid):float(np.mean(values)) if values else 0. for mid,values in support_scores.items()}
+            if publish:publish(maps)
+            if progress: progress(wi+1, len(result['raw_spectra']), f'Checking original windows {wi+1}/{len(result["raw_spectra"])}')
     check_cancel(cancel)
     return maps
 

@@ -159,7 +159,7 @@ class Workbench:
 
     def config_info(self):
         files = self.engine.catalog()
-        return {'sources': self.engine.sources, 'file_tracking': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'shared_spectra_pca': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'sources': self.engine.sources, 'file_tracking': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'shared_spectra_pca': True, 'component_workers': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'source_name_autosave': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'diffraction_processed_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -221,7 +221,7 @@ class Workbench:
                 raise ValueError('Finish or cancel other analysis before fitting components.')
             result=self.pca.completed(body['id'])
             templates=copy.deepcopy(self.engine.templates_for(result['settings']))
-            return self.pca.support(body['id'],templates) if support else self.pca.fit(body['id'],templates,body.get('options',{}))
+            return self.pca.support(body['id'],templates,workers=body.get('workers')) if support else self.pca.fit(body['id'],templates,body.get('options',{}))
 
     def preview_status(self):
         return self.preview_batch.status() if self.preview_batch else None
@@ -506,6 +506,8 @@ class Workbench:
                 job['cancel'] = True
         if self.grid_thread is not None:
             self.grid_thread.join()
+        if getattr(self, 'pca', None) and self.pca.thread:
+            self.pca.thread.join()
         if getattr(self, 'batch', None) and self.batch.thread:
             self.batch.thread.join()
 

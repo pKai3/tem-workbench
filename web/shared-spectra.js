@@ -210,6 +210,10 @@ if(typeof document!=='undefined'){
   let aggregateView=null,aggregateKey="",aggregateFamily="",aggregatePending="",aggregateError="",aggregateEpoch=0,mapHit=null,preferredMapDisplay="hex";
   let restoreEpoch=0,pendingView=null;
   const dialog=$('pca-dialog'),form=$('pca-form');
+  const savedWorkers=readPreference('tem-pca-workers',0);
+  $('pca-workers').value=[0,1,2,4,8,10,12,14,16].includes(savedWorkers)?String(savedWorkers):'0';
+  $('pca-workers').onchange=()=>writePreference('tem-pca-workers',Number($('pca-workers').value));
+  const workerOptions=()=>({workers:config?.component_workers?Number($('pca-workers').value):1});
   let section='signals';
   const solutionSymbols=new Map();let symbolModels=null,poolSummaries=[],hypothesisOrder=[],manualPool=false;
   const selectedHypotheses=new Set();
@@ -241,6 +245,8 @@ if(typeof document!=='undefined'){
   inspector.addEventListener('close',()=>{groupEpoch++});
   function controls(){
    for(const field of form.querySelectorAll('input,select'))field.disabled=running()||exporting;
+   $('pca-workers').disabled=running()||exporting||!config?.component_workers;
+   $('pca-workers').options[0].textContent=`Auto (${config?.grid_workers_default||1})`;
    $('pca-run').disabled=running()||exporting||!snapshot;
    $('pca-progress').hidden=!running();
    $('nmf-build-map').disabled=!data?.fits||data.fits.completed!==data.fits.total||running()||exporting;
@@ -260,7 +266,7 @@ if(typeof document!=='undefined'){
    return {combination_mode:$('pca-combination-mode').value,combination_components:ids,feature_components:ids};
   }
   function clearResults(){aggregateEpoch++;aggregateView=null;aggregateKey=aggregateFamily=aggregatePending=aggregateError="";mapHit=null;fitComponents=null;closeInspector();liveRevision=0;spectrumEpoch++;groupPreviews.clear();data=null;selected.clear();$('pca-results').hidden=true;$('pca-navigation').hidden=true;$('pca-setup').open=true;sampleEpoch++;groupEpoch++;sourceImage=null;controls()}
-  function options(){return {method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),layout:$('pca-sampling').value,passes:Number($('pca-passes').value),sample_edges:$('pca-rim').checked,components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value}}
+  function options(){return {...workerOptions(),method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),layout:$('pca-sampling').value,passes:Number($('pca-passes').value),sample_edges:$('pca-rim').checked,components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value}}
   const palette=signed=>$('pca-palette').value==='auto'?(signed?'rdbu':$('palette').value):$('pca-palette').value;
   const sharedPca=()=>data?.decomposition!=='nmf'&&$('pca-scale-shared').getAttribute('aria-pressed')==='true';
   let sharedRanges=null;
@@ -423,7 +429,7 @@ if(typeof document!=='undefined'){
     controls();
     if(!data&&job.has_result){const result=await api('pca/result?id='+encodeURIComponent(job.id));if(serial!==epoch)return;showResult(result);restoreView()}
     $('pca-progress').max=Math.max(1,job.total);$('pca-progress').value=job.completed;
-    notify(`${job.stage} · ${job.completed}/${job.total} · ${job.elapsed_seconds}s${job.state==='running'&&job.operation==='support'?' · crystal fits ready to inspect':''}`);
+    notify(`${job.stage} · ${job.completed}/${job.total} · ${job.elapsed_seconds}s${job.execution?` · ${job.execution.workers} worker${job.execution.workers===1?'':'s'}`:''}${job.state==='running'&&job.operation==='support'?' · crystal fits ready to inspect':''}`);
     if(job.state==='running'){
      if(data&&job.result_revision!==undefined&&job.result_revision!==liveRevision){
       const maps=data.phase_support;
@@ -450,7 +456,7 @@ if(typeof document!=='undefined'){
    }}
   }
   async function startStage(stage,serial){
-   const body={id:job.id};if(stage==='fit')body.options={peak_fraction:pipeline?.cutoff??Number($('nmf-cutoff').value),...(isPca()?combinationOptions():{})};
+   const body={id:job.id,...workerOptions()};if(stage==='fit')body.options={peak_fraction:pipeline?.cutoff??Number($('nmf-cutoff').value),...workerOptions(),...(isPca()?combinationOptions():{})};
    if(pipeline)pipeline.stage=stage;
    if(stage==='fit'){closeInspector();sampleEpoch++;data.fits=null;data.fit_status='running';showFits()}
    data.phase_support=null;data.phase_support_status=stage==='support'?'running':null;symbolModels=null;showPhaseMaps();
@@ -461,7 +467,7 @@ if(typeof document!=='undefined'){
    poll(serial);
   }
   const viewerKey=()=>`tem-pca-viewer:${config?.state_namespace||'default'}`;
-  const viewControlIds=['pca-layout','pca-palette','pca-opacity','pca-contrast','pca-map-mode','pca-map-colour','pca-map-sort','pca-map-top','nmf-map-phase','nmf-map-opacity','pca-map-metric','pca-map-display','pca-map-symbols'];
+  const viewControlIds=['pca-layout','pca-palette','pca-opacity','pca-contrast','pca-map-mode','pca-map-colour','pca-map-sort','pca-map-top','nmf-map-phase','nmf-map-opacity','pca-map-metric','pca-map-display','pca-map-symbols','pca-workers'];
   function savedViewer(){try{const saved=readPreference(viewerKey(),null);return typeof saved==='string'?JSON.parse(saved):saved}catch{return null}}
   function rememberViewer(){
    if(!job?.id||!snapshot||pendingView)return;
@@ -503,6 +509,7 @@ if(typeof document!=='undefined'){
     const fields={method:'pca-method',window_nm:'pca-window',spacing_nm:'pca-spacing',components:'pca-count',angular_sigma_deg:'pca-angle',spacing_sigma_percent:'pca-scale',normalization:'pca-normalization',layout:'pca-sampling',passes:'pca-passes'};
     for(const [key,id] of Object.entries(fields))if(snapshot.options[key]!==undefined)$(id).value=snapshot.options[key];
     $('nmf-cutoff').value=snapshot.fit_options.peak_fraction??.35;
+    $('pca-workers').value=String(snapshot.fit_options.workers??snapshot.options.workers??1);
     $('pca-combination-mode').value=snapshot.fit_options.combination_mode??'together';
     $('pca-rim').checked=snapshot.options.sample_edges??false;
     $('pca-run').textContent='Run '+$('pca-method').value.toUpperCase();
@@ -541,7 +548,7 @@ if(typeof document!=='undefined'){
   form.onsubmit=async event=>{
    event.preventDefault();if(!snapshot||running())return;
    const serial=++epoch;clearTimeout(pollTimer);cancelRequested=false;pipeline={stage:'decomposition',cutoff:Number($('nmf-cutoff').value)};clearResults();job={state:'running'};controls();notify('Starting decomposition…');$('pca-progress').value=0;
-   try{const response=await api('pca',{...snapshot,options:options(),automatic:true,fit_options:{peak_fraction:Number($('nmf-cutoff').value),...($('pca-method').value==='pca'?combinationOptions():{})}});if(serial!==epoch)return;job=response;pendingView=null;rememberViewer();if(cancelRequested)await api('pca/cancel',{id:job.id});poll(serial)}
+   try{const response=await api('pca',{...snapshot,options:options(),automatic:true,fit_options:{...workerOptions(),peak_fraction:Number($('nmf-cutoff').value),...($('pca-method').value==='pca'?combinationOptions():{})}});if(serial!==epoch)return;job=response;pendingView=null;rememberViewer();if(cancelRequested)await api('pca/cancel',{id:job.id});poll(serial)}
    catch(e){if(serial===epoch){pipeline=null;job=null;controls();notify(e.message,true);if(!e.status||e.status>=500)reconnect()}}
   };
   $('pca-method').onchange=()=>{$('pca-run').textContent='Run '+$('pca-method').value.toUpperCase();controls()};

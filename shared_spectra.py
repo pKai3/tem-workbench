@@ -25,6 +25,7 @@ from scipy import fft, ndimage, linalg
 from PIL import Image
 import analysis_core as core
 import overlap_maps
+from component_execution import selected_workers
 
 VERSION = 'local-fft-components-v2'
 RADIAL_BINS, ANGULAR_BINS = 96, 180
@@ -45,6 +46,7 @@ def number(options, key, default, lo, hi):
 
 
 def plan(info, settings, options):
+    workers=selected_workers(options)[0]
     if info.get('image_kind') == 'diffraction':
         raise ValueError('Local FFT PCA needs a calibrated real-space image.')
     sx, sy = float(info['pixel_x_nm']), float(info['pixel_y_nm'])
@@ -89,7 +91,7 @@ def plan(info, settings, options):
     normalization = options.get('normalization', 'unit_norm')
     if normalization not in ('unit_norm', 'none'):
         raise ValueError('Choose unit norm or no spectral normalization.')
-    return dict(method=method,window_pixels=[w,h], window_nm=[w*sx,h*sy], spacing_nm=[dx*sx,dy*sy],
+    return dict(method=method,workers=workers,window_pixels=[w,h], window_nm=[w*sx,h*sy], spacing_nm=[dx*sx,dy*sy],
                 xs=xs.tolist(), ys=ys.tolist(), map_shape=[1,count] if sampling else [ny,nx], count=count, **sampling,
                 pixel_nm=[sx,sy], image_shape=[height,width], g_min=inner,g_max=outer,
                 components=min(int(n_components),count-1),
@@ -305,7 +307,7 @@ def summary(result):
     return dict(plan=p,source_name=result['source'].get('name','Image'),
                 source_hash=result['source'].get('sha256_pixels'),method=VERSION,
                 algorithm=result['algorithm'],components=components,decomposition=p.get('method','pca'),
-                fit_status=result.get('fit_status'),fits=result.get('fits'),phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'),
+                execution=result.get('execution'),fit_status=result.get('fit_status'),fits=result.get('fits'),phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'),
                 iterations=result.get('iterations'),converged=result.get('converged'),
                 relative_reconstruction_error=result.get('relative_reconstruction_error'),
                 mean=spectrum_image((result['scores'].mean(axis=0)@result['components'] if nmf else result['mean'])/w,p),
@@ -374,7 +376,7 @@ def export(result, folder):
               broadening='Gaussian in log radius and angle before decomposition; no orientation registration',
               source_settings='Window, taper, mean removal and fitting band used; peak detection/matching settings not used'),
               reference='Jany et al., Micron 130 (2020) 102800; doi:10.1016/j.micron.2019.102800')
-    meta.update(fits=result.get('fits'),fit_status=result.get('fit_status'),
+    meta.update(execution=result.get('execution'),fits=result.get('fits'),fit_status=result.get('fit_status'),
                 phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'))
     if result.get('fits') and result['plan'].get('method','pca')=='pca':
         meta['conventions']['source_settings']='Decomposition uses taper, mean removal and fitting band. Signed-lobe indexing uses captured material/phase/scale settings; original-window checks do not gate by score sign.'
@@ -551,6 +553,8 @@ class SharedSpectra:
             else:
                 from nmf_fitting import fit_groups, validate_options
             validate_options(result,options)
+            options={**options,'workers':options.get('workers',result['plan'].get('workers',1))}
+            self._execution(result,options['workers'])
             if self.viewer is not None:self.viewer['fit_options']=copy.deepcopy(options)
             result.pop('phase_support',None);result.pop('phase_support_status',None)
             result['fit_status']='running';result['fits']=None
@@ -593,7 +597,13 @@ class SharedSpectra:
         self.cancel=threading.Event();self.job['automatic']=False
         return result
 
-    def support(self,job_id,templates,_within_pipeline=False):
+    def _execution(self,result,requested):
+        requested,workers=selected_workers({'workers':requested})
+        execution=dict(requested_workers=requested,workers=workers,backend='processes' if workers>1 else 'serial')
+        result['execution']=execution;self.job['execution']=execution
+        if self.viewer is not None:self.viewer.setdefault('fit_options',{})['workers']=requested
+
+    def support(self,job_id,templates,_within_pipeline=False,workers=None):
         with self.lock:
             result=self._stage_result(job_id,_within_pipeline)
             if result['plan'].get('method','pca')=='pca':
@@ -603,6 +613,7 @@ class SharedSpectra:
             fits=result.get('fits')
             if not fits or fits['completed']!=fits['total']:
                 raise ValueError('Finish component crystal fitting first.')
+            self._execution(result,workers if workers is not None else result.get('execution',{}).get('requested_workers',fits.get('workers',result['plan'].get('workers',1))))
             result['phase_support_status']='running';result.pop('phase_support',None)
             self.support_generation=uuid.uuid4().hex;self.pending_support=None
             self.live_data.update(phase_support=None,phase_support_status='running')

@@ -163,6 +163,7 @@
  <details id="pca-setup" open><summary>Analysis settings</summary>
  <form id="pca-form" class="pca-controls">
   <label>Method<select id="pca-method"><option value="pca" selected>PCA · signed</option><option value="nmf">NMF · nonnegative</option></select></label>
+  <label><span>Workers <span class="settings-help"><button type="button" class="settings-help-button" aria-label="About PCA/NMF workers">ⓘ</button><span class="settings-help-popup" role="tooltip">Parallel crystal searches and original-window mapping. Auto uses up to four workers, like the normal grid. Fewer workers use less CPU and memory. Sampling and decomposition remain single-worker. Applies to the next Run, Refit or Update mapping; changing it does not discard results.</span></span></span><select id="pca-workers"><option value="0">Auto</option><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="8">8</option><option value="10">10</option><option value="12">12</option><option value="14">14</option><option value="16">16</option></select></label>
   <label>Window, nm<input id="pca-window" type="number" min="0.01" step="any" required></label>
   <label>Centre spacing, nm<input id="pca-spacing" type="number" min="0.01" step="any" required></label>
   <label>Sampling<select id="pca-sampling"><option value="hex">Hexagonal centres</option><option value="square">Square centres</option></select></label>

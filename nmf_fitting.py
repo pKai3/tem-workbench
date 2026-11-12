@@ -8,6 +8,7 @@ from scipy import ndimage
 import analysis_core as core
 import scale_fitting
 from shared_spectra import check_cancel, number, spectrum_image, RADIAL_BINS, ANGULAR_BINS
+from component_execution import ComponentPool, search_task, selected_workers
 
 DEFAULT_PEAK_FRACTION = .35
 
@@ -22,6 +23,7 @@ def matching_width(result):
 def validate_options(result, options):
     if result['plan'].get('method') != 'nmf':
         raise ValueError('Crystal fitting requires nonnegative NMF components; rerun using NMF.')
+    selected_workers(options,result['plan'].get('workers',1))
     return number(options,'peak_fraction',DEFAULT_PEAK_FRACTION,.01,1)
 
 
@@ -103,32 +105,36 @@ def fit_groups(result, templates, options, cancel=None, progress=None):
     tolerance=matching_width(result)
     records=[]
     fits=dict(groups=records,total=total,completed=0,peak_fraction=fraction,
+              workers=selected_workers(options,result['plan'].get('workers',1))[0],
               tolerance_nm_inv=tolerance,cooccurrence_fraction=.2,
               scoring='Position minus chance allowance minus scale cost; uniform profile weights. No weak/missing, brightness or double-diffraction scoring. Not comparable to main-analysis rank.',
               grouping='Every nonempty subset. Mean coefficients in co-occurring windows; global mean if none. NMF coefficient scaling is preserved.',
               validation='Best model checked without refitting against up to three unbroadened sampled spectra. Same-image consistency only; correlated windows, not independent validation.')
     result['fits']=fits
-    for mask in range(1,total+1):
-        check_cancel(cancel)
-        ids=[i for i in range(count) if mask & (1<<i)]
-        spectrum,coefficients,common,windows=group_spectrum(result,ids)
-        peaks=detect_peaks(spectrum,result,fraction)
-        candidates=search_candidates(result,peaks,templates,cancel,
-            (lambda done,total_templates:progress(mask-1,total,f'Group {mask}/{total} · template {done}/{total_templates}')) if progress else None)
-        candidates=core.retain(candidates,topn=1)
-        record=dict(components=ids,coefficients=coefficients.tolist(),cooccurring_windows=common,
-                    peak_count=len(peaks),candidates=[dict(compact(m),predicted_nodes=m['predicted_nodes']) for m in candidates],support_checks=[])
-        if candidates:
-            best=candidates[0]
-            for index in windows:
-                observed=detect_peaks(result['raw_spectra'][index],result,fraction)
-                width=tolerance*(s.get('omega_falloff_multiplier',1.) if best['phase']=='OMEGA' else 1.)
-                check=core.score_prediction_nodes(observed,best['predicted_nodes'],width)
-                record['support_checks'].append(dict(window=index,peak_count=len(observed),
-                      matched=check['matched_profile_count'] if check else 0,
-                      coverage=check['coverage'] if check else 0.,rms_nm_inv=check['rms_nm_inv'] if check else None))
-        records.append(record);fits['completed']=mask
-        if progress:progress(mask,total,f'Fitted {mask}/{total} combinations')
+    def tasks():
+        for mask in range(1,total+1):
+            check_cancel(cancel)
+            ids=[i for i in range(count) if mask & (1<<i)]
+            spectrum,coefficients,common,windows=group_spectrum(result,ids)
+            yield dict(mask=mask,ids=ids,coefficients=coefficients,common=common,windows=windows,
+                       peaks=detect_peaks(spectrum,result,fraction),topn=1)
+    workers=selected_workers(options,result['plan'].get('workers',1))[1]
+    with ComponentPool(result,templates,workers,cancel) as pool:
+        for task,candidates,_ in pool.map(search_task,tasks()):
+            mask,ids,coefficients,common,windows,peaks=(task[k] for k in ('mask','ids','coefficients','common','windows','peaks'))
+            record=dict(components=ids,coefficients=coefficients.tolist(),cooccurring_windows=common,
+                        peak_count=len(peaks),candidates=[dict(compact(m),predicted_nodes=m['predicted_nodes']) for m in candidates],support_checks=[])
+            if candidates:
+                best=candidates[0]
+                for index in windows:
+                    observed=detect_peaks(result['raw_spectra'][index],result,fraction)
+                    width=tolerance*(s.get('omega_falloff_multiplier',1.) if best['phase']=='OMEGA' else 1.)
+                    check=core.score_prediction_nodes(observed,best['predicted_nodes'],width)
+                    record['support_checks'].append(dict(window=index,peak_count=len(observed),
+                          matched=check['matched_profile_count'] if check else 0,
+                          coverage=check['coverage'] if check else 0.,rms_nm_inv=check['rms_nm_inv'] if check else None))
+            records.append(record);fits['completed']=mask
+            if progress:progress(mask,total,f'Fitted {mask}/{total} combinations')
     return fits
 
 

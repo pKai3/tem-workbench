@@ -6,6 +6,7 @@ regardless of how many overlapping factor combinations support it.
 import math
 import numpy as np
 import analysis_core as core
+from component_execution import ComponentPool, selected_workers
 from shared_spectra import check_cancel
 from nmf_fitting import detect_peaks, search_candidates, group_spectrum, compact, matching_width
 
@@ -105,6 +106,35 @@ def match_local(peaks, model, width, settings):
     return best
 
 
+def window_task(result, templates, context, wi, cancel):
+    models,eligibility,fraction=(context[k] for k in ('models','eligibility','fraction'))
+    spectrum=result['raw_spectra'][wi];tolerance=matching_width(result)
+    check_cancel(cancel)
+    peaks=detect_peaks(spectrum,result,fraction)
+    best={};tested=0
+    for model,eligible in zip(models,eligibility):
+        check_cancel(cancel)
+        if not eligible[wi]:continue
+        tested+=1
+        width=tolerance*(result['settings'].get('omega_falloff_multiplier',1.) if model['phase']=='OMEGA' else 1.)
+        local=match_local(peaks,model,width,result['settings'])
+        if not local:continue
+        match=local['match'];rank=local['score']
+        candidate=dict(model=model['id'],phase=model['phase'],score=float(rank),position_score=local['position_score'],
+                       valid=local['valid'],coverage=match['coverage'],
+                       predicted_coverage=local['predicted_coverage'],predicted_count=local['predicted_count'],
+                       chance_allowance=local['chance_allowance'],all_observed_score=match['score'],
+                       rms_nm_inv=local['rms_nm_inv'],
+                       rotation_deg=model['rotation_deg']+local['rotation_adjustment_deg'],
+                       rotation_adjustment_deg=local['rotation_adjustment_deg'],local_scale=local['local_scale'],
+                       local_scale_penalty=local['local_scale_penalty'],profiles=local['profiles'])
+        previous=best.get(model['phase'])
+        # A passing hypothesis takes precedence over a higher-ranking failed one.
+        if previous is None or (candidate['valid'],rank)>(previous['valid'],previous['score']):best[model['phase']]=candidate
+    candidates=sorted(best.values(),key=lambda c:(-c['score'],c['model']))
+    return dict(index=wi,peak_count=len(peaks),tested_models=tested,candidates=candidates,**classify(candidates,peaks))
+
+
 def build(result, templates, cancel=None, progress=None, publish=None):
     fits=result.get('fits')
     if result['plan'].get('method')!='nmf' or not fits or fits['completed']!=fits['total']:
@@ -143,35 +173,15 @@ def build(result, templates, cancel=None, progress=None, publish=None):
                 limitations='Same-image consistency, not independent validation or phase fractions. Original spectra are polar-sampled log power. Bounded group refinement may miss larger local drift; c/a and phase/zone identity stay fixed. Overlapping windows are correlated.',
                 nmf_converged=result.get('converged'))
     if publish:publish(maps)
-    for wi,spectrum in enumerate(result['raw_spectra']):
-        check_cancel(cancel)
-        peaks=detect_peaks(spectrum,result,fraction)
-        best={};tested=0
-        for model,eligible in zip(models,eligibility):
-            check_cancel(cancel)
-            if not eligible[wi]:continue
-            tested+=1
-            width=tolerance*(result['settings'].get('omega_falloff_multiplier',1.) if model['phase']=='OMEGA' else 1.)
-            local=match_local(peaks,model,width,result['settings'])
-            if not local:continue
-            match=local['match'];rank=local['score']
-            candidate=dict(model=model['id'],phase=model['phase'],score=float(rank),position_score=local['position_score'],
-                           valid=local['valid'],coverage=match['coverage'],
-                           predicted_coverage=local['predicted_coverage'],predicted_count=local['predicted_count'],
-                           chance_allowance=local['chance_allowance'],all_observed_score=match['score'],
-                           rms_nm_inv=local['rms_nm_inv'],
-                           rotation_deg=model['rotation_deg']+local['rotation_adjustment_deg'],
-                           rotation_adjustment_deg=local['rotation_adjustment_deg'],local_scale=local['local_scale'],
-                           local_scale_penalty=local['local_scale_penalty'],profiles=local['profiles'])
-            previous=best.get(model['phase'])
-            # A passing hypothesis takes precedence over a higher-ranking failed one.
-            if previous is None or (candidate['valid'],rank)>(previous['valid'],previous['score']):best[model['phase']]=candidate
-        candidates=sorted(best.values(),key=lambda c:(-c['score'],c['model']))
-        windows.append(dict(index=wi,peak_count=len(peaks),tested_models=tested,candidates=candidates,**classify(candidates,peaks)))
-        counts[windows[-1]['label']]+=1
-        for phase in phases:
-            if any(c['phase']==phase and c['valid'] for c in candidates):maps['passing_counts'][phase]+=1
-        if publish:publish(maps)
-        if progress:progress(wi+1,n,f'Checking original windows {wi+1}/{n}')
+    workers=selected_workers(result.get('execution',fits),result['plan'].get('workers',1))[1]
+    context=dict(models=models,eligibility=np.asarray(eligibility),fraction=fraction)
+    with ComponentPool(result,templates,workers,cancel,context,mapping=True) as pool:
+        for _,window,_ in pool.map(window_task,range(n)):
+            windows.append(window);wi=window['index'];candidates=window['candidates']
+            counts[windows[-1]['label']]+=1
+            for phase in phases:
+                if any(c['phase']==phase and c['valid'] for c in candidates):maps['passing_counts'][phase]+=1
+            if publish:publish(maps)
+            if progress:progress(wi+1,n,f'Checking original windows {wi+1}/{n}')
     check_cancel(cancel)
     return maps
