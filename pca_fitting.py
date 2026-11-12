@@ -30,7 +30,7 @@ def fit_lobes(result, templates, options, cancel=None, progress=None):
     fraction = validate_options(result, options)
     total = 2 * len(result['components'])
     records = []
-    fits = dict(kind='pca_signed_lobes', version=1, groups=records, total=total,
+    fits = dict(kind='pca_signed_lobes', version=2, groups=records, total=total,
                 completed=0, peak_fraction=fraction, candidates_per_phase=5,
                 tolerance_nm_inv=max(.1, 1/min(result['plan']['window_nm'])),
                 scoring='Position minus chance allowance minus scale cost; uniform profile weights. Lobe fit is a hypothesis, not original-window support. No weak/missing, brightness or double-diffraction adjustments.',
@@ -87,19 +87,45 @@ def _candidate(result, wi, model, local):
                 rotation_deg=model['rotation_deg']+local['rotation_adjustment_deg'])
 
 
+def unique_models(result, cancel=None):
+    """One original-window check per geometry, with all signed sources retained.
+
+    Rank chooses the unchanged representative; sources are provenance, not a
+    sum of features, votes or support counts. Compare to that representative,
+    not to a chain of neighbours that could connect distinct orientations.
+    """
+    candidates=[]
+    for gi,group in enumerate(result['fits']['groups']):
+        for ci,candidate in enumerate(group['candidates']):
+            model=dict(candidate,group=gi,candidate=ci,component=group['component'],
+                       components=group['components'],side=group['side'])
+            # Backward compatibility for fits already held by an older server.
+            if 'position_matching' not in model:
+                width=max(.1,1/min(result['plan']['window_nm']))
+                if model['phase']=='OMEGA':width*=result['settings'].get('omega_falloff_multiplier',1.)
+                model['position_matching']=dict(distance_scale_nm_inv=width)
+            model.setdefault('fitting_band_nm_inv',[result['plan']['g_min'],result['plan']['g_max']])
+            candidates.append(model)
+    models=[]
+    for model in sorted(candidates,key=lambda c:-c['score']):
+        check_cancel(cancel)
+        source={key:model[key] for key in ('group','candidate','component','side','score','valid','rotation_deg')}
+        representative=next((m for m in models if core.same_solution(model,m)),None)
+        if representative is None:
+            models.append(dict(model,id=len(models),sources=[source]))
+        else:representative['sources'].append(source)
+    return models
+
+
 def build(result, templates, cancel=None, progress=None):
     validate_options(result, {})
     fits = result.get('fits')
     if not fits or fits.get('kind') != 'pca_signed_lobes' or fits['completed'] != fits['total']:
         raise ValueError('Finish fitting both sides of all PCA components first.')
     check_cancel(cancel)
-    models = []
-    for gi, group in enumerate(fits['groups']):
-        for candidate in group['candidates']:
-            # A deviation can omit mean-present reflections; the original window
-            # supplies the support screen, independently of feature-fit acceptance.
-            models.append(dict(candidate, id=len(models), group=gi,
-                               component=group['component'], components=group['components'], side=group['side']))
+    # Keep below-screen feature fits too: mean-present reflections can supply
+    # support in the original windows. A repeated source is not a new geometry.
+    models = unique_models(result,cancel)
     windows = []
     for wi, spectrum in enumerate(result['raw_spectra']):
         check_cancel(cancel)
@@ -115,14 +141,14 @@ def build(result, templates, cancel=None, progress=None):
                             phases=list(dict.fromkeys(c['phase'] for c in passing))))
         if progress: progress(wi+1, len(result['raw_spectra']), f'Checking original windows {wi+1}/{len(result["raw_spectra"])}')
     check_cancel(cancel)
-    return dict(kind='pca_signed_lobes', version=1, models=models, windows=windows,
+    return dict(kind='pca_signed_lobes', version=2, models=models, windows=windows,
                 phases=list(dict.fromkeys(t['phase'] for t in templates)),
                 counts={label:sum(w['label']==label for w in windows) for label in ('supported', 'unresolved')},
                 model_passing_counts={str(m['id']):sum(any(c['model']==m['id'] and c['valid'] for c in w['candidates']) for w in windows) for m in models},
                 parameters=dict(peak_fraction=fits['peak_fraction'], score_gate=False,
                                 local_rotation_deg=LOCAL_ROTATION_DEG, local_scale_fraction=LOCAL_SCALE_FRACTION,
                                 minimum_profiles=4, minimum_prediction_coverage=.3, minimum_support=.2),
-                interpretation='Per-hypothesis support in all original unbroadened sampled windows, regardless of score sign or magnitude. Separate same-phase orientations retained. Counts across hypotheses overlap and must not be summed. No combined-phase or coexistence classification.',
+                interpretation='Per-geometry support in all original unbroadened sampled windows, regardless of score sign or magnitude. Near duplicates across components/signs keep the highest-ranked unchanged fit and all source links; each geometry is checked once. Resolved same-phase orientations remain separate. Counts across hypotheses overlap and must not be summed. No combined-feature, combined-phase or coexistence classification.',
                 limitations='Same-image consistency, not independent validation or phase fractions. Lobes are deviations from the mean, not absolute intensity. Mean-present patterns may pass on either score side; drift or noise can also create lobes.')
 
 
@@ -147,7 +173,7 @@ def window_detail(result, index, model_id):
     for axis in 'abc':
         key = 'fitted_'+axis+'_nm'
         if fitted.get(key) is not None: fitted[key] /= candidate['local_scale']
-    return dict(kind='pca_window', component=model['component'], side=model['side'], window=index,
+    return dict(kind='pca_window', component=model['component'], side=model['side'], sources=model.get('sources',[]),window=index,
                 spectrum=spectrum_image(result['raw_spectra'][index], result['plan']), peaks=peaks,
                 candidates=[fitted], phases=[model['phase']], component_score=candidate['component_score'],
                 peak_fraction=maps['parameters']['peak_fraction'], g_max=result['plan']['g_max'])

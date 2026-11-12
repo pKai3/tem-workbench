@@ -1,5 +1,9 @@
 /* Source-bound exploratory PCA/NMF; component activity is not phase abundance. */
 const PcaView={
+ sourceLabel(model){
+  const sources=[...(model.sources?.length?model.sources:[model])].sort((a,b)=>a.component-b.component||a.side.localeCompare(b.side));
+  return 'PC '+[...new Set(sources.map(s=>`${s.component+1}${s.side==='positive'?'+':'−'}`))].join(', ');
+ },
  phaseColours:{BCC:[54,255,88],HCP:[121,188,255],OMEGA:[255,181,74],FCC:[255,121,198],ORT:[102,223,188]},
  supportColour(window,phase='all'){
   if(phase!=='all')return window.candidates.some(c=>c.phase===phase&&c.valid)?(this.phaseColours[phase]||[210,210,210]):[65,72,80];
@@ -66,7 +70,7 @@ if(typeof document!=='undefined'){
   let section='signals';
   const expandedSignals=new Set();
   const isPca=()=>data?.decomposition==='pca';
-  const sourceLabel=g=>isPca()?`PC ${g.component+1}${g.side==='positive'?'+':'−'}`:`NMF ${g.components.map(i=>i+1).join(' + ')}`;
+  const sourceLabel=g=>isPca()?PcaView.sourceLabel(g):`NMF ${g.components.map(i=>i+1).join(' + ')}`;
   const hypothesisLabel=m=>`${sourceLabel(m)} · ${m.phase} [${m.zone_3index.join(' ')}] · ${m.rotation_deg.toFixed(1)}°`;
   function showSection(next,scroll=false){
    section=next;
@@ -345,19 +349,21 @@ if(typeof document!=='undefined'){
    showSection('fits',true);
    const pane=$('nmf-group-detail'),status=$('nmf-group-status');pane.hidden=false;$('nmf-group-content').hidden=true;
    const original=windowModel!==null,windowIndex=index;
-   $('nmf-group-label').textContent=`${original?'Window '+(windowIndex+1)+' · ':''}${sourceLabel(group)} · ${original?'original-window fit':'crystal fits'}`;
+   $('nmf-group-label').textContent=`${original?'Window '+(windowIndex+1)+' · ':''}${sourceLabel(original?data.phase_support.models[windowModel]:group)} · ${original?'original-window fit':'crystal fits'}`;
    $('nmf-group-spectrum').setAttribute('aria-label',$('nmf-group-label').textContent+' spectrum with detected peaks and predictions');
    status.textContent='Detecting peaks and fitting candidates…';status.classList.remove('error');pane.scrollIntoView({block:'nearest'});
    try{
     const detail=await api(original?'pca/window-fit':isPca()?'pca/lobe':'pca/group',original?{id:jobId,index:windowIndex,model:windowModel}:{id:jobId,components:group.components,component:group.component,side:group.side,options:{peak_fraction:Number($('nmf-cutoff').value)}});
     if(serial!==groupEpoch||job?.id!==jobId)return;
-    status.textContent=`${detail.peaks.length} detected profiles · cutoff ${detail.peak_fraction} · ${detail.phases.join(' + ')||'no phases'}${isPca()?(original?' · original unbroadened spectrum · PC score '+detail.component_score.toPrecision(3):' · '+group.side+' deviations from the mean'):' · '+detail.cooccurring_windows+' co-occurring windows'}`;
+    status.textContent=`${detail.peaks.length} detected profiles · cutoff ${detail.peak_fraction} · ${detail.phases.join(' + ')||'no phases'}${isPca()?(original?` · original unbroadened spectrum · PC ${detail.component+1} score `+detail.component_score.toPrecision(3):' · '+group.side+' deviations from the mean'):' · '+detail.cooccurring_windows+' co-occurring windows'}`;
     $('nmf-group-content').hidden=false;
     const support=$('nmf-support');support.replaceChildren();
     const note=document.createElement('p');note.className='hint settings-heading-label';note.textContent=original?'Original-window support':'Partial-match screen';
     const help=document.createElement('span'),helpButton=document.createElement('button'),helpText=document.createElement('span');help.className='settings-help';helpButton.type='button';helpButton.className='settings-help-button';helpButton.textContent='ⓘ';helpButton.setAttribute('aria-label','About the partial-match screen');helpText.className='settings-help-popup';helpText.setAttribute('role','tooltip');
     helpText.textContent='Pass requires at least four assigned profiles, directional spread, over 30% observed-profile coverage and rank above 0.20. It does not require every prediction to have a peak. NMF uses position minus scale cost, with no missing-prediction, weak-peak, brightness or double-diffraction terms. Solid outlines are assigned; faint dotted outlines are unassigned. Assignments can be displaced and lose positional credit. Neither components nor co-occurrence establish phases.';help.append(helpButton,helpText);note.append(help);support.append(note);
     if(isPca())helpText.textContent=original?'Original-window support requires four close profiles, directional spread, more than 30% prediction coverage and support above 0.20 after chance and scale costs. Refinement is limited to ±3° and ±3% scale (rotation only in fixed mode). Solid predictions have close assignments; others are dotted. PCA scores do not gate these checks.':'This is a fit to one side of a signed deviation from the mean, not to an absolute diffraction pattern. Pass is a partial observed-profile screen; original-window support is checked separately. PCA sign is arbitrary: reversing both loading and scores swaps the labels. Same-phase orientations remain separate.';
+    if(!original)helpText.textContent+=' Near-duplicate fits of the same phase and zone keep only the higher rank: interior predictions must pair within one matching width, allowing reflections to cross a fitting-limit boundary. Different matched-peak subsets alone do not create a new solution.';
+    if(original)helpText.textContent+=' Repeated orientations across PCA components/signs use one best representative and retain every feature source. Support counts are not added. The displayed PC score belongs to the representative source.';
     if(!isPca()&&!detail.cooccurring_windows){const warning=document.createElement('p');warning.textContent='No co-occurring windows: this sum uses global means and is hypothetical.';support.append(warning)}
     const chosen=new Set(detail.candidates.length?[0]:[]),canvas=$('nmf-group-spectrum'),ctx=canvas.getContext('2d'),img=new Image();
     const colours={BCC:'#36ff58',HCP:'#79bcff',OMEGA:'#ffb54a',FCC:'#ff79c6',ORT:'#66dfbc'};
@@ -439,8 +445,8 @@ if(typeof document!=='undefined'){
    if(!isPca()&&phase==='all')key.append(document.createTextNode('Blended: separate evidence for multiple phases'));
    const win=maps.windows[index];
    const selectedCandidate=model?win.candidates.find(c=>c.model===model.id):null;
-   $('nmf-map-window').textContent=isPca()?`Window ${index+1} · ${selectedCandidate?.valid?'supported':'below support'} · ${win.peak_count} profiles${selectedCandidate?' · PC score '+selectedCandidate.component_score.toPrecision(3):''}`:`Window ${index+1} · ${win.label}${win.phases.length?' · '+win.phases.join(' + '):''} · ${win.peak_count} profiles · ${win.tested_models} eligible fits`;
-   if(isPca())$('nmf-map-counts').textContent=model?`${maps.model_passing_counts[model.id]} / ${maps.windows.length} original windows support this hypothesis. Feature screen: ${model.valid?'Pass':'Below'}. All windows checked, regardless of PCA score.`:'No retained feature fits to check.';
+   $('nmf-map-window').textContent=isPca()?`Window ${index+1} · ${selectedCandidate?.valid?'supported':'below support'} · ${win.peak_count} profiles${selectedCandidate?` · PC ${selectedCandidate.component+1} score `+selectedCandidate.component_score.toPrecision(3):''}`:`Window ${index+1} · ${win.label}${win.phases.length?' · '+win.phases.join(' + '):''} · ${win.peak_count} profiles · ${win.tested_models} eligible fits`;
+   if(isPca())$('nmf-map-counts').textContent=model?`${maps.model_passing_counts[model.id]} / ${maps.windows.length} original windows support this hypothesis. Representative feature: ${model.valid?'Pass':'Below'}. All windows checked, regardless of PCA score.`:'No retained feature fits to check.';
    const box=$('nmf-map-evidence');box.replaceChildren();
    const table=document.createElement('table'),head=table.createTHead().insertRow();
    [isPca()?'Original-window overlay':'Phase / group','Local support','Screen','Matched predictions','Prediction coverage'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th)});
@@ -449,6 +455,11 @@ if(typeof document!=='undefined'){
     row.title=`[${model.zone_3index.join(' ')}] at ${(c.rotation_deg??model.rotation_deg).toFixed(1)}°; local rotation ${(c.rotation_adjustment_deg??0).toFixed(2)}°, reciprocal scale ×${(c.local_scale??1).toFixed(4)}; RMS ${c.rms_nm_inv.toFixed(3)} nm⁻¹.${isPca()?'':' Distinct profiles: '+(win.unique_profiles[c.phase]||[]).length+'.'}`;
    }
    box.append(table);
+   if(isPca()&&model?.sources?.length>1){
+    const sources=document.createElement('div');sources.className='pca-controls pca-source-links';sources.append(document.createTextNode('Feature sources'));
+    for(const groupIndex of new Set(model.sources.map(s=>s.group))){const group=data.fits.groups[groupIndex],button=document.createElement('button');button.type='button';button.textContent=sourceLabel(group);button.onclick=()=>inspectGroup(group);sources.append(button)}
+    box.append(sources);
+   }
    if(!win.candidates.length){const note=document.createElement('p');note.textContent='No eligible group fit matched this window.';box.append(note)}
   }
   $('nmf-map-phase').onchange=drawPhaseMap;

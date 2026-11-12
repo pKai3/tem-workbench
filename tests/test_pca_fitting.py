@@ -46,6 +46,42 @@ def synthetic():
 
 
 class PcaFittingTests(unittest.TestCase):
+    def test_repeated_geometry_across_components_keeps_one_check_and_all_sources(self):
+        r,t,_ = synthetic()
+        fits = fitting.fit_lobes(r,t,{})
+        best=copy.deepcopy(fits['groups'][0]['candidates'][0])
+        near=copy.deepcopy(best);near['score']-=.05;near['rotation_deg']+=.6
+        near['predicted_nodes']=[{**n,'q':core.rotation(np.array([n['q']]),np.radians(.6))[0].tolist()} for n in near['predicted_nodes']]
+        r['scores']=np.column_stack([r['scores'],r['scores']])
+        r['components']=np.vstack([r['components'],r['components']])
+        fits['groups']=[dict(component=0,components=[0],side='negative',candidates=[best]),
+                        dict(component=1,components=[1],side='negative',candidates=[near]),
+                        dict(component=1,components=[1],side='positive',candidates=[copy.deepcopy(near)])]
+        fits['completed']=fits['total']=len(fits['groups'])
+        before=copy.deepcopy(fits)
+        with patch.object(fitting,'_local',wraps=fitting._local) as local:
+            maps=fitting.build(r,t)
+        self.assertEqual(len(maps['models']),1)
+        self.assertEqual(local.call_count,len(r['raw_spectra']))
+        model=maps['models'][0]
+        self.assertEqual([(s['component'],s['side']) for s in model['sources']],
+                         [(0,'negative'),(1,'negative'),(1,'positive')])
+        self.assertEqual(model['predicted_nodes'],best['predicted_nodes'])
+        self.assertEqual(model['score'],best['score'])
+        self.assertEqual(fits,before)
+        self.assertLessEqual(maps['model_passing_counts']['0'],len(r['raw_spectra']))
+        r['phase_support']=maps
+        self.assertEqual(fitting.window_detail(r,0,0)['sources'],model['sources'])
+        json.dumps(maps,allow_nan=False)
+
+    def test_shared_sources_do_not_bridge_distinct_orientations(self):
+        r,t,_=synthetic();fitting.fit_lobes(r,t,{})
+        before=sum(len(g['candidates']) for g in r['fits']['groups'])
+        models=fitting.unique_models(r)
+        self.assertEqual(sum(len(m['sources']) for m in models),before)
+        self.assertGreaterEqual(len(models),2)
+        self.assertGreater(abs(models[0]['rotation_deg']-models[1]['rotation_deg']),25)
+
     def test_both_sides_and_same_phase_orientations_survive(self):
         r,t,_ = synthetic()
         before = copy.deepcopy(r)

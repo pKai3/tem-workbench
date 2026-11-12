@@ -188,7 +188,7 @@ def score_hypothesis(peaks,T,q,scale,ang,tol,g_max=10.,g_min=3.):
  nodes=[{'q':v.tolist(),'hkl':h.tolist()} for v,h in zip(P[keep],hkl[keep])]
  if len(nodes)<4:return None
  result=score_prediction_nodes(peaks,nodes,tol)
- if result:result.update(template_id=T['id'],phase=T['phase'],zone_3index=T['zone_3index'],mirror=T['mirror'],rotation_deg=float(np.degrees(ang)%180),shared_scale=scale)
+ if result:result.update(template_id=T['id'],phase=T['phase'],zone_3index=T['zone_3index'],mirror=T['mirror'],rotation_deg=float(np.degrees(ang)%180),shared_scale=scale,fitting_band_nm_inv=[g_min,g_max])
  return result
 
 def additional_orientation_seeds(angles, scores, support, initial, limit=2):
@@ -242,12 +242,53 @@ def search(peaks,templates,scale,tol,topn=5,bcc_a=.330,candidate_sink=None,fcc_a
  if candidate_sink is not None:candidate_sink.extend(candidates)
  return retain(candidates,topn)
 
+def same_solution(a,b):
+ """Compare fitted geometry, rather than unstable assigned-profile subsets.
+
+ The smaller positional width is the deduplication distance,
+ not a statistical resolution estimate. Match antipodal predictions one-to-one;
+ every interior prediction must agree. A slight metric change may move a node
+ across the fitting-band boundary, so unmatched boundary nodes are ignored.
+ Different phase/zone/component identities remain alternative hypotheses.
+ """
+ if a['phase']!=b['phase'] or a['zone_3index']!=b['zone_3index']:return False
+ if bool(a.get('related_pattern'))!=bool(b.get('related_pattern')):return False
+ if a.get('related_pattern') and a.get('component_ids')!=b.get('component_ids'):return False
+ nodes=[m.get('predicted_nodes') for m in (a,b)]
+ widths=[m.get('position_matching',{}).get('distance_scale_nm_inv') for m in (a,b)]
+ if not all(nodes) or any(w is None or not np.isfinite(w) or w<=0 for w in widths):
+  # Older candidate records may lack geometry/width metadata. Preserve their
+  # legacy support-based retention instead of inventing a physical tolerance.
+  ids=[{x['profile_id'] for x in m.get('matches',[])} for m in (a,b)]
+  return len(ids[0]&ids[1])/max(len(ids[0]|ids[1]),1)>.8
+ p,q=[np.array([n['q'] for n in group]) for group in nodes]
+ radius=min(widths)
+ distances=np.minimum(np.linalg.norm(p[:,None]-q[None,:],axis=2),
+                      np.linalg.norm(p[:,None]+q[None,:],axis=2))
+ close=distances<=radius+1e-12
+ # Maximize the number of close pairs before minimizing their displacement.
+ ii,jj=linear_sum_assignment(np.where(close,distances/radius,max(len(p),len(q))+1.))
+ paired=close[ii,jj];ii,jj=ii[paired],jj[paired]
+ if len(ii)<4:return False
+ radii=np.linalg.norm(p[ii],axis=1)
+ directions=p[ii]/np.maximum(radii[:,None],1e-30)
+ if np.max(abs(directions[:,0,None]*directions[None,:,1]-directions[:,1,None]*directions[None,:,0]))<=.5:return False
+ bands=[m.get('fitting_band_nm_inv') for m in (a,b)]
+ same_band=all(band is not None for band in bands) and np.allclose(bands[0],bands[1],rtol=0,atol=1e-12)
+ for points,indices in ((p,ii),(q,jj)):
+  unmatched=np.ones(len(points),dtype=bool);unmatched[indices]=False
+  if not unmatched.any():continue
+  if not same_band:return False
+  r=np.linalg.norm(points[unmatched],axis=1)
+  if np.any(np.minimum(abs(r-bands[0][0]),abs(r-bands[0][1]))>radius+1e-12):return False
+ return True
+
 def retain(candidates,topn=5):
- # Keep distinct support/orientation hypotheses; symmetry copies cannot inflate evidence.
+ # Keep the highest-ranked representative of each unresolved geometry. A change
+ # in assigned peak IDs alone is not a new lattice or an independent solution.
  out=[]
  for c in sorted(candidates,key=lambda x:x['score'],reverse=True):
-  ids=set(x['profile_id'] for x in c['matches'])
-  if any(c['phase']==v['phase'] and c['zone_3index']==v['zone_3index'] and len(ids&set(x['profile_id'] for x in v['matches']))/max(len(ids|set(x['profile_id'] for x in v['matches'])),1)>.8 for v in out):continue
+  if any(same_solution(c,v) for v in out):continue
   if sum(v['phase']==c['phase'] for v in out)>=topn:continue
   out.append(c)
  return out

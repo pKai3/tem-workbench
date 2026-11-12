@@ -1,5 +1,8 @@
 const assert=require('node:assert/strict');
 const pca=require('../web/shared-spectra.js');
+assert.equal(pca.sourceLabel({component:1,side:'negative'}),'PC 2−');
+assert.equal(pca.sourceLabel({sources:[{component:1,side:'negative'},{component:0,side:'negative'},{component:1,side:'negative'}]}),'PC 1−, 2−');
+assert.equal(pca.sourceLabel({sources:[{component:0,side:'positive'},{component:0,side:'negative'}]}),'PC 1−, 1+');
 const data={components:[{scores:[[-3,1],[0,2]]},{scores:[[4,-2],[1,0]]}],residual:[[.1,.2],[.3,.4]]};
 assert.deepEqual(pca.values(data,'group',0,[0,1]),[[5,Math.sqrt(5)],[1,2]]);
 assert.deepEqual(pca.values(data,'component',1,[]),data.components[1].scores);

@@ -330,7 +330,7 @@ def search(peaks, templates, tol, mode, bcc_a=.330, topn=5, scale_penalty_streng
 
 def retain(candidates, topn=5):
     # One retention rule for fixed and fitted scales. Different zone labels remain
-    # available as alternatives; shared-profile checks prevent double evidence.
+    # available as alternatives; nearby prediction geometries keep one best fit.
     return core.retain(candidates, topn)
 
 

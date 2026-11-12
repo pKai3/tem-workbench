@@ -58,7 +58,7 @@ def compact(model):
     keys=('phase','template_id','zone_3index','rotation_deg','score','valid','coverage',
           'matched_profile_count','predicted_visible_band_node_count','rms_nm_inv',
           'fitted_a_nm','fitted_b_nm','fitted_c_nm','scale_penalty','position_score','scale_mode',
-          'scale_a','scale_c','shared_scale','scale_note')
+          'scale_a','scale_c','shared_scale','scale_note','position_matching','fitting_band_nm_inv')
     out={k:model[k] for k in keys if k in model}
     if 'fitted_a_nm' not in out and model.get('nominal_a_nm'):
         for axis in 'abc':

@@ -39,7 +39,8 @@ def evidence(model, peaks, context, settings, dd_components=None):
     if score is None:
         return None
     model.update(score)
-    model.update(position_score=score['score'], position_valid=score['valid'])
+    model.update(position_score=score['score'], position_valid=score['valid'],
+                 fitting_band_nm_inv=[context['g_min'],context['g_max']])
     peak_evidence.inspect(model, context)
     peak_evidence.apply(model, settings['peak_evidence_weight'], settings['peak_evidence_half_weight_nm_inv'], peak_evidence.missing_weight(settings))
     brightness_grouping.inspect(model, peaks)
