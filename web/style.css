@@ -1107,7 +1107,10 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #pca-hypothesis-list .pca-hypothesis-symbol{font-size:13px}
 #nmf-phase-map {display:block;width:100%;max-width:560px;cursor:crosshair;}
 .pca-map-frame{position:relative;max-width:560px;aspect-ratio:1}
-#pca-aggregation-status{position:absolute;top:8px;left:8px;max-width:calc(100% - 16px);box-sizing:border-box;margin:0;padding:5px 8px;border-radius:5px;background:#0c1729e6;color:var(--text);font-size:12px;line-height:1.4;overflow-wrap:anywhere;pointer-events:none}
+#pca-aggregation-status{position:absolute;top:8px;left:8px;max-width:calc(100% - 16px);box-sizing:border-box;margin:0;padding:5px 8px;border-radius:5px;background:#0c1729e6;color:var(--text);font-size:12px;line-height:1.4;overflow-wrap:anywhere;pointer-events:none;display:flex;align-items:center;gap:7px}
+#pca-aggregation-status[hidden]{display:none}
+#pca-aggregation-status .fft-spinner{flex:none;width:14px;height:14px;border-width:2px}
+#pca-aggregation-status.error .fft-spinner{display:none}
 #nmf-map-key {display:flex;flex-wrap:wrap;justify-content:flex-start;align-items:center;gap:6px 12px;line-height:1.8;}
 #nmf-map-key span {white-space:nowrap;}
 #nmf-map-key .pca-legend-help{display:inline-flex;align-items:center;gap:6px;min-height:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left}

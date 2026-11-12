@@ -249,6 +249,7 @@ if(typeof document!=='undefined'){
    for(const check of dialog.querySelectorAll('.pca-fit-check input'))check.disabled=running()||exporting;
    $('pca-refit-selected').hidden=!data||!isPca();$('pca-refit-selected').disabled=running()||exporting||!fitComponents?.size;
    if(data&&isPca()&&!running()&&fitComponents){const fitted=data.fits?.feature_components||data.components.map(c=>c.index);$('pca-fit-selection-note').textContent=!fitComponents.size?'Select at least one PC for fitting.':fitted.length!==fitComponents.size||fitted.some(i=>!fitComponents.has(i))?'Selection changed · refit to update crystal fits and mapping.':''}
+   updateMapStatus($('pca-map-metric').value==='raw');
   }
   function combinationOptions(){
    if(!data&&!fitComponents)return {combination_mode:$('pca-combination-mode').value};
@@ -807,6 +808,12 @@ if(typeof document!=='undefined'){
    if(!hex){const ix=Math.floor(x/width*a.width),iy=Math.floor(y/height*a.height);return a.cells.find(c=>c.x===ix&&c.y===iy)}
    return a.hex.cells.reduce((best,c)=>!best||((c.cx-x)/a.hex.radius_x)**2+((c.cy-y)/a.hex.radius_y)**2<((best.cx-x)/a.hex.radius_x)**2+((best.cy-y)/a.hex.radius_y)**2?c:best,null);
   }
+  function updateMapStatus(raw){
+   const checking=!['error','cancelled'].includes(job?.state)&&(data?.phase_support_status==='running'||job?.state==='running'&&(job.operation==='support'||pipeline?.stage==='support'));
+   const error=raw?'':aggregateError,busy=checking||(!raw&&!!aggregatePending);
+   const status=$('pca-aggregation-status');status.hidden=!busy&&!error;status.classList.toggle('error',!!error);
+   const message=$('pca-aggregation-message'),text=error||'Updating map…';if(message.textContent!==text)message.textContent=text;
+  }
   function paintAggregate(ctx,a,metric,colourBy,phase,scale,ox,oy){
    const canvas=$('nmf-phase-map'),[height,width]=data.plan.image_shape,hex=$('pca-map-display').value==='hex';
    const cells=hex?a.hex.cells:a.cells,keys=colourBy==='phase'&&phase!=='all'?a.keys.filter(k=>k===phase):a.keys;
@@ -870,7 +877,7 @@ if(typeof document!=='undefined'){
     }
    }
    const aggregated=raw?null:requestAggregate(maps,pca?ids:maps.models.map(m=>m.id),pca?colourBy:'phase');
-   const status=$('pca-aggregation-status');status.hidden=raw||(!aggregatePending&&!aggregateError);status.textContent=aggregateError||'Updating map…';status.classList.toggle('error',!!aggregateError);
+   updateMapStatus(raw);
    if(aggregated)paintAggregate(ctx,aggregated,metric,pca?colourBy:'phase',phase,scale,ox,oy);
    ctx.globalAlpha=Number($('nmf-map-opacity').value);
    const rois=PcaView.windows(p);

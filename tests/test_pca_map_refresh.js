@@ -22,6 +22,17 @@ async function main(){
  assert.equal(context.aggregateError,'Connection interrupted');assert.equal(request(4),third,'errors retain the last valid map');assert.equal(pending.length,0,'do not spin on an error');
  assert.equal(request(4,[0],'b'),null,'a refit generation starts a new map');
  context.job={id:'new-run'};assert.equal(request(4),null,'another image/run cannot reuse the old map');
+ const badge={hidden:true,classList:{toggle(name,on){badge.error=on}}},message={textContent:'Updating map…'};
+ context.$=id=>id==='pca-aggregation-status'?badge:message;context.pipeline=null;context.data={phase_support_status:'running'};
+ vm.runInContext(source.slice(source.indexOf('  function updateMapStatus('),source.indexOf('  function paintAggregate(')),context);
+ context.job={state:'running',operation:'support'};context.aggregatePending='';context.aggregateError='';
+ for(const pending of ['request','','next request','']){context.aggregatePending=pending;context.updateMapStatus(false);assert.equal(badge.hidden,false,'keep the message between incremental refreshes')}
+ context.updateMapStatus(true);assert.equal(badge.hidden,false,'individual windows also show mapping progress');
+ context.job.state='complete';context.updateMapStatus(false);assert.equal(badge.hidden,false,'wait for the final result snapshot');
+ context.data.phase_support_status='complete';context.aggregatePending='final';context.updateMapStatus(false);assert.equal(badge.hidden,false,'wait for the final aggregate');
+ context.aggregatePending='';context.updateMapStatus(false);assert.equal(badge.hidden,true);
+ context.aggregateError='Cannot update map';context.updateMapStatus(false);assert.equal(badge.hidden,false);assert.equal(badge.error,true);assert.equal(message.textContent,'Cannot update map');
+ context.aggregateError='';context.data.phase_support_status='running';context.job.state='cancelled';context.updateMapStatus(false);assert.equal(badge.hidden,true);
  console.log('PCA map refresh: stable live display, pool/run isolation, stale replies and errors passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1});
