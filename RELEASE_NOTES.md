@@ -1,4 +1,4 @@
-# TEM Workbench — next release
+# TEM Workbench 1.0.34
 
 - Run PCA and NMF stability maps from Automatic grid, with the familiar sampling, progress, project/subfolder batch selection and map PNG exports.
 - Add an Accepted hypotheses selector and collapsible hypothesis table to the main window. Selection, opacity and shared map controls stay linked to the detailed inspector and survive browser reloads.
