@@ -131,6 +131,18 @@ def screen_reasons(model):
     return reasons
 
 
+def group_preview(result, ids):
+    """Render the same weighted group used for fitting, without running a fit."""
+    validate_options(result, {})
+    if not isinstance(ids, list) or not ids or any(type(i) is not int or not 0 <= i < len(result['components']) for i in ids):
+        raise ValueError('Choose a valid component group.')
+    ids = sorted(set(ids))
+    spectrum, coefficients, common, _ = group_spectrum(result, ids)
+    from shared_spectra import component_image
+    return dict(spectrum=component_image(spectrum, result['plan'], False),
+                components=ids, coefficients=coefficients.tolist(), cooccurring_windows=common)
+
+
 def group_detail(result, ids, templates, options=None):
     if not isinstance(ids,list) or not ids or any(type(i) is not int or not 0<=i<len(result['components']) for i in ids):
         raise ValueError('Choose a valid component group.')

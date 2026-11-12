@@ -28,6 +28,20 @@ def factor_result(k=2):
 
 
 class NmfTests(unittest.TestCase):
+    def test_group_preview_uses_fitting_spectrum_without_search(self):
+        result=factor_result()
+        result['scores'][:,1]=3
+        expected,coefficients,common,_=fitting.group_spectrum(result,[0,1])
+        with patch.object(spectra,'component_image',return_value={'raster':'test'}) as render, patch.object(fitting,'search_candidates') as search:
+            preview=fitting.group_preview(result,[1,0,1])
+        np.testing.assert_allclose(render.call_args.args[0],expected)
+        self.assertEqual(preview['components'],[0,1])
+        self.assertEqual(preview['cooccurring_windows'],common)
+        np.testing.assert_allclose(preview['coefficients'],coefficients)
+        search.assert_not_called()
+        for ids in ([],[-1],[2],[True]):
+            with self.assertRaises(ValueError):fitting.group_preview(result,ids)
+
     def test_phase_support_requires_separate_evidence(self):
         peaks=[dict(profile_id=i,qx=np.cos(i),qy=np.sin(i)) for i in range(8)]
         a=dict(model=0,phase='HCP',valid=True,score=.6,coverage=.75,profiles=[0,1,2,3,4,5])

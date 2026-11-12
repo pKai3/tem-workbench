@@ -57,7 +57,7 @@ if(typeof document!=='undefined'){
    $('nmf-fit').disabled=!data||running()||exporting;$('nmf-cutoff').disabled=running()||exporting;
    $('pca-cancel').disabled=!running();$('pca-export').disabled=!data||running()||exporting;
   }
-  function clearResults(){data=null;selected.clear();$('pca-results').hidden=true;sampleEpoch++;groupEpoch++;sourceImage=null;controls()}
+  function clearResults(){spectrumEpoch++;groupPreviews.clear();data=null;selected.clear();$('pca-results').hidden=true;sampleEpoch++;groupEpoch++;sourceImage=null;controls()}
   function options(){return {method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value}}
   const palette=signed=>$('pca-palette').value==='auto'?(signed?'rdbu':'viridis'):$('pca-palette').value;
   function spectrumCanvas(canvas,component){
@@ -102,17 +102,50 @@ if(typeof document!=='undefined'){
     card.append(title,map,key,label,spectrum);box.append(card);
    }
   }
+  let spectrumEpoch=0;
+  const groupPreviews=new Map();
+  function selectedSpectrumGroup(){return [...selected].sort((a,b)=>a-b)}
+  function inspectSelectedSpectrum(){
+   if($('pca-map-mode').value==='group')inspectGroup({components:selectedSpectrumGroup()});
+   else inspectComponent(Number($('pca-component').value));
+  }
+  function drawSelectedSpectrum(mode,component,overview){
+   const serial=++spectrumEpoch,canvas=$('pca-spectrum'),label=$('pca-spectrum-label');
+   const group=mode==='group',nmf=data.decomposition==='nmf';
+   canvas.closest('figure').hidden=mode==='residual'||(group&&!nmf);
+   $('nmf-inspect-component').hidden=!nmf;
+   if(overview||canvas.closest('figure').hidden)return;
+   if(!group){
+    spectrumCanvas(canvas,data.components[component]);componentAction(canvas,component);canvas.setAttribute('aria-label','Selected component spectrum');
+    label.textContent=nmf?`NMF ${component+1} spectrum · nonnegative`:`PC ${component+1} spectrum · signed, zero at colour midpoint`;
+    return;
+   }
+   const ids=selectedSpectrumGroup(),name=`NMF ${ids.map(i=>i+1).join(' + ')} combined spectrum`,key=job.id+':'+ids.join(',');
+   canvas.setAttribute('role','button');canvas.tabIndex=0;canvas.title='Inspect this group’s detected peaks and crystal fits';
+   canvas.onclick=inspectSelectedSpectrum;
+   canvas.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();inspectSelectedSpectrum()}};
+   canvas.setAttribute('aria-label',name);label.textContent=name+' · loading…';
+   canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+   if(!groupPreviews.has(key)){
+    if(groupPreviews.size>64)groupPreviews.clear();
+    groupPreviews.set(key,api('pca/group-preview',{id:job.id,components:ids}).catch(error=>{groupPreviews.delete(key);throw error}));
+   }
+   groupPreviews.get(key).then(result=>{
+    if(serial!==spectrumEpoch)return;
+    spectrumCanvas(canvas,result);label.textContent=name+(result.cooccurring_windows?'':' · no co-occurring windows');
+   }).catch(error=>{if(serial===spectrumEpoch)label.textContent=name+' · '+error.message});
+  }
   function drawMap(){
    if(!data)return;
    const overview=$('pca-layout').value==='overview';
    $('pca-overview').hidden=!overview;$('pca-single').hidden=overview;$('pca-top-label').hidden=!overview;
-   $('pca-map-mode').disabled=overview;$('pca-component').disabled=overview;
    const mode=$('pca-map-mode').value,component=Number($('pca-component').value),values=PcaView.values(data,mode,component,[...selected]),signed=mode==='component'&&data.decomposition!=='nmf';
+   $('pca-component-label').hidden=!overview&&mode!=='component';
+   $('pca-group-summary').hidden=overview||mode!=='group';
+   $('pca-group-summary').textContent='Group: '+[...selected].sort((a,b)=>a-b).map(i=>i+1).join(' + ')+' · choose below';
    const range=paintMap($('pca-map'),values,signed,true);rangeKey($('pca-map-key'),range,signed);
    $('pca-contrast').disabled=overview?data.decomposition!=='nmf':signed;
-   spectrumCanvas($('pca-spectrum'),data.components[component]);
-   $('nmf-inspect-component').hidden=data.decomposition!=='nmf';componentAction($('pca-spectrum'),component);
-   $('pca-spectrum-label').textContent=data.decomposition==='nmf'?`NMF ${component+1} spectrum · nonnegative`:`PC ${component+1} spectrum · signed, zero at colour midpoint`;
+   drawSelectedSpectrum(mode,component,overview);
    if(overview)drawOverview();drawPhaseMap();
    for(const b of $('pca-scree').children)b.setAttribute('aria-pressed',String(Number(b.dataset.index)===component));
   }
@@ -198,7 +231,9 @@ if(typeof document!=='undefined'){
   $('pca-method').onchange=()=>{$('pca-run').textContent='Run '+$('pca-method').value.toUpperCase()};
   $('pca-cancel').onclick=async()=>{cancelRequested=true;pipeline=null;if(!job?.id)return;try{await api('pca/cancel',{id:job.id});notify('Cancelling after the current FFT, matrix step or template fit…')}catch(e){notify(e.message,true)}};
   $('pca-close').onclick=()=>dialog.close();dialog.addEventListener('close',()=>document.documentElement.classList.remove('pca-open'));
-  for(const id of ['pca-map-mode','pca-component','pca-opacity','pca-contrast','pca-layout','pca-palette'])$(id).addEventListener('input',drawMap);
+  $('pca-map-mode').addEventListener('input',()=>{$('pca-layout').value='single';drawMap()});
+  $('pca-component').addEventListener('input',()=>{$('pca-map-mode').value='component';$('pca-layout').value='single';drawMap()});
+  for(const id of ['pca-opacity','pca-contrast','pca-layout','pca-palette'])$(id).addEventListener('input',drawMap);
   $('pca-top').addEventListener('input',()=>{showAllSignals=false;drawMap()});
   $('pca-show-all').onclick=()=>{if(!data)return;showAllSignals=true;$('pca-top').value=String(data.components.length);drawMap()};
   function refreshWindowSelection(canvas){
@@ -246,7 +281,7 @@ if(typeof document!=='undefined'){
    const group=data?.fits?.groups.find(g=>g.components.length===1&&g.components[0]===component);
    inspectGroup(group||{components:[component],support_checks:[]});
   }
-  $('nmf-inspect-component').onclick=()=>inspectComponent(Number($('pca-component').value));
+  $('nmf-inspect-component').onclick=inspectSelectedSpectrum;
   $('nmf-group-close').onclick=()=>{groupEpoch++;$('nmf-group-detail').hidden=true};
   async function inspectGroup(group){
    if(!data||running())return;const serial=++groupEpoch,jobId=job.id;

@@ -917,6 +917,9 @@ def make_handler(app):
                     self.send(app.fit_nmf(body))
                 elif self.path == '/api/pca/support':
                     self.send(app.fit_nmf(body,support=True))
+                elif self.path == '/api/pca/group-preview':
+                    from nmf_fitting import group_preview
+                    self.send(group_preview(app.pca.completed(body['id']), body['components']))
                 elif self.path == '/api/pca/group':
                     from nmf_fitting import group_detail
                     result=app.pca.completed(body['id'])

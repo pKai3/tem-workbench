@@ -1163,3 +1163,9 @@ Implemented on `feature/local-fft-pca`: Run NMF now continues through exhaustive
 Support uses frozen group models on eligible original unbroadened sampled spectra, retains one best passing hypothesis per phase, and never sums overlapping groups. Multiple-phase labels require distinct nonparallel evidence for each phase; shared competing explanations remain ambiguous. Exports include models, per-window results and thresholds. This is experimental same-image support, not phase fraction. Local drift, peak extraction and NMF convergence remain methodological concerns; the sparse 0274 map is not considered validated.
 
 Validation: synthetic split-BCC support without refitting, background-stage/export round trips, classification controls, and browser checks of progressive stages, cancellation, fit failure and PCA-only operation. Scientific validation and potential bounded local refinement remain pending.
+
+Map selection follow-up: Map and Component selectors remain available in Top signals. Choosing a map opens its single-map view; choosing a component opens that component map. Top signals remains the initial default.
+
+Group-map controls show the selected group numbers and point to the numbered checkboxes; the unrelated Component selector is hidden for group and residual maps.
+
+NMF group view now displays the full-precision, co-occurrence-weighted combined spectrum used by group fitting, with inspection targeting that group. Previews are cached and stale responses ignored; no fitting is needed to change the group display. PCA group activity and residual maps hide the unrelated component spectrum.
