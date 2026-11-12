@@ -46,6 +46,7 @@ Retain the agreed analysis order: HCP scaling validation/optimizer review, weake
 - **FFT masking and inverse FFT:** first implementation completed 11 November; paired circular masks, live reconstruction and PNG/data/recipe export. FFT manual peak editing is a separate deferred item.
 - **Automatic smoothing:** user discussed a coarse search in 0.25-bin increments, not exhaustive optimization. The window-size probe can hold physical width or bins fixed but does not search smoothing. Record this as a requested follow-up with objective, bounds, runtime budget and weak-pattern controls still to agree; it is not delivered.
 - **Reopen exported grid/batch JSON:** explicit follow-up from the request to reconstruct exported analysis in the app. Existing refresh recovery reconnects to an in-memory backend job, not a general export importer. Add a version-aware import/view workflow preserving source identity, settings, raw windows, linked variants, aggregation and provenance; display old results without silently recalculating. Audit older exports for missing data and report limitations. Not implemented.
+- **Safe transfer for all exports — approved 12 November:** extend the PCA/NMF local-staging and recovery approach to every export pathway; see the export follow-up below. Planned only.
 - **Incremental placement passes:** retain completed matching windows when extending passes; stable placement origins and exact source/settings reuse remain prerequisites. Pending.
 - **Shared-spectrum PCA:** first experimental workspace implemented on `feature/local-fft-pca` (12 November); see below. Independent-window crystal matching remains unchanged. NMF and exhaustive factor-combination indexing are implemented on that branch; scientific validation and adoption into phase mapping remain pending.
 - **Image-assisted acquisition alignment:** planned; suggest verified image-content alignment without silently replacing manual placements. ADF and Hitachi offsets are to be compared against nearby images, not merely against one another.
@@ -1135,6 +1136,14 @@ Validation: PCA and NMF browser checks cover All/count controls through 16 signa
 Fixed repeated macOS Errno 60 failures while NumPy/ZIP wrote compressed spectra directly into OneDrive. PCA and NMF exports now build the complete NPZ and JSON pair in local application storage, then transfer each completed file sequentially to a temporary output file and rename it after closing. A destination failure retains both complete local files under `export-recovery`; the UI and log report their locations and the failed destination. Successful transfers remove the temporary local copy. Analysis arrays, fits and provenance are unchanged. This avoids ZIP seeks during cloud writes; it cannot guarantee cloud-provider availability or upload completion.
 
 Validation: export round-trip and failure-injection checks cover local staging, successful cleanup, write/rename/directory errors, JSON-transfer failure, and retained NMF fitting/convergence metadata.
+
+### Safe transfer for all exports — approved, pending 12 November 2026
+
+Generalize the PCA/NMF export approach into shared export handling. Audit region, grid, batch, image/PNG/GIF, iFFT and other data/report exports: generate complete files in local application storage, copy sequentially to uniquely named temporary destination files, close them, then rename into place. Preserve filenames, formats, provenance and per-source output routing.
+
+Keep complete local outputs until every file in an export set has transferred successfully. On destination failure, clearly report partial completion and recovery paths, retain recoverable files, and support retrying transfer without recomputing analysis. Clean staging after success; avoid overwriting unrelated outputs. Show transfer progress for slow destinations. This does not make a multi-file set atomic or guarantee cloud upload completion.
+
+Validate local-output parity, timeout/write/rename failures, partial sets, cancellation and recovery. This is approved future work; only PCA/NMF currently uses this mechanism.
 
 ### NMF component crystal-fit inspection — 12 November 2026
 
