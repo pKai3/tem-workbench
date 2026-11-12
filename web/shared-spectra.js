@@ -259,17 +259,24 @@ if(typeof document!=='undefined'){
    if(!fits)return;
    const sorted=[...fits.groups].sort((a,b)=>(b.candidates[0]?.score??-Infinity)-(a.candidates[0]?.score??-Infinity));
    const table=document.createElement('table'),head=table.createTHead().insertRow();
-   ['Components','Best crystal / zone','Rank','Screen','Matched','Coverage','RMS, nm⁻¹','Cell, nm','Co-occurring windows'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th)});
+   ['Components / map','Best crystal / zone / rotation','Rank','Screen','Matched','Coverage','RMS, nm⁻¹','Cell, nm','Co-occurring windows'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th)});
    const body=table.createTBody();
    function appendRows(records){for(const group of records){
     const row=body.insertRow(),model=group.candidates[0];
-    const cell=row.insertCell(),button=document.createElement('button');button.type='button';button.textContent=group.components.map(i=>i+1).join(' + ');cell.append(button);button.onclick=()=>inspectGroup(group);
-    const cells=[model?`${model.phase} [${model.zone_3index.join(' ')}]`:'No fit',model?.score?.toFixed(3)??'—',model?(model.valid?'Pass':'Below'):'—',model?`${model.matched_profile_count}/${group.peak_count}`:`0/${group.peak_count}`,model?`${(100*model.coverage).toFixed(0)}%`:'—',model?.rms_nm_inv?.toFixed(3)??'—',model?['a','b','c'].filter(a=>model['fitted_'+a+'_nm']!=null).map(a=>`${a} ${model['fitted_'+a+'_nm'].toFixed(4)}`).join(' · '):'—',String(group.cooccurring_windows)];
+    const cell=row.insertCell(),button=document.createElement('button');button.type='button';button.textContent=group.components.map(i=>i+1).join(' + ');cell.append(button);button.title='Show this group’s activity map and combined spectrum';button.onclick=()=>selectGroupMap(group);
+    const inspectButton=document.createElement('button');inspectButton.type='button';inspectButton.textContent='Fits';inspectButton.title='Inspect crystal fits for this group';inspectButton.onclick=()=>inspectGroup(group);cell.append(inspectButton);
+    const cells=[model?`${model.phase} [${model.zone_3index.join(' ')}] · ${model.rotation_deg.toFixed(1)}°`:'No fit',model?.score?.toFixed(3)??'—',model?(model.valid?'Pass':'Below'):'—',model?`${model.matched_profile_count}/${group.peak_count}`:`0/${group.peak_count}`,model?`${(100*model.coverage).toFixed(0)}%`:'—',model?.rms_nm_inv?.toFixed(3)??'—',model?['a','b','c'].filter(a=>model['fitted_'+a+'_nm']!=null).map(a=>`${a} ${model['fitted_'+a+'_nm'].toFixed(4)}`).join(' · '):'—',String(group.cooccurring_windows)];
     cells.forEach(t=>row.insertCell().textContent=t);if(!group.cooccurring_windows)row.title='These factors never exceed 20% of their own maximum together. This is a mathematical combination, not an observed shared pattern.';
    }}
    let shown=0;const more=document.createElement('button');more.type='button';
    const page=()=>{appendRows(sorted.slice(shown,shown+100));shown+=100;more.hidden=shown>=sorted.length;more.textContent=`Show next ${Math.min(100,sorted.length-shown)} combinations`};
    more.onclick=page;page();box.append(table,more);
+  }
+  function selectGroupMap(group){
+   selected=new Set(group.components);
+   for(const input of $('pca-group').querySelectorAll('input'))input.checked=selected.has(Number(input.value));
+   $('pca-map-mode').value='group';$('pca-layout').value='single';
+   drawMap();inspect();$('pca-single').scrollIntoView({block:'nearest'});
   }
   function componentAction(canvas,component){
    const enabled=data?.decomposition==='nmf';canvas.setAttribute('role',enabled?'button':'img');canvas.tabIndex=enabled?0:-1;
@@ -326,7 +333,7 @@ if(typeof document!=='undefined'){
       const cell=row.insertCell();cell.textContent=['a','b','c'].filter(a=>m['fitted_'+a+'_nm']!=null).map(a=>`${a} ${m['fitted_'+a+'_nm'].toFixed(4)}`).join(' · ')||'—';cell.title=m.scale_note||'';
      });wrap.append(table);support.append(wrap);
     }
-    for(const check of group.support_checks||[]){const b=document.createElement('button');b.type='button';b.textContent=`Window ${check.window+1}: ${check.matched}/${check.peak_count} matched`;b.title='Check of the best combination model against the original window, without refitting';b.onclick=()=>{index=check.window;selected=new Set(group.components);for(const input of $('pca-group').querySelectorAll('input'))input.checked=selected.has(Number(input.value));$('pca-map-mode').value='group';drawMap();inspect()};support.append(b)}
+    for(const check of group.support_checks||[]){const b=document.createElement('button');b.type='button';b.textContent=`Window ${check.window+1}: ${check.matched}/${check.peak_count} matched`;b.title='Check of the best combination model against the original window, without refitting';b.onclick=()=>{index=check.window;selectGroupMap(group)};support.append(b)}
    }catch(e){if(serial===groupEpoch){status.textContent=e.message;status.classList.add('error')}}
   }
   function showPhaseMaps(){
@@ -363,10 +370,10 @@ if(typeof document!=='undefined'){
    $('nmf-map-window').textContent=`Window ${index+1} · ${win.label}${win.phases.length?' · '+win.phases.join(' + '):''} · ${win.peak_count} profiles · ${win.tested_models} eligible fits`;
    const box=$('nmf-map-evidence');box.replaceChildren();
    const table=document.createElement('table'),head=table.createTHead().insertRow();
-   ['Phase / group','Rank','Screen','Matched','Coverage'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th)});
+   ['Phase / group','Local support','Screen','Matched predictions','Prediction coverage'].forEach(t=>{const th=document.createElement('th');th.textContent=t;head.append(th)});
    for(const c of win.candidates){const row=table.insertRow(),model=maps.models[c.model],button=document.createElement('button');button.type='button';button.textContent=`${c.phase} · ${model.components.map(i=>i+1).join(' + ')}`;button.onclick=()=>inspectGroup(data.fits.groups[model.group]);row.insertCell().append(button);
-    [c.score.toFixed(3),c.valid?'Pass':'Below',`${c.profiles.length}/${win.peak_count}`,`${Math.round(c.coverage*100)}%`].forEach(t=>row.insertCell().textContent=t);
-    row.title=`Fixed [${model.zone_3index.join(' ')}] at ${model.rotation_deg.toFixed(1)}°; RMS ${c.rms_nm_inv.toFixed(3)} nm⁻¹. Distinct profiles: ${(win.unique_profiles[c.phase]||[]).length}.`;
+    [c.score.toFixed(3),c.valid?'Pass':'Below',`${c.profiles.length}/${c.predicted_count??win.peak_count}`,`${Math.round((c.predicted_coverage??c.coverage)*100)}%`].forEach(t=>row.insertCell().textContent=t);
+    row.title=`[${model.zone_3index.join(' ')}] at ${(c.rotation_deg??model.rotation_deg).toFixed(1)}°; local rotation ${(c.rotation_adjustment_deg??0).toFixed(2)}°, reciprocal scale ×${(c.local_scale??1).toFixed(4)}; RMS ${c.rms_nm_inv.toFixed(3)} nm⁻¹. Distinct profiles: ${(win.unique_profiles[c.phase]||[]).length}.`;
    }
    box.append(table);
    if(!win.candidates.length){const note=document.createElement('p');note.textContent='No eligible group fit matched this window.';box.append(note)}

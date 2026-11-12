@@ -52,9 +52,39 @@ class NmfTests(unittest.TestCase):
         self.assertEqual(phase_maps.classify([a,b],peaks)['label'],'multiple')
         self.assertEqual(phase_maps.classify([a],peaks)['label'],'single')
         a.update(coverage=.4)
-        self.assertEqual(phase_maps.classify([a],peaks)['label'],'unresolved')
+        self.assertEqual(phase_maps.classify([a],peaks)['label'],'single')
         a.update(valid=False)
         self.assertEqual(phase_maps.classify([a],peaks)['label'],'unresolved')
+
+    def test_local_support_tolerates_other_patterns_and_small_drift(self):
+        q=np.array([[3.,0.],[0.,4.],[3.,4.],[6.,0.],[6.,4.],[0.,8.]])
+        nodes=[dict(q=v.tolist(),hkl=[i,0,0]) for i,v in enumerate(q)]
+        model=dict(predicted_nodes=nodes,scale_penalty=0.)
+        shifted=core.rotation(q,np.radians(2.))*1.015
+        peaks=[dict(profile_id=i,qx=v[0],qy=v[1],weight=1.) for i,v in enumerate(shifted)]
+        # Unrelated observations must not dilute support for the known pattern.
+        rng=np.random.default_rng(42)
+        extras=rng.uniform(-9,9,(24,2))
+        peaks += [dict(profile_id=i+6,qx=v[0],qy=v[1],weight=1.) for i,v in enumerate(extras)]
+        result=phase_maps.match_local(peaks,model,.15,dict(scale_mode='auto',scale_penalty_strength=.1))
+        self.assertTrue(result['valid'])
+        self.assertGreaterEqual(len(result['profiles']),6)
+        self.assertAlmostEqual(result['rotation_adjustment_deg'],2.,delta=.3)
+        self.assertAlmostEqual(result['local_scale'],1.015,delta=.005)
+        fixed=phase_maps.match_local(peaks,model,.15,dict(scale_mode='fixed'))
+        self.assertEqual(fixed['local_scale'],1.)
+        penalized=phase_maps.match_local(peaks,{**model,'scale_penalty':2.},.15,dict(scale_mode='auto'))
+        self.assertFalse(penalized['valid'])
+
+    def test_local_support_rejects_noise(self):
+        q=np.array([[3.,0.],[0.,4.],[3.,4.],[6.,0.],[6.,4.],[0.,8.]])
+        model=dict(predicted_nodes=[dict(q=v.tolist(),hkl=[i,0,0]) for i,v in enumerate(q)],scale_penalty=0.)
+        for seed in range(10):
+            rng=np.random.default_rng(seed)
+            noise=rng.uniform(-10,10,(30,2))
+            peaks=[dict(profile_id=i,qx=v[0],qy=v[1],weight=1.) for i,v in enumerate(noise)]
+            result=phase_maps.match_local(peaks,model,.15,dict(scale_mode='auto'))
+            self.assertTrue(result is None or not result['valid'])
 
     def test_nonnegative_repeatable_reconstruction(self):
         rng=np.random.default_rng(5)

@@ -1160,12 +1160,21 @@ Validation: 19 focused Python tests and the shared-spectra JavaScript checks pas
 
 Implemented on `feature/local-fft-pca`: Run NMF now continues through exhaustive combination fitting and phase-support mapping. Signal maps appear after decomposition, combination results after fitting, and the support map after original-window checks. Top signals is the default view. Cancel/error stops subsequent stages and preserves completed results; separate fitting/map buttons remain available. No main release.
 
-Support uses frozen group models on eligible original unbroadened sampled spectra, retains one best passing hypothesis per phase, and never sums overlapping groups. Multiple-phase labels require distinct nonparallel evidence for each phase; shared competing explanations remain ambiguous. Exports include models, per-window results and thresholds. This is experimental same-image support, not phase fraction. Local drift, peak extraction and NMF convergence remain methodological concerns; the sparse 0274 map is not considered validated.
+The initial support implementation used frozen group models on eligible original unbroadened sampled spectra; the bounded refinement update below replaces that check. It retains one best passing hypothesis per phase, and never sums overlapping groups. Multiple-phase labels require distinct nonparallel evidence for each phase; shared competing explanations remain ambiguous. Exports include models, per-window results and thresholds. This is experimental same-image support, not phase fraction. Local drift, peak extraction and NMF convergence remain methodological concerns; the sparse 0274 map is not considered validated.
 
-Validation: synthetic split-BCC support without refitting, background-stage/export round trips, classification controls, and browser checks of progressive stages, cancellation, fit failure and PCA-only operation. Scientific validation and potential bounded local refinement remain pending.
+Validation: synthetic split-BCC support without refitting, background-stage/export round trips, classification controls, and browser checks of progressive stages, cancellation, fit failure and PCA-only operation. Scientific validation remains pending; bounded local refinement is implemented in the update below.
 
 Map selection follow-up: Map and Component selectors remain available in Top signals. Choosing a map opens its single-map view; choosing a component opens that component map. Top signals remains the initial default.
 
 Group-map controls show the selected group numbers and point to the numbered checkboxes; the unrelated Component selector is hidden for group and residual maps.
 
 NMF group view now displays the full-precision, co-occurrence-weighted combined spectrum used by group fitting, with inspection targeting that group. Previews are cached and stale responses ignored; no fitting is needed to change the group display. PCA group activity and residual maps hide the unrelated component spectrum.
+
+
+### NMF group navigation and local support — 12 November 2026
+
+Group summaries now show rotation. Clicking the group number selects its components and opens the group activity map plus combined spectrum; a separate Fits button opens the inspector. The local-support table labels its score and prediction coverage explicitly.
+
+Replaced all-observed-peak dilution with prediction-normalized support minus chance and scale costs. Added bounded ±3° rotation / ±3% uniform scale refinement, preserving phase, zone and cell proportions (fixed mode allows rotation only). Retains group scale cost and charges local scale drift. Requires four close matches, nonparallel directions and >30% prediction coverage. Multiple-phase classifications retain distinct-evidence checks.
+
+On the saved five-factor 0274 export, single-supported windows increased from 16 to 149 of 324; 175 remain unresolved. That export contains no passing BCC group, so this does not validate beta recovery or the user's separate four-factor result. Further scientific validation, factor peak extraction and convergence remain pending. No main release.
