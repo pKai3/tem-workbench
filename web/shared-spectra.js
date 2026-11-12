@@ -13,17 +13,29 @@ const PcaView={
   return [...maps.models].sort((a,b)=>(maps.model_passing_counts[b.id]||0)-(maps.model_passing_counts[a.id]||0)||(maps.model_mean_support?.[b.id]||0)-(maps.model_mean_support?.[a.id]||0)||a.id-b.id).slice(0,Math.max(1,Math.floor(n)||1));
  },
  hypothesisPools(maps){
-  const ranked=this.topHypotheses(maps,maps.models.length),order=new Map(ranked.map((m,i)=>[m.id,i])),added=ranked.map(()=>0);
-  // A window joins the pool when its first passing hypothesis is included.
+  const ranked=this.topHypotheses(maps,maps.models.length),added=ranked.map(()=>0),improved=ranked.map(()=>0);
   for(const window of maps.windows){
-   let first=ranked.length;
-   for(const candidate of window.candidates)if(candidate.valid&&order.has(candidate.model))first=Math.min(first,order.get(candidate.model));
-   if(first<ranked.length)added[first]++;
+   const passing=new Map();
+   for(const c of window.candidates)if(c.valid)passing.set(c.model,Math.max(passing.get(c.model)??-Infinity,c.score));
+   let best=-Infinity;
+   ranked.forEach((model,i)=>{
+    const score=passing.get(model.id);if(score==null||score<=best)return;
+    if(best===-Infinity)added[i]++;else improved[i]++;
+    best=score;
+   });
   }
   let supported=0;
-  return added.map((count,i)=>({count:i+1,supported:supported+=count}));
+  return added.map((count,i)=>({count:i+1,supported:supported+=count,newlySupported:count,improved:improved[i]}));
  },
  supportPercent(count,total){return `${(total?100*count/total:0).toFixed(1)}%`},
+ winningSolutions(maps,local,palette,registry){
+  const counts=new Map();
+  for(const state of local)if(state.winner)counts.set(state.winner.model,(counts.get(state.winner.model)||0)+1);
+  return this.topHypotheses(maps,maps.models.length).filter(m=>counts.has(m.id)).map(model=>{
+   if(!registry.has(model.id))registry.set(model.id,palette[registry.size]??`◌${registry.size+1}`);
+   return {model,symbol:registry.get(model.id),count:counts.get(model.id)};
+  });
+ },
  localHypotheses(window,ids){
   const pool=new Set(ids),passing=window.candidates.filter(c=>pool.has(c.model)&&c.valid).sort((a,b)=>b.score-a.score||a.model-b.model);
   if(!passing.length)return {passing,winner:null,label:'unresolved',independent:[]};
@@ -110,6 +122,7 @@ if(typeof document!=='undefined'){
   let snapshot=null,context='',job=null,data=null,selected=new Set(),index=0,epoch=0,sampleEpoch=0,pollTimer=null,sourceImage=null,exporting=false,groupEpoch=0,showAllSignals=true,pipeline=null,cancelRequested=false;
   const dialog=$('pca-dialog'),form=$('pca-form');
   let section='signals';
+  const solutionSymbols=new Map();let symbolModels=null,poolSummaries=[];
   const expandedSignals=new Set();
   const isPca=()=>data?.decomposition==='pca';
   const sourceLabel=g=>isPca()?PcaView.sourceLabel(g):`NMF ${g.components.map(i=>i+1).join(' + ')}`;
@@ -270,6 +283,7 @@ if(typeof document!=='undefined'){
    $('nmf-fit-help').textContent+=' Peak cutoff is the fraction of the strongest maximum above the median at the same reciprocal radius: default 0.35. Higher values reject more weak/background maxima. The saved cutoff applies to features, combinations and original-window checks; it is not a distance or an absolute brightness threshold. Matching uses the same native FFT taper-response width as ordinary FFT fits; optional decomposition smoothing does not widen it.';
    $('nmf-map-phase-label').textContent=pca?'Hypothesis':'Phase';
    $('nmf-map-help').textContent=pca?'Top N is a global pool ranked by passing-window count, then mean passing support. Best local match colours each square by its highest-support passing member; all locally supported shows every passing pool member. No passing member means unresolved. A white corner marks close competing explanations of shared peaks. Multiple patterns require at least three unique nonparallel profiles and over 15% of detected profiles per pattern. Passing overlays alone are not proof of coexistence or phase fractions. All hypotheses are checked against every original unbroadened window with ±3°/±3% refinement (rotation only for fixed scale), regardless of PCA score.':'Group fits are checked in eligible original windows with bounded local rotation and scale refinement. One best passing model per phase. Blended cells require separate nonparallel evidence. Pink marks competing explanations; colours are not phase fractions.';
+   if(pca)$('nmf-map-help').textContent+=' In the Top hypotheses dropdown, supported is cumulative coverage. Better is the percentage of all checked windows that already had a passing fit and gain strictly higher local support when that last hypothesis is added. New support is reported separately; equal scores and below-screen fits do not count as improvements.';
    showSection(section);
    r.components.forEach(c=>{
     for(const host of ['pca-group','pca-map-group']){
@@ -466,12 +480,14 @@ if(typeof document!=='undefined'){
    const select=$('nmf-map-phase'),previous=select.value;select.replaceChildren(new Option('All phases','all'));
    if(!maps)return;
    if(isPca()){
+    if(symbolModels!==maps.models){solutionSymbols.clear();symbolModels=maps.models}
+    poolSummaries=PcaView.hypothesisPools(maps);
     select.replaceChildren();
     PcaView.topHypotheses(maps,maps.models.length).forEach(m=>select.add(new Option(`${hypothesisLabel(m)} · ${maps.model_passing_counts[m.id]}/${maps.windows.length} windows (${PcaView.supportPercent(maps.model_passing_counts[m.id]||0,maps.windows.length)})`,String(m.id))));
     if(!maps.models.length)select.add(new Option('No retained feature fits',''));
     select.disabled=!maps.models.length;
     const top=$('pca-map-top'),count=Math.min(Number(top.value)||3,Math.max(1,maps.models.length));
-    top.replaceChildren(...PcaView.hypothesisPools(maps).map(pool=>new Option(`${pool.count} · ${PcaView.supportPercent(pool.supported,maps.windows.length)} supported`,String(pool.count))));
+    top.replaceChildren(...poolSummaries.map(pool=>new Option(`${pool.count} · ${PcaView.supportPercent(pool.supported,maps.windows.length)} supported${pool.count>1?' · '+PcaView.supportPercent(pool.improved,maps.windows.length)+' better':''}`,String(pool.count))));
     if(!maps.models.length)top.add(new Option('No retained hypotheses',''));
     top.disabled=!maps.models.length;if(maps.models.length)top.value=String(count);
     if([...select.options].some(o=>o.value===previous))select.value=previous;
@@ -489,11 +505,12 @@ if(typeof document!=='undefined'){
    ctx.fillStyle='#050a0f';ctx.fillRect(0,0,canvas.width,canvas.height);
    if(sourceImage?.complete&&sourceImage.naturalWidth)ctx.drawImage(sourceImage,ox,oy,width*scale,height*scale);
    const pca=isPca(),mode=$('pca-map-mode').value,single=pca&&mode==='single',colourBy=$('pca-map-colour').value;
-   for(const id of ['pca-map-mode-label','pca-map-colour-label'])$(id).hidden=!pca;
+   for(const id of ['pca-map-mode-label','pca-map-colour-label','pca-map-symbols-label'])$(id).hidden=!pca;
    $('pca-map-top-label').hidden=!pca||single;$('nmf-map-select-label').hidden=pca&&!single;
    const [w,h]=p.window_pixels,[dx,dy]=[p.spacing_nm[0]/p.pixel_nm[0],p.spacing_nm[1]/p.pixel_nm[1]],phase=$('nmf-map-phase').value,model=single&&phase!==''?maps.models[Number(phase)]:null;
    const pool=pca?(single?(model?[model]:[]):PcaView.topHypotheses(maps,Number($('pca-map-top').value))):[],ids=pool.map(m=>m.id);
    const local=pca?maps.windows.map(win=>PcaView.localHypotheses(win,ids)):[];
+   const winning=pca?PcaView.winningSolutions(maps,local,ZONE_SYMBOLS,solutionSymbols):[],showSymbols=pca&&$('pca-map-symbols').checked;
    ctx.globalAlpha=Number($('nmf-map-opacity').value);
    for(const win of maps.windows){
     const ix=win.index%p.xs.length,iy=Math.floor(win.index/p.xs.length),cx=p.xs[ix]+w/2,cy=p.ys[iy]+h/2;
@@ -505,6 +522,11 @@ if(typeof document!=='undefined'){
     if(pca&&!single&&state.label==='ambiguous'){
      const x=ox+left*scale,y=oy+top*scale,s=Math.min(6,(right-left)*scale/3,(bottom-top)*scale/3);ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+s,y);ctx.lineTo(x,y+s);ctx.closePath();ctx.fill();
     }
+    if(showSymbols&&state.winner){
+     const size=Math.min(16,Math.min(right-left,bottom-top)*scale*.6),symbol=solutionSymbols.get(state.winner.model);
+     ctx.save();ctx.globalAlpha=1;ctx.font=`${size}px "Arial Unicode MS","Segoe UI Symbol",sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineJoin='round';ctx.lineWidth=size*.15;ctx.strokeStyle='#07101b';ctx.fillStyle=`rgb(${PcaView.hypothesisColour(maps.models[state.winner.model],colourBy)})`;
+     const x=ox+cx*scale,y=oy+cy*scale;ctx.strokeText(symbol,x,y,size*1.4);ctx.fillText(symbol,x,y,size*1.4);ctx.restore();
+    }
    }
    ctx.globalAlpha=1;const iy=Math.floor(index/p.xs.length),ix=index%p.xs.length;
    ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(ox+p.xs[ix]*scale,oy+p.ys[iy]*scale,w*scale,h*scale);
@@ -513,8 +535,19 @@ if(typeof document!=='undefined'){
     (phase==='all'?[...maps.phases,'Ambiguous','Unresolved']:[phase,'Below / inactive']).map(name=>({label:name,colour:PcaView.phaseColours[name]||(name==='Ambiguous'?[230,155,170]:[140,150,160])}));
    if(pca)legend.push({label:'Unresolved',colour:[140,150,160]});
    for(const entry of legend){const item=document.createElement('span');item.textContent='● '+entry.label+'  ';item.style.color=`rgb(${entry.colour})`;key.append(item)}
-   if(pca&&!single)key.append(document.createTextNode('◩ Competing explanations'));
+   function legendHelp(host,label,text,id,iconOnly=false){
+    const help=document.createElement('span'),button=document.createElement('button'),popup=document.createElement('span');help.className='settings-help';button.type='button';button.className=iconOnly?'settings-help-button':'pca-legend-help pca-ambiguity-key';button.textContent=iconOnly?'ⓘ':label;button.setAttribute('aria-label','About '+label.toLowerCase());button.setAttribute('aria-describedby',id);popup.className='settings-help-popup';popup.id=id;popup.setAttribute('role','tooltip');popup.textContent=text;help.append(button,popup);host.append(help);
+   }
+   if(pca&&!single)legendHelp(key,'Competing explanations','Small white corner triangles flag competing explanations: multiple hypotheses in the selected pool pass in that window, explain mostly the same peaks, and have similar support scores. In Best local match, the square colour and symbol still show the highest-support passing fit. The interpretation is ambiguous; this does not establish that the phases coexist.','pca-map-ambiguity-help');
    if(!pca&&phase==='all')key.append(document.createTextNode('Blended: separate evidence for multiple phases'));
+   if(showSymbols&&winning.length){
+    const group=document.createElement('div');group.className='zone-legend-group pca-solution-key';
+    for(const entry of winning){
+     const item=document.createElement('span'),symbol=document.createElement('b'),count=document.createElement('small');item.className='zone-key';item.style.color=`rgb(${PcaView.hypothesisColour(entry.model,colourBy)})`;symbol.textContent=entry.symbol;count.textContent='×'+entry.count;
+     item.append(symbol,document.createTextNode(`${entry.model.phase} [${entry.model.zone_3index.join(' ')}] ${entry.model.rotation_deg.toFixed(1)}°`),count);group.append(item);
+    }
+    legendHelp(group,'Solution symbols','Each symbol identifies one retained phase, zone and orientation solution. Only the highest-support passing member of the selected pool receives a symbol in each square, including in All locally supported view. Separate orientations of the same phase and zone have different symbols. Counts are locally winning windows, not all passing windows or image area. Only solutions that win somewhere in this view appear here. Symbols stay stable while changing the pool, view or colour setting.','pca-map-symbols-help',true);key.append(group);
+   }
    const win=maps.windows[index];
    const selectedCandidate=model?win.candidates.find(c=>c.model===model.id):null;
    const state=local[index],descriptions={unresolved:'unresolved',single:'one supported pattern',multiple:'separate patterns supported',ambiguous:'competing explanations'};
@@ -522,6 +555,7 @@ if(typeof document!=='undefined'){
    if(pca){
     const supported=local.filter(s=>s.winner).length,summary=`${supported}/${maps.windows.length} windows (${PcaView.supportPercent(supported,maps.windows.length)})`;
     $('nmf-map-counts').textContent=single?(model?`${summary} support this hypothesis. Representative source: ${model.valid?'Pass':'Below'}.`:'No retained hypotheses.'):`Top ${pool.length} of ${maps.models.length} hypotheses · ${summary} supported by this pool`;
+    if(!single&&pool.length>1){const gain=poolSummaries[pool.length-1];$('nmf-map-counts').textContent+=` · Last addition: +${PcaView.supportPercent(gain.newlySupported,maps.windows.length)} newly supported · ${PcaView.supportPercent(gain.improved,maps.windows.length)} better fit`}
    }
    const box=$('nmf-map-evidence');box.replaceChildren();
    const table=document.createElement('table'),head=table.createTHead().insertRow();
@@ -541,6 +575,7 @@ if(typeof document!=='undefined'){
   }
   $('nmf-map-phase').onchange=drawPhaseMap;
   $('pca-map-mode').onchange=drawPhaseMap;$('pca-map-top').onchange=drawPhaseMap;$('pca-map-colour').onchange=drawPhaseMap;
+  $('pca-map-symbols').onchange=drawPhaseMap;
   $('nmf-map-opacity').oninput=drawPhaseMap;
   $('nmf-phase-map').onclick=selectMapWindow;$('nmf-phase-map').onkeydown=stepMapWindow;
   for(const [id,stage] of [['nmf-build-map','support'],['nmf-fit','fit']])$(id).onclick=async()=>{

@@ -23,7 +23,7 @@ assert.equal(pca.sourceLabel({kind:'combination',components:[0,1],window:12}),'P
 assert.equal(pca.sourceLabel({sources:[{component:0,side:'negative'},{kind:'combination',components:[0,1]}]}),'PC 1− / PC 1+2');
 assert.deepEqual(pca.topHypotheses({...maps,model_passing_counts:{0:6,1:6,2:3}},2).map(m=>m.id),[1,0]);
 const supportMap={...maps,windows:[win,shared,below,{candidates:[]}]};
-assert.deepEqual(pca.hypothesisPools(supportMap),[{count:1,supported:2},{count:2,supported:2},{count:3,supported:3}],
+assert.deepEqual(pca.hypothesisPools(supportMap),[{count:1,supported:2,newlySupported:2,improved:0},{count:2,supported:2,newlySupported:0,improved:2},{count:3,supported:3,newlySupported:1,improved:1}],
  'pool support counts overlapping passing windows once and excludes unresolved windows');
 for(const pool of pca.hypothesisPools(supportMap)){
  const ids=pca.topHypotheses(supportMap,pool.count).map(m=>m.id);
@@ -32,4 +32,23 @@ for(const pool of pca.hypothesisPools(supportMap)){
 assert.equal(pca.supportPercent(301,324),'92.9%');
 assert.equal(pca.supportPercent(0,0),'0.0%');
 assert.deepEqual(pca.hypothesisPools({models:[],windows:[],model_passing_counts:{}}),[]);
+const gains={...maps,windows:[
+ {candidates:[{model:0,valid:true,score:.4},{model:1,valid:true,score:.6},{model:2,valid:true,score:.5}]},
+ {candidates:[{model:0,valid:true,score:.5},{model:1,valid:true,score:.5},{model:2,valid:true,score:.8}]},
+ {candidates:[{model:0,valid:false,score:.9},{model:1,valid:true,score:.3},{model:2,valid:true,score:.2}]},
+ {candidates:[{model:2,valid:true,score:.9}]},
+ {candidates:[{model:0,valid:false,score:.9}]}]};
+assert.deepEqual(pca.hypothesisPools(gains),[
+ {count:1,supported:2,newlySupported:2,improved:0},
+ {count:2,supported:3,newlySupported:1,improved:1},
+ {count:3,supported:4,newlySupported:1,improved:1}],
+ 'strict improvements exclude newly supported windows, ties, lower ranks and below-screen fits');
+const registry=new Map(),palette=['●','▲','◆'];
+let symbols=pca.winningSolutions(maps,[pca.localHypotheses(win,[0])],palette,registry);
+assert.deepEqual(symbols.map(s=>[s.model.id,s.symbol,s.count]),[[0,'●',1]]);
+symbols=pca.winningSolutions(maps,[pca.localHypotheses(win,[0,1]),pca.localHypotheses(win,[0]),pca.localHypotheses(below,[0,1])],palette,registry);
+assert.deepEqual(symbols.map(s=>[s.model.id,s.symbol,s.count]),[[0,'●',1],[1,'▲',1]]);
+assert.equal(registry.has(2),false,'nonwinning solutions need no symbol');
+assert.deepEqual(pca.winningSolutions(maps,[pca.localHypotheses(win,[0])],palette,registry).map(s=>s.symbol),['●'],'changing the pool preserves existing symbol identities');
+assert.deepEqual(pca.winningSolutions(maps,[{winner:null}],palette,registry),[]);
 console.log('PCA hypothesis maps: global pool, local winner, independent/shared evidence, unresolved windows and combination labels passed.');
