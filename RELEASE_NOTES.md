@@ -1,4 +1,4 @@
-# TEM Workbench — next release
+# TEM Workbench 1.0.35
 
 - Use the ordinary FFT detector, rotation/scale refinement, scoring and acceptance rules when checking PCA/NMF hypotheses against original image windows. Original-window inspectors now show the native FFT and the same rank and cell measurements as ordinary fitting.
 - Add **New windows first** as the default hypothesis order and **Auto** as the default pool size. Auto keeps the smallest leading pool retaining at least 99% of attainable passing-window coverage. Counts and manual checkboxes remain available; selection stays linked between the main map and detailed inspector, and applies to batch map exports.
