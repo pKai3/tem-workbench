@@ -1820,6 +1820,7 @@ function supportTriangleLegend(phases,palette,compact=false,strength=false,opaci
  if(!compact)svg.append(el('text',{x:150,y:217,fill:'#94a5b8','text-anchor':'middle','font-size':11},`Relative ${strength?'strength':'support'} · colour only`));
  return svg;
 }
+function mapCentreMarkerSize(spacingPixels){return Math.max(5,spacingPixels*.28)}
 function drawOverlapMap(){
  syncMapOpacityControl();
  hideRegionPreview();$('class-legend').hidden=true;$('zone-legend').hidden=true;
@@ -1886,7 +1887,7 @@ function drawOverlapMap(){
   }else{
    for(const r of grid.regions){
     if(r.rim&&!showRim)continue;
-    const cx=r.roi.x+r.roi.w/2,cy=r.roi.y+r.roi.h/2,size=Math.max(5,grid.grid.spacing_nm/meta.pixel_x_nm*.28);
+    const cx=r.roi.x+r.roi.w/2,cy=r.roi.y+r.roi.h/2,size=mapCentreMarkerSize(grid.grid.spacing_nm/meta.pixel_x_nm);
     const entries=analysisPhases(grid.settings).map(phase=>({phase,model:r.best_zones?.[phase]})).filter(e=>e.model).sort((a,b)=>compareRank(a.model,b.model)).slice(0,1);
     const node=el('circle',{cx,cy,r:size*.6,fill:symbolStyle==='zone'&&entries.length?'transparent':colors[r.label]||'#aaa','fill-opacity':opacity*(symbolStyle==='circle'?.85:.35),class:'grid-cell','data-id':r.id});group.append(node);
     if(symbolStyle!=='circle')for(const [i,{phase,model}]of entries.entries()){

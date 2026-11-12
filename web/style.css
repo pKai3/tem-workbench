@@ -990,8 +990,6 @@ html.pca-open,html.pca-open body{overflow:hidden}
 .pca-controls{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:12px 0}
 .pca-source-links{align-items:center}
 .pca-controls #pca-map-top{width:18em;max-width:100%}
-.pca-controls #pca-map-symbols-label{flex-direction:row;align-items:center;gap:6px;min-height:36px}
-#pca-map-symbols{width:13px;height:13px;min-height:0;margin:0;padding:0}
 .pca-controls [hidden]{display:none}.pca-controls input[type=number]{width:110px}.pca-controls label{display:flex;flex-direction:column;gap:5px;min-width:0}
 .pca-controls select{max-width:100%;min-width:0}
 .pca-local-selection{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0;font-size:12px}
@@ -1128,6 +1126,7 @@ html.pca-open,html.pca-open body{overflow:hidden}
 .pca-fit-check{display:flex;align-items:center;flex:none;cursor:pointer;padding:4px}
 .pca-fit-check input,.pca-check input{width:13px;height:13px;min-height:0;margin:0;padding:0}
 #pca-dialog .pca-check{display:flex;flex-direction:row;align-items:center;gap:6px;min-height:36px}
+#pca-dialog .pca-check[hidden]{display:none}
 .pca-mapping-controls{gap:8px}
 .pca-mapping-controls select{max-width:190px}
 #pca-aggregation-status.error{color:#ff9cb0}

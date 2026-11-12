@@ -201,7 +201,7 @@
   <p id="nmf-fit-note" class="hint"></p>
    <div id="nmf-fit-results" class="nmf-fit-results"></div>
    </section>
-   <section id="pca-support-panel" data-pca-panel="support" role="tabpanel" aria-labelledby="pca-tab-support" hidden><div class="pca-controls"><h3 id="nmf-support-heading">Mapping</h3><button id="nmf-build-map" type="button">Update mapping</button></div>
+   <section id="pca-support-panel" data-pca-panel="support" role="tabpanel" aria-labelledby="pca-tab-support" hidden><div class="pca-controls"><h3 id="nmf-support-heading">Mapping</h3><button id="nmf-build-map" type="button">Update mapping</button><button id="pca-export-map" type="button" disabled>Export map PNG</button></div>
    <p id="nmf-map-status" class="hint" role="status"></p>
    <section id="nmf-phase-panel" hidden>
     <div class="pca-controls pca-mapping-controls">
@@ -211,7 +211,8 @@
      <label id="nmf-map-select-label"><span id="nmf-map-phase-label">Phase</span><select id="nmf-map-phase"><option value="all">All phases</option></select></label>
      <label id="pca-map-colour-label" hidden>Colour by<select id="pca-map-colour"><option value="phase">Phase</option><option value="hypothesis">Hypothesis</option></select></label><label>Map opacity<input id="nmf-map-opacity" type="range" min="0" max="1" step="0.05" value="0.7"></label>
      <label class="pca-check" id="pca-normalize-label"><input id="pca-map-normalize" type="checkbox">Normalise opacity</label>
-     <label id="pca-map-symbols-label" hidden><input id="pca-map-symbols" type="checkbox" checked>Solution symbols</label>
+     <label id="pca-map-symbols-label" hidden>Centre markers<select id="pca-map-symbols"><option value="circle">Circles</option><option value="both" selected>Circles + zone icon</option><option value="zone">Zone icon</option></select></label>
+     <label id="pca-map-rim-label" class="pca-check" hidden><input id="pca-map-rim" type="checkbox" checked>Show rim points<span class="settings-help"><button type="button" class="settings-help-button" aria-label="About map rim points">ⓘ</button><span class="settings-help-popup" role="tooltip">Show centres of the extra windows added by Sample image rim. Rim points stay visible while mapping runs; this preference applies when it stops. Hiding them changes only Individual windows and its PNG. All sampled windows still contribute to map values.</span></span></label>
      <span class="settings-help"><button class="settings-help-button" type="button" aria-label="About original-window checks">ⓘ</button><span id="nmf-map-help" class="settings-help-popup" role="tooltip"></span></span>
     </div>
     <div id="nmf-phase-content">

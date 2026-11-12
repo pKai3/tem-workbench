@@ -65,7 +65,7 @@ vm.createContext(mapContext);
 vm.runInContext(fs.readFileSync('web/phase-blend.js','utf8'),mapContext);
 vm.runInContext(source.slice(source.indexOf('function supportMapView('),source.indexOf('function selectedMapView(')),mapContext);
 vm.runInContext(source.slice(source.indexOf('function selectedMapView('),source.indexOf('function syncMapDisplay(')),mapContext);
-vm.runInContext(source.slice(source.indexOf('function drawOverlapMap('),source.indexOf("for(const id of ['map-mode'")),mapContext);
+vm.runInContext(source.slice(source.indexOf('function mapCentreMarkerSize('),source.indexOf("for(const id of ['map-mode'")),mapContext);
 vm.runInContext(source.slice(source.indexOf('const savedMapSymbol='),source.indexOf('function syncZoneToggle(')),mapContext);
 control('map-mode').value='raw';control('map-symbol').value='circle';control('show-grid').checked=true;control('grid-opacity').value='80';
 const original=JSON.stringify(mapData);mapContext.drawOverlapMap();
