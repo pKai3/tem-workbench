@@ -47,12 +47,12 @@ def signal_view(numerator, denominator=None, *, sigma=0, normalisation='none'):
         baseline = float(np.mean(filtered[mask]) if normalisation == 'mean' else
                          np.percentile(filtered[mask], 50 if normalisation == 'median' else 20))
         if baseline <= 0:
-            raise ValueError('The normalization baseline is zero; use unnormalized values.')
+            raise ValueError(f'{normalisation.capitalize()} is zero; choose '+('Mean or Off.' if normalisation != 'mean' else 'Off.'))
     return dict(raw=raw/baseline, values=filtered/baseline, baseline=baseline, mask=mask)
 
 
-def horizontal_crop(image, start, end, *, width=1200, pad=.035, top=.36, bottom=.10):
-    """The report's exact rotation/crop geometry; only the image is resampled."""
+def horizontal_crop(image, start, end, *, width=1200, pad=.035, top=.23, bottom=.23):
+    """Rotate start-to-end and centre the crop on the physical scan path."""
     a = np.asarray(image, dtype=float)
     start, end = np.asarray(start, float), np.asarray(end, float)
     delta = end-start; length = float(np.linalg.norm(delta))
@@ -63,8 +63,12 @@ def horizontal_crop(image, start, end, *, width=1200, pad=.035, top=.36, bottom=
     umin, umax = -pad*length, (1+pad)*length
     vmin, vmax = -top*length, bottom*length
     height = round(width*(vmax-vmin)/(umax-umin))
-    us=umin+(np.arange(width)+.5)*(umax-umin)/width
-    vs=vmin+(np.arange(height)+.5)*(vmax-vmin)/height
+    # Equal sampling pitch in both directions preserves the image's proportions.
+    pitch=(umax-umin)/width
+    vcentre=(vmin+vmax)/2
+    vmin,vmax=vcentre-height*pitch/2,vcentre+height*pitch/2
+    us=umin+(np.arange(width)+.5)*pitch
+    vs=vmin+(np.arange(height)+.5)*pitch
     u,v=np.meshgrid(us,vs)
     sx=start[0]+u*tangent[0]+v*normal[0]
     sy=start[1]+u*tangent[1]+v*normal[1]

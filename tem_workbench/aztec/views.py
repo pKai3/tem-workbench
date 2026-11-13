@@ -38,8 +38,8 @@ def acquisition_views(reader, options):
     if not isinstance(ids,list) or not 1 <= len(ids) <= 32:
         raise AztecReadError('Select one or more acquisitions (up to 32).')
     mode=options.get('mode','signal');norm=options.get('normalisation','none')
-    if mode not in ('signal','ratio'):
-        raise AztecReadError('Choose element signals or ratios.')
+    if mode not in ('signal','ratio','both'):
+        raise AztecReadError('Choose element signals, ratios, or both.')
     denominator=options.get('denominator','Ti');selected=options.get('signals',[])
     if not isinstance(selected,list) or len(selected)>32:
         raise AztecReadError('Choose up to 32 element channels.')
@@ -63,8 +63,8 @@ def acquisition_views(reader, options):
             if name in by_label:return by_label[name]
             matches=[r for r in channels if r['Label'].split()[0]==name]
             return matches[0] if len(matches)==1 else None
-        den_record=find_channel(denominator) if mode=='ratio' else None
-        if mode=='ratio' and den_record is None:
+        den_record=find_channel(denominator) if mode in ('ratio','both') else None
+        if mode in ('ratio','both') and den_record is None:
             raise AztecReadError(f'{denominator} is not uniquely available in {channels[0]["acquisition_label"]}.')
         cache={}
         def values(record):
@@ -92,27 +92,41 @@ def acquisition_views(reader, options):
             count=values(channels[0]).size
             sigma=smoothing/FWHM_PER_SIGMA/(length/(count-1))
             row.update(background=png(crop['array'],low=float(np.percentile(electron,1)),high=float(np.percentile(electron,99))),
+                       image_extent=(np.asarray(crop['extent'])/crop['length_px']).tolist(),
                        length=length,distance_unit='nm' if nm_per_px else 'px',
                        calibration='Stored scan calibration and magnification' if nm_per_px else 'Image pixels; physical calibration unavailable')
         order = ['Ti', 'V', 'Fe', 'Al']
         channels.sort(key=lambda r: (order.index(r['Label'].split()[0]) if r['Label'].split()[0] in order else 99, r['Label']))
+        def process_channel(record, den=None):
+            try:
+                return signal_view(values(record), den, sigma=sigma, normalisation=norm), None
+            except ValueError as error:
+                # A zero baseline in one sparse channel must not hide valid channels.
+                return None, str(error)
+        def map_image(result, colour):
+            return png(result['values'], low=low if norm!='none' else 0,
+                       high=high if norm!='none' else None, colour=colour, diverging=norm!='none')
         for i,record in enumerate(channels):
             element=record['Label'].split()[0]
             if selected and record['Label'] not in selected and element not in selected:continue
             if kind=='line' and mode=='ratio' and record is den_record:continue
-            den=values(den_record) if den_record and record is not den_record else None
-            result=signal_view(values(record),den,sigma=sigma,normalisation=norm)
+            den=values(den_record) if mode=='ratio' and den_record and record is not den_record else None
             colour=ELEMENT_COLOURS.get(element,['#65cfff','#fa7d8b','#c8a4ff'][i%3])
             label=record['Label']+(' / '+den_record['Label'] if den is not None else '')
-            tile=dict(label=label,colour=colour,baseline=result['baseline'],path=record['path'])
-            if kind=='map':
-                tile['image']=png(result['values'],low=low if norm!='none' else 0,
-                                  high=high if norm!='none' else None,colour=colour,diverging=norm!='none')
+            tile=dict(label=label,colour=colour,path=record['path'])
+            result,error=process_channel(record,den)
+            if error:tile['error']=error
+            elif kind=='map':tile.update(image=map_image(result,colour),baseline=result['baseline'])
             else:
                 vals=result['values'];finite=vals[np.isfinite(vals)]
                 ymax=upper if mode=='ratio' and norm=='none' else max(1e-12,float(np.max(finite))*1.1) if finite.size else 1
                 tile.update(x=np.linspace(0,length,len(vals)).tolist(),y=finite_list(vals),raw=finite_list(result['raw']),
-                            maximum=ymax,unit='Relative signal' if norm!='none' else 'Signal ratio' if den is not None else 'cps')
+                            maximum=ymax,baseline=result['baseline'],unit='Relative signal' if norm!='none' else 'Signal ratio' if den is not None else 'cps')
+            if kind=='map' and mode=='both' and record is not den_record:
+                tile['ratio_label']=record['Label']+' / '+den_record['Label']
+                ratio,ratio_error=process_channel(record,values(den_record))
+                if ratio_error:tile['ratio_error']=ratio_error
+                else:tile.update(ratio_image=map_image(ratio,colour),ratio_baseline=ratio['baseline'])
             row['tiles'].append(tile)
         rows.append(row)
     return dict(rows=rows,mode=mode,normalisation=norm,smoothing=smoothing,low=low,high=high,

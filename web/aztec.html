@@ -19,15 +19,15 @@
     <p id="eds-file-info" class="hint"></p>
     <p id="eds-warnings" class="eds-warning" hidden></p>
     <div class="eds-content-layout">
-     <section class="eds-contents" aria-label="Available data"><div id="eds-site-view" hidden><div class="panel-head"><h3>Site image</h3><span id="eds-site-busy" class="hint" role="status">Loading…</span></div><label id="eds-site-image-label" hidden>Electron image<select id="eds-site-image"></select></label><div id="eds-site-canvas"></div><div id="eds-site-regions" class="eds-region-keys"></div><p id="eds-site-error" class="eds-warning" role="alert" hidden></p><details id="eds-site-help"><summary>Position details</summary><p id="eds-site-note" class="hint"></p><div id="eds-site-unpositioned"></div></details></div><h3>Contents</h3><div id="eds-contents"></div></section>
+     <section class="eds-contents" aria-label="Available data"><div id="eds-site-view" hidden><div class="panel-head"><h3>Site image</h3></div><label id="eds-site-image-label" hidden>Electron image<select id="eds-site-image"></select></label><div class="eds-view-stage eds-site-stage"><div id="eds-site-canvas"></div><span id="eds-site-busy" class="eds-image-loading" role="status" aria-label="Loading site image"><span class="eds-loading-ring" aria-hidden="true"></span></span></div><div id="eds-site-regions" class="eds-region-keys"></div><p id="eds-site-error" class="eds-warning" role="alert" hidden></p><details id="eds-site-help"><summary>Position details</summary><p id="eds-site-note" class="hint"></p><div id="eds-site-unpositioned"></div></details></div><h3>Contents</h3><div id="eds-contents"></div></section>
      <section class="eds-inspection" aria-label="Selected data">
-      <div class="panel-head"><h3 id="eds-dataset-title">Select an item to inspect</h3><span id="eds-preview-busy" class="hint" role="status" hidden>Loading…</span></div>
+      <div class="panel-head"><h3 id="eds-dataset-title">Select an item to inspect</h3></div>
       <p id="eds-dataset-info" class="hint"></p>
       <div id="eds-analysis-tools" hidden></div>
       <div id="eds-preview-tools" class="row" hidden><label id="eds-row-label" hidden>Spectrum row<input id="eds-row" type="number" min="1" value="1" step="1"></label><label id="eds-unsigned-label" class="check" hidden><input id="eds-unsigned" type="checkbox">Unsigned 16-bit display<span title="Reinterpret the signed 16-bit pixel bit patterns as unsigned for this preview. Original values remain unchanged.">ⓘ</span></label></div>
       <p id="eds-preview-error" role="alert" hidden></p>
-      <div id="eds-preview" class="eds-preview"></div>
-      <div id="eds-analysis-views" hidden></div>
+      <div class="eds-view-stage"><div id="eds-preview" class="eds-preview"></div>
+      <div id="eds-analysis-views" hidden></div><span id="eds-preview-busy" class="eds-image-loading" role="status" aria-label="Updating preview" hidden><span class="eds-loading-ring" aria-hidden="true"></span></span></div>
       <p id="eds-preview-note" class="hint"></p>
       <details id="eds-dataset-details" hidden><summary>Dataset details</summary><p id="eds-dataset-path" class="hint"></p><div id="eds-attributes"></div><div id="eds-sample"></div></details>
      </section>
