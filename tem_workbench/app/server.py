@@ -49,6 +49,7 @@ from tem_workbench.components.component_batch import ComponentBatch
 from tem_workbench.storage import folder_paths
 from tem_workbench.storage.preview_files import PreviewBatch, sidecar_path
 from tem_workbench.storage.workbench_project import Project
+from tem_workbench.aztec.browser import AztecBrowser
 
 from tem_workbench.paths import APP_ROOT as ROOT, RESOURCES
 # Capture at import: updating files must not relabel an already running backend.
@@ -91,6 +92,7 @@ class Workbench:
         self.window_probe = WindowSizeProbe()
         self.pca = shared_spectra.SharedSpectra()
         self.component_batch = ComponentBatch(self)
+        self.aztec = AztecBrowser()
         self.watch_stop = threading.Event()
         self.watch_thread = None
 
@@ -820,7 +822,13 @@ def make_handler(app):
             try:
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
-                if url.path == '/api/config':
+                if url.path == '/api/aztec/config':
+                    self.send({'token': app.token, 'app_version': APP_VERSION,
+                               'sources': app.engine.sources})
+                elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec.css'):
+                    name = {'/eds': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec.css': 'aztec.css'}[url.path]
+                    self.send((ROOT / 'web' / name).read_bytes(), mimetypes.guess_type(name)[0] or 'text/plain')
+                elif url.path == '/api/config':
                     LOG.info('Viewer connected: version=%s', APP_VERSION)
                     with app.lock:
                         self.send({**app.config_info(), 'diagnostics': True})
@@ -916,6 +924,16 @@ def make_handler(app):
                     LOG.info('Action %s started: %s',self.path,diagnostics.request_details(body))
                 if self.path == '/api/diagnostics':
                     self.send(diagnostics.browser_events(body))
+                elif self.path == '/api/aztec/browse':
+                    self.send(app.aztec.browse(body.get('path'), app.root))
+                elif self.path == '/api/aztec/open':
+                    self.send(app.aztec.open(body['path']))
+                elif self.path == '/api/aztec/preview':
+                    self.send(app.aztec.preview(body['id'], body['dataset'], body.get('row', 0), body.get('unsigned', False)))
+                elif self.path == '/api/aztec/site':
+                    self.send(app.aztec.site(body['id'], body['site'], body.get('image')))
+                elif self.path == '/api/aztec/process':
+                    self.send(app.aztec.process(body['id'], body))
                 elif self.path == '/api/browse-folders':
                     self.send(folder_paths.browse(body.get('path'), app.root))
                 elif self.path == '/api/sources':

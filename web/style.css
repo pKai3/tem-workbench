@@ -1152,3 +1152,5 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #component-hypotheses .row{margin:10px 0}
 #component-hypotheses .row label{flex:0 1 260px}
 #component-pool-control{flex:0 1 150px!important}
+
+.workspace-link{color:var(--cyan);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:8px 12px;white-space:nowrap}.workspace-link:hover{border-color:var(--cyan)}

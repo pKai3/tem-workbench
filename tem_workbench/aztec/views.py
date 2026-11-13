@@ -1,0 +1,119 @@
+"""Interactive versions of the existing element-map and horizontal-scan reports."""
+import base64
+from io import BytesIO
+
+import numpy as np
+from PIL import Image
+from matplotlib import colormaps
+
+from .h5oina import AztecReadError
+from .processing import ELEMENT_COLOURS, FWHM_PER_SIGMA, horizontal_crop, signal_view
+
+
+def png(values, *, low=None, high=None, colour=None, diverging=False):
+    values=np.asarray(values,float);finite=values[np.isfinite(values)]
+    low=float(np.percentile(finite,1)) if low is None and finite.size else float(low or 0)
+    high=float(np.percentile(finite,99)) if high is None and finite.size else float(high or 1)
+    scaled=np.nan_to_num(np.clip((values-low)/(high-low or 1),0,1))
+    if diverging:
+        rgb=colormaps['RdBu_r'](scaled,bytes=True)[...,:3]
+    elif colour:
+        channels=np.array([int(colour[i:i+2],16) for i in (1,3,5)])
+        rgb=np.uint8(scaled[...,None]*channels)
+    else:
+        rgb=np.repeat(np.uint8(scaled*255)[...,None],3,axis=-1)
+    rgba=np.dstack([rgb,np.where(np.isfinite(values),255,0).astype(np.uint8)])
+    image=Image.fromarray(rgba);image.thumbnail((1200,1200),Image.Resampling.BILINEAR)
+    out=BytesIO();image.save(out,format='PNG')
+    return 'data:image/png;base64,'+base64.b64encode(out.getvalue()).decode()
+
+
+def finite_list(values):
+    return [float(v) if np.isfinite(v) else None for v in values]
+
+
+def acquisition_views(reader, options):
+    reader.inspect()
+    ids=options.get('acquisitions',[])
+    if not isinstance(ids,list) or not 1 <= len(ids) <= 32:
+        raise AztecReadError('Select one or more acquisitions (up to 32).')
+    mode=options.get('mode','signal');norm=options.get('normalisation','none')
+    if mode not in ('signal','ratio'):
+        raise AztecReadError('Choose element signals or ratios.')
+    denominator=options.get('denominator','Ti');selected=options.get('signals',[])
+    if not isinstance(selected,list) or len(selected)>32:
+        raise AztecReadError('Choose up to 32 element channels.')
+    smoothing=float(options.get('smoothing',0));upper=float(options.get('upper',.5))
+    if not np.isfinite([smoothing,upper]).all() or smoothing<0 or upper<=0:
+        raise AztecReadError('Use nonnegative smoothing and a positive plot maximum.')
+    low,high=float(options.get('low',.7)),float(options.get('high',1.3))
+    if not np.isfinite([low,high]).all() or high<=low:
+        raise AztecReadError('Colour maximum must be greater than minimum.')
+    rows=[]
+    for acquisition_id in ids:
+        records=[r for r in reader._records.values() if r.get('acquisition_id')==acquisition_id]
+        channels=[r for r in records if r['table'] in ('XrayMapImages','XrayLinescans')]
+        if not channels:
+            raise AztecReadError('No saved element channels in this acquisition.')
+        kind='map' if channels[0]['table']=='XrayMapImages' else 'line'
+        channel_table=channels[0]['table'];channels=[r for r in channels if r['table']==channel_table]
+        # Preserve full line labels in the output; do not silently choose between emission families.
+        by_label={r['Label']:r for r in channels}
+        def find_channel(name):
+            if name in by_label:return by_label[name]
+            matches=[r for r in channels if r['Label'].split()[0]==name]
+            return matches[0] if len(matches)==1 else None
+        den_record=find_channel(denominator) if mode=='ratio' else None
+        if mode=='ratio' and den_record is None:
+            raise AztecReadError(f'{denominator} is not uniquely available in {channels[0]["acquisition_label"]}.')
+        cache={}
+        def values(record):
+            if record['path'] not in cache:
+                result=reader.preview(record['path']);a=result.get('array',result.get('y'))
+                if a is None or tuple(np.shape(a))!=tuple(result['shape']):
+                    raise AztecReadError('Processing requires the full saved channel grid.')
+                cache[record['path']]=np.asarray(a,float)
+            return cache[record['path']]
+        site=reader.site(channels[0]['site_id'])
+        region=next((r for r in site['regions'] if channels[0]['path'] in r['paths']),None)
+        electron=reader.preview(site['image_path'])['array'] if site.get('image_path') else None
+        row=dict(label=channels[0]['acquisition_label'],kind=kind,tiles=[],acquisition=acquisition_id)
+        site_meta=next(a for a in reader.inspect()['acquisitions'] if a['index']==channels[0]['site_id'])
+        row['label']=' / '.join(filter(None,[site_meta['specimen'],site_meta['label'],row['label']]))
+        if kind=='map':
+            sigma=smoothing
+            if electron is not None:row['electron']=png(electron)
+        else:
+            if not region or region['kind']!='line' or electron is None:
+                raise AztecReadError('The line has no decoded electron-image registration.')
+            crop=horizontal_crop(electron,*region['points'])
+            geometry=site['geometry'];nm_per_px=(geometry.get('field_width_nm') or 0)*geometry['step']
+            length=crop['length_px']*(nm_per_px or 1)
+            count=values(channels[0]).size
+            sigma=smoothing/FWHM_PER_SIGMA/(length/(count-1))
+            row.update(background=png(crop['array'],low=float(np.percentile(electron,1)),high=float(np.percentile(electron,99))),
+                       length=length,distance_unit='nm' if nm_per_px else 'px',
+                       calibration='Stored scan calibration and magnification' if nm_per_px else 'Image pixels; physical calibration unavailable')
+        order = ['Ti', 'V', 'Fe', 'Al']
+        channels.sort(key=lambda r: (order.index(r['Label'].split()[0]) if r['Label'].split()[0] in order else 99, r['Label']))
+        for i,record in enumerate(channels):
+            element=record['Label'].split()[0]
+            if selected and record['Label'] not in selected and element not in selected:continue
+            if kind=='line' and mode=='ratio' and record is den_record:continue
+            den=values(den_record) if den_record and record is not den_record else None
+            result=signal_view(values(record),den,sigma=sigma,normalisation=norm)
+            colour=ELEMENT_COLOURS.get(element,['#65cfff','#fa7d8b','#c8a4ff'][i%3])
+            label=record['Label']+(' / '+den_record['Label'] if den is not None else '')
+            tile=dict(label=label,colour=colour,baseline=result['baseline'],path=record['path'])
+            if kind=='map':
+                tile['image']=png(result['values'],low=low if norm!='none' else 0,
+                                  high=high if norm!='none' else None,colour=colour,diverging=norm!='none')
+            else:
+                vals=result['values'];finite=vals[np.isfinite(vals)]
+                ymax=upper if mode=='ratio' and norm=='none' else max(1e-12,float(np.max(finite))*1.1) if finite.size else 1
+                tile.update(x=np.linspace(0,length,len(vals)).tolist(),y=finite_list(vals),raw=finite_list(result['raw']),
+                            maximum=ymax,unit='Relative signal' if norm!='none' else 'Signal ratio' if den is not None else 'cps')
+            row['tiles'].append(tile)
+        rows.append(row)
+    return dict(rows=rows,mode=mode,normalisation=norm,smoothing=smoothing,low=low,high=high,
+                note='Channels are smoothed separately before division. Ratios describe recorded signal, not concentration.')

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AZtec projects · TEM Workbench</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/aztec.css"></head>
+<body class="aztec-browser">
+<header><div><span class="eyebrow">TEM WORKBENCH</span><h1>AZtec projects</h1></div><nav class="header-status" aria-label="Workspace"><a class="workspace-link" href="/">Diffraction</a><span id="eds-version" class="muted"></span><span class="pill">Read-only</span></nav></header>
+<main>
+ <form id="eds-location" class="eds-location">
+  <label>Project source<select id="eds-sources"><option value="">Choose a folder…</option></select></label>
+  <label class="eds-path-label">File or folder<input id="eds-path" type="text" autocomplete="off" spellcheck="false" placeholder="Path to an AZtec project or folder"></label>
+  <button type="submit" class="primary">Open</button><button id="eds-up" type="button" disabled>↑ Parent</button><button id="eds-home" type="button">Home</button>
+ </form>
+ <p id="eds-status" class="hint" role="status" aria-live="polite">Connecting…</p>
+ <div class="eds-layout">
+  <aside class="panel eds-files" aria-label="Project navigation"><details id="eds-file-browser" open><summary>Files and folders</summary><label>Find in this folder<input id="eds-filter" type="search" placeholder="File or folder name"></label><div id="eds-files"></div></details><nav id="eds-acquisitions" aria-label="Sites and acquisitions" hidden></nav></aside>
+  <section class="panel eds-file" aria-label="File contents">
+   <div id="eds-empty"><h2>Choose a file to see what it contains</h2><p class="hint">Open your native OIPX project with its data folder. Browse specimens, sites and stored data before choosing what to process.</p></div>
+   <div id="eds-file" hidden>
+    <div class="panel-head"><div><p id="eds-context" class="hint"></p><h2 id="eds-title"></h2></div><button id="eds-compare" type="button" hidden>Compare maps</button></div>
+    <p id="eds-file-info" class="hint"></p>
+    <p id="eds-warnings" class="eds-warning" hidden></p>
+    <div class="eds-content-layout">
+     <section class="eds-contents" aria-label="Available data"><div id="eds-site-view" hidden><div class="panel-head"><h3>Site image</h3><span id="eds-site-busy" class="hint" role="status">Loading…</span></div><label id="eds-site-image-label" hidden>Electron image<select id="eds-site-image"></select></label><div id="eds-site-canvas"></div><div id="eds-site-regions" class="eds-region-keys"></div><p id="eds-site-error" class="eds-warning" role="alert" hidden></p><details id="eds-site-help"><summary>Position details</summary><p id="eds-site-note" class="hint"></p><div id="eds-site-unpositioned"></div></details></div><h3>Contents</h3><div id="eds-contents"></div></section>
+     <section class="eds-inspection" aria-label="Selected data">
+      <div class="panel-head"><h3 id="eds-dataset-title">Select an item to inspect</h3><span id="eds-preview-busy" class="hint" role="status" hidden>Loading…</span></div>
+      <p id="eds-dataset-info" class="hint"></p>
+      <div id="eds-analysis-tools" hidden></div>
+      <div id="eds-preview-tools" class="row" hidden><label id="eds-row-label" hidden>Spectrum row<input id="eds-row" type="number" min="1" value="1" step="1"></label><label id="eds-unsigned-label" class="check" hidden><input id="eds-unsigned" type="checkbox">Unsigned 16-bit display<span title="Reinterpret the signed 16-bit pixel bit patterns as unsigned for this preview. Original values remain unchanged.">ⓘ</span></label></div>
+      <p id="eds-preview-error" role="alert" hidden></p>
+      <div id="eds-preview" class="eds-preview"></div>
+      <div id="eds-analysis-views" hidden></div>
+      <p id="eds-preview-note" class="hint"></p>
+      <details id="eds-dataset-details" hidden><summary>Dataset details</summary><p id="eds-dataset-path" class="hint"></p><div id="eds-attributes"></div><div id="eds-sample"></div></details>
+     </section>
+    </div>
+    <details id="eds-metadata"><summary>File and acquisition metadata</summary><button id="eds-catalogue" type="button">Save catalogue</button><div id="eds-metadata-body"></div></details>
+   </div>
+  </section>
+ </div>
+</main>
+<script src="/aztec-analysis.js"></script><script src="/aztec.js"></script>
+</body></html>
