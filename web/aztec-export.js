@@ -94,16 +94,17 @@ window.aztecExport=(()=>{
    left+=badge(ctx,part.label,left,top,Math.min(300,x+width-left),part.colour,14)+6;
   }
  }
- const lineWidth=1400,linePad=8,panelInset=4,columnGap=6,rowGap=0;
+ const lineWidth=1400,linePad=8,columnGap=6,rowGap=0;
  const plotHeight=(figure,width)=>Math.max(105,Math.round(width*figure.image.height/Math.max(1,figure.image.width)));
  const plotCrop=(figure,width)=>{const height=plotHeight(figure,width);return {top:height*figure.cropTop,height:height*figure.cropHeight}};
  function lineColumns(captured,comparison){
-  const usable=lineWidth-linePad*2-panelInset*2-columnGap;
-  if(!comparison)return {referenceWidth:0,plotWidth:lineWidth-linePad*2};
+  if(!comparison)return {referenceWidth:0,plotWidth:lineWidth-linePad*2,panelInset:0};
   const figure=captured.groups[0].figures[0],aspects=[...captured.references.values()].map(ref=>ref.width/ref.height),aspect=aspects.length?Math.max(...aspects):1;
   const ratio=figure.cropHeight*figure.image.height/Math.max(1,figure.image.width)*aspect;
-  const referenceWidth=Math.max(120,Math.min(usable*.6,Math.round(usable*ratio/(1+ratio))));
-  return {referenceWidth,plotWidth:usable-referenceWidth};
+  const widths=inset=>{const usable=lineWidth-linePad*2-inset*2-columnGap,referenceWidth=Math.max(120,Math.min(usable*.6,Math.round(usable*ratio/(1+ratio))));return {referenceWidth,plotWidth:usable-referenceWidth}};
+  let panelInset=4;
+  for(let i=0;i<3;i++)panelInset=Math.max(4,Math.round(plotCrop(figure,widths(panelInset).plotWidth).top));
+  return {...widths(panelInset),panelInset};
  }
  async function drawReference(ctx,reference,label,x,y,width,height){
   ctx.fillStyle='#0c131c';ctx.fillRect(x,y,width,height);
@@ -120,7 +121,7 @@ window.aztecExport=(()=>{
   return height;
  }
  async function lines({snapshot,root,names,result,options,comparison,onlyAcquisition}){
-  const captured=snapshot||captureLines({root,names,result,options,comparison}),{referenceWidth,plotWidth}=lineColumns(captured,comparison);
+  const captured=snapshot||captureLines({root,names,result,options,comparison}),{referenceWidth,plotWidth,panelInset}=lineColumns(captured,comparison);
   if(onlyAcquisition&&!captured.acquisitions.includes(onlyAcquisition))throw new Error('The selected acquisition has no line plots.');
   const references=onlyAcquisition?captured.acquisitions.filter(id=>id===onlyAcquisition):captured.acquisitions;
   if(captured.layout==='overlay'){
