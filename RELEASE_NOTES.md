@@ -1,4 +1,4 @@
-# TEM Workbench — next release
+# TEM Workbench 1.0.36
 
 - Add an AZtec workspace for browsing native OIPX projects and H5OINA files, with registered electron images, acquisition outlines, saved element maps, line profiles and point spectra.
 - Compare maps and lines across sites and native project files. Use shared scales, optional per-acquisition normalization, smoothing, ratios, calibrated crops and line overlays. Save named comparisons and export PNGs or numerical data with source and processing details.
