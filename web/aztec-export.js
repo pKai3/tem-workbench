@@ -27,7 +27,7 @@ window.aztecExport=(()=>{
   const columns=[{electron:true}];
   for(const channel of signals)columns.push({channel});
   if(result.mode==='both')for(const channel of signals)if(channel!==options.denominator)columns.push({channel,ratio:true});
-  const tileSize=320,gap=5,margin=8,legend=result.normalisation!=='none'&&result.shared_scales;
+  const tileSize=320,gap=5,margin=8,legend=result.normalisation!=='none'&&(!comparison||result.scale_scope==='all');
   const width=margin*2+columns.length*tileSize+(columns.length-1)*gap+(legend?100:0),height=margin*2+result.rows.length*tileSize+(result.rows.length-1)*gap;
   const [out,ctx]=canvas(width*2,height*2);ctx.scale(2,2);const sizes=new Map(),minimum=new Map();
   for(const r of result.rows)if(r.width&&r.height){sizes.set(r.distance_unit,Math.max(sizes.get(r.distance_unit)||0,r.width,r.height));minimum.set(r.distance_unit,Math.min(minimum.get(r.distance_unit)||Infinity,r.width,r.height))}
@@ -46,7 +46,7 @@ window.aztecExport=(()=>{
     ctx.drawImage(img,left,top,w,h);ctx.filter='none';
     const start=Math.max(x,left),end=Math.min(x+tileSize,left+w),bottom=Math.min(y+tileSize,top+h);
     scaleBar(ctx,start+9,bottom-12,end-start,row.width*(end-start)/w,row.distance_unit);
-    if(!column.electron&&!result.shared_scales){const limits=tile[column.ratio?'ratio_image_limits':'image_limits'];if(limits){ctx.font='12px system-ui';ctx.fillStyle='#fff';ctx.textAlign='right';ctx.strokeStyle='#000';ctx.lineWidth=3;const text=limits.map(v=>Number(v.toPrecision(3))).join(' – ');ctx.strokeText(text,x+tileSize-8,bottom-12);ctx.fillText(text,x+tileSize-8,bottom-12);ctx.textAlign='left'}}
+    if(!column.electron&&(result.scale_scope!=='all'||result.normalisation==='none')){const limits=tile[column.ratio?'ratio_image_limits':'image_limits'];if(limits){ctx.font='12px system-ui';ctx.fillStyle='#fff';ctx.textAlign='right';ctx.strokeStyle='#000';ctx.lineWidth=3;const text=limits.map(v=>Number(v.toPrecision(3))).join(' – ');ctx.strokeText(text,x+tileSize-8,bottom-12);ctx.fillText(text,x+tileSize-8,bottom-12);ctx.textAlign='left'}}
     badge(ctx,label,Math.max(x,left)+5,Math.max(y,top)+5,Math.min(tileSize,w)-10);ctx.restore();
    }else{badge(ctx,label,x+5,y+5,tileSize-10);ctx.fillStyle=ink;ctx.font='14px system-ui';ctx.fillText('Unavailable',x+12,y+tileSize/2)}
   }

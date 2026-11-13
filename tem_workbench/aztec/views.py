@@ -259,14 +259,22 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
         rows.append(row)
     # One exposure per quantity/unit across acquisitions; smoothing never changes
     # the unsmoothed reference. Normalization is explicitly per acquisition.
-    shared={};auto_delta=.01
-    for item in pending_images:shared[item['key']]=max(shared.get(item['key'],0),item['high'])
+    shared={};normalized_ranges={};auto_delta=.01
     for item in pending_images:
+        shared[item['key']]=max(shared.get(item['key'],0),item['high'])
         if norm!='none':
             finite=item['values'][np.isfinite(item['values'])]
-            if finite.size:auto_delta=max(auto_delta,float(np.max(np.abs(np.percentile(finite,[5,95])-1))))
+            delta=max(.01,float(np.max(np.abs(np.percentile(finite,[5,95])-1)))) if finite.size else .01
+            auto_delta=max(auto_delta,delta)
+            normalized_ranges[item['key']]=max(normalized_ranges.get(item['key'],.01),delta)
+    for item in pending_images:
         floor=low if norm!='none' else 0
         exposure=high if norm!='none' else shared[item['key']] if comparison and shared_scales else item['high']
+        if comparison and scale_scope=='element' and norm!='none':
+            # One range per quantity across acquisitions, not the global manual
+            # bounds used by All. Keep the normalized baseline white.
+            delta=normalized_ranges[item['key']]
+            floor,exposure=1-delta,1+delta
         if comparison and not shared_scales and norm!='none':
             finite=item['values'][np.isfinite(item['values'])]
             if finite.size:
@@ -278,6 +286,7 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
         item['tile'][item['field']+'_limits']=[floor,exposure]
     return dict(rows=rows,mode=mode,normalisation=norm,smoothing=smoothing,low=low,high=high,
                 comparison=comparison,shared_scales=shared_scales,scale_scope=scale_scope,smoothing_unit=smoothing_unit,
+                colour_scale_scope=scale_scope if comparison else 'all',
                 structure_only=structure_only,
                 suggested_colour_limits=[float(1-auto_delta),float(1+auto_delta)] if norm!='none' else None,
                 note='Channels are smoothed separately before division. Ratios describe recorded signal, not concentration.')

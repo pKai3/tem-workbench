@@ -62,6 +62,32 @@ class ComparisonTests(unittest.TestCase):
         a,_=self.view(scale_scope='element')
         self.assertNotEqual(a['tiles'][0]['image_limits'],a['tiles'][1]['image_limits'])
 
+    def test_normalized_per_element_links_acquisitions_not_other_quantities(self):
+        reader=Reader();ramp=np.tile(np.linspace(-1,1,32),(32,1))
+        for acquisition,factor in [('a',1),('b',2)]:
+            reader.arrays[f'/XrayMapImages/{acquisition}-Ti']*=1+.1*factor*ramp
+            reader.arrays[f'/XrayMapImages/{acquisition}-V']*=1+.3*factor*ramp
+        options=dict(acquisitions=['a','b'],channel_table='XrayMapImages',signals=['Ti','V'],
+                     mode='both',denominator='Ti',comparison=True,normalisation='median',
+                     smoothing=0,low=.7,high=1.3)
+        together=acquisition_views(reader,{**options,'scale_scope':'all'})
+        grouped=acquisition_views(reader,{**options,'scale_scope':'element'})
+        separate=acquisition_views(reader,{**options,'scale_scope':'off'})
+        a,b=grouped['rows'];all_a=together['rows'][0]
+        for row in together['rows']:
+            for tile in row['tiles']:self.assertEqual(tile['image_limits'],[.7,1.3])
+        self.assertEqual(a['tiles'][0]['image_limits'],b['tiles'][0]['image_limits'])
+        self.assertEqual(a['tiles'][1]['ratio_image_limits'],b['tiles'][1]['ratio_image_limits'])
+        self.assertNotEqual(a['tiles'][0]['image_limits'],a['tiles'][1]['image_limits'])
+        self.assertNotEqual(a['tiles'][1]['image_limits'],a['tiles'][1]['ratio_image_limits'])
+        self.assertNotEqual(a['tiles'][1]['image'],all_a['tiles'][1]['image'])
+        self.assertNotEqual(separate['rows'][0]['tiles'][0]['image_limits'],separate['rows'][1]['tiles'][0]['image_limits'])
+        self.assertAlmostEqual(sum(a['tiles'][1]['image_limits']),2)
+        # A hidden global limit must not override Per Element.
+        alternate=acquisition_views(reader,{**options,'scale_scope':'element','low':.1,'high':1.9})
+        self.assertEqual(a['tiles'][1]['image'],alternate['rows'][0]['tiles'][1]['image'])
+        self.assertEqual(a['tiles'][1]['baseline'],all_a['tiles'][1]['baseline'])
+
     def test_both_retains_signal_and_ratio_statistics(self):
         a,_=self.view()
         self.assertEqual([s['channel'] for s in a['signal_statistics']['spreads']],['Ti','V'])
