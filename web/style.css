@@ -1154,3 +1154,7 @@ html.pca-open,html.pca-open body{overflow:hidden}
 #component-pool-control{flex:0 1 150px!important}
 
 .workspace-link{color:var(--cyan);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:8px 12px;white-space:nowrap}.workspace-link:hover{border-color:var(--cyan)}
+
+.workspace-save-status{font-size:11px;padding:3px 7px;color:var(--muted,#9eafbf);border-color:transparent;background:transparent;white-space:nowrap}.workspace-save-error{color:#ffb2b2;border-color:#dd7585}
+
+.workspace[hidden]{display:none}

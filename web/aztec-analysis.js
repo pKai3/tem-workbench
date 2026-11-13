@@ -17,7 +17,7 @@ window.aztecLineGeometry={
 /* Live views of the existing EDX report operations. Native inputs stay read-only. */
 window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLineCursor,setMapCursor,remember})=>{
  let current=null,version=0,smoothingTimer=null,plotObservers=[],plotSerial=0,referenceCursors=[],layoutVersion=0;
- let savedViews={};try{const saved=JSON.parse(localStorage.getItem('tem-eds-comparison-v1')||'{}');if(saved&&typeof saved==='object')savedViews=saved}catch{}
+ let savedViews={};try{const saved=JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-comparison-v1')||'{}');if(saved&&typeof saved==='object')savedViews=saved}catch{}
  const object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
  const preferences=object(savedViews.preferences),selections=object(savedViews.selections),cropCentres=new Map(Object.entries(object(savedViews.crops))),aliases=object(savedViews.aliases),presets=object(savedViews.presets),structureCache=new Map();
  let persistTimer=null;
@@ -25,7 +25,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  function persist(){
   if(current){preferences[current.preferenceKey]={...current.options};selections[current.preferenceKey]={ids:[...current.ids],signals:[...current.signals]}}
   clearTimeout(persistTimer);
-  try{localStorage.setItem('tem-eds-comparison-v1',JSON.stringify({preferences,selections,aliases,presets,crops:Object.fromEntries([...cropCentres].slice(-200))}))}
+  try{WorkbenchWorkspace.writeRaw('tem-eds-comparison-v1',JSON.stringify({preferences,selections,aliases,presets,crops:Object.fromEntries([...cropCentres].slice(-200))}))}
   catch(error){console.warn('AZtec comparison settings could not be saved:',error.message)}
  }
  function imageScaleAvailability(result){

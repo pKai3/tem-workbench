@@ -200,7 +200,8 @@ vm.runInContext(source.slice(source.indexOf('async function openFile(){'),source
 Object.assign(context,{
  config:{files:[{id:'override-fft'},{id:'plain-fft'},{id:'override-direct'},{id:'plain-direct'}]},
  sourceRequest:0,generation:0,rescoreRevision:0,rescoreTimer:null,jobId:null,preferredRegionNm:7,
- hoverCache:new Map(),clearTimeout(){},document:{body:{classList:{remove(){}}}},
+ hoverCache:new Map(),clearTimeout(){},document:{body:{classList:{remove(){}}},querySelector:()=>({hidden:false})},
+ rememberDiffractionLocation(){},WorkbenchWorkspace:{bookmark:()=>({})},
  reconnectGridToImage(){},rememberGrid(){},lastImageKey:()=> 'last-image',isGridRunning:()=>false,reciprocalUnit:()=> 'nm⁻¹',renderFileList(){},
  api:async(path,{file_id:id})=>({sha256_pixels:id,name:id,width:100,height:100,pixel_x_nm:.1,pixel_x_nm_inv:.01,pixel_y_nm_inv:.01,device:'test'}),
  setupImageKind(){context.direct=context.meta.name.endsWith('direct');context.diffractionSettings={exclude_radius_nm_inv:1.1}},

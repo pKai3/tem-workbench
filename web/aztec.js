@@ -3,8 +3,20 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const state={token:'',listing:null,file:null,acquisition:null,dataset:null,site:null,analysisGroup:null,lineCrop:null,folderVersion:0,fileVersion:0,previewVersion:0,siteVersion:0};
-const saved=()=>{try{return JSON.parse(localStorage.getItem('tem-eds-browser')||'{}')}catch{return {}}};
-const remember=()=>{try{localStorage.setItem('tem-eds-browser',JSON.stringify({folder:state.listing?.path,file:state.file?.catalogue.source.path,dataset:state.dataset?.path,acquisition:state.acquisition?.index,comparison:state.comparisonKind||null,comparisonTable:state.comparisonTable||null}))}catch{/* Browsing also works with storage disabled. */}};
+let project='',sources=[],restoring=false,projectVersion=0;
+const saved=()=>{try{return JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-browser')||'{}')}catch{return {}}};
+function remember(){
+ if(restoring)return;
+ const previous=WorkbenchWorkspace.bookmark(project,'aztec');
+ if(!state.file&&previous.file)return; // Keep unavailable-file bookmarks for reconnection.
+ const bookmark={folder:state.listing?.path||'',file:state.file?.catalogue.source.path,dataset:state.dataset?.path,acquisition:state.acquisition?.index,comparison:state.comparisonKind||null,comparisonTable:state.comparisonTable||null,analysisGroup:state.analysisGroup,image:state.site?.image_path||(previous.acquisition===state.acquisition?.index?previous.image:null)};
+ WorkbenchWorkspace.remember(project,'aztec',bookmark);
+ const owner=WorkbenchWorkspace.projectForPath(bookmark.file||bookmark.folder);
+ if(owner&&owner!==project)WorkbenchWorkspace.remember(owner,'aztec',bookmark);
+ WorkbenchWorkspace.writeRaw('tem-eds-browser',JSON.stringify(bookmark));
+}
+document.addEventListener('workbench-bookmark',remember);
+
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node}
 function status(text,error=false){$('eds-status').textContent=text;$('eds-status').classList.toggle('eds-warning',error)}
 function number(value){return Number.isFinite(value)?Number(value).toLocaleString(undefined,{maximumSignificantDigits:6}):'—'}
@@ -36,14 +48,16 @@ function renderFiles(){
 }
 async function browse(path){
  const version=++state.folderVersion;status('Reading folder…');
- try{const listing=await api('browse',{path});if(version!==state.folderVersion)return;state.listing=listing;$('eds-path').value=listing.path;$('eds-up').disabled=listing.parent===listing.path;$('eds-filter').value='';$('eds-file-browser').open=true;renderFiles();remember();status(`${listing.files.filter(f=>f.supported).length} readable files · ${listing.directories.length} folders`)}catch(error){if(version===state.folderVersion)status(error.message,true)}
+ try{const listing=await api('browse',{path,project});if(version!==state.folderVersion)return;state.listing=listing;$('eds-path').value=listing.path;$('eds-up').disabled=listing.parent===listing.path;$('eds-filter').value='';$('eds-file-browser').open=true;renderFiles();remember();status(`${listing.files.filter(f=>f.supported).length} readable files · ${listing.directories.length} folders`)}catch(error){if(version===state.folderVersion)status(error.message,true)}
 }
-async function openFile(path,restoreDataset,restoreAcquisition,restoreComparison,restoreTable){
+async function openFile(path,restoreDataset,restoreAcquisition,restoreComparison,restoreTable,bookmark={}){
+ const owner=WorkbenchWorkspace.projectForPath(path);if(project&&owner!==project){remember();project=owner;$('eds-sources').value=project;WorkbenchWorkspace.set('active_project',project)}
  const version=++state.fileVersion;++state.previewVersion;status('Reading file contents…');
  try{const file=await api('open',{path});if(version!==state.fileVersion)return;state.file=file;const c=file.catalogue;$('eds-empty').hidden=true;$('eds-file').hidden=false;$('eds-file-info').textContent=`${c.source.path.split(/[\\/]/).at(-1)} · ${size(c.source.size)} · ${c.file_type} ${c.format_version}${c.software_version?' · AZtec '+c.software_version:''}`;
   const restored=c.acquisitions.find(a=>a.index===restoreAcquisition)||c.acquisitions.find(a=>a.layers.some(l=>l.signals.some(d=>d.path===restoreDataset)));
   $('eds-compare').hidden=!analysis.groups().some(g=>g.kind==='map');$('eds-compare-lines').hidden=!analysis.groups().some(g=>g.kind==='line');renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();renderFiles();remember();if(file.folder!==state.listing?.path)await browse(file.folder);if(version!==state.fileVersion)return;$('eds-file-browser').open=false;status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
-  const target=state.acquisition?.layers.flatMap(l=>l.signals).find(d=>d.path===restoreDataset);if(['map','line'].includes(restoreComparison)){analysis.open(null,restoreComparison,restoreTable);remember()}else if(target)selectDataset(target);
+  const target=state.acquisition?.layers.flatMap(l=>l.signals).find(d=>d.path===restoreDataset);if(['map','line'].includes(restoreComparison)){analysis.open(null,restoreComparison,restoreTable);remember()}else if(bookmark.analysisGroup){const [id,table]=bookmark.analysisGroup.split(':');openAnalysis(id,false,table)}else if(target)selectDataset(target);
+  if(bookmark.image)await loadSite(bookmark.image);
  }catch(error){if(version===state.fileVersion)status(error.message,true)}
 }
 function renderAcquisitions(){
@@ -107,7 +121,7 @@ async function loadSite(image){
  const version=++state.siteVersion;state.site=null;const native=state.file.catalogue.file_type==='OIPX'&&state.acquisition?.index!=='unassigned';$('eds-site-view').hidden=!native;$('eds-site-canvas').replaceChildren();$('eds-site-regions').replaceChildren();$('eds-site-error').hidden=true;$('eds-site-image-label').hidden=true;$('eds-site-help').hidden=true;$('eds-site-unpositioned').replaceChildren();if(!native)return;
  $('eds-site-busy').hidden=false;
  try{const site=await api('site',{id:state.file.id,site:state.acquisition.index,image});if(version!==state.siteVersion)return;state.site=site;const select=$('eds-site-image');select.replaceChildren();for(const im of site.images){const o=el('option',im.label);o.value=im.path;select.append(o)}select.value=site.image_path||'';$('eds-site-image-label').hidden=site.images.length<2;
-  if(site.preview)drawSite(site);else $('eds-site-canvas').append(el('p',site.note,'hint'));
+  remember();if(site.preview)drawSite(site);else $('eds-site-canvas').append(el('p',site.note,'hint'));
   for(const item of site.unpositioned||[])$('eds-site-unpositioned').append(el('p',`${item.label}: ${item.reason}`,'hint'));
   if(site.unpositioned?.length){$('eds-site-help').hidden=false;$('eds-site-error').textContent=`${site.unpositioned.length} saved regions have no decoded outline. See Unplaced regions.`;$('eds-site-error').hidden=false}
  }catch(error){if(version===state.siteVersion){$('eds-site-error').textContent=error.message;$('eds-site-error').hidden=false}}finally{if(version===state.siteVersion)$('eds-site-busy').hidden=true}
@@ -207,11 +221,35 @@ function metadata(){
  const all=el('details');all.append(el('summary',`All datasets (${c.datasets.length})`));all.addEventListener('toggle',()=>{if(!all.open||all.childElementCount>1)return;for(const d of c.datasets){const b=el('button',`${d.path} · ${dimensions(d.shape)}`,'eds-item');b.type='button';b.onclick=()=>{selectDataset(d);$('eds-dataset-title').scrollIntoView({block:'nearest'})};all.append(b)}});root.append(all);
 }
 $('eds-location').onsubmit=e=>{e.preventDefault();const path=$('eds-path').value.trim();if(/\.(h5oina|oipx?)$/i.test(path))openFile(path);else browse(path)};
-$('eds-sources').onchange=e=>{if(e.target.value)browse(e.target.value)};$('eds-up').onclick=()=>browse(state.listing?.parent);$('eds-home').onclick=()=>browse(state.listing?.home||'');$('eds-filter').oninput=renderFiles;$('eds-row').onchange=preview;$('eds-unsigned').onchange=preview;$('eds-metadata').ontoggle=()=>{if($('eds-metadata').open)metadata()};
+$('eds-sources').onchange=e=>changeProject(e.target.value);$('eds-up').onclick=()=>browse(state.listing?.parent);$('eds-home').onclick=()=>browse('');$('eds-filter').oninput=renderFiles;$('eds-row').onchange=preview;$('eds-unsigned').onchange=preview;$('eds-metadata').ontoggle=()=>{if($('eds-metadata').open)metadata()};
 $('eds-compare').onclick=()=>openAnalysis(null,'map');
 $('eds-compare-lines').onclick=()=>openAnalysis(null,'line');
 $('eds-site-image').onchange=e=>loadSite(e.target.value);
 $('eds-catalogue').onclick=()=>{if(!state.file)return;const blob=new Blob([JSON.stringify(state.file.catalogue,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=state.file.catalogue.source.path.split(/[\\/]/).at(-1)+'.catalogue.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
-async function init(){try{const config=await api('config');state.token=config.token;window.configureWorkbenchDiagnostics({send:body=>fetch('/api/diagnostics',{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body),keepalive:true}),context:()=>({workspace:'AZtec',file_path:state.file?.catalogue.source.path,site:state.acquisition?.label,dataset:state.dataset?.path})});$('eds-version').textContent=config.app_version;for(const source of config.sources||[]){const option=el('option',source.name||source.path);option.value=source.path;$('eds-sources').append(option)}const previous=saved();await browse(previous.folder||config.sources?.[0]?.path||'');if(previous.file)await openFile(previous.file,previous.dataset,previous.acquisition,previous.comparison,previous.comparisonTable)}catch(error){status(error.message,true)}}
+async function changeProject(id){
+ const version=++projectVersion;remember();project=id;WorkbenchWorkspace.set('active_project',project);$('eds-sources').value=project;
+ const bookmark=WorkbenchWorkspace.bookmark(project,'aztec');restoring=true;
+ ++state.fileVersion;++state.folderVersion;++state.siteVersion;++state.previewVersion;
+ analysis.close();state.file=null;state.acquisition=null;state.dataset=null;state.site=null;state.listing=null;
+ $('eds-file').hidden=true;$('eds-empty').hidden=false;$('eds-acquisitions').replaceChildren();$('eds-files').replaceChildren();
+ try{
+  await browse(bookmark.folder||sources.find(s=>s.id===project)?.path||'');
+  if(version!==projectVersion)return;
+  if(bookmark.file)await openFile(bookmark.file,bookmark.dataset,bookmark.acquisition,bookmark.comparison,bookmark.comparisonTable,bookmark);
+ }finally{if(version===projectVersion){restoring=false;remember()}}
+}
+async function init(){try{
+ const config=await api('config');state.token=config.token;sources=config.sources||[];
+ await WorkbenchWorkspace.configure(config);
+ window.configureWorkbenchDiagnostics({send:body=>fetch('/api/diagnostics',{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body),keepalive:true}),context:()=>({workspace:'AZtec',file_path:state.file?.catalogue.source.path,site:state.acquisition?.label,dataset:state.dataset?.path})});
+ $('eds-version').textContent=config.app_version;
+ const previous=saved(),owner=WorkbenchWorkspace.projectForPath(previous.file||previous.folder);
+ if(previous.file&&!WorkbenchWorkspace.bookmark(owner,'aztec').file)WorkbenchWorkspace.remember(owner,'aztec',previous);
+ const active=WorkbenchWorkspace.get('active_project',owner),id=sources.some(s=>s.id===active)?active:'';
+ for(const source of sources){const option=el('option',source.name||source.path);option.value=source.id;$('eds-sources').append(option)}
+ // Do not replace a remembered project with the initial empty viewer.
+ project=id;restoring=true;await changeProject(id);
+ }catch(error){restoring=false;status(error.message,true)}}
+
 init();
 })();

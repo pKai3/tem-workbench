@@ -5,6 +5,24 @@ with stored point spectra, element/ratio maps and line/image overlays. It retain
 original values and lets users choose signals and processing explicitly. Planned work and
 priorities live in [the implementation plan](implementation-plan.md).
 
+## Shared projects and saved workspace
+
+The Project selection is shared with the diffraction viewer. Each project keeps
+separate return locations for the two modes: diffraction image and selected
+region, or AZtec file, site, acquisition and comparison view. AZtec browsing
+shows only folder branches containing OIP, OIPX or H5OINA files. The diffraction
+image collection excludes those acquisition folders and their raster exports;
+native DM4 images in mixed folders remain available.
+
+Viewer preferences, comparison selections, aliases and named map/line presets
+autosave to `tem-workbench.workspace.json` beside the folder configuration.
+The header's Saved indicator gives its full path; save failures remain visible
+with a retry button. Existing browser preferences migrate on first connection,
+without replacing settings already on disk. Browser storage is a local cache,
+so clearing it does not delete the disk workspace. Include this JSON with your
+configuration backups. Research inputs are never changed. Comparisons between
+different AZtec project files remain planned work.
+
 `NativeProjectReader` reads supported OIPX records without deserializing .NET
 objects. Stored spectrum blobs are matched by UUID and label; verified versions
 2 and 3 contain signed 32-bit nonnegative counts and a channel-width/offset pair

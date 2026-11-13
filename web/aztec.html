@@ -1,13 +1,13 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AZtec projects · TEM Workbench</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/aztec.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AZtec projects · TEM Workbench</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/aztec.css"><script src="/workspace-state.js"></script></head>
 <body class="aztec-browser">
-<header><div><span class="eyebrow">TEM WORKBENCH</span><h1>AZtec projects</h1></div><nav class="header-status" aria-label="Workspace"><a class="workspace-link" href="/">Diffraction</a><span id="eds-version" class="muted"></span><span class="pill">Read-only</span></nav></header>
+<header><div><span class="eyebrow">TEM WORKBENCH</span><h1>AZtec projects</h1></div><nav class="header-status" aria-label="Workspace"><a class="workspace-link" href="/">Diffraction</a><button id="workspace-save-status" type="button" class="workspace-save-status" aria-live="polite">Saved</button><span id="eds-version" class="muted"></span><span class="pill">Read-only</span></nav></header>
 <main>
  <form id="eds-location" class="eds-location">
-  <label>Project source<select id="eds-sources"><option value="">Choose a folder…</option></select></label>
+  <label>Project<select id="eds-sources"><option value="">All projects</option></select></label>
   <label class="eds-path-label">File or folder<input id="eds-path" type="text" autocomplete="off" spellcheck="false" placeholder="Path to an AZtec project or folder"></label>
-  <button type="submit" class="primary">Open</button><button id="eds-up" type="button" disabled>↑ Parent</button><button id="eds-home" type="button">Home</button>
+  <button type="submit" class="primary">Open</button><button id="eds-up" type="button" disabled>↑ Parent</button><button id="eds-home" type="button">Project root</button>
  </form>
  <p id="eds-status" class="hint" role="status" aria-live="polite">Connecting…</p>
  <div class="eds-layout">

@@ -12,7 +12,7 @@ function fixture(){
   DOMPoint:class{constructor(x,y){this.x=x;this.y=y}matrixTransform(){return this}},
   setTimeout(fn){const id={};timers.set(id,fn);return id},clearTimeout:id=>timers.delete(id),
   isDiffraction:()=>false,overlapPlanning:()=>false,
-  rememberRegionSize(){},showLiveRegionCrop(){},updateStrengthMode(){},queueLiveRegionPreview(){},
+  rememberRegionSize(){},rememberDiffractionLocation(){},showLiveRegionCrop(){},updateStrengthMode(){},queueLiveRegionPreview(){},
   beginSpectrumLoading(){},finishSpectrumLoading(){},syncSpectrumExportControls(){},syncPeakEditControls(){},
   hideRegionPreview(){context.previewVisible=false},showDragRegionPreview(){context.previewVisible=true},
   api(path,body,signal){return new Promise(resolve=>requests.push({body,signal,resolve}))},

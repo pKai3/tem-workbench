@@ -146,10 +146,10 @@ class Engine:
         outputs = {folder_paths.resolve_folder(self.settings.get('output_root', './output'), ROOT)}
         outputs.update(Path(s['output']).resolve() for s in self.sources if s.get('output'))
         candidates, seen = [], set()
+        from tem_workbench.storage.mode_folders import diffraction_files
         for source in self.sources:
             root = Path(source['path']).resolve()
-            for directory, folders, names in os.walk(root, followlinks=False):
-                folders[:] = sorted(n for n in folders if not n.startswith('.') and (Path(directory)/n).resolve() not in outputs)
+            for directory, names in diffraction_files(root, outputs):
                 originals = {Path(n).stem.casefold() for n in names if Path(n).suffix.lower() in {'.dm4', '.jpg', '.jpeg', '.tif', '.tiff'}}
                 for name in sorted(names):
                     path = Path(directory)/name

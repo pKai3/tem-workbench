@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 
 from tem_workbench.storage import folder_paths
+from tem_workbench.storage.mode_folders import aztec_folders
 from tem_workbench.runtime.diagnostics import compact
 from .h5oina import H5OinaReader, AztecReadError, MAX_READ_BYTES
 from .native import NativeProjectReader
@@ -24,8 +25,23 @@ class AztecBrowser:
         self._readers = OrderedDict()
         self._lock = threading.RLock()
 
-    def browse(self, path, root):
+    def browse(self, path, root, sources=None, project=None):
+        sources = sources or []
+        selected = next((s for s in sources if s['id'] == project), None)
+        if not path and sources:
+            if selected:
+                path = selected['path']
+            else:
+                directories = [dict(name=s['name'], path=s['path']) for s in sources if aztec_folders(s['path'])]
+                return dict(path='', parent='', home='', directories=directories, files=[], drives=[])
         listing = folder_paths.browse(path, root)
+        location = Path(listing['path'])
+        scope = next((Path(s['path']).resolve() for s in sources if location.is_relative_to(Path(s['path']).resolve())), location)
+        identified = aztec_folders(scope)
+        listing['directories'] = [d for d in listing['directories'] if Path(d['path']) in identified]
+        if location == scope:
+            listing['parent'] = str(scope) if selected else ''
+        listing['home'] = selected['path'] if selected else ''
         files = []
         for child in Path(listing['path']).iterdir():
             if child.suffix.lower() not in ('.h5oina', '.oip', '.oipx'):

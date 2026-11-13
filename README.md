@@ -65,7 +65,9 @@ Expand **Data Sources and Outputs** at the top of the page. Add one or more name
 
 Immediate subfolders identify samples, with project names distinguishing samples across sources. Batch review can flatten nested subfolders for summaries. Per-image exports use that source's output override, when set; combined batch summaries use the main output folder. Choices are saved in the ignored `.tem-paths.json`. Existing single-folder configuration remains supported.
 
-The catalogue finds DM4, JPEG, standalone PNG and single-frame TIFF files recursively, excluding configured outputs and preview sidecars. A background check runs every 15 seconds while no grid, batch or window-size job is active; **Refresh images** also rescans explicitly. Path changes and missing files appear as bottom-right notices.
+The catalogue finds DM4, JPEG, standalone PNG and single-frame TIFF files recursively, excluding configured outputs, preview sidecars and AZtec acquisition folders/raster exports. Native DM4 files in mixed folders remain available. A background check runs every 15 seconds while no grid, batch or window-size job is active; **Refresh images** also rescans explicitly. Path changes and missing files appear as bottom-right notices.
+
+The **Project** selection is shared between diffraction and AZtec, with a separate return location in each mode. Preferences and named comparisons autosave to `tem-workbench.workspace.json` beside the folder configuration; see [saved workspace details](docs/aztec.md#shared-projects-and-saved-workspace).
 
 Image identities are stored in `.tem-image-registry.json` using SHA-256 of complete file contents. Once indexed, renaming or moving an unchanged image within configured sources retains its identity, saved regions and associated preferences. Add the destination source when moving outside existing sources. Exact byte-for-byte copies share an identity; edited or re-encoded files are new identities. Preserve the registry with your project state. The first scan reads image contents (and may download cloud placeholders); later scans reuse hashes for unchanged files. Filenames remain display labels, with filename fallbacks where no acquisition number exists. Image lists include real-space, diffraction or uncalibrated type labels.
 
@@ -336,10 +338,10 @@ Supported input is finite, two-dimensional DM4 data with length or reciprocal-le
 
 ## Development
 
-The experimental [AZtec reader foundation](docs/aztec.md) provides read-only
-H5OINA inspection and bounded access to EDS point/line/map data. Its interactive
-workspace is not implemented yet; see the [implementation plan](docs/implementation-plan.md)
-for approved scope and follow-ups.
+The experimental [AZtec workspace](docs/aztec.md) provides read-only native OIPX
+and H5OINA inspection, point spectra, and interactive element/ratio maps and line
+comparisons. See the [implementation plan](docs/implementation-plan.md) for
+approved scope and follow-ups.
 
 Application modules live in `tem_workbench/`: `analysis/` holds numerical fitting,
 `mapping/` grid and map operations, `components/` PCA/NMF workflows, `storage/`

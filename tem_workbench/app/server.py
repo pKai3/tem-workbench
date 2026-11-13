@@ -47,6 +47,7 @@ from tem_workbench.mapping.window_size_probe import WindowSizeProbe
 from tem_workbench.components import shared_spectra
 from tem_workbench.components.component_batch import ComponentBatch
 from tem_workbench.storage import folder_paths
+from tem_workbench.storage.workspace_state import WorkspaceState
 from tem_workbench.storage.preview_files import PreviewBatch, sidecar_path
 from tem_workbench.storage.workbench_project import Project
 from tem_workbench.aztec.browser import AztecBrowser
@@ -71,6 +72,7 @@ class Workbench:
     def __init__(self, config, root=ROOT, config_path=None):
         self.root = Path(root).resolve()
         self.config_path = Path(config_path or self.root/'.tem-paths.json')
+        self.workspace = WorkspaceState(self.config_path)
         self.config = folder_paths.resolve_config(config, self.root)
         self.engine = Engine(self.config)
         self.project = Project(self.root)
@@ -822,7 +824,16 @@ def make_handler(app):
             try:
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
-                if url.path == '/api/aztec/config':
+                if url.path == '/workspace-state.js':
+                    try:
+                        saved = app.workspace.read()
+                    except (ValueError, OSError) as exc:
+                        saved = {'records': {}, 'path': str(app.workspace.path), 'error': str(exc)}
+                    bootstrap = 'window.WorkbenchWorkspaceData=' + json.dumps(saved).replace('<', '\\u003c') + ';\n'
+                    self.send(bootstrap.encode() + (ROOT/'web/workspace-state.js').read_bytes(), 'application/javascript')
+                elif url.path == '/api/workspace':
+                    self.send(app.workspace.read())
+                elif url.path == '/api/aztec/config':
                     LOG.info('AZtec viewer connected: version=%s', APP_VERSION)
                     self.send({'token': app.token, 'app_version': APP_VERSION,
                                'sources': app.engine.sources})
@@ -915,7 +926,7 @@ def make_handler(app):
                 if self.headers.get('X-TEM-Token') != app.token:
                     self.send({'error': 'Reload the workbench to reconnect.'}, status=403); return
                 size=int(self.headers.get('Content-Length', 0))
-                limit = 256*1024*1024 if self.path == '/api/export-spectrum' else 65536
+                limit = 256*1024*1024 if self.path == '/api/export-spectrum' else (16*1024*1024 if self.path == '/api/workspace' else 65536)
                 if size <= 0 or size > limit or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                     raise ValueError('Expected a small JSON request.')
                 body=json.loads(self.rfile.read(size))
@@ -925,8 +936,10 @@ def make_handler(app):
                     LOG.info('Action %s started: %s',self.path,diagnostics.request_details(body))
                 if self.path == '/api/diagnostics':
                     self.send(diagnostics.browser_events(body))
+                elif self.path == '/api/workspace':
+                    self.send(app.workspace.patch(body.get('records'), body.get('only_missing') is True))
                 elif self.path == '/api/aztec/browse':
-                    self.send(app.aztec.browse(body.get('path'), app.root))
+                    self.send(app.aztec.browse(body.get('path'), app.root, app.engine.sources, body.get('project')))
                 elif self.path == '/api/aztec/open':
                     self.send(app.aztec.open(body['path']))
                 elif self.path == '/api/aztec/preview':

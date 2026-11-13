@@ -152,11 +152,11 @@ function reportJobError(kind,key,text){
 async function api(path,body,signal){const options=body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)}:{};const r=await fetch('/api/'+path,{...options,signal});const data=await r.json();if(!r.ok){const error=new Error(data.error||r.statusText);error.status=r.status;throw error}return data}
 function readPreference(key,fallback){
  try{
-  const text=localStorage.getItem(key);if(text===null)return fallback;
+  const text=window.WorkbenchWorkspace?WorkbenchWorkspace.readRaw(key):localStorage.getItem(key);if(text===null)return fallback;
   try{return JSON.parse(text)??fallback}catch{return text} // Accept older plain-text display preferences.
  }catch{return fallback}
 }
-function writePreference(key,value){try{localStorage.setItem(key,JSON.stringify(value))}catch{message('Browser storage is unavailable; these preferences will last until this page closes.',true)}}
+function writePreference(key,value){if(window.WorkbenchWorkspace){WorkbenchWorkspace.writeRaw(key,JSON.stringify(value));return}try{localStorage.setItem(key,JSON.stringify(value))}catch{message('Browser storage is unavailable; these preferences will last until this page closes.',true)}}
 const FFT_DETECTOR_CONTROLS={'fft-smoothing':['fft_smoothing_sigma',.65,0,3],'fft-threshold-floor':['fft_threshold_floor',1.8,0,20],'fft-min-strength':['fft_minimum_enrichment',3,0,20],'fft-min-separation':['fft_minimum_separation',.5,0,3],'fft-max-peaks':['fft_max_peaks',70,4,200,true]};
 const BASIC_NUMBERS={"g-max":[4,30],"fft-g-min":[0,29.9],"hcp-a":[0.15,0.65],"hcp-c":[0.20,1.20],"bcc-a":[0.20,0.65],"fcc-a":[0.20,0.65],"ort-a":[.1,2],"ort-b":[.1,2],"ort-c":[.1,2],"omega-a":[.15,1.2],"omega-c":[.15,1.2],"threshold":[0.15,0.7],"grid-workers":[0,16,true],"grid-count":[2,24,true],"grid-min":[0,null],"batch-cutoff":[0,100000000]};
 Object.assign(BASIC_NUMBERS,Object.fromEntries(Object.entries(FFT_DETECTOR_CONTROLS).map(([id,[key,value,min,max,integer]])=>[id,[min,max,integer]])));
@@ -237,12 +237,31 @@ function updateRasterStatus(id,calibrated){
 }
 function projectFiles(){const id=$('source-filter').value;return config.files.filter(f=>!id||(f.source_id||'demo')===id)}
 function renderProjectFilter(){
- const select=$('source-filter'),saved=readPreference('tem-source-filter:'+config.state_namespace,'');
+ const select=$('source-filter'),saved=WorkbenchWorkspace.get('active_project',readPreference('tem-source-filter:'+config.state_namespace,''));
  select.replaceChildren(new Option('All projects',''),...(config.sources||[]).map(s=>new Option(s.name,s.id)));
  if(config.files.some(f=>!f.source_id))select.append(new Option('Demo','demo'));
  select.value=[...select.options].some(o=>o.value===saved)?saved:'';
 }
-$('source-filter').onchange=()=>{writePreference('tem-source-filter:'+config.state_namespace,$('source-filter').value);renderFileList()};
+let diffractionBookmarkProject=null;
+function rememberDiffractionLocation(){
+ if(!meta||!fileId)return;
+ const source=config.files.find(f=>f.id===fileId)?.source_id||'demo';
+ const old=WorkbenchWorkspace.bookmark(source,'diffraction');
+ const value={...old,file:fileId,roi:{...roi},browserFolder:old.browserFolder||''};
+ WorkbenchWorkspace.remember(source,'diffraction',value);
+ if(diffractionBookmarkProject==='')WorkbenchWorkspace.remember('','diffraction',value);
+}
+document.addEventListener('workbench-bookmark',rememberDiffractionLocation);
+$('source-filter').onchange=async()=>{
+ rememberDiffractionLocation();
+ const selected=$('source-filter').value;
+ WorkbenchWorkspace.set('active_project',selected);writePreference('tem-source-filter:'+config.state_namespace,selected);
+ $('file-search').value='';renderFileList();renderFavorites();
+ const bookmark=WorkbenchWorkspace.bookmark(selected,'diffraction'),files=projectFiles();
+ const next=files.find(f=>f.id===bookmark.file)||files.find(f=>!f.raster||f.calibrated)||files[0];
+ if(next){$('file').value=next.id;await openFile()}
+ else{abandonAnalysis();++sourceRequest;meta=null;fileId=null;opened=false;result=null;document.querySelector('.workspace').hidden=true;$('metadata').textContent='No diffraction images in this project';$('run-grid').disabled=true;message('This project has no diffraction images. Switch to AZtec to browse its acquisitions.')}
+};
 function matchingFiles(){
  const terms=$('file-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
  return projectFiles().filter(f=>terms.every(term=>`${f.name} ${f.sample} ${f.source_name||''} ${f.folder||''} ${f.id}`.toLocaleLowerCase().includes(term)));
@@ -276,7 +295,7 @@ $('material-controls').open=readPreference('tem-material-open',true)!==false;
 $('material-controls').ontoggle=()=>writePreference('tem-material-open',$('material-controls').open);
 $('processing-controls').open=readPreference('tem-processing-open',true)!==false;
 $('processing-controls').ontoggle=()=>writePreference('tem-processing-open',$('processing-controls').open);
-function clearFileSearch(){if($('source-filter').value){$('source-filter').value='';if(config)renderFileList()}if($('file-search').value){$('file-search').value='';if(config)renderFileList()}}
+function clearFileSearch(){if($('source-filter').value){$('source-filter').value='';WorkbenchWorkspace.set('active_project','');if(config)renderFileList()}if($('file-search').value){$('file-search').value='';if(config)renderFileList()}}
 $('file-search').oninput=()=>{if(config)renderFileList()};
 $('file-search').onkeydown=event=>{
  if(event.key==='Escape'){clearFileSearch();return}
@@ -288,7 +307,7 @@ $('file-sort').onchange=()=>{
  if(config){renderFileList();renderFavorites()}
 };
 function renderFavorites(){
- const select=$('favorites'), rows=sortedFiles(config.files.filter(f=>favorites.has(f.id)));
+ const select=$('favorites'), rows=sortedFiles(projectFiles().filter(f=>favorites.has(f.id)));
  select.replaceChildren(new Option(rows.length?'Choose a favourite…':'No favourites yet',''));
  for(const f of rows)select.append(new Option(`★ ${f.sample} · ${fileDisplayName(f)}`,f.id));
  select.disabled=!rows.length;select.value=opened&&favorites.has(fileId)?fileId:'';
@@ -502,7 +521,7 @@ for(const id of ['fft','overview','fft-zoom-view']){
 }
 
 function clamp(v,min,max){return Math.min(max,Math.max(min,v))}
-function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi={x:0,y:0,w:meta.width,h:meta.height};$('region-size').textContent=`${meta.width} × ${meta.height} px · full detector`;drawDetector();return;}const min=32,max=(preserveHeight||roi.polygon||$('region-selection')?.value==='rectangle')?meta.width:Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=(preserveHeight||roi.polygon||$('region-selection')?.value==='rectangle')?clamp(Math.round(roi.h),min,meta.height):roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`;rememberRegionSize();if(typeof syncRegionSelection==='function')syncRegionSelection();showLiveRegionCrop()}
+function updateBox(preserveHeight=false){if(!meta)return;if(isDiffraction()){roi={x:0,y:0,w:meta.width,h:meta.height};$('region-size').textContent=`${meta.width} × ${meta.height} px · full detector`;drawDetector();return;}const min=32,max=(preserveHeight||roi.polygon||$('region-selection')?.value==='rectangle')?meta.width:Math.min(meta.width,meta.height);roi.w=clamp(Math.round(roi.w),min,max);roi.h=(preserveHeight||roi.polygon||$('region-selection')?.value==='rectangle')?clamp(Math.round(roi.h),min,meta.height):roi.w;roi.x=clamp(Math.round(roi.x),0,meta.width-roi.w);roi.y=clamp(Math.round(roi.y),0,meta.height-roi.h);for(const[k,v]of Object.entries({x:roi.x,y:roi.y,width:roi.w,height:roi.h}))$('roi-box').setAttribute(k,v);const handle=meta.width*.018;$('roi-handle').setAttribute('width',handle);$('roi-handle').setAttribute('height',handle);$('roi-handle').setAttribute('x',roi.x+roi.w-handle/2);$('roi-handle').setAttribute('y',roi.y+roi.h-handle/2);$('roi-x').value=roi.x;$('roi-y').value=roi.y;$('roi-nm').value=(roi.w*meta.pixel_x_nm).toFixed(2);$('region-size').textContent=`${(roi.w*meta.pixel_x_nm).toFixed(2)} nm · ${roi.w} px`;rememberRegionSize();rememberDiffractionLocation();if(typeof syncRegionSelection==='function')syncRegionSelection();showLiveRegionCrop()}
 // Invalidate the old result immediately; never attach it to a newly moved region.
 function schedule(delay=120){generation++;pending=true;result=null;if(typeof refreshIfftSource==='function')refreshIfftSource();updateStrengthMode();hideRegionPreview();if(!isDiffraction()){$('fft-overlay').replaceChildren();$('fft-legend').hidden=true;queueLiveRegionPreview()}beginSpectrumLoading();syncSpectrumExportControls();if(isDiffraction()){drawDetector();renderTranslation()}$('save-region').disabled=true;$('phase-label').textContent='Updating…';document.querySelector('.previews').classList.add('stale');if(!timer)timer=setTimeout(()=>{timer=null;analyze()},delay)}
 function abandonAnalysis(){
@@ -594,6 +613,7 @@ $('raster-apply').onclick=async()=>{
 };
 $('calibrate-image').onclick=async()=>{const id=$('file').value;try{if(await calibrateRaster(id,await api('raster-info?id='+encodeURIComponent(id))))await openFile()}catch(e){message(e.message,true)}};
 async function openFile(){
+ rememberDiffractionLocation();document.querySelector('.workspace').hidden=false;
  if(typeof resetWindowSizeProbe==='function')resetWindowSizeProbe();
  const id=$('file').value;if(!id)return;updateFileNavigation();$('calibrate-image').hidden=!config.files.find(f=>f.id===id)?.raster;$('run-grid').disabled=true;
  rescoreRevision++;rescorePending=false;clearTimeout(rescoreTimer);
@@ -622,7 +642,11 @@ async function openFile(){
   $('metadata').textContent=`${info.width} × ${info.height} · ${calibration} · ${info.device}${info.is_demo?' · bundled demo':''}`;
   if(isDiffraction())roi={x:0,y:0,w:info.width,h:info.height};
   else{const size=Math.min(info.width,info.height,Math.max(32,Math.round(preferredRegionNm/info.pixel_x_nm)));roi={x:Math.round((info.width-size)/2),y:Math.round((info.height-size)/2),w:size,h:size}}
-  updateBox();renderSavedRegions();schedule(0);
+  diffractionBookmarkProject=$('source-filter').value;
+  const selectedBookmark=WorkbenchWorkspace.bookmark(diffractionBookmarkProject,'diffraction');
+  const bookmark=selectedBookmark.file===id?selectedBookmark:WorkbenchWorkspace.bookmark(openedFile?.source_id||'demo','diffraction');
+  if(!isDiffraction()&&bookmark.file===id&&['x','y','w','h'].every(k=>Number.isFinite(bookmark.roi?.[k])))roi={...bookmark.roi};
+  updateBox(true);rememberDiffractionLocation();renderSavedRegions();schedule(0);
   document.dispatchEvent(new Event('tem-image-opened'));
   message(isDiffraction()?'Direct diffraction: check the beam centre, mask the beam stop if needed, and inspect the spot fits.':'');
  }catch(e){if(version===sourceRequest){finishSpectrumLoading();syncSpectrumExportControls();message(e.message,true)}}
@@ -2137,16 +2161,17 @@ function restoreGridControls(job){
 async function openInitialImage(){
  const latest=config.grid_job,remembered=readPreference(gridSessionKey(),null);
  const recovery=latest&&(latest.state==='running'||latest.id===remembered)?latest:null;
- const lastImage=config.files.find(f=>f.id===readPreference(lastImageKey(),null));
- const activeFile=recovery&&config.files.find(f=>f.id===recovery.source.id);
- const initial=lastImage||activeFile||projectFiles().find(f=>f.id===config.default_file)||projectFiles()[0]||config.files[0];
- if(initial)clearFileSearch();
+ const bookmark=WorkbenchWorkspace.bookmark($('source-filter').value,'diffraction');
+ const lastImage=projectFiles().find(f=>f.id===(bookmark.file||readPreference(lastImageKey(),null)));
+ const activeFile=recovery&&projectFiles().find(f=>f.id===recovery.source.id);
+ const initial=lastImage||activeFile||projectFiles().find(f=>f.id===config.default_file)||projectFiles().find(f=>!f.raster||f.calibrated)||projectFiles()[0];
+ if(initial){$('file-search').value='';renderFileList()}
  if(!recovery)rememberGrid(null);
  if(initial){
   $('file').value=initial.id;
   const opening=openFile(),version=sourceRequest;
   await opening;if(version!==sourceRequest)return;
- }else message('Choose a data folder containing DigitalMicrograph DM3 or DM4 files.');
+ }else{document.querySelector('.workspace').hidden=true;message('No diffraction images in this project. Choose another project or switch to AZtec.');}
  if(!recovery)return;
  trackedGrid=recovery;jobId=recovery.id;rememberGrid(jobId);
  updateGridProgress(recovery);
@@ -2623,7 +2648,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;for(const mode of ['pca','nmf'])$('grid-mode').querySelector('option[value='+mode+']').disabled=!config.component_grid;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.fft_tukey&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('OMEGA')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}$('fft-mean').disabled=!config.fft_processing;if(!config.fft_processing)$('fft-mean').checked=true;updateFFTWindowControls();$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();await loadSavedRegions();renderFileList();await openInitialImage();}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');await WorkbenchWorkspace.configure(config);const legacyImage=config.files.find(f=>f.id===readPreference(lastImageKey(),null));if(legacyImage&&!WorkbenchWorkspace.bookmark(legacyImage.source_id||'demo','diffraction').file)WorkbenchWorkspace.remember(legacyImage.source_id||'demo','diffraction',{file:legacyImage.id});if(WorkbenchWorkspace.get('active_project',null)===null)WorkbenchWorkspace.set('active_project',readPreference('tem-source-filter:'+config.state_namespace,''));$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;for(const mode of ['pca','nmf'])$('grid-mode').querySelector('option[value='+mode+']').disabled=!config.component_grid;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.fft_tukey&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('OMEGA')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}$('fft-mean').disabled=!config.fft_processing;if(!config.fft_processing)$('fft-mean').checked=true;updateFFTWindowControls();$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();renderFavorites();await loadSavedRegions();renderFileList();await openInitialImage();}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 // Reuse the displayed spectrum and overlays; hovering never requests analysis.
@@ -2870,23 +2895,23 @@ function imageBrowserFolder(file){
  const path=file.id.replaceAll('\\','/');return path.includes('/')?path.slice(0,path.lastIndexOf('/')):'.';
 }
 function syncImageBrowserFolders(){
- const select=$('image-browser-folder'),root=config.state_namespace||config.data_root||'',key='tem-image-browser-folder:'+root;
- const previous=imageBrowserFolderRoot===root?select.value:readPreference(key,'');imageBrowserFolderRoot=root;
+ const select=$('image-browser-folder'),project=$('source-filter').value,root=(config.state_namespace||config.data_root||'')+':'+project,key='tem-image-browser-folder:'+root;
+ const previous=imageBrowserFolderRoot===root?select.value:WorkbenchWorkspace.bookmark(project,'diffraction').browserFolder||readPreference(key,'');imageBrowserFolderRoot=root;
  const counts=new Map();
- for(const file of config.files){
+ for(const file of projectFiles()){
   const folder=imageBrowserFolder(file);
   if(folder==='.')counts.set('.',(counts.get('.')||0)+1);
   else{const parts=folder.split('/');for(let i=1;i<=parts.length;i++){const parent=parts.slice(0,i).join('/');counts.set(parent,(counts.get(parent)||0)+1)}}
  }
  const option=(value,text)=>{const node=document.createElement('option');node.value=value;node.textContent=text;return node};
- select.replaceChildren(option('',`All folders (${config.files.length})`),...[...counts].sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:'base'})).map(([folder,count])=>option(folder,`${folder==='.'?'Data folder (top level)':folder} (${count})`)));
+ select.replaceChildren(option('',`All folders (${projectFiles().length})`),...[...counts].sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:'base'})).map(([folder,count])=>option(folder,`${folder==='.'?'Data folder (top level)':folder} (${count})`)));
  select.value=counts.has(previous)?previous:'';
 }
 function renderImageBrowser(){
  syncImageBrowserFolders();
  const terms=$('image-browser-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
  const folder=$('image-browser-folder').value;
- const files=config.files.filter(f=>(!folder||imageBrowserFolder(f)===folder||(folder!=='.'&&imageBrowserFolder(f).startsWith(folder+'/')))&&terms.every(term=>`${f.name} ${f.sample} ${f.source_name||''} ${f.folder||''} ${f.id}`.toLocaleLowerCase().includes(term)));
+ const files=projectFiles().filter(f=>(!folder||imageBrowserFolder(f)===folder||(folder!=='.'&&imageBrowserFolder(f).startsWith(folder+'/')))&&terms.every(term=>`${f.name} ${f.sample} ${f.source_name||''} ${f.folder||''} ${f.id}`.toLocaleLowerCase().includes(term)));
  const list=$('image-browser-list');list.replaceChildren();
  $('image-browser-count').textContent=`${files.length} image${files.length===1?'':'s'}`;
  for(const sample of new Set(files.map(f=>f.sample)))for(const file of sortedFiles(files.filter(f=>f.sample===sample))){
@@ -2902,7 +2927,7 @@ function renderImageBrowser(){
   if(favorites.has(file.id)){const star=document.createElement('span');star.className='favorite-star';star.textContent='★ ';star.title='Favourite';star.setAttribute('aria-hidden','true');name.prepend(star)}
   const group=document.createElement('small');group.textContent=file.sample;
   tile.append(preview,name,group);tile.onclick=()=>{
-   $('image-browser').close();clearFileSearch();$('file').value=file.id;openFile();
+   $('image-browser').close();$('file-search').value='';renderFileList();$('file').value=file.id;openFile();
   };list.append(tile);
  }
  if(!files.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No matching images.';list.append(empty)}
@@ -2913,7 +2938,7 @@ $('browse-images').onclick=()=>{
 };
 $('image-browser-close').onclick=()=>$('image-browser').close();
 $('image-browser-search').oninput=renderImageBrowser;
-$('image-browser-folder').onchange=()=>{writePreference('tem-image-browser-folder:'+(config.state_namespace||config.data_root||''),$('image-browser-folder').value);renderImageBrowser()};
+$('image-browser-folder').onchange=()=>{const project=$('source-filter').value;WorkbenchWorkspace.remember(project,'diffraction',{...WorkbenchWorkspace.bookmark(project,'diffraction'),browserFolder:$('image-browser-folder').value});renderImageBrowser()};
 $('image-browser-sort').onchange=()=>{$('file-sort').value=$('image-browser-sort').value;$('file-sort').onchange();renderImageBrowser()};
 async function browseFolder(path){
  const version=++folderBrowseVersion;$('folder-use').disabled=true;$('folder-status').textContent='Loading folders…';

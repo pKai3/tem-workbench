@@ -31,3 +31,4 @@ outputs/
 /dist/
 
 /.tem-image-registry.json
+/tem-workbench.workspace.json

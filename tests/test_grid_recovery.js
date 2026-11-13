@@ -11,8 +11,9 @@ function job(state='running'){
 function setup(current=job(),remembered=null,last=image.id){
  const controls=new Map(),storage=new Map([['tem-grid-session:project',remembered],['last-image',last]]),timers=new Map(),calls=[];
  const $=id=>{if(!controls.has(id))controls.set(id,{value:'',checked:false,disabled:false,textContent:''});return controls.get(id)};
- $('source-filter').value='other-project';
+ $('source-filter').value='';
  const context=vm.createContext({assert,$,config:{state_namespace:'project',files:[{id:'other-image'},image],grid_job:current},
+  WorkbenchWorkspace:{bookmark:()=>({})},renderFileList(){},document:{querySelector:()=>({hidden:false})},
   meta:null,fileId:null,grid:null,jobId:null,trackedGrid:null,gridStarting:false,batchRunning:false,sourceRequest:0,rescoreRevision:0,rescorePending:false,rescoreTimer:null,
   readPreference:(key,fallback)=>storage.get(key)??fallback,writePreference:(key,value)=>storage.set(key,value),lastImageKey:()=> 'last-image',
   clearFileSearch(){ $('source-filter').value='';context.filtersCleared=true; },
@@ -31,7 +32,7 @@ function setup(current=job(),remembered=null,last=image.id){
 async function main(){
  // An active job is discoverable even if the refresh happened before its POST reply.
  const live=setup();await live.run('openInitialImage()');
- assert.equal(live.context.fileId,image.id);assert.equal(live.context.filtersCleared,true);
+ assert.equal(live.context.fileId,image.id);assert.equal(live.$('source-filter').value,'');
  assert.equal(live.context.jobId,'same-job');assert.equal(live.context.grid.processed,1);
  assert.equal(live.context.restored.g_min,3.1);assert.equal(live.$('grid-count').value,4);
  assert.equal(live.$('grid-mode').value,'standard');assert.equal(live.$('adaptive').checked,true);
@@ -64,13 +65,15 @@ async function main(){
   assert.equal(other.context.progress.state,state);assert.equal(other.$('cancel-grid').disabled,state!=='running');
   assert.equal(other.run('isGridRunning()'),state==='running');
  }
- // A stored project filter must not hide the remembered image at startup.
+ // The shared project constrains startup; jobs in other projects still reconnect in the background.
  const plain=setup(null);await plain.run('openInitialImage()');
- assert.equal(plain.context.fileId,image.id);assert.equal(plain.context.filtersCleared,true);assert.equal(plain.calls.length,0);
+ assert.equal(plain.context.fileId,image.id);assert.equal(plain.$('source-filter').value,'');assert.equal(plain.calls.length,0);
  const forgotten=setup(null,null,'removed-image');await forgotten.run('openInitialImage()');
  assert.equal(forgotten.context.fileId,'other-image');
  const empty=setup(null);empty.context.config.files=[];await empty.run('openInitialImage()');
- assert.equal(empty.context.fileId,null);assert.match(empty.context.notice,/Choose a data folder/);
+ assert.equal(empty.context.fileId,null);assert.match(empty.context.notice,/No diffraction images/);
+ const scoped=setup();scoped.$('source-filter').value='other-project';await scoped.run('openInitialImage()');
+ assert.equal(scoped.context.fileId,'other-image');assert.equal(scoped.context.grid,null);assert.equal(scoped.context.jobId,'same-job');
  const restarted=setup(null,'old-job');await restarted.run('openInitialImage()');
  assert.equal(restarted.context.jobId,null);assert.equal(restarted.storage.get('tem-grid-session:project'),null);
 
