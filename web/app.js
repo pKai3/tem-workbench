@@ -2767,6 +2767,9 @@ const chooseFolder=target=>{if(config?.folder_picker)folderBrowser.choose(target
 const projectSettings=WorkbenchProjectTools.sources({api,getConfig:()=>config,chooseFolder,
  onRename:async data=>{config.sources=data.sources;await WorkbenchWorkspace.configure(config);renderProjectFilter();applyCatalogue(data)},
  onSave:async()=>{await start();message('Project sources and outputs saved.')}});
+const openProjectSettings=()=>WorkbenchProjectTools.showSources($('folders-panel'));
+$('open-project-settings').onclick=openProjectSettings;
+$('project-settings-close').onclick=()=>$('folders-panel').close();
 function showFileEvents(events){
  const fresh=events.filter(event=>{const key=JSON.stringify(event);if(seenFileEvents.has(key))return false;seenFileEvents.add(key);return true});
  if(!fresh.length)return;
@@ -2798,7 +2801,7 @@ function setupFolderControls(){
  const savedDemoLink=readPreference('tem-demo-pack-url','');
  $('demo-pack-url').value=typeof savedDemoLink==='string'&&savedDemoLink.trim()?savedDemoLink:$('demo-pack-url').defaultValue;
  if(config.demo_download){renderDemoDownload(config.demo_job);if(config.demo_job?.state==='running')pollDemoDownload()}
- if(!config.files.length){$('folders-panel').open=true;offerDemoDownload()}
+ if(!config.files.length)offerDemoDownload();
  for(const id of ['browse-data','browse-output','apply-folders','refresh-files'])$(id).disabled=!config.folder_picker;
  $('folder-data').value=config.data_root;$('folder-output').value=config.output_root;projectSettings.render();renderProjectFilter();catalogueRevision=config.catalogue_revision;showFileEvents(config.file_events||[]);
  if(!config.folder_picker)$('folders-note').textContent='Restart TEM Workbench to enable folder selection.';
@@ -3859,10 +3862,10 @@ function offerDemoDownload(){
 }
 $('demo-prompt-later').onclick=()=>$('demo-download-prompt').close();
 $('demo-prompt-folder').onclick=()=>{
- $('demo-download-prompt').close();$('folders-panel').open=true;chooseFolder('source-0-path');
+ $('demo-download-prompt').close();openProjectSettings();chooseFolder('source-0-path');
 };
 $('demo-prompt-download').onclick=()=>{
- $('demo-download-prompt').close();$('folders-panel').open=true;$('download-demo-pack').click();
+ $('demo-download-prompt').close();openProjectSettings();$('project-image-tools').open=true;$('download-demo-pack').click();
 };
 
 // Editing uses the last displayed coordinate system, never stale analysis as a new result.

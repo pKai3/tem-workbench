@@ -227,7 +227,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const paths=[...new Set([...context.files,...discovered.map(f=>f.path)])];
    for(const path of paths){
     const file=discovered.find(f=>f.path===path),label=el('label'),input=el('input'),caption=el('span',file?`${file.project} / ${file.relative_path}`:fileName(path));
-    input.type='checkbox';input.checked=context.files.includes(path);input.setAttribute('aria-label','Include '+path);caption.title=path;label.append(input,caption);list.append(label);
+    input.type='checkbox';input.checked=context.files.includes(path);input.setAttribute('aria-label','Include '+path);WorkbenchProjectTools.pathText(caption,caption.textContent);caption.title=path;label.append(input,caption);list.append(label);
     if(sourceErrors.has(path)){const error=el('span',sourceErrors.get(path),'eds-channel-error');label.append(error)}
     input.onchange=async()=>{
      const include=input.checked;input.disabled=true;status.textContent=include?'Reading file contents…':'';++version;

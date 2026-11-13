@@ -2,9 +2,25 @@
 window.WorkbenchProjectTools=(()=>{
  const $=id=>document.getElementById(id);
  const mount=(markup)=>{const template=document.createElement('template');template.innerHTML=markup;document.body.append(template.content)};
+ function panPath(input){input.title=input.value;if(document.activeElement!==input)input.scrollLeft=input.scrollWidth}
+ function pathInput(input){
+  input.classList.add('path-input');
+  input.addEventListener('input',()=>{input.title=input.value});
+  input.addEventListener('change',()=>panPath(input));
+  input.addEventListener('blur',()=>requestAnimationFrame(()=>panPath(input)));
+  requestAnimationFrame(()=>panPath(input));
+ }
+ function panPaths(){requestAnimationFrame(()=>document.querySelectorAll('.path-input').forEach(panPath))}
+ function showSources(dialog){if(!dialog.open)dialog.showModal();panPaths()}
+ document.addEventListener('toggle',panPaths,true);window.addEventListener('resize',panPaths);
+ function pathText(node,value){
+  node.classList.add('path-tail');node.title=value;
+  const text=document.createElement('bdi');text.dir='ltr';text.textContent=value;node.replaceChildren(text);return node;
+ }
  function browser(api){
   if(!$('folder-picker'))mount("<dialog id=\"folder-picker\" aria-labelledby=\"folder-picker-title\"><div class=\"panel-head\"><h2 id=\"folder-picker-title\">Choose folder</h2><button id=\"folder-close\" type=\"button\" aria-label=\"Close folder picker\">\u00d7</button></div><div class=\"folder-nav\"><button id=\"folder-up\" type=\"button\">\u2191 Up</button><button id=\"folder-home\" type=\"button\">Home</button><select id=\"folder-drive\" aria-label=\"Switch drive\" hidden><option value=\"\">Drive\u2026</option></select><input id=\"folder-path\" aria-label=\"Folder path\" type=\"text\"><button id=\"folder-go\" type=\"button\">Go</button></div><p id=\"folder-status\" class=\"hint\" role=\"status\"></p><label class=\"folder-filter\">Find<input id=\"folder-filter\" type=\"search\" placeholder=\"Filter names\"></label><div id=\"folder-list\"></div><div class=\"dialog-actions\"><button id=\"folder-cancel\" type=\"button\">Cancel</button><button id=\"folder-use\" type=\"button\" class=\"primary\">Use this folder</button></div></dialog>");
   const dialog=$('folder-picker');let listing=null,version=0,options={};
+  pathInput($('folder-path'));
   function close(){version++;dialog.close()}
   async function select(path){close();await options.onSelect(path)}
   function render(){
@@ -18,7 +34,7 @@ window.WorkbenchProjectTools=(()=>{
    const request=++version;$('folder-use').disabled=true;$('folder-status').textContent='Loading…';listing=null;
    try{
     const next=await api('browse-folders',{path});if(request!==version||!dialog.open)return;listing=next;
-    $('folder-path').value=listing.path;$('folder-up').disabled=listing.path===listing.parent;
+    $('folder-path').value=listing.path;panPath($('folder-path'));$('folder-up').disabled=listing.path===listing.parent;
     const drives=$('folder-drive');drives.replaceChildren(new Option('Drive…',''));for(const drive of listing.drives||[])drives.add(new Option(drive,drive));drives.hidden=!(listing.drives||[]).length;
     $('folder-use').disabled=false;$('folder-filter').value='';render();
     $('folder-status').textContent=`${listing.directories.length} subfolders`;
@@ -35,6 +51,7 @@ window.WorkbenchProjectTools=(()=>{
  }
  function sources({api,getConfig,onRename,onSave,chooseFolder}){
   $('project-settings').innerHTML="<div class=\"source-actions\"><button id=\"apply-folders\" type=\"button\" disabled>Save source changes</button><span class=\"hint\">Project names save automatically.</span></div><div id=\"source-list\"></div><button id=\"add-source\" type=\"button\">Add project source</button><div class=\"folder-settings\"><label hidden>Data folder<span class=\"folder-input\"><input id=\"folder-data\" type=\"text\" value=\"./data\"><button id=\"browse-data\" type=\"button\" disabled>Browse\u2026</button></span></label><label>Main output folder<span class=\"folder-input\"><input id=\"folder-output\" type=\"text\" value=\"./output\"><button id=\"browse-output\" type=\"button\" disabled>Browse\u2026</button></span></label></div>";
+  for(const id of ['folder-data','folder-output'])pathInput($(id));
   let sourceDraft=[];
 let sourceNameSaveQueue=Promise.resolve();
 const pendingSourceNames=new WeakMap();
@@ -79,6 +96,7 @@ function drawSources(){
     input.onblur=()=>saveSourceName(source,input,status);
     input.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();input.blur()}};
    }else{
+    pathInput(input);
     const browse=document.createElement('button');browse.type='button';browse.textContent='Browse…';
     browse.onclick=()=>chooseFolder(input.id);wrap.append(browse);
     input.addEventListener('change',()=>{source[key]=input.value});
@@ -99,7 +117,7 @@ $('add-source').onclick=()=>{sourceDraft.push({name:'',path:'',output:''});drawS
    finally{$('apply-folders').disabled=!getConfig()?.folder_picker}
   };
   const status=document.createElement('span');status.id='project-settings-status';status.className='hint';status.setAttribute('role','status');$('apply-folders').after(status);
-  return {render(){const config=getConfig();$('folder-data').value=config.data_root||'';$('folder-output').value=config.output_root||'';for(const id of ['browse-data','browse-output','apply-folders'])$(id).disabled=!config.folder_picker;renderSources()},saveSourceName};
+  return {render(){const config=getConfig();$('folder-data').value=config.data_root||'';$('folder-output').value=config.output_root||'';for(const id of ['browse-data','browse-output','apply-folders'])$(id).disabled=!config.folder_picker;renderSources();panPaths()},saveSourceName};
  }
- return {browser,sources};
+ return {browser,sources,pathText,showSources};
 })();

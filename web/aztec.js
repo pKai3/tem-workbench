@@ -59,7 +59,7 @@ function renderFiles(){
  for(const file of matches){
   const button=el('button',undefined,'eds-entry'),name=el('span',file.name,'eds-file-name');button.type='button';button.append(name);
   const folder=file.relative_path.split(/[\\/]/).slice(0,-1).join(' / '),context=[project?'':file.project,folder].filter(Boolean).join(' / ');
-  if(context)button.append(el('small',context));button.title=file.path;button.setAttribute('aria-current',String(file.path===state.file?.catalogue.source.path));button.onclick=()=>openFile(file.path);host.append(button);
+  if(context)button.append(WorkbenchProjectTools.pathText(el('small'),context));button.title=file.path;button.setAttribute('aria-current',String(file.path===state.file?.catalogue.source.path));button.onclick=()=>openFile(file.path);host.append(button);
  }
  if(!matches.length)host.append(el('p',query?'No matching files.':'No supported AZtec files found. Choose another project or check its source folder in Project settings.','hint'));
 }
@@ -244,7 +244,7 @@ $('eds-filter').oninput=renderFiles;
 $('eds-row').onchange=preview;
 $('eds-unsigned').onchange=preview;
 $('eds-metadata').ontoggle=()=>{if($('eds-metadata').open)metadata()};
-$('eds-project-settings').onclick=()=>{$('eds-project-dialog').showModal()};
+$('eds-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('eds-project-dialog'));
 $('eds-project-close').onclick=()=>$('eds-project-dialog').close();
 $('eds-sources').onchange=e=>changeProject(e.target.value);
 $('eds-compare').onclick=()=>openAnalysis(null,'map');
