@@ -2,6 +2,10 @@
 
 Last updated: 13 November 2026
 
+## Approved AZtec merge and release — 13 November 2026
+
+The user approved merging `codex/aztec` into `main` and publishing the next version after workspace-wide comparison access (`dc8b90b`). Include the package organisation, native AZtec workspace, map/line comparisons, shared projects and disk persistence described below. Publish through the manual **Publish Workbench release** workflow, retaining the analysis/browser and Windows/macOS verification gates. The workflow prepares the version and tag only after those checks pass; release publication is pending verification.
+
 ## Package organisation and AZtec provisioning — approved 13 November 2026
 
 **Project file list and configured exports — completed 13 November 2026:** superseding the earlier folder-navigation design, AZtec recursively scans the selected project source and lists all supported OIPX/H5OINA files together, with filename/subfolder filtering and Rescan files. All projects combines the configured sources without duplicate files. It reads directory metadata during discovery and opens datasets only when selected; legacy OIP remains unsupported. Project sources, names and output folders are editable from either interface using one shared editor and folder picker. Existing per-mode bookmarks and named comparisons are retained. A remembered file outside the current source scan is no longer reopened after changing that source.
