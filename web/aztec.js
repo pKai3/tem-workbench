@@ -12,6 +12,7 @@ function size(value){const units=['B','KiB','MiB','GiB'];let i=0;while(value>=10
 function dimensions(shape){return shape===null?'Stored record':shape.length?shape.map(n=>n.toLocaleString()).join(' × '):'Scalar'}
 function valueText(value){return typeof value==='object'?JSON.stringify(value):String(value??'—')}
 function pointLabel(label){return label.replace(/^Spectrum\b/,'Point').replace(/^Preview spectrum$/i,'Preview').replace(/ Sum Spectrum$/i,' sum')}
+function isSavedPreview(d){return d.path.startsWith('/EDXSpectra/')&&/^Preview spectrum$/i.test(d.attributes.Label||'')}
 function siteContents(a){
  if(state.file.catalogue.file_type!=='OIPX')return [];
  const datasets=a.layers.flatMap(l=>l.signals),items=[],seen=new Set();
@@ -19,7 +20,7 @@ function siteContents(a){
   if(kind==='ElectronImages')items.push(label.replace(/^Electron Image /,'Image '));
   else if(['SmartMaps','SmartLines','XrayMapImages','XrayLinescans','QuantLinescans'].includes(kind)&&acquisition&&!seen.has(d.attributes['Acquisition ID'])){seen.add(d.attributes['Acquisition ID']);items.push(acquisition.replace(/^(Map|Line) Data /,'$1 '))}
  }
- const points=datasets.filter(d=>d.path.startsWith('/EDXSpectra/')).map(d=>{
+ const points=datasets.filter(d=>d.path.startsWith('/EDXSpectra/')&&!isSavedPreview(d)).map(d=>{
   const label=d.attributes.Label||'Point',acquisition=d.attributes.Acquisition?.replace(/^(Map|Line) Data /,'$1 ');
   return /^(Map|Line) Sum Spectrum$/i.test(label)&&acquisition?`${acquisition} sum`:pointLabel(label);
  });
@@ -27,7 +28,7 @@ function siteContents(a){
 }
 function table(entries){const node=el('table',undefined,'eds-metadata-table');const body=el('tbody');for(const [key,value] of entries){const row=el('tr');row.append(el('th',key),el('td',valueText(value)));body.append(row)}node.append(body);return node}
 async function api(action,body){const response=await fetch(`/api/aztec/${action}`,body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body)}:{});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
-const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions,setLineCrop});
+const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions,setLineCrop,setLineCursor});
 function openAnalysis(id,comparison=false,channelTable){clearPreview();analysis.open(id,comparison,channelTable);remember()}
 function renderFiles(){
  const root=$('eds-files');root.replaceChildren();const listing=state.listing;if(!listing)return;
@@ -44,7 +45,7 @@ async function openFile(path,restoreDataset,restoreAcquisition){
  const version=++state.fileVersion;++state.previewVersion;status('Reading file contents…');
  try{const file=await api('open',{path});if(version!==state.fileVersion)return;state.file=file;const c=file.catalogue;$('eds-empty').hidden=true;$('eds-file').hidden=false;$('eds-file-info').textContent=`${c.source.path.split(/[\\/]/).at(-1)} · ${size(c.source.size)} · ${c.file_type} ${c.format_version}${c.software_version?' · AZtec '+c.software_version:''}`;
   const restored=c.acquisitions.find(a=>a.index===restoreAcquisition)||c.acquisitions.find(a=>a.layers.some(l=>l.signals.some(d=>d.path===restoreDataset)));
-  $('eds-compare').hidden=!analysis.groups().some(g=>g.kind==='map');renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();renderFiles();remember();if(file.folder!==state.listing?.path)await browse(file.folder);if(version!==state.fileVersion)return;$('eds-file-browser').open=false;status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} point records · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
+  $('eds-compare').hidden=!analysis.groups().some(g=>g.kind==='map');renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();renderFiles();remember();if(file.folder!==state.listing?.path)await browse(file.folder);if(version!==state.fileVersion)return;$('eds-file-browser').open=false;status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
   const target=state.acquisition?.layers.flatMap(l=>l.signals).find(d=>d.path===restoreDataset);if(target)selectDataset(target);
  }catch(error){if(version===state.fileVersion)status(error.message,true)}
 }
@@ -63,11 +64,15 @@ function renderAcquisition(index){
  const a=state.acquisition,c=state.file.catalogue;$('eds-context').textContent=[a?.project,a?.specimen,a?.site===a?.label?null:a?.site].filter(Boolean).join(' / ');$('eds-title').textContent=a?.label||'File contents';
  const notes=[...(c.notes||[]),...c.warnings];$('eds-warnings').textContent=notes.join(' ');$('eds-warnings').hidden=!notes.length;
  const root=$('eds-contents');root.replaceChildren();clearPreview();$('eds-metadata').open=false;$('eds-metadata-body').replaceChildren();
- const native=c.file_type==='OIPX',previewable=d=>/^\/(ElectronImages|XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path);
- const layers=[...(a?.layers||[])];if(native)layers.sort((x,y)=>Number(!x.signals.some(previewable))-Number(!y.signals.some(previewable)));
+ const native=c.file_type==='OIPX',previewable=d=>!isSavedPreview(d)&&/^\/(ElectronImages|XrayMapImages|XrayLinescans|QuantLinescans|EDXSpectra)\//.test(d.path);
+ const layers=(a?.layers||[]).flatMap(l=>{const previews=l.signals.filter(isSavedPreview);return previews.length?[{...l,signals:l.signals.filter(d=>!isSavedPreview(d))},{...l,path:'Saved preview spectra',technique:'Saved preview spectra',signals:previews}]:[l]});if(native)layers.sort((x,y)=>Number(!x.signals.some(previewable))-Number(!y.signals.some(previewable)));
+ const channelsByAcquisition=new Set(layers.flatMap(l=>l.signals).filter(d=>/^\/(XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)).map(d=>d.attributes['Acquisition ID']));
+ const sums=new Map(layers.flatMap(l=>l.signals).filter(d=>d.path.startsWith('/EDXSpectra/')&&/^(Line|Map) Sum Spectrum$/i.test(d.attributes.Label||'')&&channelsByAcquisition.has(d.attributes['Acquisition ID'])).map(d=>[d.attributes['Acquisition ID'],d]));
+ const inlineSums=new Set([...sums.values()].map(d=>d.path));
  const unavailable=el('details',undefined,'eds-unavailable'),unavailableCount=layers.flatMap(l=>l.signals).filter(d=>!previewable(d)).length;
  unavailable.append(el('summary',`Other stored data · ${unavailableCount}`));
- for(const layer of layers){
+ for(const originalLayer of layers){
+  const layer={...originalLayer,signals:originalLayer.signals.filter(d=>!inlineSums.has(d.path))};if(!layer.signals.length)continue;
   const compact=native&&layer.signals.every(previewable),points=native&&layer.signals.every(d=>d.path.startsWith('/EDXSpectra/')),name=(layer.technique==='Layered Image'?layer.path.split('/').at(-1):layer.technique).replace(/Stored spectra/g,'Points');
   const section=el(native?'section':'details',undefined,native?'eds-data-group':undefined);
   if(!native)section.open=['EDS','Electron Image'].includes(layer.technique);
@@ -75,7 +80,6 @@ function renderAcquisition(index){
   if(!native)section.append(el('p',`${layer.state}${layer.grid_shape?` · ${dimensions(layer.grid_shape)} grid`:''}`,'hint'));
   for(const note of layer.notes)section.append(el('p',note,'eds-warning'));
   const buttonRow=compact||points,buttons=buttonRow?el('div',undefined,'eds-data-buttons'):section;if(buttonRow){buttons.setAttribute('role','group');buttons.setAttribute('aria-label',name);section.append(buttons)}
-  if(points)section.append(el('small','Preview not available yet','eds-group-note'));
   const channel=layer.signals.find(d=>/^\/(XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)),acquisitionId=channel?.attributes['Acquisition ID'];
   if(acquisitionId){const all=el('button','All','eds-item');all.type='button';all.title='View all elements';all.setAttribute('aria-label','View all elements');all.setAttribute('aria-pressed','false');all.dataset.analysisGroup=acquisitionId+':'+channel.path.split('/')[1];all.onclick=()=>openAnalysis(acquisitionId,false,channel.path.split('/')[1]);buttons.append(all)}
   let lastGroup='';for(const d of layer.signals){
@@ -83,9 +87,10 @@ function renderAcquisition(index){
    if(group!==lastGroup&&!native){section.append(el('p',group,'eds-group-label'));lastGroup=group}
    const symbol=label.split(' ')[0],shortLabel=points?pointLabel(label):compact?(channel&&layer.signals.filter(s=>s.attributes.Label?.split(' ')[0]===symbol).length===1?symbol:label.replace(/^Electron Image /,'Image ')):label;
    const b=el('button',shortLabel,'eds-item');b.type='button';b.dataset.path=d.path;b.setAttribute('aria-pressed','false');b.setAttribute('aria-label',points?shortLabel:label);if(buttonRow)b.title=label;
-   if(native){if(!previewable(d)&&!points)b.append(el('small','Preview not available yet'))}else b.append(el('small',`${dimensions(d.shape)}${d.attributes.Unit?` · ${d.attributes.Unit}`:''}`));
+   if(native){if(!previewable(d)&&!points&&!isSavedPreview(d))b.append(el('small','Preview not available yet'))}else b.append(el('small',`${dimensions(d.shape)}${d.attributes.Unit?` · ${d.attributes.Unit}`:''}`));
    b.onclick=()=>selectDataset(d);buttons.append(b);
   }
+  const sum=sums.get(acquisitionId);if(sum){const button=el('button','Sum','eds-item');button.type='button';button.dataset.path=sum.path;button.setAttribute('aria-pressed','false');button.setAttribute('aria-label',sum.attributes.Acquisition+' sum');button.title='Stored spectrum summed over the entire '+(channel.path.startsWith('/XrayMapImages/')?'map':'line');button.onclick=()=>selectDataset(sum);buttons.append(button)}
   (native&&!compact?unavailable:root).append(section);
  }
  if(native&&unavailableCount)root.append(unavailable);
@@ -127,6 +132,32 @@ function setLineCrop(path,extent){
  polygon.setAttribute('points',[[u0,v0],[u1,v0],[u1,v1],[u0,v1]].map(([u,v])=>`${x+u*dx-v*dy},${y+u*dy+v*dx}`).join(' '));
  polygon.setAttribute('aria-hidden','true');svg.querySelector('image').after(polygon);
 }
+function setLineCursor(path,fraction){
+ const svg=$('eds-site-canvas').querySelector('svg');if(!svg)return;
+ let cursor=svg.querySelector('.eds-line-position');
+ const region=state.site?.regions.find(r=>r.kind==='line'&&r.paths.includes(path));
+ if(!region||!Number.isFinite(fraction)){cursor?.remove();return}
+ const [[x,y],[x2,y2]]=region.points,dx=x2-x,dy=y2-y,length=Math.hypot(dx,dy);if(!length){cursor?.remove();return}
+ const t=Math.max(0,Math.min(1,fraction)),cx=x+t*dx,cy=y+t*dy;
+ // Keep the crossbar compact in screen pixels regardless of image resolution.
+ const half=7*state.site.geometry.width/(svg.getBoundingClientRect().width||320),nx=-dy/length*half,ny=dx/length*half;
+ if(!cursor){cursor=document.createElementNS('http://www.w3.org/2000/svg','line');cursor.classList.add('eds-line-position');cursor.setAttribute('aria-hidden','true');svg.append(cursor)}
+ for(const [key,value]of Object.entries({x1:cx-nx,y1:cy-ny,x2:cx+nx,y2:cy+ny}))cursor.setAttribute(key,value);
+}
+function placeLineLabel(node,points,w,h,unit){
+ const [[x,y],[x2,y2]]=points,dx=x2-x,dy=y2-y,length=Math.hypot(dx,dy);if(!length)return;
+ const tx=dx/length,ty=dy/length,nx=-ty,ny=tx,box=node.getBBox(),hw=box.width/2,hh=box.height/2,pad=5*unit;
+ const offset=Math.abs(nx)*hw+Math.abs(ny)*hh+8*unit;
+ // Try either side of the arrow near its start, then farther along at an edge.
+ let best;
+ for(const along of [Math.min(12*unit,length/2),length*.25,length*.5,length*.75])for(const side of [1,-1]){
+  const cx=x+tx*along+side*nx*offset,cy=y+ty*along+side*ny*offset;
+  const overflow=Math.max(0,pad+hw-cx)+Math.max(0,cx+hw+pad-w)+Math.max(0,pad+hh-cy)+Math.max(0,cy+hh+pad-h);
+  if(!best||overflow<best.overflow)best={cx,cy,overflow};
+ }
+ node.setAttribute('x',Math.max(pad+hw,Math.min(w-pad-hw,best.cx)));
+ node.setAttribute('y',Math.max(pad+hh,Math.min(h-pad-hh,best.cy))-(box.y+hh));
+}
 function drawSite(site){
  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg'),w=site.geometry.width,h=site.geometry.height,unit=Math.max(w,h)/320;
  svg.setAttribute('viewBox',`0 0 ${w} ${h}`);svg.setAttribute('aria-label','Electron image with acquisition regions');svg.classList.add('eds-site-svg');$('eds-site-canvas').append(svg);
@@ -137,7 +168,8 @@ function drawSite(site){
   if(region.kind==='rectangle'){make(group,'rect',{x,y,width:x2-x,height:y2-y,class:'eds-region-outline'});make(group,'rect',{x,y,width:x2-x,height:y2-y,class:'eds-region-hit'})}
   else if(region.kind==='point'){make(group,'circle',{cx:x,cy:y,r:5*unit,class:'eds-region-outline'});make(group,'path',{d:`M${x-9*unit},${y}h${18*unit} M${x},${y-9*unit}v${18*unit}`,class:'eds-region-outline'});make(group,'circle',{cx:x,cy:y,r:12*unit,class:'eds-region-hit'})}
   else{make(group,'line',{x1:x,y1:y,x2,y2,class:'eds-region-outline'});make(group,'line',{x1:x,y1:y,x2,y2,class:'eds-region-hit'});make(group,'circle',{cx:x,cy:y,r:3*unit,class:'eds-region-start'});const angle=Math.atan2(y2-y,x2-x);make(group,'path',{d:`M${x2},${y2}l${-10*unit*Math.cos(angle-.4)},${-10*unit*Math.sin(angle-.4)} M${x2},${y2}l${-10*unit*Math.cos(angle+.4)},${-10*unit*Math.sin(angle+.4)}`,class:'eds-region-outline'})}
-  const label=region.label.replace('Line Data ','L').replace('Map Data ','M').replace('Spectrum ','P');make(group,'text',{x:Math.min(w-30*unit,Math.max(6*unit,x+8*unit)),y:Math.max(15*unit,y-8*unit),class:'eds-region-label','font-size':12*unit},label);
+  const label=region.label.replace('Line Data ','L').replace('Map Data ','M').replace('Spectrum ','P'),text=make(group,'text',{x:Math.min(w-30*unit,Math.max(6*unit,x+8*unit)),y:Math.max(15*unit,y-8*unit),class:'eds-region-label','font-size':12*unit},label);
+  if(region.kind==='line'){text.setAttribute('x',0);text.setAttribute('y',0);text.setAttribute('text-anchor','middle');placeLineLabel(text,region.points,w,h,unit)}
   const button=el('button',pointLabel(region.label).replace('Line Data ','Line ').replace('Map Data ','Map '),'eds-region-key');button.type='button';button.dataset.region=region.id;button.style.setProperty('--region-colour',color);button.onclick=()=>choose(region);$('eds-site-regions').append(button);
  }
  highlightRegions();if(state.lineCrop)setLineCrop(state.lineCrop.path,state.lineCrop.extent);
@@ -146,7 +178,7 @@ async function preview(){
  if(!state.dataset)return;const version=++state.previewVersion;const d=state.dataset;$('eds-preview-busy').hidden=false;$('eds-preview-error').hidden=true;$('eds-preview').replaceChildren();$('eds-preview-note').textContent='';
  try{const result=await api('preview',{id:state.file.id,dataset:d.path,row:Number($('eds-row').value)-1,unsigned:$('eds-unsigned').checked});if(version!==state.previewVersion)return;
   $('eds-row-label').hidden=!result.rows;$('eds-row').max=result.rows||1;$('eds-unsigned-label').hidden=!result.unsigned_available;$('eds-preview-tools').hidden=!result.rows&&!result.unsigned_available;
-  if(result.shape)$('eds-dataset-info').textContent=`${dimensions(result.shape)}${result.shape.length===1?' samples':''}${result.unit?' · '+result.unit:''}`;const root=$('eds-preview');if(result.kind==='image'){const img=el('img');img.src=result.image;img.alt=`Stored preview of ${d.path}`;root.append(img)}else if(result.kind==='plot'){drawPlot(root,result)}else if(result.sample!==undefined||result.value!==undefined){root.append(table([['Stored values',result.sample??result.value]]))}else root.append(el('p',result.note,'hint'));
+  if(result.shape)$('eds-dataset-info').textContent=result.total_counts!==undefined?`${dimensions(result.shape)} channels · ${result.total_counts.toLocaleString()} counts · ${number(result.channel_width_ev)} eV/channel`:`${dimensions(result.shape)}${result.shape.length===1?' samples':''}${result.unit?' · '+result.unit:''}`;const root=$('eds-preview');if(result.kind==='image'){const img=el('img');img.src=result.image;img.alt=`Stored preview of ${d.path}`;root.append(img)}else if(result.kind==='plot'){drawPlot(root,result)}else if(result.sample!==undefined||result.value!==undefined){root.append(table([['Stored values',result.sample??result.value]]))}else root.append(el('p',result.note,'hint'));
   $('eds-preview-note').textContent=result.kind==='metadata'?'':result.note+(result.minimum!==undefined?` Range ${number(result.minimum)}–${number(result.maximum)}${result.unit?' '+result.unit:''}.`:'');
   $('eds-sample').replaceChildren();if(result.kind==='image'&&result.sample!==undefined){$('eds-sample').append(el('h3','First stored rows'),table([['Original values',result.sample]]))}
  }catch(error){if(version===state.previewVersion){$('eds-preview-error').textContent=error.message;$('eds-preview-error').hidden=false}}finally{if(version===state.previewVersion)$('eds-preview-busy').hidden=true}
@@ -173,6 +205,6 @@ $('eds-sources').onchange=e=>{if(e.target.value)browse(e.target.value)};$('eds-u
 $('eds-compare').onclick=()=>openAnalysis(null,true);
 $('eds-site-image').onchange=e=>loadSite(e.target.value);
 $('eds-catalogue').onclick=()=>{if(!state.file)return;const blob=new Blob([JSON.stringify(state.file.catalogue,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=state.file.catalogue.source.path.split(/[\\/]/).at(-1)+'.catalogue.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
-async function init(){try{const config=await api('config');state.token=config.token;$('eds-version').textContent=config.app_version;for(const source of config.sources||[]){const option=el('option',source.name||source.path);option.value=source.path;$('eds-sources').append(option)}const previous=saved();await browse(previous.folder||config.sources?.[0]?.path||'');if(previous.file)await openFile(previous.file,previous.dataset,previous.acquisition)}catch(error){status(error.message,true)}}
+async function init(){try{const config=await api('config');state.token=config.token;window.configureWorkbenchDiagnostics({send:body=>fetch('/api/diagnostics',{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body),keepalive:true}),context:()=>({workspace:'AZtec',file_path:state.file?.catalogue.source.path,site:state.acquisition?.label,dataset:state.dataset?.path})});$('eds-version').textContent=config.app_version;for(const source of config.sources||[]){const option=el('option',source.name||source.path);option.value=source.path;$('eds-sources').append(option)}const previous=saved();await browse(previous.folder||config.sources?.[0]?.path||'');if(previous.file)await openFile(previous.file,previous.dataset,previous.acquisition)}catch(error){status(error.message,true)}}
 init();
 })();

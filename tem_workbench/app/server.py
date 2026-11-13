@@ -823,6 +823,7 @@ def make_handler(app):
                 self.check_origin()
                 url=urlparse(self.path); query=parse_qs(url.query)
                 if url.path == '/api/aztec/config':
+                    LOG.info('AZtec viewer connected: version=%s', APP_VERSION)
                     self.send({'token': app.token, 'app_version': APP_VERSION,
                                'sources': app.engine.sources})
                 elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec.css'):

@@ -90,6 +90,24 @@ class AztecBrowserTests(unittest.TestCase):
         preview=self.browser.preview(opened['id'],'/EDXSpectra/'+self.ids['EDXSpectra'])
         self.assertEqual(preview['kind'],'metadata');self.assertNotIn('y',preview)
 
+    def test_native_point_counts_calibration_and_truncation(self):
+        ident=self.ids['EDXSpectra'];label=b'Sum spectrum'
+        counts=np.array([0, 3, 70000, 5],dtype='<i4')
+        payload=(struct.pack('<I',2)+uuid.UUID(ident).bytes_le+struct.pack('<I',1)+b'\0'
+                 +bytes([len(label)])+label+struct.pack('<I',len(counts))+counts.tobytes()
+                 +struct.pack('<dd',10.,-200.)+b'\1'*4)
+        def store(data):
+            with closing(sqlite3.connect(self.path)) as con, con:
+                con.execute('UPDATE EDXSpectra SET ObjectBlob=?',(blob(data),))
+        store(payload)
+        result=NativeProjectReader(self.path).preview('/EDXSpectra/'+ident)
+        np.testing.assert_array_equal(result['y'],counts)
+        np.testing.assert_allclose(result['x'],[-.2,-.19,-.18,-.17])
+        self.assertEqual(result['total_counts'],70008)
+        store(payload[:-1])
+        with self.assertRaisesRegex(AztecReadError,'truncated'):
+            NativeProjectReader(self.path).preview('/EDXSpectra/'+ident)
+
     def test_changed_project_and_companion_require_reopen(self):
         reader=NativeProjectReader(self.path);reader.inspect()
         target=self.root/'data'/f"{self.ids['XrayMapImages']}.dat"

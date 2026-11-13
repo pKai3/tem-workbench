@@ -4,6 +4,7 @@ from io import BytesIO
 from pathlib import Path
 import base64
 import math
+import logging
 import threading
 import uuid
 
@@ -11,8 +12,11 @@ import numpy as np
 from PIL import Image
 
 from tem_workbench.storage import folder_paths
+from tem_workbench.runtime.diagnostics import compact
 from .h5oina import H5OinaReader, AztecReadError, MAX_READ_BYTES
 from .native import NativeProjectReader
+
+LOG = logging.getLogger('tem_workbench.aztec')
 
 
 class AztecBrowser:
@@ -34,10 +38,12 @@ class AztecBrowser:
                                       kind=child.suffix[1:].upper()))
             except OSError:
                 continue
+        LOG.info('AZtec folder: %s · %s files · %s subfolders', compact(listing['path']), len(files), len(listing['directories']))
         return {**listing, 'files': sorted(files, key=lambda f: (f['kind'] == 'H5OINA', f['name'].casefold()))}
 
     def open(self, path):
         path = Path(path).expanduser().resolve()
+        LOG.info('AZtec opening read-only: %s', compact(str(path)))
         if path.suffix.lower() in ('.oip', '.oipx'):
             reader = NativeProjectReader(path)
             catalogue = reader.inspect()
@@ -51,6 +57,7 @@ class AztecBrowser:
             self._readers[key] = reader
             while len(self._readers) > 4:
                 self._readers.popitem(last=False)
+        LOG.info('AZtec opened %s: %s sites/acquisitions · %s datasets', compact(str(path)), len(catalogue['acquisitions']), len(catalogue['datasets']))
         return {'id': key, 'catalogue': catalogue, 'folder': str(path.parent)}
 
     def preview(self, key, path, row=0, unsigned=False):
@@ -59,6 +66,7 @@ class AztecBrowser:
             if reader is None:
                 raise AztecReadError('Reopen the file to inspect its contents.')
             self._readers.move_to_end(key)
+        LOG.info('AZtec preview: %s · %s · row=%s · unsigned=%s', compact(str(reader.path)), compact(path), row, unsigned)
         if isinstance(reader, NativeProjectReader):
             result = reader.preview(path)
             if result['kind'] == 'image':
@@ -160,6 +168,9 @@ class AztecBrowser:
         if not isinstance(reader, NativeProjectReader):
             return dict(images=[], regions=[], note='Site overlays are currently available for native OIPX projects.')
         result = reader.site(site_id, image_path)
+        catalogue = reader.inspect()
+        label = next(a['label'] for a in catalogue['acquisitions'] if a['index'] == site_id)
+        LOG.info('AZtec site: %s · %s · %s regions · %s unplaced', compact(str(reader.path)), compact(label), len(result.get('regions', [])), len(result.get('unpositioned', [])))
         if result.get('image_path'):
             result['preview'] = self.preview(key, result['image_path'])
         return result
@@ -170,7 +181,15 @@ class AztecBrowser:
             reader=self._readers.get(key)
         if not isinstance(reader,NativeProjectReader):
             raise AztecReadError('Open a native OIPX project for acquisition views.')
-        return acquisition_views(reader,options)
+        result = acquisition_views(reader,options)
+        for row in result['rows']:
+            LOG.info('AZtec processed: %s · %s · %s channels · view=%s · denominator=%s · normalize=%s · smoothing=%s',
+                     compact(str(reader.path)), compact(row['label']), len(row['tiles']), result['mode'], compact(options.get('denominator')), result['normalisation'], result['smoothing'])
+            for tile in row['tiles']:
+                for field in ('error', 'ratio_error'):
+                    if tile.get(field):
+                        LOG.warning('AZtec channel unavailable: %s · %s · %s', compact(row['label']), compact(tile['label']), compact(tile[field]))
+        return result
 
 
 def numeric(values):

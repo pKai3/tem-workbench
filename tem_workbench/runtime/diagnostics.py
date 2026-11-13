@@ -7,7 +7,9 @@ LOG = logging.getLogger('tem_workbench')
 FIELDS = {'id','job_id','file_id','file_ids','source_id','name','roi','settings','options',
           'fit_options','component','overlap','workers','count','adaptive','minimum_nm',
           'index','model','models','components','side','format','image_kind','png_views',
-          'export_png','summary_folders','flatten_folders','view','path','output_root'}
+          'export_png','summary_folders','flatten_folders','view','path','output_root',
+          'dataset','site','image','row','unsigned','acquisitions','signals','channel_table',
+          'mode','denominator','normalisation','smoothing','brightness','low','high','upper','layout','raw','background'}
 
 
 def compact(value, depth=0):
@@ -44,6 +46,6 @@ def browser_events(body):
         if not isinstance(event,dict):raise ValueError('Invalid diagnostic event.')
         kind=event.get('kind')
         if kind not in ('action','change','error','rejection','connection'):raise ValueError('Invalid diagnostic event kind.')
-        fields={k:compact(event[k]) for k in ('control','value','file_id','message','stack') if k in event}
+        fields={k:compact(event[k]) for k in ('control','value','file_id','message','stack','workspace','file_path','site','dataset') if k in event}
         (LOG.error if kind in ('error','rejection') else LOG.info)('Viewer %s: %s',kind,json.dumps(fields,ensure_ascii=False))
     return {'logged':len(events)}

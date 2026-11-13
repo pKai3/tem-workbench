@@ -1,9 +1,21 @@
 # AZtec reader foundation
 
-This branch provisions data access for an EDS point, line and map workspace.
-There is no new browser interface yet. The application must retain original
-values and let users choose signals and processing explicitly. Planned work and
+The `/eds` workspace browses native OIPX projects and optional H5OINA files,
+with stored point spectra, element/ratio maps and line/image overlays. It retains
+original values and lets users choose signals and processing explicitly. Planned work and
 priorities live in [the implementation plan](implementation-plan.md).
+
+`NativeProjectReader` reads supported OIPX records without deserializing .NET
+objects. Stored spectrum blobs are matched by UUID and label; verified versions
+2 and 3 contain signed 32-bit nonnegative counts and a channel-width/offset pair
+in eV. The plot uses that saved axis in keV. Unknown layouts retain metadata;
+truncated or invalid supported records are rejected. All 38 spectra in the
+inspected TEM project decode, including six named points, saved preview spectra
+and existing sums. The Line 1 sum exactly matches all 2,048 channels summed from
+its H5OINA export. The native saved axis and the export's refined calibration
+differ slightly; matching counts does not establish identical energy axes.
+Raw line/map event streams and arbitrary region spectrum extraction remain
+undecoded. Legacy OIP is not yet supported.
 
 ## What works
 
@@ -49,6 +61,27 @@ virtual and linked payloads are not automatically loaded.
 spectra without loading the whole dataset at once. It retains every row; the
 per-read memory limit is not a limit on acquisition size or access to the data.
 
+## Line spatial-structure check
+
+The line viewer adapts the earlier `analyse_joint_elements.py` shuffle check.
+It compares the smoothed profile's relative standard deviation (SD/mean) with
+the median from 256 deterministic shuffles. Numerator and denominator samples
+move together, preserving their within-sample relationship; both are smoothed
+before division, matching the viewer. This intentionally differs from the old
+report's smooth-log-ratio operation. Exclude 3σ at each end, require at least 16
+interior samples, and report unavailable for undefined ratios or a zero shuffled
+baseline. Process permutations in bounded batches.
+
+The displayed multiplier is observed variation / typical shuffled variation.
+Values near 1 mean random ordering can produce similar smooth variation. The
+expanded readout includes the shuffled 95th percentile as a model reference.
+This is an exploratory check of spatial ordering, **not** a confidence interval,
+fraction of noise or proof of segregation. Spatially correlated measurement
+errors, drift and thickness also produce ordering. Display gain and scalar
+normalization cancel from the metric. Formal counting uncertainty is deferred
+until exposure, background/deconvolution and covariance are established; see
+[NIST's uncertainty propagation guidance](https://www.nist.gov/pml/nist-technical-note-1297/nist-tn-1297-appendix-law-propagation-uncertainty).
+
 ## Data distinctions to preserve in the interface
 
 - **Raw spectra and exported profiles/maps can have different grids.** The
@@ -88,12 +121,10 @@ strict JSON and non-overwriting catalogue export.
 
 Read-only checks of 21 actual exports (15 TEM EDS, six SEM EBSD) verify 376 numeric
 slices and 361 full scalar/image grids exactly against direct HDF5 reads, plus
-energy axes for all 15 EDS files. No real point export was supplied; point-spectrum
-access currently has synthetic coverage only. These are extraction checks, not
+energy axes for all 15 EDS files. No real point H5OINA export was supplied;
+native point spectra are inspected as described above. These are extraction checks, not
 validation of quantification or phase interpretation.
 
-Next EDS work: source/acquisition browsing in Workbench, linked image/spectrum/
-profile views, explicit raw-to-binned coordinate mapping, signal/ratio selection,
-processing recipes and data/image export. Native OIP/OIPX decoding remains
-separate and must be checked against H5OINA references before it is exposed as
-supported. No EBSD re-indexing or live instrument control is provisioned.
+Remaining EDS work includes raw-to-binned coordinate mapping, raw region spectra,
+processing recipes and data/image export; priorities remain in the implementation
+plan. No EBSD re-indexing or live instrument control is provisioned.

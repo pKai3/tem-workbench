@@ -240,10 +240,34 @@ class NativeProjectReader:
             raise AztecReadError('Choose an item in this project.')
         base = {'path': path, 'kind': 'metadata', 'note': 'Stored record identified. Numerical preview is not decoded for this record type yet.'}
         table = record['table']
-        if table not in ('XrayLinescans', 'QuantLinescans', 'ElectronImages', 'XrayMapImages'):
+        if table not in ('XrayLinescans', 'QuantLinescans', 'ElectronImages', 'XrayMapImages', 'EDXSpectra'):
             return base
         data = self.record_blob(record)
         for payload in blob_payloads(data):
+            if table == 'EDXSpectra':
+                # The spectrum's own blob is distinguished from embedded detector,
+                # strobe and peak-label blobs by its UUID and saved label.
+                if len(payload) < 30 or str(uuid.UUID(bytes_le=payload[4:20])) != record['id']:
+                    continue
+                version = struct.unpack_from('<I', payload)[0]
+                if version not in (2, 3) or payload[24] != 0:
+                    continue
+                label, offset = native_string(payload, 25)
+                if label != record['Label'] or offset + 4 > len(payload):
+                    continue
+                count = struct.unpack_from('<I', payload, offset)[0]
+                end = offset + 4 + count * 4
+                if not 1 <= count <= 16384 or len(payload) - end != {2: 20, 3: 129}[version]:
+                    raise AztecReadError('Unsupported or truncated native point spectrum.')
+                values = np.frombuffer(payload, '<i4', count, offset + 4).copy()
+                channel_ev, offset_ev = struct.unpack_from('<dd', payload, end)
+                if np.any(values < 0) or not np.isfinite([channel_ev, offset_ev]).all() or channel_ev <= 0:
+                    raise AztecReadError('Invalid native spectrum counts or channel calibration.')
+                return {**base, 'kind': 'plot', 'x': ((offset_ev + np.arange(count) * channel_ev) / 1000).tolist(),
+                        'y': values, 'shape': [count], 'dtype': '<i4', 'unit': 'counts',
+                        'x_label': 'Energy, keV', 'y_label': 'Counts', 'total_counts': int(values.sum()),
+                        'channel_width_ev': channel_ev, 'energy_offset_ev': offset_ev,
+                        'note': 'Stored counts and channel energy calibration. No smoothing, background subtraction or elemental identification.'}
             if table in ('XrayLinescans', 'QuantLinescans'):
                 if len(payload) < 30 or str(uuid.UUID(bytes_le=payload[4:20])) != record['id']:
                     continue
@@ -289,4 +313,6 @@ class NativeProjectReader:
                 raise SourceChangedError('Companion data changed during reading; reopen the project.')
             return {**base, 'kind': 'image', 'array': values, 'shape': [height, width], 'dtype': dtype, 'unit': 'cps' if kind == 4 else 'Stored intensity',
                     'note': 'Native full-resolution array; linear greyscale preview. No smoothing, rebinning or alignment.'}
+        if table == 'EDXSpectra':
+            return base
         raise AztecReadError('Native record differs from the validated image/profile encoding; preview withheld.')

@@ -7,10 +7,10 @@ from PIL import Image
 from matplotlib import colormaps
 
 from .h5oina import AztecReadError
-from .processing import ELEMENT_COLOURS, FWHM_PER_SIGMA, horizontal_crop, signal_view
+from .processing import ELEMENT_COLOURS, FWHM_PER_SIGMA, horizontal_crop, signal_view, spatial_structure
 
 
-def png(values, *, low=None, high=None, colour=None, diverging=False):
+def png(values, *, low=None, high=None, colour=None, diverging=False, opacity=None):
     values=np.asarray(values,float);finite=values[np.isfinite(values)]
     low=float(np.percentile(finite,1)) if low is None and finite.size else float(low or 0)
     high=float(np.percentile(finite,99)) if high is None and finite.size else float(high or 1)
@@ -22,7 +22,9 @@ def png(values, *, low=None, high=None, colour=None, diverging=False):
         rgb=np.uint8(scaled[...,None]*channels)
     else:
         rgb=np.repeat(np.uint8(scaled*255)[...,None],3,axis=-1)
-    rgba=np.dstack([rgb,np.where(np.isfinite(values),255,0).astype(np.uint8)])
+    alpha=np.isfinite(values).astype(float)
+    if opacity is not None:alpha*=np.nan_to_num(np.clip(opacity,0,1))
+    rgba=np.dstack([rgb,np.uint8(alpha*255)])
     image=Image.fromarray(rgba);image.thumbnail((1200,1200),Image.Resampling.BILINEAR)
     out=BytesIO();image.save(out,format='PNG')
     return 'data:image/png;base64,'+base64.b64encode(out.getvalue()).decode()
@@ -110,15 +112,25 @@ def acquisition_views(reader, options):
             except ValueError as error:
                 # A zero baseline in one sparse channel must not hide valid channels.
                 return None, str(error)
-        def map_image(result, colour):
-            # Keep the display scale fixed when smoothing spreads sparse pixels.
-            # Re-stretching each smoothed map to its own P99 caused a brightness jump.
-            reference=result['raw'][np.isfinite(result['raw'])]
-            reference_high=float(np.percentile(reference,99)) if reference.size else 1.
-            if reference_high<=0:
-                reference_high=max(float(np.max(reference)),1.) if reference.size else 1.
+        denominator_mean=None;ratio_opacity=None
+        if kind=='map' and den_record is not None:
+            denominator_mean=float(np.mean(values(den_record)))
+            smoothed_denominator=signal_view(values(den_record),sigma=sigma)['values']
+            # Display only: fade near-empty denominator sites, not ordinary spatial
+            # variations/depletion. This 10% floor is a display safeguard, not a
+            # statistical confidence threshold. Numerical ratios remain unchanged.
+            ratio_opacity=np.clip(smoothed_denominator/(.1*denominator_mean),0,1) if denominator_mean>0 else np.zeros_like(smoothed_denominator)
+        def map_image(result, colour, record, ratio=False):
+            # Use the numerator's fixed exposure for both rows. A ratio's exposure is
+            # expressed in ratio units using the same acquisition-wide denominator mean.
+            # Sparse raw pixel ratios are not a meaningful exposure reference.
+            reference=values(record)
+            reference_high=float(np.percentile(reference,99))
+            if reference_high<=0:reference_high=max(float(np.max(reference)),1.)
+            if ratio:reference_high=reference_high/denominator_mean if denominator_mean>0 else 1.
             return png(result['values'], low=low if norm!='none' else 0,
-                       high=high if norm!='none' else reference_high, colour=colour, diverging=norm!='none')
+                       high=high if norm!='none' else reference_high, colour=colour, diverging=norm!='none',
+                       opacity=ratio_opacity if ratio else None)
         for i,record in enumerate(channels):
             element=record['Label'].split()[0]
             if selected and record['Label'] not in selected and element not in selected:continue
@@ -129,17 +141,18 @@ def acquisition_views(reader, options):
             tile=dict(label=label,colour=colour,path=record['path'])
             result,error=process_channel(record,den)
             if error:tile['error']=error
-            elif kind=='map':tile.update(image=map_image(result,colour),baseline=result['baseline'])
+            elif kind=='map':tile.update(image=map_image(result,colour,record,den is not None),baseline=result['baseline'])
             else:
                 vals=result['values'];finite=vals[np.isfinite(vals)]
                 ymax=upper if mode=='ratio' and norm=='none' else max(1e-12,float(np.max(finite))*1.1) if finite.size else 1
                 tile.update(x=np.linspace(0,length,len(vals)).tolist(),y=finite_list(vals),raw=finite_list(result['raw']),
                             maximum=ymax,baseline=result['baseline'],unit=('Relative composition' if composition else 'Relative signal') if norm!='none' else ('Composition ratio' if composition else 'Signal ratio') if den is not None else units[record['path']])
+                tile['noise_check']=spatial_structure(values(record),den,sigma=sigma)
             if kind=='map' and mode=='both' and record is not den_record:
                 tile['ratio_label']=record['Label']+' / '+den_record['Label']
                 ratio,ratio_error=process_channel(record,values(den_record))
                 if ratio_error:tile['ratio_error']=ratio_error
-                else:tile.update(ratio_image=map_image(ratio,colour),ratio_baseline=ratio['baseline'])
+                else:tile.update(ratio_image=map_image(ratio,colour,record,True),ratio_baseline=ratio['baseline'])
             row['tiles'].append(tile)
         rows.append(row)
     return dict(rows=rows,mode=mode,normalisation=norm,smoothing=smoothing,low=low,high=high,

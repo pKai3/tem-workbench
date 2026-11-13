@@ -51,6 +51,53 @@ def signal_view(numerator, denominator=None, *, sigma=0, normalisation='none'):
     return dict(raw=raw/baseline, values=filtered/baseline, baseline=baseline, mask=mask)
 
 
+def spatial_structure(numerator, denominator=None, *, sigma=0, permutations=256):
+    """Exploratory shuffle check adapted from analyse_joint_elements.py.
+
+    Shuffle paired channels, then replay smoothing-before-division. This asks
+    about spatial ordering, not photon uncertainty or the fraction of noise.
+    Relative standard deviation makes the result independent of display gain
+    and normalization. Preserve correlations between channels at each sample.
+    """
+    if sigma <= 0:
+        return {'available': False, 'reason': 'Use nonzero smoothing to check spatial structure.'}
+    a = np.asarray(numerator, dtype=float)
+    b = None if denominator is None else np.asarray(denominator, dtype=float)
+    if a.ndim != 1 or not np.isfinite(a).all() or (b is not None and (b.shape != a.shape or not np.isfinite(b).all())):
+        return {'available': False, 'reason': 'A complete finite line profile is required.'}
+    edge = int(np.ceil(3*sigma))
+    if a.size - 2*edge < 16:
+        return {'available': False, 'reason': 'Too few interior samples at this smoothing width; reduce smoothing.'}
+
+    def variation(x, y=None):
+        x = gaussian_filter1d(x, sigma, axis=-1, mode='reflect')
+        if y is not None:
+            y = gaussian_filter1d(y, sigma, axis=-1, mode='reflect')
+            x = np.divide(x, y, out=np.full_like(x, np.nan), where=y > 0)
+        x = x[..., edge:-edge]
+        mean = np.mean(x, axis=-1)
+        return np.divide(np.std(x, axis=-1), mean, out=np.full_like(mean, np.nan), where=mean > 0)
+
+    observed = float(variation(a, b))
+    if not np.isfinite(observed):
+        return {'available': False, 'reason': 'Undefined ratio or nonpositive mean in the interior; no reliable shuffle comparison.'}
+    # Bounded batches avoid a large samples × permutations array for long scans.
+    rng = np.random.default_rng(20261113)
+    shuffled = []
+    for first in range(0, permutations, 16):
+        indices = np.asarray([rng.permutation(a.size) for _ in range(min(16, permutations-first))])
+        shuffled.extend(variation(a[indices], None if b is None else b[indices]).tolist())
+    shuffled = np.asarray(shuffled)
+    if not np.isfinite(shuffled).all():
+        return {'available': False, 'reason': 'Shuffled ratios include empty denominator regions; comparison unavailable.'}
+    typical = float(np.median(shuffled))
+    if typical <= np.finfo(float).eps:
+        return {'available': False, 'reason': 'No measurable shuffled variation; structure ratio is undefined.'}
+    return dict(available=True, observed_cv=observed, shuffled_cv=typical,
+                structure_ratio=observed/typical, shuffled_95=float(np.percentile(shuffled,95)),
+                permutations=permutations, interior_samples=a.size-2*edge)
+
+
 def horizontal_crop(image, start, end, *, width=1200, pad=.035, top=.23, bottom=.23):
     """Rotate start-to-end and centre the crop on the physical scan path."""
     a = np.asarray(image, dtype=float)
