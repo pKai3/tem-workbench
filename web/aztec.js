@@ -2,8 +2,8 @@
 (() => {
 'use strict';
 const $=id=>document.getElementById(id);
-const state={token:'',listing:null,file:null,acquisition:null,dataset:null,site:null,analysisGroup:null,lineCrop:null,folderVersion:0,fileVersion:0,previewVersion:0,siteVersion:0};
-let project='',sources=[],restoring=false,projectVersion=0;
+const state={token:'',listing:null,file:null,acquisition:null,dataset:null,site:null,analysisGroup:null,lineCrop:null,folderVersion:0,files:[],fileVersion:0,previewVersion:0,siteVersion:0};
+let project='',sources=[],restoring=false,projectVersion=0,config;
 const saved=()=>{try{return JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-browser')||'{}')}catch{return {}}};
 function remember(){
  if(restoring)return;
@@ -39,23 +39,42 @@ function table(entries){const node=el('table',undefined,'eds-metadata-table');co
 async function api(action,body){const response=await fetch(`/api/aztec/${action}`,body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body)}:{});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
 const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions,setLineCrop,setLineCursor,setMapCursor,remember});
 function openAnalysis(id,comparison=false,channelTable){clearPreview();analysis.open(id,comparison,channelTable);remember()}
-function renderFiles(){
- const root=$('eds-files');root.replaceChildren();const listing=state.listing;if(!listing)return;
- const query=$('eds-filter').value.toLowerCase();
- for(const folder of listing.directories.filter(f=>f.name.toLowerCase().includes(query))){const b=el('button',`▸ ${folder.name}`,'eds-entry');b.type='button';b.onclick=()=>browse(folder.path);root.append(b)}
- for(const file of listing.files.filter(f=>f.name.toLowerCase().includes(query))){const b=el('button',file.name,'eds-entry');b.type='button';b.setAttribute('aria-current',String(file.path===state.file?.catalogue.source.path));b.append(el('small',`${size(file.size)} · ${file.kind==='H5OINA'?'H5OINA · optional export':file.supported?'Native project':'Legacy project · reader pending'}`));b.disabled=!file.supported;b.onclick=()=>openFile(file.path);root.append(b)}
- if(!root.childElementCount)root.append(el('p',query?'No matching files or folders.':'No AZtec files or subfolders here.','hint'));
+async function sharedApi(action,body){const response=await fetch(`/api/${action}`,{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
+const folderBrowser=WorkbenchProjectTools.browser(sharedApi);
+const projectSettings=WorkbenchProjectTools.sources({api:sharedApi,getConfig:()=>config,chooseFolder:target=>folderBrowser.choose(target),
+ onRename:async data=>{config.sources=data.sources;await updateProjects();await scanFiles()},
+ onSave:async data=>{remember();config={...config,...data};await updateProjects();projectSettings.render();await changeProject(project)}});
+async function updateProjects(){
+ sources=config.sources||[];await WorkbenchWorkspace.configure(config);
+ $('eds-sources').replaceChildren(new Option('All projects',''));for(const source of sources)$('eds-sources').add(new Option(source.name||source.path,source.id));
+ if(!sources.some(s=>s.id===project))project='';$('eds-sources').value=project;
 }
-async function browse(path){
- const version=++state.folderVersion;status('Reading folder…');
- try{const listing=await api('browse',{path,project});if(version!==state.folderVersion)return;state.listing=listing;$('eds-path').value=listing.path;$('eds-up').disabled=listing.parent===listing.path;$('eds-filter').value='';$('eds-file-browser').open=true;renderFiles();remember();status(`${listing.files.filter(f=>f.supported).length} readable files · ${listing.directories.length} folders`)}catch(error){if(version===state.folderVersion)status(error.message,true)}
+function renderFileChoice(){
+ const path=state.file?.catalogue.source.path;$('eds-current-file').textContent=path?path.split(/[\\/]/).at(-1):'Choose file…';$('eds-current-file').title=path||'';$('eds-sites-empty').hidden=!!state.file;
+}
+function renderFiles(){
+ const host=$('eds-files'),query=$('eds-filter').value.toLowerCase();host.replaceChildren();
+ const matches=state.files.filter(f=>(f.relative_path+' '+f.project).toLowerCase().includes(query));
+ $('eds-file-count').textContent=String(state.files.length);
+ for(const file of matches){
+  const button=el('button',undefined,'eds-entry'),name=el('span',file.name,'eds-file-name');button.type='button';button.append(name);
+  const folder=file.relative_path.split(/[\\/]/).slice(0,-1).join(' / '),context=[project?'':file.project,folder].filter(Boolean).join(' / ');
+  if(context)button.append(el('small',context));button.title=file.path;button.setAttribute('aria-current',String(file.path===state.file?.catalogue.source.path));button.onclick=()=>openFile(file.path);host.append(button);
+ }
+ if(!matches.length)host.append(el('p',query?'No matching files.':'No supported AZtec files found. Choose another project or check its source folder in Project settings.','hint'));
+}
+async function scanFiles(){
+ const version=++state.folderVersion;$('eds-rescan').disabled=true;$('eds-scan-status').textContent='Scanning project…';
+ try{const listing=await api('files',{project});if(version!==state.folderVersion)return;state.files=listing.files;renderFiles();$('eds-scan-status').textContent=listing.errors.join(' · ');$('eds-scan-status').classList.toggle('eds-warning',!!listing.errors.length)}
+ catch(error){if(version===state.folderVersion)$('eds-scan-status').textContent=error.message}
+ finally{if(version===state.folderVersion)$('eds-rescan').disabled=false}
 }
 async function openFile(path,restoreDataset,restoreAcquisition,restoreComparison,restoreTable,bookmark={}){
  const owner=WorkbenchWorkspace.projectForPath(path);if(project&&owner!==project){remember();project=owner;$('eds-sources').value=project;WorkbenchWorkspace.set('active_project',project)}
  const version=++state.fileVersion;++state.previewVersion;status('Reading file contents…');
  try{const file=await api('open',{path});if(version!==state.fileVersion)return;state.file=file;const c=file.catalogue;$('eds-empty').hidden=true;$('eds-file').hidden=false;$('eds-file-info').textContent=`${c.source.path.split(/[\\/]/).at(-1)} · ${size(c.source.size)} · ${c.file_type} ${c.format_version}${c.software_version?' · AZtec '+c.software_version:''}`;
   const restored=c.acquisitions.find(a=>a.index===restoreAcquisition)||c.acquisitions.find(a=>a.layers.some(l=>l.signals.some(d=>d.path===restoreDataset)));
-  $('eds-compare').hidden=!analysis.groups().some(g=>g.kind==='map');$('eds-compare-lines').hidden=!analysis.groups().some(g=>g.kind==='line');renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();renderFiles();remember();if(file.folder!==state.listing?.path)await browse(file.folder);if(version!==state.fileVersion)return;$('eds-file-browser').open=false;status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
+  $('eds-compare').hidden=!analysis.groups().some(g=>g.kind==='map');$('eds-compare-lines').hidden=!analysis.groups().some(g=>g.kind==='line');renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();state.listing={path:file.folder};renderFileChoice();renderFiles();remember();status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
   const target=state.acquisition?.layers.flatMap(l=>l.signals).find(d=>d.path===restoreDataset);if(['map','line'].includes(restoreComparison)){analysis.open(null,restoreComparison,restoreTable);remember()}else if(bookmark.analysisGroup){const [id,table]=bookmark.analysisGroup.split(':');openAnalysis(id,false,table)}else if(target)selectDataset(target);
   if(bookmark.image)await loadSite(bookmark.image);
  }catch(error){if(version===state.fileVersion)status(error.message,true)}
@@ -220,33 +239,40 @@ function metadata(){
  for(const layer of state.acquisition?.layers||[]){root.append(el('h3',layer.path),table(Object.entries(layer.header).map(([key,d])=>[key,`${d.value===null?dimensions(d.shape):valueText(d.value)}${d.attributes.Unit?' '+d.attributes.Unit:''}`])))}
  const all=el('details');all.append(el('summary',`All datasets (${c.datasets.length})`));all.addEventListener('toggle',()=>{if(!all.open||all.childElementCount>1)return;for(const d of c.datasets){const b=el('button',`${d.path} · ${dimensions(d.shape)}`,'eds-item');b.type='button';b.onclick=()=>{selectDataset(d);$('eds-dataset-title').scrollIntoView({block:'nearest'})};all.append(b)}});root.append(all);
 }
-$('eds-location').onsubmit=e=>{e.preventDefault();const path=$('eds-path').value.trim();if(/\.(h5oina|oipx?)$/i.test(path))openFile(path);else browse(path)};
-$('eds-sources').onchange=e=>changeProject(e.target.value);$('eds-up').onclick=()=>browse(state.listing?.parent);$('eds-home').onclick=()=>browse('');$('eds-filter').oninput=renderFiles;$('eds-row').onchange=preview;$('eds-unsigned').onchange=preview;$('eds-metadata').ontoggle=()=>{if($('eds-metadata').open)metadata()};
+$('eds-rescan').onclick=scanFiles;
+$('eds-filter').oninput=renderFiles;
+$('eds-row').onchange=preview;
+$('eds-unsigned').onchange=preview;
+$('eds-metadata').ontoggle=()=>{if($('eds-metadata').open)metadata()};
+$('eds-project-settings').onclick=()=>{$('eds-project-dialog').showModal()};
+$('eds-project-close').onclick=()=>$('eds-project-dialog').close();
+$('eds-sources').onchange=e=>changeProject(e.target.value);
 $('eds-compare').onclick=()=>openAnalysis(null,'map');
 $('eds-compare-lines').onclick=()=>openAnalysis(null,'line');
 $('eds-site-image').onchange=e=>loadSite(e.target.value);
-$('eds-catalogue').onclick=()=>{if(!state.file)return;const blob=new Blob([JSON.stringify(state.file.catalogue,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=state.file.catalogue.source.path.split(/[\\/]/).at(-1)+'.catalogue.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+$('eds-catalogue').onclick=async()=>{if(!state.file)return;const button=$('eds-catalogue');button.disabled=true;status('Saving catalogue…');try{const saved=await api('export',{id:state.file.id,format:'catalogue'});status('Saved: '+saved.path)}catch(error){status(error.message,true)}finally{button.disabled=false}};
 async function changeProject(id){
  const version=++projectVersion;remember();project=id;WorkbenchWorkspace.set('active_project',project);$('eds-sources').value=project;
  const bookmark=WorkbenchWorkspace.bookmark(project,'aztec');restoring=true;
  ++state.fileVersion;++state.folderVersion;++state.siteVersion;++state.previewVersion;
  analysis.close();state.file=null;state.acquisition=null;state.dataset=null;state.site=null;state.listing=null;
- $('eds-file').hidden=true;$('eds-empty').hidden=false;$('eds-acquisitions').replaceChildren();$('eds-files').replaceChildren();
+ $('eds-file').hidden=true;$('eds-empty').hidden=false;$('eds-acquisitions').replaceChildren();state.files=[];$('eds-files').replaceChildren();$('eds-filter').value='';renderFileChoice();
  try{
-  await browse(bookmark.folder||sources.find(s=>s.id===project)?.path||'');
-  if(version!==projectVersion)return;
-  if(bookmark.file)await openFile(bookmark.file,bookmark.dataset,bookmark.acquisition,bookmark.comparison,bookmark.comparisonTable,bookmark);
+  state.listing={path:bookmark.folder||sources.find(s=>s.id===project)?.path||''};status('Choose an AZtec file.');
+  await scanFiles();if(version!==projectVersion)return;
+  if(bookmark.file&&state.files.some(file=>file.path===bookmark.file))await openFile(bookmark.file,bookmark.dataset,bookmark.acquisition,bookmark.comparison,bookmark.comparisonTable,bookmark);
+  else if(state.files.length===1)await openFile(state.files[0].path);
  }finally{if(version===projectVersion){restoring=false;remember()}}
 }
 async function init(){try{
- const config=await api('config');state.token=config.token;sources=config.sources||[];
+ config=await api('config');state.token=config.token;sources=config.sources||[];
  await WorkbenchWorkspace.configure(config);
  window.configureWorkbenchDiagnostics({send:body=>fetch('/api/diagnostics',{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body),keepalive:true}),context:()=>({workspace:'AZtec',file_path:state.file?.catalogue.source.path,site:state.acquisition?.label,dataset:state.dataset?.path})});
  $('eds-version').textContent=config.app_version;
  const previous=saved(),owner=WorkbenchWorkspace.projectForPath(previous.file||previous.folder);
  if(previous.file&&!WorkbenchWorkspace.bookmark(owner,'aztec').file)WorkbenchWorkspace.remember(owner,'aztec',previous);
  const active=WorkbenchWorkspace.get('active_project',owner),id=sources.some(s=>s.id===active)?active:'';
- for(const source of sources){const option=el('option',source.name||source.path);option.value=source.id;$('eds-sources').append(option)}
+ await updateProjects();projectSettings.render();
  // Do not replace a remembered project with the initial empty viewer.
  project=id;restoring=true;await changeProject(id);
  }catch(error){restoring=false;status(error.message,true)}}

@@ -688,6 +688,36 @@ class Workbench:
         LOG.info('Exported real-space crop: %s', target)
         return {'path': str(target)}
 
+    def export_aztec(self, body):
+        from tem_workbench.aztec.export import save_export
+        source = self.aztec.source_path(body['id'])
+        with self.lock:
+            output = folder_paths.output_folder(self.engine.sources, self.config['output_root'], path=source)
+        kind = body.get('format')
+        if kind == 'data':
+            result = self.aztec.process(body['id'], {**body, 'export_data': True})
+            raw = base64.b64decode(result['data'], validate=True)
+            suffix, label = 'zip', 'data'
+        elif kind == 'catalogue':
+            raw = json.dumps(self.aztec.catalogue(body['id']), ensure_ascii=False, indent=2).encode()
+            suffix, label = 'json', 'catalogue'
+        elif kind == 'png':
+            frame = body.get('image')
+            if not isinstance(frame, str) or not frame.startswith('data:image/png;base64,'):
+                raise ValueError('Expected a PNG image.')
+            raw = base64.b64decode(frame.split(',', 1)[1], validate=True)
+            with Image.open(BytesIO(raw)) as image:
+                if image.format != 'PNG' or image.width*image.height > 64000000:
+                    raise ValueError('PNG export exceeds the supported image size.')
+                image.verify()
+            suffix = 'png'
+            label = 'map' if body.get('kind') == 'map' else 'line'
+            if body.get('comparison'):
+                label += '-comparison'
+        else:
+            raise ValueError('Choose PNG, data or catalogue export.')
+        return save_export(output, source, label, suffix, raw)
+
     def export_spectrum(self, body):
         format_name = body.get('format')
         frames = body.get('frames')
@@ -836,7 +866,11 @@ def make_handler(app):
                 elif url.path == '/api/aztec/config':
                     LOG.info('AZtec viewer connected: version=%s', APP_VERSION)
                     self.send({'token': app.token, 'app_version': APP_VERSION,
-                               'sources': app.engine.sources})
+                               'sources': app.engine.sources, 'data_root': str(app.engine.data_root),
+                               'output_root': app.config['output_root'], 'folder_picker': True,
+                               'source_name_autosave': True, 'aztec_output_exports': True})
+                elif url.path == '/project-tools.js':
+                    self.send((ROOT/'web/project-tools.js').read_bytes(), 'application/javascript')
                 elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec-export.js', '/aztec.css'):
                     name = {'/eds': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec-export.js': 'aztec-export.js', '/aztec.css': 'aztec.css'}[url.path]
                     self.send((ROOT / 'web' / name).read_bytes(), mimetypes.guess_type(name)[0] or 'text/plain')
@@ -926,7 +960,7 @@ def make_handler(app):
                 if self.headers.get('X-TEM-Token') != app.token:
                     self.send({'error': 'Reload the workbench to reconnect.'}, status=403); return
                 size=int(self.headers.get('Content-Length', 0))
-                limit = 256*1024*1024 if self.path == '/api/export-spectrum' else (16*1024*1024 if self.path == '/api/workspace' else 65536)
+                limit = 256*1024*1024 if self.path in ('/api/export-spectrum', '/api/aztec/export') else (16*1024*1024 if self.path == '/api/workspace' else 65536)
                 if size <= 0 or size > limit or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                     raise ValueError('Expected a small JSON request.')
                 body=json.loads(self.rfile.read(size))
@@ -940,6 +974,10 @@ def make_handler(app):
                     self.send(app.workspace.patch(body.get('records'), body.get('only_missing') is True))
                 elif self.path == '/api/aztec/browse':
                     self.send(app.aztec.browse(body.get('path'), app.root, app.engine.sources, body.get('project')))
+                elif self.path == '/api/aztec/files':
+                    self.send(app.aztec.files(app.engine.sources, body.get('project')))
+                elif self.path == '/api/aztec/export':
+                    self.send(app.export_aztec(body))
                 elif self.path == '/api/aztec/open':
                     self.send(app.aztec.open(body['path']))
                 elif self.path == '/api/aztec/preview':

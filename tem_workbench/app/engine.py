@@ -224,8 +224,7 @@ class Engine:
 
     def output_for(self, file_id):
         source_id = self.file_rows.get(file_id, {}).get('source_id')
-        source = next((s for s in self.sources if s['id'] == source_id), {})
-        return Path(source.get('output') or self.settings.get('output_root', './output')).expanduser().resolve()
+        return folder_paths.output_folder(self.sources, self.settings.get('output_root', './output'), source_id=source_id)
 
     def calibration_key(self, file_id):
         digest = self.file_rows.get(file_id, {}).get('content_sha256')

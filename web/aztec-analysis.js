@@ -185,9 +185,12 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    png.disabled=data.disabled=true;status.textContent=kind==='png'?'Preparing PNG…':'Preparing data…';
    try{
     if(!window.aztecExport)throw new Error('Restart TEM Workbench and reload to load the export tools.');
-    if(kind==='png')await window.aztecExport.png({result,options,kind:context.kind,comparison:context.comparison,signals:selectedSignals(),names,source,crops:Object.fromEntries(result.rows.map(r=>[r.acquisition,cropCentres.get(projectKey()+':'+r.acquisition)])),root:$('eds-analysis-views')});
-    else{const output=await api('process',{id:fileId,acquisitions:[...context.ids],signals:selectedSignals(),channel_table:context.table,comparison:context.comparison,...options,export_labels:names,export_line_ranges:lineRanges,export_data:true});if(!output.data)throw new Error('Restart TEM Workbench to load data export.');if(Object.values(lineRanges).some(r=>r.trimmed)&&output.selected_line_segments===undefined)throw new Error('Restart TEM Workbench, then reload to export the trimmed segments.');window.aztecExport.download(output)}
-    status.textContent='Export ready';setTimeout(()=>{if(status.isConnected)status.textContent=''},5000);
+    let saved;
+    if(kind==='png'){
+     const image=await window.aztecExport.png({result,options,kind:context.kind,comparison:context.comparison,signals:selectedSignals(),names,source,crops:Object.fromEntries(result.rows.map(r=>[r.acquisition,cropCentres.get(projectKey()+':'+r.acquisition)])),root:$('eds-analysis-views')});
+     saved=await api('export',{id:fileId,format:'png',kind:context.kind,comparison:context.comparison,image});
+    }else saved=await api('export',{id:fileId,acquisitions:[...context.ids],signals:selectedSignals(),channel_table:context.table,comparison:context.comparison,...options,export_labels:names,export_line_ranges:lineRanges,format:'data'});
+    status.textContent='Saved: '+saved.path;status.title=saved.path;
    }catch(error){status.textContent=error.message;console.error('AZtec export failed:',error)}finally{png.disabled=data.disabled=false}
   }
   png.onclick=()=>run('png');data.onclick=()=>run('data');

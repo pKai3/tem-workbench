@@ -80,3 +80,16 @@
 .eds-line-trimming{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin-top:10px}.eds-line-trimming[hidden]{display:none}.eds-line-trimming>label{width:120px;font-size:12px}.eds-line-trimming>label>span{display:block}.eds-line-trimming input[type=number]{min-height:28px;padding:4px 6px}.eds-trim-positions{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px}.eds-trim-positions label{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 80px;gap:4px 8px;align-items:center;font-size:11px}.eds-trim-positions label>span{grid-column:1/-1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.eds-trim-positions input{min-width:0;width:100%}
 
 .eds-preset-controls{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--line)}.eds-preset-controls select,.eds-preset-controls input{width:180px;min-height:28px;padding:4px 6px;font-size:12px}.eds-preset-controls button{min-height:28px;padding:4px 8px;font-size:12px}
+/* Project → file → site, without a second folder-navigation system. */
+.eds-file-choice{display:flex;flex-direction:column;gap:7px;flex:1 1 220px;min-width:0;padding-bottom:8px}
+#eds-current-file{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+#eds-project-dialog{width:min(1100px,94vw);max-width:94vw;max-height:85vh}
+#eds-project-dialog h2{margin:0}#eds-project-dialog .source-actions{margin-top:16px}
+.eds-sites-heading{margin:0 0 10px;font-size:14px}.eds-sites-heading small{color:var(--muted);font-weight:400}
+.eds-sites-divider{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+#eds-files{max-height:280px;overflow-y:auto;margin-top:8px}
+#eds-filter{width:100%}#eds-scan-status:empty{display:none}
+.eds-file-name,.eds-entry small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#eds-acquisitions{border:0;padding:0;margin:0}
+.eds-export-actions [role=status]{overflow-wrap:anywhere;min-width:0}
+@media(max-width:600px){#eds-project-dialog .source-row{grid-template-columns:1fr}.eds-location>label{flex:1 1 180px}}

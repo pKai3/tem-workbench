@@ -9,10 +9,19 @@ priorities live in [the implementation plan](implementation-plan.md).
 
 The Project selection is shared with the diffraction viewer. Each project keeps
 separate return locations for the two modes: diffraction image and selected
-region, or AZtec file, site, acquisition and comparison view. AZtec browsing
-shows only folder branches containing OIP, OIPX or H5OINA files. The diffraction
+region, or AZtec file, site, acquisition and comparison view. AZtec scans the
+selected project's source folder and subfolders, listing supported OIPX and
+H5OINA files together. Search filters filenames and subfolder names; Rescan files
+refreshes the list. All projects combines the configured sources. Project settings
+uses the same source/output editor and folder picker as the diffraction viewer.
+The diffraction
 image collection excludes those acquisition folders and their raster exports;
 native DM4 images in mixed folders remain available.
+
+PNG, numerical ZIP and catalogue exports save to the source project's configured
+output folder, or the main output folder when that project's output is blank.
+The most specific source folder determines ownership when sources overlap.
+Each export gets a unique filename and shows its saved path in the interface.
 
 Viewer preferences, comparison selections, aliases and named map/line presets
 autosave to `tem-workbench.workspace.json` beside the folder configuration.

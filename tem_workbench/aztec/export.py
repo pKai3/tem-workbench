@@ -3,12 +3,27 @@ import base64
 from datetime import datetime, timezone
 from io import BytesIO, TextIOWrapper
 import json
+import logging
+import uuid
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
 import numpy as np
 
 from .h5oina import AztecReadError
+
+
+def save_export(output, source, label, suffix, data):
+    """Save alongside the other Workbench results, with a unique non-overwriting name."""
+    from tem_workbench.mapping.batch_grids import safe_name
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
+    target = output / f'{stamp}_{safe_name(Path(source).stem)}_{label}_{uuid.uuid4().hex[:6]}.{suffix}'
+    with target.open('xb') as stream:
+        stream.write(data)
+    logging.getLogger('tem_workbench.aztec').info('AZtec export saved: %s', target)
+    return {'path': str(target)}
 
 
 class DataArchive:

@@ -3,8 +3,6 @@ window.aztecExport=(()=>{
  const background='#101c27',ink='#e5edf7';
  const load=async source=>{const img=new Image();img.src=source;await img.decode();return img};
  const canvas=(w,h)=>{if(w*h>64000000)throw new Error('Select fewer acquisitions for one PNG.');const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.fillStyle=background;ctx.fillRect(0,0,w,h);return [c,ctx]};
- function save(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000)}
- function download(output){const bytes=Uint8Array.from(atob(output.data),c=>c.charCodeAt(0));save(new Blob([bytes],{type:output.mime}),output.filename)}
  function badge(ctx,label,x,y,maxWidth){
   let size=18;ctx.font=`600 ${size}px system-ui`;
   while(size>11&&ctx.measureText(label).width>maxWidth-16){size--;ctx.font=`600 ${size}px system-ui`}
@@ -84,6 +82,10 @@ window.aztecExport=(()=>{
   for(const [i,b] of blocks.entries()){ctx.fillStyle=ink;ctx.font='16px system-ui';ctx.fillText(b.heading,pad,y+20);for(const part of b.legend){ctx.fillStyle=part.colour;ctx.fillText(part.label,part.x,y+42+part.line*22)}const img=await load(b.source);ctx.drawImage(img,pad,y+b.header-13,width-pad*2,heights[i]);y+=heights[i]+b.header}
   return out;
  }
- async function png(settings){const output=await (settings.kind==='map'?maps:lines)(settings);const blob=await new Promise(resolve=>output.toBlob(resolve,'image/png'));if(!blob)throw new Error('PNG export could not be created.');const name=settings.source.split(/[\\/]/).pop().replace(/\.[^.]+$/,'');save(blob,`${name}-${settings.kind}${settings.comparison?'-comparison':''}.png`)}
- return {png,download};
+ async function png(settings){
+  const output=await (settings.kind==='map'?maps:lines)(settings);
+  const blob=await new Promise(resolve=>output.toBlob(resolve,'image/png'));if(!blob)throw new Error('PNG export could not be created.');
+  return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('PNG export could not be read.'));reader.readAsDataURL(blob)});
+ }
+ return {png};
 })();

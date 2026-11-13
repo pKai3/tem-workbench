@@ -4,14 +4,15 @@
 <body class="aztec-browser">
 <header><div><span class="eyebrow">TEM WORKBENCH</span><h1>AZtec projects</h1></div><nav class="header-status" aria-label="Workspace"><a class="workspace-link" href="/">Diffraction</a><button id="workspace-save-status" type="button" class="workspace-save-status" aria-live="polite">Saved</button><span id="eds-version" class="muted"></span><span class="pill">Read-only</span></nav></header>
 <main>
- <form id="eds-location" class="eds-location">
+ <div class="eds-location">
   <label>Project<select id="eds-sources"><option value="">All projects</option></select></label>
-  <label class="eds-path-label">File or folder<input id="eds-path" type="text" autocomplete="off" spellcheck="false" placeholder="Path to an AZtec project or folder"></label>
-  <button type="submit" class="primary">Open</button><button id="eds-up" type="button" disabled>↑ Parent</button><button id="eds-home" type="button">Project root</button>
- </form>
+  <button id="eds-project-settings" type="button">Project settings…</button>
+  <div class="eds-file-choice"><span class="hint">Open file</span><strong id="eds-current-file">Choose a file from the list</strong></div><button id="eds-rescan" type="button">Rescan files</button>
+ </div>
+ <dialog id="eds-project-dialog" aria-labelledby="eds-project-title"><div class="panel-head"><h2 id="eds-project-title">Project sources and outputs</h2><button id="eds-project-close" type="button" aria-label="Close project settings">×</button></div><div id="project-settings"></div></dialog>
  <p id="eds-status" class="hint" role="status" aria-live="polite">Connecting…</p>
  <div class="eds-layout">
-  <aside class="panel eds-files" aria-label="Project navigation"><details id="eds-file-browser" open><summary>Files and folders</summary><label>Find in this folder<input id="eds-filter" type="search" placeholder="File or folder name"></label><div id="eds-files"></div></details><nav id="eds-acquisitions" aria-label="Sites and acquisitions" hidden></nav></aside>
+  <aside class="panel eds-files" aria-label="Project files and sites"><h2 class="eds-sites-heading">Files <small id="eds-file-count"></small></h2><input id="eds-filter" type="search" aria-label="Search AZtec files" placeholder="Search files or subfolders"><p id="eds-scan-status" class="hint" role="status"></p><div id="eds-files"></div><h2 class="eds-sites-heading eds-sites-divider">Sites</h2><p id="eds-sites-empty" class="hint">Choose an AZtec file to see its sites.</p><nav id="eds-acquisitions" aria-label="Sites and acquisitions" hidden></nav></aside>
   <section class="panel eds-file" aria-label="File contents">
    <div id="eds-empty"><h2>Choose a file to see what it contains</h2><p class="hint">Open your native OIPX project with its data folder. Browse specimens, sites and stored data before choosing what to process.</p></div>
    <div id="eds-file" hidden>
@@ -37,5 +38,5 @@
   </section>
  </div>
 </main>
-<script src="/diagnostics.js"></script><script src="/aztec-export.js"></script><script src="/aztec-analysis.js"></script><script src="/aztec.js"></script>
+<script src="/diagnostics.js"></script><script src="/aztec-export.js"></script><script src="/aztec-analysis.js"></script><script src="/project-tools.js"></script><script src="/aztec.js"></script>
 </body></html>

@@ -1,9 +1,10 @@
 // Name-only saves keep unsaved folder edits and do not restart the current view.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
-const app=fs.readFileSync('web/app.js','utf8'),requests=[];
+const app=fs.readFileSync('web/project-tools.js','utf8'),requests=[];
 const context={config:{source_name_autosave:true,sources:[{id:'a',name:'Original'},{id:'b',name:'Second'}]},WeakMap,Promise,
  api(path,body){return new Promise((resolve,reject)=>requests.push({path,body,resolve,reject}))},renderProjectFilter(){},applyCatalogue(data){context.catalogue=data}};
-vm.createContext(context);vm.runInContext(app.slice(app.indexOf('let sourceNameSaveQueue='),app.indexOf('const seenFileEvents=')),context);
+context.getConfig=()=>context.config;context.onRename=async data=>{context.config.sources=data.sources;context.applyCatalogue(data)};
+vm.createContext(context);vm.runInContext(app.slice(app.indexOf('let sourceNameSaveQueue='),app.indexOf('function renderSources()')),context);
 const status=()=>({textContent:'',classList:{add(){},remove(){}}}),tick=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
  const source={id:'a',name:'New',path:'unsaved-folder'},input={value:'New'},notice=status();

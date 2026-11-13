@@ -14,7 +14,9 @@ FIELDS = {'id','job_id','file_id','file_ids','source_id','name','roi','settings'
 
 def compact(value, depth=0):
     if value is None or isinstance(value, (bool, int, float)):return value
-    if isinstance(value, str):return value.replace('\r',' ').replace('\n',' ')[:300]
+    if isinstance(value, str):
+        if value.startswith('data:image/'):return '<image data>'
+        return value.replace('\r',' ').replace('\n',' ')[:300]
     if depth >= 3:return '<details>'
     if isinstance(value, list):
         return [compact(v,depth+1) for v in value[:12]] + ([f'… {len(value)} total'] if len(value)>12 else [])

@@ -1,5 +1,6 @@
 """Local folder pointers and directory browsing; no research files are moved."""
 from pathlib import Path
+
 import json
 import logging
 import time
@@ -8,6 +9,18 @@ import stat
 import sys
 import tempfile
 import uuid
+
+
+def output_folder(sources, default, *, source_id=None, path=None):
+    """Resolve the shared output policy for catalogue images or native project files."""
+    if path is not None:
+        location = Path(path).expanduser().resolve()
+        matches = [s for s in sources if location.is_relative_to(Path(s['path']).expanduser().resolve())]
+        source = max(matches, key=lambda s: len(Path(s['path']).parts), default={})
+    else:
+        source = next((s for s in sources if s['id'] == source_id), {})
+    return Path(source.get('output') or default).expanduser().resolve()
+
 
 DEFAULTS = {'data_root': './data', 'output_root': './output'}
 

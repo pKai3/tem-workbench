@@ -5,6 +5,7 @@ from pathlib import Path
 import base64
 import math
 import logging
+import os
 import threading
 import uuid
 
@@ -24,6 +25,37 @@ class AztecBrowser:
     def __init__(self):
         self._readers = OrderedDict()
         self._lock = threading.RLock()
+
+    def files(self, sources, project=None):
+        """List supported files throughout the project without decoding every dataset."""
+        selected = [s for s in sources if not project or s['id'] == project]
+        if project and not selected:
+            raise AztecReadError('Choose a configured project.')
+        files, errors, seen = [], [], set()
+        for source in sorted(selected, key=lambda s: len(Path(s['path']).parts), reverse=True):
+            root = Path(source['path']).expanduser().resolve()
+            def failed(error):
+                errors.append(f'{error.filename}: {error.strerror}')
+            for directory, folders, names in os.walk(root, followlinks=False, onerror=failed):
+                folders[:] = sorted(n for n in folders if not n.startswith('.') and not (Path(directory)/n).is_symlink())
+                for name in names:
+                    path = Path(directory)/name
+                    if path.suffix.lower() not in ('.oipx', '.h5oina') or path.is_symlink():
+                        continue
+                    try:
+                        if not path.is_file() or path in seen:
+                            continue
+                        info = path.stat()
+                    except OSError as error:
+                        failed(error)
+                        continue
+                    seen.add(path)
+                    files.append(dict(name=name, path=str(path), relative_path=str(path.relative_to(root)),
+                                      source_id=source['id'], project=source['name'], size=info.st_size,
+                                      kind=path.suffix[1:].upper(), supported=True))
+        files.sort(key=lambda f: (f['project'].casefold(), f['kind'] == 'H5OINA', f['relative_path'].casefold()))
+        LOG.info('AZtec project scan: %s · %s files · %s folder errors', project or 'all', len(files), len(errors))
+        return dict(files=files, errors=errors)
 
     def browse(self, path, root, sources=None, project=None):
         sources = sources or []
@@ -75,6 +107,21 @@ class AztecBrowser:
                 self._readers.popitem(last=False)
         LOG.info('AZtec opened %s: %s sites/acquisitions · %s datasets', compact(str(path)), len(catalogue['acquisitions']), len(catalogue['datasets']))
         return {'id': key, 'catalogue': catalogue, 'folder': str(path.parent)}
+
+    def source_path(self, key):
+        with self._lock:
+            reader = self._readers.get(key)
+        if reader is None:
+            raise AztecReadError('Reopen the file before exporting.')
+        return reader.path
+
+    def catalogue(self, key):
+        with self._lock:
+            reader = self._readers.get(key)
+        if reader is None:
+            raise AztecReadError('Reopen the file before exporting.')
+        value = reader.inspect()
+        return value if isinstance(value, dict) else value.to_dict()
 
     def preview(self, key, path, row=0, unsigned=False):
         with self._lock:

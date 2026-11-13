@@ -131,7 +131,7 @@ let diffractionSettings=null, maskDrag=null;
 function isDiffraction(){return meta?.image_kind==='diffraction'}
 let chosenFits=new Set(), favorites=new Set();
 let regionProject={revision:0,regions:[]},selectedRegionId=null,regionRequest=0;
-let folderTarget=null,folderListing=null,folderBrowseVersion=0;
+
 let rescoreTimer=null, rescoreBusy=false, rescoreJobId=null, rescorePending=false, rescoreRevision=0, scalePenalty=.10, caPenalty=.10, peakEvidenceWeight=.10, missingPeakWeight=.10, brightnessGroupingWeight=.10, ddWeight=0, peakFalloff=8;
 let zoneJob=null, zoneSymbols=phaseMaps();
 const ZONE_SYMBOLS=['●','▲','◆','■','★','✚','✕','▼','⬟','⬢','◀','▶','✦','✳','◉','⊞','⊠','✧'];
@@ -2760,61 +2760,13 @@ $('fft-zoom').addEventListener('click',e=>{
 });
 $('fft-zoom').addEventListener('close',()=>{if($('fft-zoom').open)return;hideSpectrumHover();$('fft-zoom-view').replaceChildren();$('fft').focus({preventScroll:true})});
 
-let sourceDraft=[], catalogueRevision=null, cataloguePolling=false;
-let sourceNameSaveQueue=Promise.resolve();
-const pendingSourceNames=new WeakMap();
-function saveSourceName(source,input,status){
- const name=input.value.trim();
- if(!source.id||!config.source_name_autosave){status.textContent='Use Save source changes';return sourceNameSaveQueue}
- if(pendingSourceNames.get(source)===name)return sourceNameSaveQueue;
- pendingSourceNames.set(source,name);status.textContent='Saving…';status.classList.remove('error');
- sourceNameSaveQueue=sourceNameSaveQueue.then(async()=>{
-  // Coalesce edits queued behind a different project's save.
-  if(input.value.trim()!==name){if(pendingSourceNames.get(source)===name)pendingSourceNames.delete(source);return}
-  try{
-   if(config.sources.find(s=>s.id===source.id)?.name!==name){
-    const data=await api('sources/rename',{source_id:source.id,name});
-    config.sources=data.sources;renderProjectFilter();applyCatalogue(data);
-   }
-   if(input.value.trim()===name){source.name=name;input.value=name;status.textContent='Saved'}
-  }catch(error){
-   if(input.value.trim()===name){status.textContent=error.message;status.classList.add('error')}
-  }finally{if(pendingSourceNames.get(source)===name)pendingSourceNames.delete(source)}
- });
- return sourceNameSaveQueue;
-}
+let catalogueRevision=null, cataloguePolling=false;
 const seenFileEvents=new Set();
-function renderSources(){
- sourceDraft=(config.sources||[{id:'primary',name:'Images',path:config.data_root,output:''}]).map(s=>({...s}));
- drawSources();
-}
-function drawSources(){
- const host=$('source-list');host.replaceChildren();
- sourceDraft.forEach((source,index)=>{
-  const row=document.createElement('div');row.className='source-row';
-  for(const [key,title] of [['name','Project'],['path','Source folder'],['output','Output folder (blank = main)']]){
-   const label=document.createElement('label');label.textContent=title;
-   const wrap=document.createElement('span');wrap.className='folder-input';
-   const input=document.createElement('input');input.type='text';input.value=source[key]||'';input.id=`source-${index}-${key}`;
-   input.oninput=()=>{source[key]=input.value};wrap.append(input);
-   if(key==='name'){
-    const status=document.createElement('span');status.className='source-name-status';status.setAttribute('role','status');label.append(status);
-    input.title='Project name saves when you leave this field or press Enter';
-    input.oninput=()=>{source.name=input.value;status.textContent='Unsaved';status.classList.remove('error')};
-    input.onblur=()=>saveSourceName(source,input,status);
-    input.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();input.blur()}};
-   }else{
-    const browse=document.createElement('button');browse.type='button';browse.textContent='Browse…';
-    browse.onclick=()=>chooseFolder(input.id);wrap.append(browse);
-    input.addEventListener('change',()=>{source[key]=input.value});
-   }
-   label.append(wrap);row.append(label);
-  }
-  const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';remove.disabled=sourceDraft.length===1;
-  remove.onclick=()=>{sourceDraft.splice(index,1);drawSources()};row.append(remove);host.append(row);
- });
-}
-$('add-source').onclick=()=>{sourceDraft.push({name:'',path:'',output:''});drawSources()};
+const folderBrowser=WorkbenchProjectTools.browser(api);
+const chooseFolder=target=>{if(config?.folder_picker)folderBrowser.choose(target)};
+const projectSettings=WorkbenchProjectTools.sources({api,getConfig:()=>config,chooseFolder,
+ onRename:async data=>{config.sources=data.sources;await WorkbenchWorkspace.configure(config);renderProjectFilter();applyCatalogue(data)},
+ onSave:async()=>{await start();message('Project sources and outputs saved.')}});
 function showFileEvents(events){
  const fresh=events.filter(event=>{const key=JSON.stringify(event);if(seenFileEvents.has(key))return false;seenFileEvents.add(key);return true});
  if(!fresh.length)return;
@@ -2848,7 +2800,7 @@ function setupFolderControls(){
  if(config.demo_download){renderDemoDownload(config.demo_job);if(config.demo_job?.state==='running')pollDemoDownload()}
  if(!config.files.length){$('folders-panel').open=true;offerDemoDownload()}
  for(const id of ['browse-data','browse-output','apply-folders','refresh-files'])$(id).disabled=!config.folder_picker;
- $('folder-data').value=config.data_root;$('folder-output').value=config.output_root;renderSources();renderProjectFilter();catalogueRevision=config.catalogue_revision;showFileEvents(config.file_events||[]);
+ $('folder-data').value=config.data_root;$('folder-output').value=config.output_root;projectSettings.render();renderProjectFilter();catalogueRevision=config.catalogue_revision;showFileEvents(config.file_events||[]);
  if(!config.folder_picker)$('folders-note').textContent='Restart TEM Workbench to enable folder selection.';
  $('browse-images').disabled=false;
  $('acquisition-map-open').disabled=!config.acquisition_map||!config.files.length;
@@ -2940,42 +2892,6 @@ $('image-browser-close').onclick=()=>$('image-browser').close();
 $('image-browser-search').oninput=renderImageBrowser;
 $('image-browser-folder').onchange=()=>{const project=$('source-filter').value;WorkbenchWorkspace.remember(project,'diffraction',{...WorkbenchWorkspace.bookmark(project,'diffraction'),browserFolder:$('image-browser-folder').value});renderImageBrowser()};
 $('image-browser-sort').onchange=()=>{$('file-sort').value=$('image-browser-sort').value;$('file-sort').onchange();renderImageBrowser()};
-async function browseFolder(path){
- const version=++folderBrowseVersion;$('folder-use').disabled=true;$('folder-status').textContent='Loading folders…';
- try{
-  const listing=await api('browse-folders',{path});
-  if(version!==folderBrowseVersion)return;
-  folderListing=listing;const drives=$('folder-drive');drives.replaceChildren(new Option('Drive…',''));for(const drive of listing.drives||[])drives.add(new Option(drive,drive));drives.hidden=!(listing.drives||[]).length;$('folder-path').value=listing.path;$('folder-list').replaceChildren();
-  for(const folder of listing.directories){
-   const button=document.createElement('button');button.type='button';button.textContent='▸ '+folder.name;button.title=folder.path;
-   button.onclick=()=>browseFolder(folder.path);$('folder-list').append(button);
-  }
-  $('folder-up').disabled=listing.path===listing.parent;$('folder-use').disabled=false;
-  $('folder-status').textContent=listing.directories.length?listing.directories.length+' subfolders':'No subfolders. You can select this folder.';
- }catch(e){if(version===folderBrowseVersion){folderListing=null;$('folder-status').textContent=e.message}}
-}
-function chooseFolder(target){
- if(!config?.folder_picker)return;
- folderTarget=target;$('folder-picker-title').textContent=(target==='folder-data'||target.endsWith('-path'))?'Choose source folder':'Choose output folder';
- $('folder-picker').showModal();browseFolder($(target).value);
-}
-$('browse-data').onclick=()=>chooseFolder('folder-data');$('browse-output').onclick=()=>chooseFolder('folder-output');
-for(const id of ['folder-close','folder-cancel'])$(id).onclick=()=>{$('folder-picker').close();folderBrowseVersion++};
-$('folder-up').onclick=()=>browseFolder(folderListing?.parent);
-$('folder-home').onclick=()=>browseFolder(folderListing?.home);
-$('folder-drive').onchange=()=>{if($('folder-drive').value)browseFolder($('folder-drive').value)};
-$('folder-go').onclick=()=>browseFolder($('folder-path').value);
-$('folder-path').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();browseFolder($('folder-path').value)}};
-$('folder-use').onclick=()=>{if(folderListing&&folderTarget){$(folderTarget).value=folderListing.path;$(folderTarget).dispatchEvent(new Event('change'));$('folder-picker').close();folderBrowseVersion++}};
-$('apply-folders').onclick=async()=>{
- $('apply-folders').disabled=true;
- try{
-  await sourceNameSaveQueue;
-  await api('sources',{sources:sourceDraft,output_root:$('folder-output').value});
-  await start();message('Folders linked and image collection refreshed.');
- }catch(e){message(e.message,true)}
- finally{$('apply-folders').disabled=!config?.folder_picker}
-};
 $('refresh-files').onclick=async()=>{try{applyCatalogue(await api('refresh-files',{}));exportNotice('Images refreshed','Saved work and the current grid have been kept.','saved')}catch(e){message(e.message,true)}};
 
 function resetRegionEditor(){
