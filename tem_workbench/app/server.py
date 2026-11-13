@@ -717,6 +717,9 @@ class Workbench:
             label = 'map' if body.get('kind') == 'map' else 'line'
             if body.get('comparison'):
                 label += '-comparison'
+                if body.get('kind') == 'line' and body.get('individual'):
+                    from tem_workbench.mapping.batch_grids import safe_name
+                    label += '-' + safe_name(str(body.get('export_label') or 'acquisition')[:80])
         else:
             raise ValueError('Choose PNG, data or catalogue export.')
         return save_export(output, source, label, suffix, raw)

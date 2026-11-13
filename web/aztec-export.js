@@ -3,11 +3,12 @@ window.aztecExport=(()=>{
  const background='#101c27',ink='#e5edf7';
  const load=async source=>{const img=new Image();img.src=source;await img.decode();return img};
  const canvas=(w,h)=>{if(w*h>64000000)throw new Error('Select fewer acquisitions for one PNG.');const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.fillStyle=background;ctx.fillRect(0,0,w,h);return [c,ctx]};
- function badge(ctx,label,x,y,maxWidth){
-  let size=18;ctx.font=`600 ${size}px system-ui`;
+ function badge(ctx,label,x,y,maxWidth,colour='#fff',initialSize=18){
+  let size=initialSize;ctx.font=`600 ${size}px system-ui`;
   while(size>11&&ctx.measureText(label).width>maxWidth-16){size--;ctx.font=`600 ${size}px system-ui`}
   if(ctx.measureText(label).width>maxWidth-16){while(label.length&&ctx.measureText(label+'…').width>maxWidth-16)label=label.slice(0,-1);label+='…'}
-  ctx.fillStyle='rgba(5,10,16,.65)';ctx.fillRect(x,y,ctx.measureText(label).width+14,size+12);ctx.fillStyle='#fff';ctx.textBaseline='top';ctx.fillText(label,x+7,y+5);ctx.textBaseline='alphabetic';
+  const width=ctx.measureText(label).width+14;
+  ctx.fillStyle='rgba(5,10,16,.78)';ctx.fillRect(x,y,width,size+12);ctx.fillStyle=colour;ctx.textBaseline='top';ctx.fillText(label,x+7,y+5);ctx.textBaseline='alphabetic';return width;
  }
  function scaleBar(ctx,x,y,visibleWidth,fieldWidth,unit){
   if(!(fieldWidth>0&&visibleWidth>0))return;
@@ -59,27 +60,81 @@ window.aztecExport=(()=>{
   copy.style.background=getComputedStyle(svg).backgroundColor;copy.style.fontFamily='system-ui';copy.style.color=ink;
   // Hover cursors are temporary UI, not part of the selected data.
   for(const n of copy.querySelectorAll('[visibility]'))n.setAttribute('visibility','hidden');
-  return {source:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(copy)),width:box.width,height:box.height};
+  return {node:copy,width:box.width||view.width,height:box.height||view.height};
  }
- async function lines({root,names,result,options}){
-  // Snapshot before awaiting image decoding so a later UI update cannot alter it.
-  const blocks=[];
+ function svgSource(snapshot,acquisition){
+  const copy=snapshot.node.cloneNode(true);
+  if(acquisition)for(const node of copy.querySelectorAll('[data-acquisition]'))if(node.getAttribute('data-acquisition')!==acquisition)node.remove();
+  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(copy));
+ }
+ function captureLines({root,names,result,options,comparison}){
+  // Capture the current plots before any asynchronous image decoding or saving.
+  const references=new Map();
+  for(const figure of root.querySelectorAll('.eds-line-reference')){
+   const svg=figure.querySelector('.eds-reference-drawing');if(svg)references.set(figure.dataset.acquisition,svgSnapshot(svg));
+  }
+  const groups=[];
   for(const section of root.querySelectorAll('.eds-compare-line-section,.eds-map-row')){
-   const heading=names[section.dataset.acquisition]||section.querySelector(':scope > h3')?.textContent||'';
-   for(const figure of section.querySelectorAll('.eds-line-tile')){const svg=figure.querySelector('svg');if(svg)blocks.push({...svgSnapshot(svg),heading,legend:[...figure.querySelectorAll('figcaption > span')].map(n=>({label:n.textContent,colour:n.style.color||ink}))})}
+   const acquisition=section.dataset.acquisition||null,heading=names[acquisition]||section.querySelector(':scope > h3')?.textContent||'';
+   const figures=[...section.querySelectorAll('.eds-line-tile')].map(figure=>{
+    const svg=figure.querySelector('svg');if(!svg)return null;
+    return {image:svgSnapshot(svg),legend:[...figure.querySelectorAll('figcaption > span')].map(node=>({label:node.dataset.acquisition?names[node.dataset.acquisition]||node.textContent:node.textContent,acquisition:node.dataset.acquisition||null,colour:node.style.color||ink}))};
+   }).filter(Boolean);
+   if(figures.length)groups.push({acquisition,heading,figures});
   }
-  if(!blocks.length)throw new Error('There are no line plots to export.');
-  const refs=[...root.querySelectorAll('.eds-line-reference')].map(figure=>({acquisition:figure.dataset.acquisition,...svgSnapshot(figure.querySelector('.eds-reference-drawing'))})),width=1400,pad=12,refSize=180,perRow=Math.floor((width-pad*2)/(refSize+pad));
-  let y=pad+Math.ceil(refs.length/perRow)*(refSize+pad);
-  const measure=document.createElement('canvas').getContext('2d');measure.font='16px system-ui';
-  for(const b of blocks){let x=pad,line=0;b.legend=b.legend.map(part=>{const width=measure.measureText(part.label).width+24;if(x>pad&&x+width>1400-pad){x=pad;line++}const value={...part,x,line};x+=width;return value});b.header=65+line*22}
-  const heights=blocks.map(b=>Math.max(120,Math.round((width-pad*2)*b.height/Math.max(1,b.width))));
-  const [out,ctx]=canvas(width*2,(y+heights.reduce((a,b,i)=>a+b+blocks[i].header,0)+pad)*2);ctx.scale(2,2);
-  for(const [i,r] of refs.entries()){
-   const img=await load(r.source),x=pad+(i%perRow)*(refSize+pad),top=pad+Math.floor(i/perRow)*(refSize+pad),fit=Math.min(refSize/r.width,refSize/r.height),w=r.width*fit,h=r.height*fit;
-   ctx.drawImage(img,x,top,w,h);badge(ctx,names[r.acquisition],x+4,top+4,w-8);
+  if(!groups.length)throw new Error('There are no line plots to export.');
+  return {groups,references,layout:comparison&&options.layout==='overlay'?'overlay':'rows',names,acquisitions:result.rows.filter(row=>!row.error&&row.tiles?.some(tile=>!tile.error)).map(row=>row.acquisition)};
+ }
+ function plotBadges(ctx,parts,x,y,width){
+  let left=x+6,top=y+6;
+  for(const part of parts){
+   ctx.font='600 14px system-ui';const wanted=Math.min(width-12,ctx.measureText(part.label).width+14);
+   if(left>x+6&&left+wanted>x+width-6){left=x+6;top+=28}
+   left+=badge(ctx,part.label,left,top,Math.min(300,x+width-left-6),part.colour,14)+6;
   }
-  for(const [i,b] of blocks.entries()){ctx.fillStyle=ink;ctx.font='16px system-ui';ctx.fillText(b.heading,pad,y+20);for(const part of b.legend){ctx.fillStyle=part.colour;ctx.fillText(part.label,part.x,y+42+part.line*22)}const img=await load(b.source);ctx.drawImage(img,pad,y+b.header-13,width-pad*2,heights[i]);y+=heights[i]+b.header}
+ }
+ const lineWidth=1400,linePad=14,lineGap=12,referenceWidth=280;
+ const plotHeight=(figure,width)=>Math.max(105,Math.min(380,Math.round(width*figure.image.height/Math.max(1,figure.image.width))));
+ const referenceHeight=reference=>reference?Math.min(300,referenceWidth*reference.height/Math.max(1,reference.width)):180;
+ async function drawReference(ctx,reference,label,x,y){
+  const height=referenceHeight(reference);ctx.fillStyle='#0c131c';ctx.fillRect(x,y,referenceWidth,height);
+  if(reference){const image=await load(svgSource(reference)),scale=Math.min(referenceWidth/reference.width,300/reference.height);ctx.drawImage(image,x,y,reference.width*scale,reference.height*scale)}
+  else{ctx.fillStyle=ink;ctx.font='15px system-ui';ctx.fillText('Reference image unavailable',x+12,y+height/2)}
+  badge(ctx,label||'Acquisition',x+6,y+6,referenceWidth-12);return height;
+ }
+ async function drawPlot(ctx,figure,x,y,width,acquisition,heading=''){
+  const height=plotHeight(figure,width),image=await load(svgSource(figure.image,acquisition));ctx.drawImage(image,x,y,width,height);
+  const legend=figure.legend.filter(part=>!acquisition||!part.acquisition||part.acquisition===acquisition);
+  plotBadges(ctx,[...(heading?[{label:heading,colour:'#fff'}]:[]),...legend],x,y,width);return height;
+ }
+ async function lines({snapshot,root,names,result,options,comparison,onlyAcquisition}){
+  const captured=snapshot||captureLines({root,names,result,options,comparison}),plotWidth=lineWidth-linePad*2-referenceWidth-lineGap;
+  if(onlyAcquisition&&!captured.acquisitions.includes(onlyAcquisition))throw new Error('The selected acquisition has no line plots.');
+  const references=onlyAcquisition?captured.acquisitions.filter(id=>id===onlyAcquisition):captured.acquisitions;
+  if(captured.layout==='overlay'){
+   const panels=captured.groups.flatMap(group=>group.figures.map(figure=>({figure,heading:group.heading})))
+    .filter(panel=>!onlyAcquisition||panel.figure.legend.some(part=>part.acquisition===onlyAcquisition));
+   const leftHeight=references.reduce((sum,id)=>sum+referenceHeight(captured.references.get(id))+lineGap,0);
+   const rightHeight=panels.reduce((sum,panel)=>sum+plotHeight(panel.figure,plotWidth)+lineGap,0);
+   const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+Math.max(leftHeight,rightHeight))*2));ctx.scale(2,2);
+   let y=linePad;for(const id of references){y+=await drawReference(ctx,captured.references.get(id),captured.names[id],linePad,y)+lineGap}
+   y=linePad;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+referenceWidth+lineGap,y,plotWidth,onlyAcquisition,panel.heading)+lineGap;
+   return out;
+  }
+  const groups=onlyAcquisition?captured.groups.filter(group=>group.acquisition===onlyAcquisition):captured.groups;
+  const rows=groups.map(group=>{
+   const reference=captured.references.get(group.acquisition),available=!!reference;
+   const width=available?plotWidth:lineWidth-linePad*2;
+   const plots=group.figures.reduce((sum,figure)=>sum+plotHeight(figure,width)+lineGap,0);
+   return {group,reference,width,height:Math.max(available?referenceHeight(reference):0,plots)};
+  });
+  const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+rows.reduce((sum,row)=>sum+row.height+lineGap,0))*2));ctx.scale(2,2);
+  let y=linePad;for(const row of rows){
+   const {group,reference,width}=row,x=reference?linePad+referenceWidth+lineGap:linePad;
+   if(reference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad,y);
+   let plotY=y;for(const figure of group.figures)plotY+=await drawPlot(ctx,figure,x,plotY,width,null,reference?'':group.heading)+lineGap;
+   y+=row.height+lineGap;
+  }
   return out;
  }
  async function png(settings){
@@ -87,5 +142,5 @@ window.aztecExport=(()=>{
   const blob=await new Promise(resolve=>output.toBlob(resolve,'image/png'));if(!blob)throw new Error('PNG export could not be created.');
   return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('PNG export could not be read.'));reader.readAsDataURL(blob)});
  }
- return {png};
+ return {png,captureLines};
 })();

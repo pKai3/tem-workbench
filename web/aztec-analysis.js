@@ -301,8 +301,19 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  }
  function exportControls(root,footer){
   const buttons=el('div',undefined,'eds-export-actions'),png=el('button','Export PNG'),data=el('button','Export data'),status=el('span',undefined,'hint');status.setAttribute('role','status');
-  for(const b of [png,data])b.type='button';buttons.append(png,data,status);footer.append(buttons);
-  if(current.comparison)for(const b of [png,data])b.title='Save to the configured output folder for the first selected acquisition’s project.';
+  for(const b of [png,data])b.type='button';
+  let pngMode;
+  if(current.comparison&&current.kind==='line'){
+   const label=el('label','PNG layout','eds-export-mode');pngMode=el('select');pngMode.setAttribute('aria-label','Line PNG export mode');
+   for(const [value,name] of [['all','All in one image'],['individual','One per acquisition']]){const option=el('option',name);option.value=value;pngMode.append(option)}
+   label.append(pngMode);buttons.append(label);
+  }
+  buttons.append(png,data,status);footer.append(buttons);
+  if(current.comparison){
+   data.title='Save to the configured output folder for the first selected acquisition’s project.';
+   const updatePngTitle=()=>{png.title=pngMode?.value==='individual'?'Save one PNG per acquisition to its source project’s output folder.':'Save to the configured output folder for the first selected acquisition’s project.'};
+   if(pngMode)pngMode.onchange=updatePngTitle;updatePngTitle();
+  }
   const labels=el('details',undefined,'eds-export-labels');labels.append(el('summary','Export labels'));const list=el('div',undefined,'eds-export-aliases');labels.append(list);root.append(labels);
   renderExportLabels();
   async function run(kind){
@@ -310,16 +321,31 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const context=current,result=context.result,options={...context.options},fileId=state.file?.id,source=context.comparison?result.rows[0].source:projectKey();
    const names=Object.fromEntries(result.rows.map(r=>[r.acquisition,exportLabel(r)]));
    const lineRanges=context.kind==='line'&&context.comparison?window.aztecLineGeometry.ranges(result.rows,options):{};
-   png.disabled=data.disabled=true;status.textContent=kind==='png'?'Preparing PNG…':'Preparing data…';
+   png.disabled=data.disabled=true;if(pngMode)pngMode.disabled=true;status.textContent=kind==='png'?'Preparing PNG…':'Preparing data…';
    try{
     if(!window.aztecExport)throw new Error('Restart TEM Workbench and reload to load the export tools.');
     let saved;
     if(kind==='png'){
-     const image=await window.aztecExport.png({result,options,kind:context.kind,comparison:context.comparison,signals:selectedSignals(),names,source,crops:Object.fromEntries(result.rows.map(r=>[r.acquisition,cropCentres.get(itemKey(r.acquisition))])),root:$('eds-analysis-views')});
+     const settings={result,options,kind:context.kind,comparison:context.comparison,signals:selectedSignals(),names,source,crops:Object.fromEntries(result.rows.map(r=>[r.acquisition,cropCentres.get(itemKey(r.acquisition))])),root:$('eds-analysis-views')};
+     if(pngMode?.value==='individual'){
+      const snapshot=window.aztecExport.captureLines(settings),ids=snapshot.acquisitions,paths=[];
+      if(!ids.length)throw new Error('There are no line plots to export.');
+      try{
+       for(const [index,id] of ids.entries()){
+        status.textContent=`Saving PNG ${index+1} of ${ids.length}…`;
+        const image=await window.aztecExport.png({...settings,snapshot,onlyAcquisition:id});
+        saved=await api('export',{id:fileId,...acquisitionRequest(context,[id]),format:'png',kind:'line',comparison:true,individual:true,export_label:names[id],image});
+        paths.push(saved.path);
+       }
+      }catch(error){if(paths.length)error.message=`Saved ${paths.length} of ${ids.length} PNGs. ${error.message}`;throw error}
+      status.textContent=`Saved ${paths.length} PNG${paths.length===1?'':'s'}. ${paths.length===1?paths[0]:''}`;status.title=paths.join('\n');return;
+     }
+     const snapshot=context.kind==='line'?window.aztecExport.captureLines(settings):null;
+     const image=await window.aztecExport.png({...settings,snapshot});
      saved=await api('export',{id:fileId,...acquisitionRequest(context),format:'png',kind:context.kind,comparison:context.comparison,image});
     }else saved=await api('export',{id:fileId,...acquisitionRequest(context),signals:selectedSignals(),channel_table:context.table,comparison:context.comparison,...options,export_labels:names,export_line_ranges:lineRanges,format:'data'});
     status.textContent='Saved: '+saved.path;status.title=saved.path;
-   }catch(error){status.textContent=error.message;console.error('AZtec export failed:',error)}finally{png.disabled=data.disabled=false}
+   }catch(error){status.textContent=error.message;console.error('AZtec export failed:',error)}finally{png.disabled=data.disabled=false;if(pngMode)pngMode.disabled=false}
   }
   png.onclick=()=>run('png');data.onclick=()=>run('data');
  }
@@ -398,6 +424,8 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   }else{
    const rows=result.rows.filter(r=>!r.error);
    for(const row of result.rows.filter(r=>r.error))root.append(el('p',`${row.label}: ${row.error}`,'eds-channel-error'));
+   const structure=el('details',undefined,'eds-noise-check eds-comparison-structure'),structureBody=el('div');
+   structure.append(el('summary',`Spatial structure · ${rows.length} lines`),structureBody);
    const lineRanges=window.aztecLineGeometry.ranges(rows,current.options);
    for(const row of rows){row.viewStart=lineRanges[row.acquisition]?.start||0;row.viewLength=lineRanges[row.acquisition]?.length||row.length;row.trimmed=lineRanges[row.acquisition]?.trimmed||false;for(const tile of row.tiles){tile.viewStart=row.viewStart;tile.viewLength=row.viewLength;tile.acquisition=row.acquisition}}
    const ranges=new Map(),lengths=new Map(),baseline=normalized?1:0;
@@ -408,17 +436,22 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     ranges.set(t.scaleKey,Math.max(ranges.get(t.scaleKey)||0,range));
    }}
    if(current.options.layout==='overlay'){
-    const refs=el('div',undefined,'eds-line-references');root.append(refs);const colours=['#da85ef','#55d4e9','#ffb658','#67e6a1','#f78595','#adb4ff','#e1db66','#f7faff','#e09868','#5fa8fb','#c5eea1','#f793c3'];
-    rows.forEach((r,i)=>{r.compareColour=colours[i%colours.length];if(current.options.background)lineReference(refs,r,r.compareColour)});
+    const refs=el('div',undefined,'eds-line-references');refs.hidden=!current.options.background;root.append(refs);const colours=['#da85ef','#55d4e9','#ffb658','#67e6a1','#f78595','#adb4ff','#e1db66','#f7faff','#e09868','#5fa8fb','#c5eea1','#f793c3'];
+    rows.forEach((r,i)=>{r.compareColour=colours[i%colours.length];lineReference(refs,r,r.compareColour)});
     const byQuantity=new Map();for(const row of rows)for(const tile of row.tiles.filter(t=>!t.error)){const key=tile.quantityKey+row.distance_unit;if(!byQuantity.has(key))byQuantity.set(key,{tiles:[],row});byQuantity.get(key).tiles.push({...tile,label:row.short_label||row.label,source:row.label,colour:row.compareColour})}
     for(const {tiles,row} of byQuantity.values()){
      const section=el('section',undefined,'eds-compare-line-section');section.append(el('h3',row.tiles.find(t=>t.quantityKey===tiles[0].quantityKey).label));root.append(section);
-     linePlots(section,{...row,background:null,overlay:true,axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.scale_scope!=='off'?ranges:null,tiles},result);
+     linePlots(section,{...row,background:null,overlay:true,axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.scale_scope!=='off'?ranges:null,tiles},result,structureBody,section.querySelector('h3').textContent);
     }
    }else for(const row of rows){
     const section=el('section',undefined,'eds-compare-line-section');section.dataset.acquisition=row.acquisition;section.append(el('h3',row.label));root.append(section);
     const body=el('div',undefined,'eds-compare-line-body'),ref=el('div'),plots=el('div');section.append(body);body.append(ref,plots);lineReference(ref,row);
-    linePlots(plots,{...row,overlay:current.options.layout==='elements',axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.scale_scope!=='off'?ranges:null},result);
+    linePlots(plots,{...row,overlay:current.options.layout==='elements',axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.scale_scope!=='off'?ranges:null},result,structureBody,row.label);
+    alignLineReference(ref,plots);
+   }
+   if(structureBody.childElementCount){
+    structure.append(el('p','Full acquisitions: smoothed variation is compared with 256 paired shuffles, excluding 3σ at each end. A larger observed/shuffled ratio can reflect spatial structure, drift, thickness or correlated noise; it is not a segregation test or confidence interval. Display normalization does not change this check.','hint'));
+    root.append(structure);
    }
   }
  }
@@ -591,6 +624,11 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    update:distance=>{if(distance===null||distance<0||distance>(row.viewLength||row.length)){cursor.setAttribute('visibility','hidden');return}const f=(distance+(row.viewStart||0))/row.length,x=a[0]+dx*f,y=a[1]+dy*f,size=7*width/Math.max(1,svg.clientWidth);for(const [key,value]of Object.entries({x1:x-nx*size,y1:y-ny*size,x2:x+nx*size,y2:y+ny*size,visibility:'visible'}))cursor.setAttribute(key,value)}
   });
  }
+ function alignLineReference(referenceRoot,plots){
+  const reference=referenceRoot.querySelector('.eds-line-reference'),plot=plots.querySelector('.eds-line-tile svg');if(!reference||!plot)return;
+  const align=()=>{if(reference.isConnected)reference.style.marginTop=Math.max(0,plot.getBoundingClientRect().top-plots.getBoundingClientRect().top)+'px'};
+  const observer=new ResizeObserver(align);observer.observe(plots);plotObservers.push(observer);requestAnimationFrame(align);
+ }
 
  function mapLabel(cell,text,row){
   const caption=el('span',text,'eds-map-label');if(row)caption.dataset.acquisition=row.acquisition;cell.append(caption);return caption;
@@ -679,22 +717,22 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   figure.append(el('figcaption','● Observed · white tick: shuffled median · grey bar ends at shuffled 95th','hint'));
  }
 
- function linePlots(root,row,result){
+ function linePlots(root,row,result,structureBody=null,structureTitle=''){
   for(const tile of row.tiles.filter(t=>t.error))root.append(el('p',`${tile.label}: ${tile.error}`,'eds-channel-error'));row={...row,tiles:row.tiles.filter(t=>!t.error)};
   if(!row.tiles.length){root.append(el('p','Select an element other than the ratio denominator.','hint'));return}
   const display={...current.options},overlay=row.overlay??display.layout==='overlay',normalized=result.normalisation!=='none',baseline=normalized?1:0;
   const stack=el('div',undefined,`eds-line-plots${overlay?' eds-line-overlay':''}`);root.append(stack);
   const readout=el('p',row.trimmed?`${row.viewStart.toFixed(1)}–${(row.viewStart+row.viewLength).toFixed(1)} ${row.distance_unit} of scan · axis starts at selection`:`${row.length.toFixed(1)} ${row.distance_unit} · start → end`,'eds-line-readout');readout.title=row.calibration;root.append(readout);
   const normalLabel=({median:'Median',mean:'Mean',p20:'P20'})[result.normalisation];
-  const noise=el('details',undefined,'eds-noise-check'),summary=el('summary','Spatial structure');
+  const noise=el(structureBody?'section':'details',undefined,structureBody?'eds-structure-entry':'eds-noise-check'),summary=structureBody?el('h4',structureTitle):el('summary','Spatial structure');
   const checks=row.tiles.filter(t=>t.noise_check?.available);
   if(checks.length)summary.append(el('span',' · '+checks.map(t=>`${t.label}: ${t.noise_check.structure_ratio.toFixed(1)}×`).join(' · '),'hint'));
-  noise.append(summary);root.append(noise);
+  noise.append(summary);
   noisePlot(noise,row.tiles);
-  noise.append(el('p','Smoothed variation compared with 256 paired shuffles of the same measurements. Around 1× means random ordering produces similar variation. Larger values indicate spatial structure, which can also come from drift, thickness or correlated noise; this is not a segregation test or a percentage of noise.','hint'));
+  if(!structureBody)noise.append(el('p','Smoothed variation compared with 256 paired shuffles of the same measurements. Around 1× means random ordering produces similar variation. Larger values indicate spatial structure, which can also come from drift, thickness or correlated noise; this is not a segregation test or a percentage of noise.','hint'));
   const table=el('table',undefined,'eds-noise-table'),head=el('tr');for(const text of ['Profile','Variation','Shuffled median','Shuffled 95th'])head.append(el('th',text));table.append(head);
   for(const tile of row.tiles){const check=tile.noise_check,tr=el('tr');tr.append(el('td',tile.label));if(check?.available){for(const value of [check.observed_cv,check.shuffled_cv,check.shuffled_95])tr.append(el('td',(100*value).toFixed(1)+'%'))}else{const cell=el('td',check?.reason||'Unavailable');cell.colSpan=3;tr.append(cell)}table.append(tr)}noise.append(table);
-  noise.append(el('p','Full acquisition: variation = standard deviation ÷ mean of the smoothed profile, excluding 3σ at each end. The 95th percentile is a reference for this shuffle model, not a confidence interval. Numerator/denominator stay paired; channels are smoothed before division. Display normalization does not affect the result. Spatially correlated errors and instrument/systematic uncertainty are not estimated.','hint'));
+  if(!structureBody)noise.append(el('p','Full acquisition: variation = standard deviation ÷ mean of the smoothed profile, excluding 3σ at each end. The 95th percentile is a reference for this shuffle model, not a confidence interval. Numerator/denominator stay paired; channels are smoothed before division. Display normalization does not affect the result. Spatially correlated errors and instrument/systematic uncertainty are not estimated.','hint'));
   const rangeFor=tiles=>{
    if(!normalized&&result.mode==='ratio'&&(!current.comparison||display.scale_scope!=='off'))return Math.max(...tiles.map(t=>t.maximum));
    // Underlying data is a display overlay; it must never change the plot scale.
@@ -705,7 +743,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const panels=overlay?[row.tiles]:row.tiles.map(t=>[t]);
   panels.forEach((tiles,index)=>{
    const figure=el('figure',undefined,'eds-line-tile');stack.append(figure);
-   const caption=el('figcaption',undefined,'eds-line-caption');for(const tile of tiles){const label=el('span',tile.label);label.style.color=tile.colour;label.title=tile.source||tile.label;caption.append(label)}figure.append(caption);
+   const caption=el('figcaption',undefined,'eds-line-caption');for(const tile of tiles){const label=el('span',tile.label);label.style.color=tile.colour;label.title=tile.source||tile.label;if(current.comparison&&display.layout==='overlay')label.dataset.acquisition=tile.acquisition;caption.append(label)}figure.append(caption);
    const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('role','img');svg.setAttribute('aria-label',`${tiles.map(t=>t.label).join(', ')} over centred scan image`);figure.append(svg);
    const linkedRange=row.sharedRanges?Math.max(...tiles.map(t=>row.sharedRanges.get(t.scaleKey)||0)):0;
    const range=linkedRange||sharedRange||rangeFor(tiles),showX=index===panels.length-1;
@@ -725,8 +763,8 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     add('line',{x1:left,y1:centre,x2:left+pw,y2:centre,stroke:'#fff','stroke-width':1,'stroke-dasharray':'5 4',opacity:.8},undefined,plot);
     add('circle',{cx:X(0),cy:centre,r:3,fill:'#fff',stroke:'#000'},undefined,plot);add('path',{d:`M${X(viewLength)-7},${centre-4} L${X(viewLength)},${centre} L${X(viewLength)-7},${centre+4}Z`,fill:'#fff',stroke:'#000'},undefined,plot);
     const path=(tile,values)=>{let d='',move=true;values.forEach((y,i)=>{if(!Number.isFinite(y)){move=true;return}d+=`${move?'M':'L'}${X(tile.x[i]-(tile.viewStart||0))},${Y(y)} `;move=false});return d};
-    if(display.raw)for(const tile of tiles){const d=path(tile,tile.raw);add('path',{d,fill:'none',stroke:'#07101b',opacity:.7,'stroke-width':2.5},undefined,plot);add('path',{d,fill:'none',stroke:tile.colour,opacity:.85,'stroke-width':1.2},undefined,plot)}
-    for(const tile of tiles){const d=path(tile,tile.y);add('path',{d,fill:'none',stroke:'#fff',opacity:.9,'stroke-width':3.5,'stroke-linejoin':'round'},undefined,plot);add('path',{d,fill:'none',stroke:tile.colour,'stroke-width':2,'stroke-linejoin':'round'},undefined,plot)}
+    if(display.raw)for(const tile of tiles){const d=path(tile,tile.raw),source=tile.acquisition?{'data-acquisition':tile.acquisition}:{};add('path',{d,fill:'none',stroke:'#07101b',opacity:.7,'stroke-width':2.5,...source},undefined,plot);add('path',{d,fill:'none',stroke:tile.colour,opacity:.85,'stroke-width':1.2,...source},undefined,plot)}
+    for(const tile of tiles){const d=path(tile,tile.y),source=tile.acquisition?{'data-acquisition':tile.acquisition}:{};add('path',{d,fill:'none',stroke:'#fff',opacity:.9,'stroke-width':3.5,'stroke-linejoin':'round',...source},undefined,plot);add('path',{d,fill:'none',stroke:tile.colour,'stroke-width':2,'stroke-linejoin':'round',...source},undefined,plot)}
     const fmt=v=>Number(v.toPrecision(3)).toString();for(const value of [baseline+range,baseline,baseline-range])if(value>=0)add('text',{x:left-5,y:Y(value)+3,fill:'#becbda','text-anchor':'end','font-size':10},fmt(value));
     if(showX){for(let i=0;i<=4;i++){const x=axisLength*i/4;add('text',{x:X(x),y:h-5,fill:'#becbda','text-anchor':'middle','font-size':10},`${x.toFixed(0)}${i===4?' '+row.distance_unit:''}`)}}
     add('text',{x:left+5,y:top+11,fill:'#fff',stroke:'#000','stroke-width':2,'paint-order':'stroke','font-size':10},normalized?`${normalLabel} = 1 on scan`:tiles[0].unit);
@@ -740,6 +778,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    }
    draw();
   });
+  (structureBody||root).append(noise);
  }
 
  return {open,close,groups};

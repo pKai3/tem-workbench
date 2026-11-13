@@ -75,6 +75,13 @@
 
 .eds-correlation-cell{position:relative}.eds-correlation-reference{position:absolute;left:calc(50% + 2.1ch);top:3px;margin-left:4px}
 .eds-export-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.eds-export-actions button{font-size:12px;padding:4px 8px;min-height:28px}
+.eds-export-mode{display:inline-flex!important;align-items:center;gap:6px!important;width:auto!important;font-size:11px}.eds-export-mode select{min-height:28px;padding:4px 6px;font-size:12px;max-width:170px}
+.eds-line-references[hidden]{display:none}
+.eds-comparison-structure{margin-top:20px!important;padding:10px 12px;border-top:1px solid var(--line)}
+.eds-comparison-structure>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:14px;margin-top:12px}
+.eds-structure-entry{min-width:0;border:1px solid var(--line);border-radius:6px;padding:10px}
+.eds-structure-entry h4{font-size:12px;margin:0 0 8px;overflow-wrap:anywhere}
+.eds-structure-entry h4 .hint{font-weight:400}
 .eds-export-labels{margin:8px 0 0}.eds-export-labels summary{font-size:12px}.eds-export-aliases{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:8px}.eds-export-aliases label{min-width:0;font-size:11px}.eds-export-aliases label>span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:17px}.eds-export-aliases input{min-height:28px;padding:4px 6px;font-size:12px}
 .eds-line-reference-stage>.eds-reference-drawing{position:static;display:block;width:100%;height:auto;overflow:hidden}
 .eds-line-trimming{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin-top:10px}.eds-line-trimming[hidden]{display:none}.eds-line-trimming>label{width:120px;font-size:12px}.eds-line-trimming>label>span{display:block}.eds-line-trimming input[type=number]{min-height:28px;padding:4px 6px}.eds-trim-positions{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px}.eds-trim-positions label{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 80px;gap:4px 8px;align-items:center;font-size:11px}.eds-trim-positions label>span{grid-column:1/-1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.eds-trim-positions input{min-width:0;width:100%}
