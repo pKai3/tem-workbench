@@ -40,7 +40,7 @@ class PreviewChecks(unittest.TestCase):
 
     def test_diffraction_preview_does_not_estimate_or_fit_and_limits_size(self):
         with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder).resolve();source=root/'tem_workbench.analysis.diffraction.dm4';source.touch()
+            root=Path(folder).resolve();source=root/'diffraction.dm4';source.touch()
             engine=Engine(dict(data_root=str(root)));engine.catalog()
             raw=np.linspace(0, 10000, 1600*800, dtype=np.float32).reshape(1600, 800)
             meta={f'Calibrations Dimension {d} Units':'1/nm' for d in (1,2)}

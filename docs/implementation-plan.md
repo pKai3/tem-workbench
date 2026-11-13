@@ -10,6 +10,8 @@ Last updated: 13 November 2026
 
 **Validation:** 541 Python checks (527 pass, 14 platform/environment skips), including real spawned ordinary/PCA/NMF workers, setup/update recovery and two added outside-installation launch/resource checks. Two export checks use temporary local staging for the restricted environment; the read-only process-list check passes with process access. All 39 JavaScript suites pass. No research files or personal configuration are moved.
 
+Implementation `50402fc`. Additional verification: all three native Mac shutdown checks pass; an extracted release archive starts through the stable console entry point from an unrelated working directory and serves configuration, HTML, JavaScript and CSS. Fixture filenames remain independent of Python module paths. Archive built locally for verification only; no release published.
+
 **Next, on the AZtec branch:** provision independent, read-only reader/domain modules using H5OINA TEM EDS and SEM EBSD exports as the first supported source. Retain acquired versus processed states, units, calibration and source identifiers; validate against the inspected exports. Native OIP/OIPX decoding and a complete interactive workspace remain later stages, with support boundaries explicit. Start with an inspectable acquisition/dataset catalogue and bounded data access, rather than connecting AZtec data to diffraction fitting.
 
 ## Local configuration cleanup and installer visibility — 13 November 2026
