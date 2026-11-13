@@ -177,14 +177,32 @@ class AztecBrowser:
 
     def process(self, key, options):
         from .views import acquisition_views
+        from time import monotonic
         with self._lock:
             reader=self._readers.get(key)
         if not isinstance(reader,NativeProjectReader):
             raise AztecReadError('Open a native OIPX project for acquisition views.')
-        result = acquisition_views(reader,options)
+        started=monotonic()
+        structure_only=bool(options.get('structure_only',False))
+        if structure_only:
+            LOG.info('AZtec map spatial check started: %s · %s acquisitions · 256 paired shuffles · ten smoothing widths', compact(str(reader.path)), len(options.get('acquisitions',[])))
+        export_arrays=None
+        if options.get('export_data'):
+            from .export import DataArchive
+            if structure_only:
+                raise AztecReadError('Export acquisition data separately from the spatial check.')
+            export_arrays=DataArchive(reader.path,options)
+        result = acquisition_views(reader,options,structure_only=structure_only,export_arrays=export_arrays)
+        if structure_only:
+            for row in result['rows']:
+                for tile in row['tiles']:
+                    check=tile['noise_check']
+                    LOG.info('AZtec map spatial structure: %s · %s · %s', compact(row['label']), compact(tile['label']),
+                             f"{check['structure_ratio']:.3f}× shuffled median" if check['available'] else compact(check['reason']))
+            LOG.info('AZtec map spatial check complete: %.2f s',monotonic()-started)
         if result.get('comparison'):
             LOG.info('AZtec comparison: %s acquisitions · %s · shared scales=%s · normalize each=%s · smoothing unit=%s',
-                     len(result['rows']), options.get('channel_table'), result['shared_scales'], result['normalisation'],
+                     len(result['rows']), options.get('channel_table'), result['scale_scope'], result['normalisation'],
                      result.get('smoothing_unit') if options.get('channel_table')=='XrayMapImages' else 'nm FWHM')
         for row in result['rows']:
             LOG.info('AZtec processed: %s · %s · %s channels · view=%s · denominator=%s · normalize=%s · smoothing=%s',
@@ -195,6 +213,9 @@ class AztecBrowser:
                 for field in ('error', 'ratio_error'):
                     if tile.get(field):
                         LOG.warning('AZtec channel unavailable: %s · %s · %s', compact(row['label']), compact(tile['label']), compact(tile[field]))
+        if export_arrays is not None:
+            result=export_arrays.finish(result)
+            LOG.info('AZtec data exported: %s · %s · %.2f s',compact(str(reader.path)),result['filename'],monotonic()-started)
         return result
 
 

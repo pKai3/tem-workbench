@@ -61,34 +61,46 @@ def spatial_structure(numerator, denominator=None, *, sigma=0, permutations=256)
     Relative standard deviation makes the result independent of display gain
     and normalization. Preserve correlations between channels at each sample.
     """
-    if sigma <= 0:
-        return {'available': False, 'reason': 'Use nonzero smoothing to check spatial structure.'}
     a = np.asarray(numerator, dtype=float)
     b = None if denominator is None else np.asarray(denominator, dtype=float)
-    if a.ndim != 1 or not np.isfinite(a).all() or (b is not None and (b.shape != a.shape or not np.isfinite(b).all())):
-        return {'available': False, 'reason': 'A complete finite line profile is required.'}
-    edge = int(np.ceil(3*sigma))
-    if a.size - 2*edge < 16:
+    if a.ndim not in (1, 2) or not a.size or not np.isfinite(a).all() or (b is not None and (b.shape != a.shape or not np.isfinite(b).all())):
+        return {'available': False, 'reason': 'A complete finite profile or map is required.'}
+    sigmas = np.broadcast_to(np.asarray(sigma, float), (a.ndim,))
+    if not np.isfinite(sigmas).all() or np.any((sigmas < 0) | (sigmas > 128)):
+        return {'available': False, 'reason': 'Smoothing must be between 0 and 128 samples/pixels.'}
+    if not np.any(sigmas > 0):
+        return {'available': False, 'reason': 'Use nonzero smoothing to check spatial structure.'}
+    edges = np.ceil(3*sigmas).astype(int)
+    interior_shape = np.asarray(a.shape)-2*edges
+    if np.any(interior_shape <= 0) or np.prod(interior_shape) < 16:
         return {'available': False, 'reason': 'Too few interior samples at this smoothing width; reduce smoothing.'}
+    interior = tuple(slice(int(e), -int(e) if e else None) for e in edges)
+    axes = tuple(range(-a.ndim, 0))
 
     def variation(x, y=None):
-        x = gaussian_filter1d(x, sigma, axis=-1, mode='reflect')
+        # A leading dimension holds independent permutations, never smoothed.
+        widths = (0,)*(x.ndim-a.ndim)+tuple(sigmas)
+        x = gaussian_filter(x, widths, mode='reflect')
         if y is not None:
-            y = gaussian_filter1d(y, sigma, axis=-1, mode='reflect')
+            y = gaussian_filter(y, widths, mode='reflect')
             x = np.divide(x, y, out=np.full_like(x, np.nan), where=y > 0)
-        x = x[..., edge:-edge]
-        mean = np.mean(x, axis=-1)
-        return np.divide(np.std(x, axis=-1), mean, out=np.full_like(mean, np.nan), where=mean > 0)
+        x = x[(Ellipsis,)+interior]
+        mean = np.mean(x, axis=axes)
+        return np.divide(np.std(x, axis=axes), mean, out=np.full_like(mean, np.nan), where=mean > 0)
 
     observed = float(variation(a, b))
     if not np.isfinite(observed):
         return {'available': False, 'reason': 'Undefined ratio or nonpositive mean in the interior; no reliable shuffle comparison.'}
-    # Bounded batches avoid a large samples × permutations array for long scans.
+    # Bound the working set for full-resolution maps; never downsample the data.
+    batch = max(1, min(16, 1048576//a.size))
     rng = np.random.default_rng(20261113)
     shuffled = []
-    for first in range(0, permutations, 16):
-        indices = np.asarray([rng.permutation(a.size) for _ in range(min(16, permutations-first))])
-        shuffled.extend(variation(a[indices], None if b is None else b[indices]).tolist())
+    for first in range(0, permutations, batch):
+        count = min(batch, permutations-first)
+        indices = np.asarray([rng.permutation(a.size) for _ in range(count)])
+        x = a.ravel()[indices].reshape((count,)+a.shape)
+        y = None if b is None else b.ravel()[indices].reshape((count,)+a.shape)
+        shuffled.extend(variation(x, y).tolist())
     shuffled = np.asarray(shuffled)
     if not np.isfinite(shuffled).all():
         return {'available': False, 'reason': 'Shuffled ratios include empty denominator regions; comparison unavailable.'}
@@ -97,7 +109,8 @@ def spatial_structure(numerator, denominator=None, *, sigma=0, permutations=256)
         return {'available': False, 'reason': 'No measurable shuffled variation; structure ratio is undefined.'}
     return dict(available=True, observed_cv=observed, shuffled_cv=typical,
                 structure_ratio=observed/typical, shuffled_95=float(np.percentile(shuffled,95)),
-                permutations=permutations, interior_samples=a.size-2*edge)
+                permutations=permutations, interior_samples=int(np.prod(interior_shape)),
+                above_shuffled_95=bool(observed > np.percentile(shuffled,95)))
 
 
 def horizontal_crop(image, start, end, *, width=1200, pad=.035, top=.23, bottom=.23):

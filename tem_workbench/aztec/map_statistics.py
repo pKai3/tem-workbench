@@ -2,7 +2,41 @@
 import numpy as np
 from scipy.stats import spearmanr
 
-from .processing import signal_view
+from .processing import signal_view, spatial_structure, ELEMENT_COLOURS
+
+
+def map_structure(channels, *, denominator=None, denominator_label=None, sigma=0):
+    """The line shuffle check on a 2D grid, plus a ten-width spread curve.
+
+    The sweep uses a common interior (3σ at its largest width), so changing the
+    included rim cannot masquerade as a smoothing response. It is descriptive,
+    not ten additional significance tests. Source arrays remain at full size.
+    """
+    sigmas = np.broadcast_to(np.asarray(sigma, float), (2,))
+    factors = np.arange(1, 11)/5
+    curves = []
+    for name, values in channels.items():
+        label = name + (f' / {denominator_label}' if denominator_label else '')
+        check = spatial_structure(values, denominator, sigma=sigmas)
+        sweep = []
+        if np.any(sigmas > 0) and np.all(2*sigmas <= 128):
+            edge = np.ceil(6*sigmas).astype(int)
+            mask = np.ones(np.shape(values), bool)
+            ey, ex = edge
+            if ey: mask[:ey] = mask[-ey:] = False
+            if ex: mask[:, :ex] = mask[:, -ex:] = False
+            for factor in factors:
+                item = signal_view(values, denominator, sigma=sigmas*factor)
+                valid = mask & item['mask'] & np.isfinite(item['values'])
+                samples = item['values'][valid]
+                p10, p90 = np.percentile(samples, [10, 90]) if samples.size >= 16 else (np.nan, np.nan)
+                sweep.append(float(p90/p10) if p10 > 0 and np.isfinite(p90) else None)
+        else:
+            sweep = [None]*len(factors)
+        curves.append(dict(channel=name, label=label, colour=ELEMENT_COLOURS.get(name.split()[0], '#c8a4ff'),
+                           noise_check=check, spread=sweep))
+    return dict(tiles=curves, sigma_px=sigmas.tolist(), factors=factors.tolist(),
+                sweep_reason='Use nonzero smoothing no greater than 64 pixels per axis; at least 16 valid pixels must remain inside the common 6σ rim.')
 
 
 def map_statistics(channels, *, denominator=None, sigma=0):

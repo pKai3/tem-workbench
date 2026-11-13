@@ -826,8 +826,8 @@ def make_handler(app):
                     LOG.info('AZtec viewer connected: version=%s', APP_VERSION)
                     self.send({'token': app.token, 'app_version': APP_VERSION,
                                'sources': app.engine.sources})
-                elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec.css'):
-                    name = {'/eds': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec.css': 'aztec.css'}[url.path]
+                elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec-export.js', '/aztec.css'):
+                    name = {'/eds': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec-export.js': 'aztec-export.js', '/aztec.css': 'aztec.css'}[url.path]
                     self.send((ROOT / 'web' / name).read_bytes(), mimetypes.guess_type(name)[0] or 'text/plain')
                 elif url.path == '/api/config':
                     LOG.info('Viewer connected: version=%s', APP_VERSION)
