@@ -2,7 +2,7 @@
 
 ## Install
 
-Use the versioned ZIP asset from [GitHub Releases](https://github.com/pKai3/tem-workbench/releases/latest), extract it and run the platform installer. Keep the application folder in place. Git is optional.
+Use the versioned ZIP asset from [GitHub Releases](https://github.com/pKai3/tem-workbench/releases/latest) and extract the whole folder (Extract All on Windows). Open **0 - START HERE.txt**, then double-click **1 - Install TEM Workbench - Windows.bat** or **1 - Install TEM Workbench - macOS.command**. Keep the application folder in place. Git is optional.
 
 Desktop setup requires standard 64-bit Python 3.14 (Mac ARM64/Intel or Windows x86-64). It searches installed Python first. If absent, it asks before downloading the official Python installer. The pinned URL and SHA-256 come from [Python 3.14.10 release metadata](https://www.python.org/downloads/release/python-31410/), rechecked 4 November 2026. Windows also checks Authenticode. macOS prompts for installer administrator approval. Keep Tcl/Tk selected on Windows. Managed computers may require IT help. No execution-policy bypass is applied.
 
@@ -46,4 +46,4 @@ On Windows, demo downloads use the native Windows certificate store and chain va
 
 ## Release maintenance
 
-Verified main pushes produce numbered releases. Desktop tests run on Windows and macOS; the full synthetic suite gates publishing. The workflow increments the patch version unless VERSION already requests a higher version, commits version/notes, pushes the tag and commit atomically, and publishes only after verifying uploaded asset sizes and hashes. Release packages include committed application files only. Fetch and fast-forward the workflow's version commit before subsequent work.
+Pushes run checks without publishing a release. Approved releases use the manual Publish Workbench release workflow. Desktop tests run on Windows and macOS; the full synthetic suite gates publishing. The workflow increments the patch version unless VERSION already requests a higher version, commits version/notes, pushes the tag and commit atomically, and publishes only after verifying uploaded asset sizes and hashes. Release packages include committed application files only. Fetch and fast-forward the workflow's version commit before subsequent work.

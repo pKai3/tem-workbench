@@ -34,14 +34,14 @@ ensure_python() {
     find_python && return 0
     bootstrap_python || return 1
     PYTHON_INSTALLED=1
-    find_python || { print -u2 -r -- 'Python 3.14 was not found after installation. Rerun Install TEM Workbench App - macOS.command, or see SETUP.md.'; return 1; }
+    find_python || { print -u2 -r -- 'Python 3.14 was not found after installation. Rerun 1 - Install TEM Workbench - macOS.command, or see SETUP.md.'; return 1; }
 }
 
 open_installed_app() {
     local app_path="${1:-$HOME/Applications/TEM Workbench.app}" installed_launcher
     installed_launcher="$(/usr/libexec/PlistBuddy -c 'Print :WorkbenchLauncherPath' "$app_path/Contents/Info.plist" 2>/dev/null)" || installed_launcher=""
     if [[ -z "$installed_launcher" || "${installed_launcher:A}" != "$PROJECT_DIR/Launch TEM Workbench - macOS.command" ]]; then
-        print -u2 -r -- 'Run Install TEM Workbench App - macOS.command from this folder first.'
+        print -u2 -r -- 'Run 1 - Install TEM Workbench - macOS.command from this folder first.'
         return 1
     fi
     /usr/bin/open "$app_path"

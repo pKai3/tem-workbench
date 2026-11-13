@@ -1,0 +1,33 @@
+TEM WORKBENCH — START HERE
+
+1. Extract the whole TEM-Workbench ZIP into a folder you can keep.
+   On Windows, choose Extract All before running the installer.
+
+2. Double-click the installer for your computer:
+
+   Windows:  1 - Install TEM Workbench - Windows.bat
+   macOS:    1 - Install TEM Workbench - macOS.command
+
+   Setup checks for Python and guides you through any required installation.
+
+3. Open TEM Workbench:
+
+   Windows:  Use the new Desktop or Start menu shortcut.
+   macOS:    Open TEM Workbench in your user Applications folder.
+
+   Choose Start, then Open Workbench in the launcher.
+
+KEEP THIS FOLDER
+The installed shortcut uses the application files here. Keep the whole
+folder together. If you move it, run its installer again.
+
+YOUR IMAGES
+Choose your image and results folders under Data Sources and Outputs in
+the workbench. You do not need to copy images into this application folder.
+
+UPDATES
+Use Check for updates in the TEM Workbench launcher.
+
+NEED HELP?
+Read SETUP.md for installation and recovery, or README.md for using the app.
+The remaining files and folders are application code and documentation.

@@ -2,6 +2,16 @@
 
 Last updated: 13 November 2026
 
+## Local configuration cleanup and installer visibility — 13 November 2026
+
+**Requested and completed locally:** remove obsolete configuration from this installation without changing current project sources or saved work. Archived then removed the old `data`/`output` shortcuts, three redundant path overrides, and four obsolete filename-keyed calibration entries superseded by existing content-keyed calibrations (three identical copies and one earlier calibration of the same pixel data). The archive lives in the installation's application-support cleanup folder. Resolved source/output settings, all four current calibrations, image registry, saved regions and environment pointer were checked and preserved. No source images or output folders were removed; the running application was not restarted.
+
+**Installer entry points:** renamed the two installers to `1 - Install TEM Workbench - Windows.bat` and `1 - Install TEM Workbench - macOS.command`, and added `0 - START HERE.txt`. These sort before the implementation files. The guide explains extracting the whole ZIP, choosing an installer, opening the installed app and keeping the application folder together. Updated current setup/error/recovery instructions and existing installer tests; launcher filenames remain stable for installed shortcuts. Corrected the stale setup-document claim that every main push publishes a release: publication remains manual and approved, with full gates.
+
+**Validation:** installer/bootstrap, release preparation, updater and storage checks: 74 passed and six platform-specific skips. The process-list check passed when rerun with process-read access. macOS shell syntax, executable permission, current installer references and whitespace checks pass. Native Windows execution remains covered by its existing CI gates.
+
+**Proposed only:** progressively move cohesive reader/storage, fitting, mapping and application modules into packages when those areas are next changed. Establish module boundaries and preserve multiprocessing imports, packaged resources and launcher/update paths before moving files. A broad source-tree reorganisation is not part of this cleanup. The user-facing download layout and scientific module boundaries are separate concerns. No version bump or release is requested for this change.
+
 ## Window-default verification — 11 November 2026
 
 Fixed two CI fixtures after the Tukey default change: the synthetic brightness/grouping experiment explicitly retains its designed Hann aperture, while the detector-display test derives the expected signal using the actual saved window settings. No analysis behaviour changed.
@@ -1419,3 +1429,15 @@ Validation: 539 Python checks pass with 14 environment/platform skips; three env
 
 
 Release record — 13 November 2026: implementation `5c3e3ef` published as **[v1.0.35](https://github.com/pKai3/tem-workbench/releases/tag/v1.0.35)**, release commit `af57d5d`, through [Publish Workbench release](https://github.com/pKai3/tem-workbench/actions/runs/43317121226). Linux analysis/JavaScript checks and Windows/macOS update and launcher verification all passed. The update ZIP and checksum are published; the local checkout is synchronized.
+
+## AZtec interactive analysis — requested 13 November 2026
+
+**Requested:** a local interactive version of the EDX image/linescan analysis, with selectable elements and ratios, linked image/profile inspection and exports. Include the user's Grade9 SEM EBSD collection when designing and validating the readers. Use corresponding H5OINA exports as numerical references for native OIP/OIPX decoding. The user is considering Workbench integration versus a separate application; placement is not yet decided. This is a new requested workstream, not authorization to implement unrelated roadmap items or reorder existing follow-ups.
+
+**Inspected:** TEM exports contain full EDS spectra, elemental profiles/maps, electron images and calibration. The SEM collection contains an OIPX database and paired H5OINA exports for AB, ST and STA: 400 × 300 EBSD maps at 0.1 µm steps, phase identifiers, Euler orientations, indexing quality/error values, phase definitions, SEM images and processing metadata. Both collections use H5OINA 8.0 exported by AZtec 6.3. The SEM exports contain no EDS map/spectral datasets or raw EBSP image datasets. The native SEM project contains three preview EDS spectra, which are not spatial chemical maps.
+
+The folders labelled `h5oina` and `h5oina uncleaned` contain identical acquired EBSD phase/Euler arrays but different processed results. Both have a Data Processing layer; folder names alone must not determine whether results are original or processed. Preserve acquired indexing, each processed state, unindexed/replaced flags, coordinate transforms, angle units, crystal symmetry and provenance separately. Raw EBSPs would be needed for later re-indexing; their presence in the native project has not been established.
+
+**Proposed, not approved or implemented:** a dedicated AZtec workspace within Workbench, backed by independent reader/analysis modules. Reuse the launcher, project sources, image interaction, appearance, progress/logging and export conventions; keep EDS/EBSD controls together in their own workspace instead of extending the FFT settings panel. Detect techniques from file contents and retain TEM/SEM acquisition geometry and distinct quantitative methods. H5OINA is the initial complete input; native capabilities are enabled only as independently validated.
+
+Proposed first delivery: acquisition browser, EDS image/map and linked spectrum/profile views, element/ratio selection, draggable line/region with explicit averaging width, selectable available signal types (counts, cps, corrected peak area, wt% or at%), and image/numerical/recipe exports. Add EBSD phase/orientation/quality and original-versus-processed inspection through the same data browser; grain/KAM recomputation and raw-pattern re-indexing remain separately scoped. Original files stay read-only. No live microscope control, application implementation, architecture refresh or release is part of this inspection/planning change.

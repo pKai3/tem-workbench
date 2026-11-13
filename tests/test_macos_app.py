@@ -204,10 +204,10 @@ class MacAppTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Mac wrapper check')
     def test_installer_preflight_setup_and_app_flow(self):
-        for name in ('Install TEM Workbench App - macOS.command',
+        for name in ('1 - Install TEM Workbench - macOS.command',
                      'Launch TEM Workbench - macOS.command', 'tools/run_macos.sh'):
             subprocess.run(['/bin/zsh', '-n', str(ROOT / name)], check=True)
-        for name in ('Install TEM Workbench App - macOS.command',):
+        for name in ('1 - Install TEM Workbench - macOS.command',):
             shutil.copyfile(ROOT / name, self.root / name)
         environment = self.base / 'venv'
         fake = environment / 'bin/python'
@@ -217,7 +217,7 @@ class MacAppTests(unittest.TestCase):
                         'case "$1" in *install_macos_app.py) [ "$2" = --check ] && exit 0; exit 9;; esac\nexit 0\n')
         fake.chmod(0o755)
         env = dict(os.environ, TEM_ENV_DIR=str(environment))
-        result = subprocess.run(['/bin/zsh', str(self.root / 'Install TEM Workbench App - macOS.command')],
+        result = subprocess.run(['/bin/zsh', str(self.root / '1 - Install TEM Workbench - macOS.command')],
                                 env=env, input='\n', text=True, capture_output=True, cwd=self.base)
         self.assertEqual(result.returncode, 9, result.stderr)
         self.assertLess(result.stdout.index('--check'), result.stdout.index('workbench_environment.py'))
@@ -225,13 +225,13 @@ class MacAppTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Mac installer shell workflow')
     def test_failed_app_preflight_prevents_package_changes(self):
-        shutil.copyfile(ROOT / 'Install TEM Workbench App - macOS.command', self.root / 'Install TEM Workbench App - macOS.command')
+        shutil.copyfile(ROOT / '1 - Install TEM Workbench - macOS.command', self.root / '1 - Install TEM Workbench - macOS.command')
         environment = self.base / 'venv'
         fake = environment / 'bin/python'
         fake.parent.mkdir(parents=True)
         fake.write_text('#!/bin/sh\nif [ "$1" = "-c" ]; then exit 0; fi\nprintf "%s\\n" "$@"\nexit 8\n')
         fake.chmod(0o755)
-        result = subprocess.run(['/bin/zsh', str(self.root / 'Install TEM Workbench App - macOS.command')],
+        result = subprocess.run(['/bin/zsh', str(self.root / '1 - Install TEM Workbench - macOS.command')],
                                 env=dict(os.environ, TEM_ENV_DIR=str(environment)),
                                 input='\n', text=True, capture_output=True, cwd=self.base)
         self.assertEqual(result.returncode, 8)
@@ -255,7 +255,7 @@ class MacAppTests(unittest.TestCase):
         result = subprocess.run(['/bin/zsh', '-c', script, 'test', str(ROOT / 'tools/run_macos.sh'), str(app.parent)],
                                 text=True, capture_output=True)
         self.assertEqual(result.returncode, 1)
-        self.assertIn('Install TEM Workbench App - macOS.command', result.stderr)
+        self.assertIn('1 - Install TEM Workbench - macOS.command', result.stderr)
 
 
 if __name__ == '__main__':

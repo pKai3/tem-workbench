@@ -27,7 +27,7 @@ def run(command, **kwargs):
 
 def require_build_tools():
     if sys.platform != 'darwin':
-        raise RuntimeError('This installer is for macOS. Use Install TEM Workbench App - Windows.bat on Windows.')
+        raise RuntimeError('This installer is for macOS. Use 1 - Install TEM Workbench - Windows.bat on Windows.')
     if int(platform.mac_ver()[0].split('.')[0]) < 13:
         raise RuntimeError('The Dock app requires macOS 13 or newer. See the console workflow in SETUP.md for older systems.')
     try:
@@ -37,7 +37,7 @@ def require_build_tools():
         raise RuntimeError(
             'The Dock app needs Apple Command Line Tools (or Xcode). In Terminal, run '
             'xcode-select --install and finish Apple’s installation, then double-click '
-            'Install TEM Workbench App - macOS.command. See SETUP.md for the console workflow.'
+            '1 - Install TEM Workbench - macOS.command. See SETUP.md for the console workflow.'
         ) from error
 
 
