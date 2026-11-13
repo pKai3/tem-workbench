@@ -1,6 +1,6 @@
 /* Live views of the existing EDX report operations. Native inputs stay read-only. */
 window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLineCursor})=>{
- let current=null,version=0,smoothingTimer=null,plotObservers=[],plotSerial=0,referenceCursors=[];
+ let current=null,version=0,smoothingTimer=null,plotObservers=[],plotSerial=0,referenceCursors=[],layoutVersion=0;
  const preferences={},selections={},cropCentres=new Map();
  function navigation(kind=null){
   state.comparisonKind=kind;
@@ -15,7 +15,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const key=id+':'+table;if(!found.has(key))found.set(key,{id,table,kind,site:[a.specimen,a.label].filter(Boolean).join(' / '),name:d.attributes.Acquisition,label:[a.specimen,a.label,d.attributes.Acquisition].filter(Boolean).join(' / '),signals:[],paths:[]});const g=found.get(key);g.signals.push(d.attributes.Label);g.paths.push(d.path);
   }return [...found.values()].sort((a,b)=>(a.table==='QuantLinescans')-(b.table==='QuantLinescans'));
  }
- function close(){navigation();document.querySelector('.eds-content-layout').classList.remove('eds-comparing');$('eds-file').classList.remove('eds-file-comparing');clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++version;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-preview').hidden=false}
+ function close(){navigation();document.querySelector('.eds-content-layout').classList.remove('eds-comparing');$('eds-file').classList.remove('eds-file-comparing');clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++version;++layoutVersion;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-analysis-views').style.minHeight='';$('eds-preview').hidden=false}
  function open(id,comparison=false,channelTable){
   const available=groups(),compareKind=comparison===true?'map':comparison;
   const chosen=comparison?available.find(g=>g.kind===compareKind&&(!channelTable||g.table===channelTable)):available.find(g=>g.id===id&&(!channelTable||g.table===channelTable));if(!chosen){$('eds-preview-error').textContent='No viewable element channels for this acquisition.';$('eds-preview-error').hidden=false;return}
@@ -35,7 +35,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  }
  function controls(channels){
   const root=$('eds-analysis-tools');root.replaceChildren();const row=el('div',undefined,'eds-analysis-controls');root.append(row);
-  const changed=key=>{if(key==='smoothing_unit')smoothing.firstChild.textContent=`Smoothing σ, ${current.options.smoothing_unit}`;updateVisibility();if(['layout','spatial'].includes(key)){preferences[current.preferenceKey]={...current.options};if(current.result)render(current.result)}else update()};
+  const changed=key=>{if(key==='smoothing_unit')smoothing.firstChild.textContent=`Smoothing σ, ${current.options.smoothing_unit}`;keepScroll(updateVisibility);if(['layout','spatial'].includes(key)){preferences[current.preferenceKey]={...current.options};if(current.result)render(current.result)}else update()};
   const toggle=(label,key,choices)=>{const wrap=el('div',undefined,'eds-control');wrap.append(el('span',label));const group=el('div',undefined,'signal-toggle inspector-layout');group.setAttribute('role','group');group.setAttribute('aria-label',label);for(const [value,text] of choices){const b=el('button',text);b.type='button';b.setAttribute('aria-pressed',String(current.options[key]===value));b.onclick=()=>{current.options[key]=value;for(const n of group.children)n.setAttribute('aria-pressed',String(n===b));changed(key)};group.append(b)}wrap.append(group);row.append(wrap);return wrap};
   if(current.comparison&&current.kind==='line'&&groups().some(g=>g.table==='QuantLinescans')){const family=el('div',undefined,'eds-control');family.append(el('span','Profiles'));const buttons=el('div',undefined,'signal-toggle inspector-layout');for(const [table,label] of [['XrayLinescans','Intensity'],['QuantLinescans','Composition']]){const button=el('button',label);button.type='button';button.setAttribute('aria-pressed',String(current.table===table));button.disabled=!groups().some(g=>g.table===table);button.onclick=()=>open(null,'line',table);buttons.append(button)}family.append(buttons);row.append(family)}
   if(current.kind==='line')toggle('Plots','layout',[['stacked','Stacked'],['overlay','Overlay']]);
@@ -87,9 +87,20 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const signals=selectedSignals();
   if(!current.ids.length||!signals.length){clearPlotObservers();setLineCrop(null);current.result=null;$('eds-analysis-views').replaceChildren(el('p','Select an acquisition and at least one element.','hint'));$('eds-preview-busy').hidden=true;return}
   $('eds-preview-busy').hidden=false;
-  try{const result=await api('process',{id:state.file.id,acquisitions:current.ids,signals,channel_table:current.table,comparison:current.comparison,...current.options});if(v!==version)return;current.result=result;render(result)}catch(error){if(v===version){$('eds-preview-error').textContent=error.message;$('eds-preview-error').hidden=false}}finally{if(v===version)$('eds-preview-busy').hidden=true}
+  try{const result=await api('process',{id:state.file.id,acquisitions:current.ids,signals,channel_table:current.table,comparison:current.comparison,...current.options});if(v!==version)return;if(current.comparison&&!current.options.shared_scales&&result.shared_scales!==false)throw new Error('This running server has not loaded independent scales. Restart TEM Workbench, then reload this page.');current.result=result;render(result)}catch(error){if(v===version){$('eds-preview-error').textContent=error.message;$('eds-preview-error').hidden=false}}finally{if(v===version)$('eds-preview-busy').hidden=true}
+ }
+ function keepScroll(change){
+  const left=window.scrollX,top=window.scrollY;change();window.scrollTo({left,top,behavior:'instant'});
  }
  function render(result){
+  // Retain the old height until replacement images have dimensions. Otherwise a
+  // temporarily shorter document clamps scroll position before images load.
+  const root=$('eds-analysis-views'),layout=++layoutVersion;
+  root.style.minHeight=`${root.getBoundingClientRect().height}px`;
+  keepScroll(()=>renderContent(result));
+  Promise.all([...root.querySelectorAll('img')].map(img=>img.decode().catch(()=>{}))).then(()=>requestAnimationFrame(()=>{if(layout===layoutVersion)keepScroll(()=>{root.style.minHeight=''})}));
+ }
+ function renderContent(result){
   clearPlotObservers();
   setLineCrop(null);
   const root=$('eds-analysis-views');root.replaceChildren();
@@ -103,6 +114,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    else linePlots(section,row,result)
   }
   applyMapBrightness();
+  if(current.kind==='map')mapStatistics(root,result);
   $('eds-preview-note').textContent=current.kind==='line'?'':result.note;
  }
  function selectedSignals(){const signals=current.signals.filter(s=>current.options.mode!=='ratio'||s!==current.options.denominator);if(current.comparison&&current.kind==='map'&&current.options.mode==='ratio')signals.unshift(current.options.denominator);return signals}
@@ -137,7 +149,8 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     }
     if(current.options.spatial==='crop')panMapRow(cropTiles,row,label);
    }
-   if(normalized&&result.shared_scales){const scale=el('div',undefined,'eds-comparison-colour-scale');scale.append(el('span',String(result.high)),el('span',undefined,'eds-scale-bar'),el('span',String(result.low)));scale.title=`Shared colour limits; relative to each acquisition’s own ${result.normalisation}`;wrap.append(scale)}
+   if(normalized&&result.shared_scales)comparisonColourScale(wrap,grid,result);
+   mapStatistics(root,result);
   }else{
    const rows=result.rows.filter(r=>!r.error);
    for(const row of result.rows.filter(r=>r.error))root.append(el('p',`${row.label}: ${row.error}`,'eds-channel-error'));
@@ -161,6 +174,60 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     const body=el('div',undefined,'eds-compare-line-body'),ref=el('div'),plots=el('div');section.append(body);body.append(ref,plots);lineReference(ref,row);
     linePlots(plots,{...row,overlay:false,axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.shared_scales?ranges:null},result);
    }
+  }
+ }
+ function comparisonColourScale(wrap,grid,result){
+  const scale=el('div',undefined,'eds-comparison-colour-scale'),ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');scale.append(svg);wrap.append(scale);
+  const baseline={median:'median',mean:'mean',p20:'20th percentile'}[result.normalisation]||result.normalisation;
+  const label=`Relative to each map’s ${baseline} (shared limits)`,id=`eds-colour-scale-${++plotSerial}`;
+  svg.setAttribute('role','img');svg.setAttribute('aria-label',`${label}: ${result.low} to ${result.high}`);
+  const draw=()=>{
+   const cells=grid.querySelectorAll('.eds-comparison-cell');if(!cells.length||!grid.isConnected)return;
+   const rect=grid.getBoundingClientRect(),first=cells[0].getBoundingClientRect(),last=cells[cells.length-1].getBoundingClientRect();
+   const top=first.top-rect.top,bottom=last.bottom-rect.top,height=bottom-top;if(height<=0)return;
+   svg.replaceChildren();svg.setAttribute('viewBox',`0 0 80 ${rect.height+8}`);svg.style.height=`${rect.height+8}px`;
+   const add=(tag,attrs,text,parent=svg)=>{const n=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;parent.append(n);return n};
+   const defs=add('defs',{}),gradient=add('linearGradient',{id,x1:0,y1:1,x2:0,y2:0},undefined,defs);
+   ['#053061','#2166ac','#4393c3','#92c5de','#d1e5f0','#f7f7f7','#fddbc7','#f4a582','#d6604d','#b2182b','#67001f'].forEach((colour,i)=>add('stop',{offset:`${i*10}%`,'stop-color':colour},undefined,gradient));
+   add('rect',{x:2,y:top,width:18,height,fill:`url(#${id})`,stroke:'#8b9aaa','stroke-width':.6});
+   const range=result.high-result.low,target=range/6,power=10**Math.floor(Math.log10(target));
+   const step=([1,2,2.5,5,10].find(n=>n*power>=target-1e-12)||10)*power,ticks=[result.low];
+   for(let v=Math.ceil((result.low+step*.05)/step)*step;v<result.high-step*.05;v+=step)ticks.push(v);
+   ticks.push(result.high);
+   for(const v of ticks){const y=bottom-(v-result.low)/range*height;add('line',{x1:20,x2:25,y1:y,y2:y,stroke:'currentColor'});add('text',{x:29,y,'dominant-baseline':'middle','font-size':10,fill:'currentColor'},Number(v.toPrecision(4)).toString())}
+   add('text',{x:70,y:(top+bottom)/2,transform:`rotate(-90 70 ${(top+bottom)/2})`,'text-anchor':'middle',fill:'currentColor','font-size':11,...(height<260?{textLength:Math.max(80,height-10),lengthAdjust:'spacingAndGlyphs'}:{})},label);
+  };
+  const observer=new ResizeObserver(draw);observer.observe(grid);plotObservers.push(observer);draw();
+ }
+ function mapStatistics(root,result){
+  const rows=result.rows.filter(r=>r.statistics);if(!rows.length)return;
+  const section=el('section',undefined,'eds-map-statistics'),heading=el('div',undefined,'eds-statistics-heading');
+  heading.append(el('h3','Descriptive comparison'));
+  const help=el('span',undefined,'eds-analysis-help'),button=el('button','ⓘ'),content=el('span','P90/P10 compares the 90th and 10th percentiles: 1 means no spread. Correlations are Spearman coefficients between the first selected quantity and the others, over their common valid pixels. A 3σ rim is excluded on each axis. These describe smoothed, unclipped values across the full acquisition; crop position, brightness and normalization do not change them. Shared denominators can create correlations. Smoothed pixels are not independent observations; these are not significance tests or proof of segregation. A dash means insufficient valid pixels, a zero lower percentile or a constant channel.','eds-help-content');
+  button.type='button';button.setAttribute('aria-label','Map statistics help');button.setAttribute('aria-expanded','false');button.onclick=()=>button.setAttribute('aria-expanded',String(button.getAttribute('aria-expanded')!=='true'));button.onkeydown=e=>{if(e.key==='Escape')button.setAttribute('aria-expanded','false')};content.setAttribute('role','tooltip');help.append(button,content);heading.append(help);section.append(heading);root.append(section);
+  const unit=current.comparison?result.smoothing_unit:'px';section.append(el('p',`Gaussian σ ${result.smoothing} ${unit} · full acquisition interiors`,'hint'));
+  const channels=[...new Set(rows.flatMap(r=>(r.statistics.spreads||[]).map(s=>s.channel)))];
+  const pairs=new Map();for(const r of rows)for(const c of r.statistics.correlations||[])pairs.set(JSON.stringify([c.first,c.second]),c);
+  const den=rows.find(r=>r.statistics.denominator)?.statistics.denominator,short=s=>s.split(' ')[0],quantity=s=>short(s)+(den?`/${short(den)}`:'');
+  const number=v=>Number.isFinite(v)?v.toFixed(2):'—';
+  function table(parent,secondary=false){
+   const t=el('table',undefined,'eds-map-statistics-table'),head=el('thead'),tr=el('tr');tr.append(el('th','Map'));
+   const shownPairs=secondary&&!den?[]:[...pairs.values()];
+   for(const ch of channels){const th=el('th');th.append(el('span',quantity(ch)),el('small',`${secondary?'2×σ · ':''}P90/P10`));th.title=ch+(den?` / ${den}`:'');tr.append(th)}
+   for(const c of shownPairs){const th=el('th');th.append(el('span',secondary?`${short(c.first)}–${short(c.second)}`:`${quantity(c.first)}–${quantity(c.second)}`),el('small',secondary?'Adjusted r':'Spearman ρ'));th.title=secondary?'Pearson correlation after removing log denominator and a planar position trend':`${c.first} and ${c.second}`;tr.append(th)}
+   head.append(tr);t.append(head);const body=el('tbody');
+   for(const r of rows){const line=el('tr'),name=el('td',r.short_label||r.label);name.title=r.label;line.append(name);
+    const stats=secondary?r.statistics.double_smoothing:r.statistics;
+    for(const ch of channels){const spread=stats?.spreads?.find(s=>s.channel===ch),td=el('td',number(spread?.p90_p10));td.title=spread?`${spread.pixels.toLocaleString()} valid interior pixels`:stats?.reason||'Unavailable';line.append(td)}
+    for(const c of shownPairs){const pair=r.statistics.correlations?.find(p=>p.first===c.first&&p.second===c.second),td=el('td',number(pair?.[secondary?'adjusted':'spearman']));td.title=pair?`${pair.pixels.toLocaleString()} common interior pixels`:r.statistics.reason||'Unavailable';line.append(td)}
+    body.append(line);
+   }t.append(body);parent.append(t);
+  }
+  table(section);
+  for(const r of rows.filter(r=>!r.statistics.available))section.append(el('p',`${r.short_label||r.label}: ${r.statistics.reason}`,'hint'));
+  if(rows.some(r=>r.statistics.double_smoothing||r.statistics.denominator)){
+   const more=el('details'),summary=el('summary',den?'Smoothing and shared-denominator checks':'Smoothing check');more.append(summary);section.append(more);table(more,true);
+   more.append(el('p','Spread is recalculated at twice the smoothing width, excluding its wider 3σ rim. '+(den?'Adjusted r uses the original smoothing: log element intensity with log denominator and a planar x/y trend removed, then Pearson correlation of the residuals. ':'')+'These exploratory checks do not correct for counting precision or establish a phase.','hint'));
   }
  }
  function lineReference(root,row,colour='#d88aff'){

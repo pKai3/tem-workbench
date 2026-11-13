@@ -8,6 +8,7 @@ from matplotlib import colormaps
 
 from .h5oina import AztecReadError
 from .processing import ELEMENT_COLOURS, FWHM_PER_SIGMA, horizontal_crop, signal_view, spatial_structure
+from .map_statistics import map_statistics
 
 
 def png(values, *, low=None, high=None, colour=None, diverging=False, opacity=None):
@@ -191,6 +192,18 @@ def acquisition_views(reader, options):
                     map_image(ratio,colour,record,tile,'ratio_image',True)
                     tile['ratio_baseline']=ratio['baseline']
             row['tiles'].append(tile)
+        if kind=='map':
+            stats_channels={r['Label']:values(r) for r in channels
+                            if (not selected or r['Label'] in selected or r['Label'].split()[0] in selected)
+                            and (mode=='signal' or r is not den_record)}
+            if mode!='signal' and den_record is None:
+                row['statistics']={'available':False,'reason':f'{denominator} unavailable in this acquisition.'}
+            else:
+                stats_den=values(den_record) if mode!='signal' else None
+                row['statistics']=map_statistics(stats_channels,denominator=stats_den,sigma=sigma)
+                row['statistics']['denominator']=den_record['Label'] if mode!='signal' else None
+                if np.any(np.asarray(sigma)>0):
+                    row['statistics']['double_smoothing']=map_statistics(stats_channels,denominator=stats_den,sigma=2*np.asarray(sigma))
         rows.append(row)
     # One exposure per quantity/unit across acquisitions; smoothing never changes
     # the unsmoothed reference. Normalization is explicitly per acquisition.
