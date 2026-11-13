@@ -78,7 +78,8 @@ window.aztecExport=(()=>{
    const acquisition=section.dataset.acquisition||null,heading=names[acquisition]||section.querySelector(':scope > h3')?.textContent||'';
    const figures=[...section.querySelectorAll('.eds-line-tile')].map(figure=>{
     const svg=figure.querySelector('svg');if(!svg)return null;
-    return {image:svgSnapshot(svg),legend:[...figure.querySelectorAll('figcaption > span')].map(node=>({label:node.dataset.acquisition?names[node.dataset.acquisition]||node.textContent:node.textContent,acquisition:node.dataset.acquisition||null,colour:node.style.color||ink}))};
+    const viewHeight=svg.viewBox.baseVal.height||svg.getBoundingClientRect().height||1;
+    return {image:svgSnapshot(svg),cropTop:(Number(svg.dataset.cropTop)||0)/viewHeight,cropHeight:(Number(svg.dataset.cropHeight)||viewHeight)/viewHeight,metric:figure.dataset.metric||'',labelX:Number(figure.dataset.labelX),labelY:Number(figure.dataset.labelY),labelWidth:Number(figure.dataset.labelWidth),metricRight:Number(figure.dataset.metricRight),legend:[...figure.querySelectorAll('figcaption > span:not(.eds-line-quantity)')].map(node=>({label:node.dataset.acquisition?names[node.dataset.acquisition]||node.textContent:node.textContent,acquisition:node.dataset.acquisition||null,colour:node.style.color||ink}))};
    }).filter(Boolean);
    if(figures.length)groups.push({acquisition,heading,figures});
   }
@@ -86,26 +87,29 @@ window.aztecExport=(()=>{
   return {groups,references,layout:comparison&&options.layout==='overlay'?'overlay':'rows',names,acquisitions:result.rows.filter(row=>!row.error&&row.tiles?.some(tile=>!tile.error)).map(row=>row.acquisition)};
  }
  function plotBadges(ctx,parts,x,y,width){
-  let left=x+6,top=y+6;
+  let left=x,top=y;
   for(const part of parts){
-   ctx.font='600 14px system-ui';const wanted=Math.min(width-12,ctx.measureText(part.label).width+14);
-   if(left>x+6&&left+wanted>x+width-6){left=x+6;top+=28}
-   left+=badge(ctx,part.label,left,top,Math.min(300,x+width-left-6),part.colour,14)+6;
+   ctx.font='600 14px system-ui';const wanted=Math.min(width,ctx.measureText(part.label).width+14);
+   if(left>x&&left+wanted>x+width){left=x;top+=28}
+   left+=badge(ctx,part.label,left,top,Math.min(300,x+width-left),part.colour,14)+6;
   }
  }
  const lineWidth=1400,linePad=14,lineGap=12,referenceWidth=280;
- const plotHeight=(figure,width)=>Math.max(105,Math.min(380,Math.round(width*figure.image.height/Math.max(1,figure.image.width))));
- const referenceHeight=reference=>reference?Math.min(300,referenceWidth*reference.height/Math.max(1,reference.width)):180;
- async function drawReference(ctx,reference,label,x,y){
-  const height=referenceHeight(reference);ctx.fillStyle='#0c131c';ctx.fillRect(x,y,referenceWidth,height);
-  if(reference){const image=await load(svgSource(reference)),scale=Math.min(referenceWidth/reference.width,300/reference.height);ctx.drawImage(image,x,y,reference.width*scale,reference.height*scale)}
-  else{ctx.fillStyle=ink;ctx.font='15px system-ui';ctx.fillText('Reference image unavailable',x+12,y+height/2)}
-  badge(ctx,label||'Acquisition',x+6,y+6,referenceWidth-12);return height;
+ const plotHeight=(figure,width)=>Math.max(105,Math.round(width*figure.image.height/Math.max(1,figure.image.width)));
+ const plotCrop=(figure,width)=>{const height=plotHeight(figure,width);return {top:height*figure.cropTop,height:height*figure.cropHeight}};
+ async function drawReference(ctx,reference,label,x,y,height){
+  ctx.fillStyle=background;ctx.fillRect(x,y,referenceWidth,height);
+  if(reference){const image=await load(svgSource(reference)),scale=Math.min(referenceWidth/reference.width,height/reference.height),w=reference.width*scale,h=reference.height*scale,left=x+(referenceWidth-w)/2,top=y+(height-h)/2;ctx.drawImage(image,left,top,w,h);badge(ctx,label||'Acquisition',left+6,top+6,Math.max(30,w-12))}
+  else{ctx.fillStyle=ink;ctx.font='15px system-ui';ctx.fillText('Reference image unavailable',x+12,y+height/2);badge(ctx,label||'Acquisition',x+6,y+6,referenceWidth-12)}
+  return height;
  }
  async function drawPlot(ctx,figure,x,y,width,acquisition,heading=''){
   const height=plotHeight(figure,width),image=await load(svgSource(figure.image,acquisition));ctx.drawImage(image,x,y,width,height);
   const legend=figure.legend.filter(part=>!acquisition||!part.acquisition||part.acquisition===acquisition);
-  plotBadges(ctx,[...(heading?[{label:heading,colour:'#fff'}]:[]),...legend],x,y,width);return height;
+  const labelX=x+width*(Number.isFinite(figure.labelX)?figure.labelX:.05),labelY=y+height*(Number.isFinite(figure.labelY)?figure.labelY:.04),labelWidth=width*(Number.isFinite(figure.labelWidth)?figure.labelWidth:.68);
+  plotBadges(ctx,[...(heading?[{label:heading,colour:'#fff'}]:[]),...legend],labelX,labelY,labelWidth);
+  if(figure.metric){ctx.font='600 14px system-ui';const maxWidth=width*.28,wanted=Math.min(maxWidth,ctx.measureText(figure.metric).width+14),right=width*(Number.isFinite(figure.metricRight)?figure.metricRight:.02);badge(ctx,figure.metric,x+width-right-wanted,labelY,maxWidth,'#fff',14)}
+  return height;
  }
  async function lines({snapshot,root,names,result,options,comparison,onlyAcquisition}){
   const captured=snapshot||captureLines({root,names,result,options,comparison}),plotWidth=lineWidth-linePad*2-referenceWidth-lineGap;
@@ -114,25 +118,27 @@ window.aztecExport=(()=>{
   if(captured.layout==='overlay'){
    const panels=captured.groups.flatMap(group=>group.figures.map(figure=>({figure,heading:group.heading})))
     .filter(panel=>!onlyAcquisition||panel.figure.legend.some(part=>part.acquisition===onlyAcquisition));
-   const leftHeight=references.reduce((sum,id)=>sum+referenceHeight(captured.references.get(id))+lineGap,0);
+   const referenceCrop=panels.length?plotCrop(panels[0].figure,plotWidth):{top:0,height:180};
+   const leftHeight=referenceCrop.top+references.length*(referenceCrop.height+lineGap);
    const rightHeight=panels.reduce((sum,panel)=>sum+plotHeight(panel.figure,plotWidth)+lineGap,0);
    const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+Math.max(leftHeight,rightHeight))*2));ctx.scale(2,2);
-   let y=linePad;for(const id of references){y+=await drawReference(ctx,captured.references.get(id),captured.names[id],linePad,y)+lineGap}
+   let y=linePad+referenceCrop.top;for(const id of references){y+=await drawReference(ctx,captured.references.get(id),captured.names[id],linePad,y,referenceCrop.height)+lineGap}
    y=linePad;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+referenceWidth+lineGap,y,plotWidth,onlyAcquisition,panel.heading)+lineGap;
    return out;
   }
   const groups=onlyAcquisition?captured.groups.filter(group=>group.acquisition===onlyAcquisition):captured.groups;
   const rows=groups.map(group=>{
-   const reference=captured.references.get(group.acquisition),available=!!reference;
+   const reference=captured.references.get(group.acquisition),available=!!reference||comparison;
    const width=available?plotWidth:lineWidth-linePad*2;
    const plots=group.figures.reduce((sum,figure)=>sum+plotHeight(figure,width)+lineGap,0);
-   return {group,reference,width,height:Math.max(available?referenceHeight(reference):0,plots)};
+   const crop=plotCrop(group.figures[0],width);
+   return {group,reference,showReference:available,width,referenceTop:crop.top,referenceHeight:crop.height,height:plots};
   });
   const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+rows.reduce((sum,row)=>sum+row.height+lineGap,0))*2));ctx.scale(2,2);
   let y=linePad;for(const row of rows){
-   const {group,reference,width}=row,x=reference?linePad+referenceWidth+lineGap:linePad;
-   if(reference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad,y);
-   let plotY=y;for(const figure of group.figures)plotY+=await drawPlot(ctx,figure,x,plotY,width,null,reference?'':group.heading)+lineGap;
+   const {group,reference,width}=row,x=row.showReference?linePad+referenceWidth+lineGap:linePad;
+   if(row.showReference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad,y+row.referenceTop,row.referenceHeight);
+   let plotY=y;for(const figure of group.figures)plotY+=await drawPlot(ctx,figure,x,plotY,width,null,row.showReference?'':group.heading)+lineGap;
    y+=row.height+lineGap;
   }
   return out;

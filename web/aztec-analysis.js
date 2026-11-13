@@ -294,9 +294,12 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  function updateMapLabels(){
   for(const caption of $('eds-analysis-views').querySelectorAll('.eds-map-label[data-acquisition]')){const row=current.result?.rows.find(r=>r.acquisition===caption.dataset.acquisition);if(row)caption.textContent=exportLabel(row)}
  }
+ function updateLineLabels(){
+  for(const caption of $('eds-analysis-views').querySelectorAll('.eds-line-reference-label[data-acquisition],.eds-line-caption span[data-acquisition]')){const row=current.result?.rows.find(r=>r.acquisition===caption.dataset.acquisition);if(row)caption.textContent=exportLabel(row)}
+ }
  function renderExportLabels(){
   const list=$('eds-analysis-tools').querySelector('.eds-export-aliases');if(!list)return;list.replaceChildren();
-  for(const group of current.all.filter(g=>current.ids.includes(g.id))){const label=el('label'),caption=el('span',group.label),input=el('input');caption.title=(group.source?group.source+' / ':'')+group.label;label.append(caption);input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[itemKey(group.id)]||'';input.setAttribute('aria-label','Export label for '+group.label);input.onchange=()=>{const key=itemKey(group.id),value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist();updateMapLabels()};label.append(input);list.append(label)}
+  for(const group of current.all.filter(g=>current.ids.includes(g.id))){const label=el('label'),caption=el('span',group.label),input=el('input');caption.title=(group.source?group.source+' / ':'')+group.label;label.append(caption);input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[itemKey(group.id)]||'';input.setAttribute('aria-label','Export label for '+group.label);input.onchange=()=>{const key=itemKey(group.id),value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist();updateMapLabels();updateLineLabels()};label.append(input);list.append(label)}
   list.parentElement.hidden=!list.childElementCount;
  }
  function exportControls(root,footer){
@@ -436,16 +439,20 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     ranges.set(t.scaleKey,Math.max(ranges.get(t.scaleKey)||0,range));
    }}
    if(current.options.layout==='overlay'){
-    const refs=el('div',undefined,'eds-line-references');refs.hidden=!current.options.background;root.append(refs);const colours=['#da85ef','#55d4e9','#ffb658','#67e6a1','#f78595','#adb4ff','#e1db66','#f7faff','#e09868','#5fa8fb','#c5eea1','#f793c3'];
+    const body=el('div',undefined,'eds-overlay-line-body'),refs=el('div',undefined,'eds-line-references'),plots=el('div',undefined,'eds-overlay-line-plots');refs.hidden=!current.options.background;body.classList.toggle('eds-no-reference',refs.hidden);body.append(refs,plots);root.append(body);
+    const colours=['#da85ef','#55d4e9','#ffb658','#67e6a1','#f78595','#adb4ff','#e1db66','#f7faff','#e09868','#5fa8fb','#c5eea1','#f793c3'];
     rows.forEach((r,i)=>{r.compareColour=colours[i%colours.length];lineReference(refs,r,r.compareColour)});
     const byQuantity=new Map();for(const row of rows)for(const tile of row.tiles.filter(t=>!t.error)){const key=tile.quantityKey+row.distance_unit;if(!byQuantity.has(key))byQuantity.set(key,{tiles:[],row});byQuantity.get(key).tiles.push({...tile,label:row.short_label||row.label,source:row.label,colour:row.compareColour})}
     for(const {tiles,row} of byQuantity.values()){
-     const section=el('section',undefined,'eds-compare-line-section');section.append(el('h3',row.tiles.find(t=>t.quantityKey===tiles[0].quantityKey).label));root.append(section);
+     const section=el('section',undefined,'eds-compare-line-section eds-overlay-scan-section');section.append(el('h3',row.tiles.find(t=>t.quantityKey===tiles[0].quantityKey).label));plots.append(section);
      linePlots(section,{...row,background:null,overlay:true,axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.scale_scope!=='off'?ranges:null,tiles},result,structureBody,section.querySelector('h3').textContent);
+     const caption=section.querySelector('.eds-line-caption');if(caption)caption.prepend(el('span',section.querySelector('h3').textContent,'eds-line-quantity'));
     }
+    alignOverlayReferences(refs,plots);
    }else for(const row of rows){
     const section=el('section',undefined,'eds-compare-line-section');section.dataset.acquisition=row.acquisition;section.append(el('h3',row.label));root.append(section);
     const body=el('div',undefined,'eds-compare-line-body'),ref=el('div'),plots=el('div');section.append(body);body.append(ref,plots);lineReference(ref,row);
+    section.classList.toggle('eds-has-line-reference',!!ref.querySelector('.eds-line-reference'));
     linePlots(plots,{...row,overlay:current.options.layout==='elements',axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.scale_scope!=='off'?ranges:null},result,structureBody,row.label);
     alignLineReference(ref,plots);
    }
@@ -603,9 +610,10 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const geometry=window.aztecLineGeometry.reference(row,current.options.reference_orientation),{width,height,a,b,length}=geometry;
   if(!(length>0))return;
   const figure=el('figure',undefined,'eds-line-reference');figure.dataset.acquisition=row.acquisition;
-  const caption=el('figcaption',row.short_label||row.label);caption.title=row.label;figure.append(caption);root.append(figure);
+  root.append(figure);
   const stage=el('div',undefined,'eds-line-reference-stage'),ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
   svg.classList.add('eds-reference-drawing');svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.setAttribute('role','img');svg.setAttribute('aria-label',row.label+' · scan location and crop');stage.append(svg);figure.append(stage);
+  const caption=el('span',exportLabel(row),'eds-line-reference-label');caption.dataset.acquisition=row.acquisition;caption.title=row.label;stage.append(caption);
   const add=(tag,attrs,text)=>{const n=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;svg.append(n);return n};
   add('image',{href:row.electron,width:geometry.nativeWidth,height:geometry.nativeHeight,transform:geometry.transform});
   const crop=add('polygon',{class:'eds-reference-crop',fill:'none',stroke:'#fff','stroke-width':1,'stroke-dasharray':'4 4',opacity:.65,'vector-effect':'non-scaling-stroke'});
@@ -626,8 +634,29 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  }
  function alignLineReference(referenceRoot,plots){
   const reference=referenceRoot.querySelector('.eds-line-reference'),plot=plots.querySelector('.eds-line-tile svg');if(!reference||!plot)return;
-  const align=()=>{if(reference.isConnected)reference.style.marginTop=Math.max(0,plot.getBoundingClientRect().top-plots.getBoundingClientRect().top)+'px'};
-  const observer=new ResizeObserver(align);observer.observe(plots);plotObservers.push(observer);requestAnimationFrame(align);
+  const stage=reference.querySelector('.eds-line-reference-stage');
+  const body=referenceRoot.parentElement;
+  const align=()=>{if(!reference.isConnected)return;const crop=linePlotCropRect(plot),width=fitLineReferenceStage(stage,crop.height,Math.min(320,body.getBoundingClientRect().width*.42));body.style.gridTemplateColumns=`${width}px minmax(0,1fr)`;redrawLinePlots(plots);reference.style.marginTop=Math.max(0,linePlotCropRect(plot).top-plots.getBoundingClientRect().top)+'px'};
+  const observer=new ResizeObserver(align);observer.observe(plot);plotObservers.push(observer);align();
+ }
+ function linePlotCropRect(plot){
+  const box=plot.getBoundingClientRect(),view=plot.viewBox.baseVal,scale=box.height/(view.height||box.height);
+  return {top:box.top+(Number(plot.dataset.cropTop)||0)*scale,height:(Number(plot.dataset.cropHeight)||view.height)*scale};
+ }
+ function redrawLinePlots(root){
+  for(const plot of root.querySelectorAll('.eds-line-tile svg'))if(plot.redraw&&Math.abs(plot.viewBox.baseVal.width-plot.clientWidth)>1)plot.redraw();
+ }
+ function fitLineReferenceStage(stage,height,maxWidth){
+  const svg=stage.querySelector('.eds-reference-drawing'),label=stage.querySelector('.eds-line-reference-label');if(!svg||!label)return 0;
+  const view=svg.viewBox.baseVal,width=Math.max(80,Math.min(maxWidth,height*view.width/view.height));stage.style.width=width+'px';stage.style.height=height+'px';
+  const box=stage.getBoundingClientRect(),scale=Math.min(box.width/view.width,box.height/view.height),imageWidth=view.width*scale;
+  label.style.left=(box.width-imageWidth)/2+5+'px';label.style.top=(box.height-view.height*scale)/2+5+'px';label.style.maxWidth=Math.max(30,imageWidth-10)+'px';return width;
+ }
+ function alignOverlayReferences(references,plots){
+  const plot=plots.querySelector('.eds-line-tile svg'),stages=[...references.querySelectorAll('.eds-line-reference-stage')];if(!plot||!stages.length)return;
+  const body=references.parentElement;
+  const align=()=>{if(!references.isConnected)return;const crop=linePlotCropRect(plot),maxWidth=Math.min(320,body.getBoundingClientRect().width*.42),width=Math.max(...stages.map(stage=>fitLineReferenceStage(stage,crop.height,maxWidth)));body.style.gridTemplateColumns=`${width}px minmax(0,1fr)`;redrawLinePlots(plots);references.style.paddingTop=Math.max(0,linePlotCropRect(plot).top-plots.getBoundingClientRect().top)+'px'};
+  const observer=new ResizeObserver(align);observer.observe(plot);plotObservers.push(observer);align();
  }
 
  function mapLabel(cell,text,row){
@@ -743,31 +772,37 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const panels=overlay?[row.tiles]:row.tiles.map(t=>[t]);
   panels.forEach((tiles,index)=>{
    const figure=el('figure',undefined,'eds-line-tile');stack.append(figure);
-   const caption=el('figcaption',undefined,'eds-line-caption');for(const tile of tiles){const label=el('span',tile.label);label.style.color=tile.colour;label.title=tile.source||tile.label;if(current.comparison&&display.layout==='overlay')label.dataset.acquisition=tile.acquisition;caption.append(label)}figure.append(caption);
+   const caption=el('figcaption',undefined,'eds-line-caption');for(const tile of tiles){const sourceRow=current.comparison&&display.layout==='overlay'?result.rows.find(r=>r.acquisition===tile.acquisition):null,label=el('span',sourceRow?exportLabel(sourceRow):tile.label);label.style.color=tile.colour;label.title=tile.source||tile.label;if(sourceRow)label.dataset.acquisition=tile.acquisition;caption.append(label)}figure.append(caption);
    const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('role','img');svg.setAttribute('aria-label',`${tiles.map(t=>t.label).join(', ')} over centred scan image`);figure.append(svg);
+   const metric=normalized?`${normalLabel} = 1`:tiles[0].unit;figure.dataset.metric=current.comparison?metric:'';
+   if(current.comparison){const note=el('span',metric,'eds-line-metric');note.title=normalized?`${normalLabel} = 1 on the scan path`:metric;figure.append(note)}
    const linkedRange=row.sharedRanges?Math.max(...tiles.map(t=>row.sharedRanges.get(t.scaleKey)||0)):0;
    const range=linkedRange||sharedRange||rangeFor(tiles),showX=index===panels.length-1;
    const observer=new ResizeObserver(draw);plotObservers.push(observer);observer.observe(svg);
    function draw(){
     if(!svg.isConnected){observer.disconnect();return}
-    svg.replaceChildren();const w=Math.max(150,svg.clientWidth),h=svg.clientHeight,left=w<400?40:48,right=8,top=4,bottom=showX?21:6,pw=Math.max(60,w-left-right),ph=h-top-bottom,centre=top+ph/2;
+    svg.replaceChildren();const w=Math.max(150,svg.clientWidth),h=svg.clientHeight,left=normalized?(w<400?30:32):(w<400?38:42),right=8,top=4,bottom=showX?21:6,pw=Math.max(60,w-left-right),ph=h-top-bottom,centre=top+ph/2;
     svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
-    const nativeExtent=row.image_extent||[-.035,1.035,-.23,.23],axisLength=row.axisLength||row.length,extent=row.axisLength?[-.035,1.035,nativeExtent[2],nativeExtent[3]]:nativeExtent,span=extent[1]-extent[0],viewStart=row.viewStart||0,viewLength=row.viewLength||row.length;
+    svg.dataset.cropTop=top;svg.dataset.cropHeight=ph;
+    const nativeExtent=row.image_extent||[-.035,1.035,-.23,.23],axisLength=row.axisLength||row.length,extent=current.comparison?[-.008,1.008,nativeExtent[2],nativeExtent[3]]:row.axisLength?[-.035,1.035,nativeExtent[2],nativeExtent[3]]:nativeExtent,span=extent[1]-extent[0],viewStart=row.viewStart||0,viewLength=row.viewLength||row.length;
     if(index===0&&current.comparison){for(const ref of referenceCursors){if(ref.unit!==row.distance_unit||(!row.overlay||current.options.layout!=='overlay')&&ref.acquisition!==row.acquisition)continue;const length=ref.row.length,halfHeight=ph/2/(pw/span)*axisLength/length;ref.updateCrop([Math.max(ref.row.image_extent[0],(ref.row.viewStart+(ref.row.trimmed?0:extent[0]*axisLength))/length),Math.min(ref.row.image_extent[1],(ref.row.viewStart+(ref.row.trimmed?ref.row.viewLength:extent[1]*axisLength))/length),Math.max(ref.row.image_extent[2],-halfHeight),Math.min(ref.row.image_extent[3],halfHeight)])}}
     if(index===0&&!current.comparison){const halfHeight=ph/2/(pw/span);setLineCrop(tiles[0].path,[extent[0],extent[1],Math.max(extent[2],-halfHeight),Math.min(extent[3],halfHeight)])}
     const X=x=>left+pw*(x/axisLength-extent[0])/span,Y=y=>centre-(y-baseline)*(ph/2-7)/range;
+    if(current.comparison){const x=(row.trimmed?Math.max(left,X(0)):left)+6,y=top+6,width=Math.max(60,Math.min(pw*.7,left+pw-x-6)),metric=figure.querySelector('.eds-line-metric');caption.style.left=x+'px';caption.style.top=y+'px';caption.style.maxWidth=width+'px';if(metric){metric.style.top=y+'px';metric.style.right=(right+6)+'px';metric.style.maxWidth=Math.max(50,pw*.28)+'px'}figure.dataset.labelX=x/w;figure.dataset.labelY=y/h;figure.dataset.labelWidth=width/w;figure.dataset.metricRight=(right+6)/w}
     const add=(tag,attrs,text,parent=svg)=>{const n=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;parent.append(n);return n};
     const clipId=`eds-line-clip-${++plotSerial}`,defs=add('defs',{}),clip=add('clipPath',{id:clipId},undefined,defs);add('rect',{x:row.trimmed?X(0):left,y:top,width:row.trimmed?X(viewLength)-X(0):pw,height:ph},undefined,clip);const plot=add('g',{'clip-path':`url(#${clipId})`});
-    if(display.background&&row.background){const scale=pw/span*row.length/axisLength;add('image',{href:row.background,x:X(nativeExtent[0]*row.length-viewStart),y:centre+nativeExtent[2]*scale,width:(nativeExtent[1]-nativeExtent[0])*scale,height:(nativeExtent[3]-nativeExtent[2])*scale,preserveAspectRatio:'xMidYMid meet'},undefined,plot)}
+    if(display.background&&row.background){const scale=pw/span*row.length/axisLength;
+     // The rotated crop uses equal x/y sampling. Its extent already defines the displayed aspect; an SVG meet fit adds empty side gutters.
+     add('image',{href:row.background,x:X(nativeExtent[0]*row.length-viewStart),y:centre+nativeExtent[2]*scale,width:(nativeExtent[1]-nativeExtent[0])*scale,height:(nativeExtent[3]-nativeExtent[2])*scale,preserveAspectRatio:'none'},undefined,plot)}
     add('line',{x1:left,y1:centre,x2:left+pw,y2:centre,stroke:'#000','stroke-width':3,opacity:.8},undefined,plot);
     add('line',{x1:left,y1:centre,x2:left+pw,y2:centre,stroke:'#fff','stroke-width':1,'stroke-dasharray':'5 4',opacity:.8},undefined,plot);
     add('circle',{cx:X(0),cy:centre,r:3,fill:'#fff',stroke:'#000'},undefined,plot);add('path',{d:`M${X(viewLength)-7},${centre-4} L${X(viewLength)},${centre} L${X(viewLength)-7},${centre+4}Z`,fill:'#fff',stroke:'#000'},undefined,plot);
     const path=(tile,values)=>{let d='',move=true;values.forEach((y,i)=>{if(!Number.isFinite(y)){move=true;return}d+=`${move?'M':'L'}${X(tile.x[i]-(tile.viewStart||0))},${Y(y)} `;move=false});return d};
     if(display.raw)for(const tile of tiles){const d=path(tile,tile.raw),source=tile.acquisition?{'data-acquisition':tile.acquisition}:{};add('path',{d,fill:'none',stroke:'#07101b',opacity:.7,'stroke-width':2.5,...source},undefined,plot);add('path',{d,fill:'none',stroke:tile.colour,opacity:.85,'stroke-width':1.2,...source},undefined,plot)}
     for(const tile of tiles){const d=path(tile,tile.y),source=tile.acquisition?{'data-acquisition':tile.acquisition}:{};add('path',{d,fill:'none',stroke:'#fff',opacity:.9,'stroke-width':3.5,'stroke-linejoin':'round',...source},undefined,plot);add('path',{d,fill:'none',stroke:tile.colour,'stroke-width':2,'stroke-linejoin':'round',...source},undefined,plot)}
-    const fmt=v=>Number(v.toPrecision(3)).toString();for(const value of [baseline+range,baseline,baseline-range])if(value>=0)add('text',{x:left-5,y:Y(value)+3,fill:'#becbda','text-anchor':'end','font-size':10},fmt(value));
-    if(showX){for(let i=0;i<=4;i++){const x=axisLength*i/4;add('text',{x:X(x),y:h-5,fill:'#becbda','text-anchor':'middle','font-size':10},`${x.toFixed(0)}${i===4?' '+row.distance_unit:''}`)}}
-    add('text',{x:left+5,y:top+11,fill:'#fff',stroke:'#000','stroke-width':2,'paint-order':'stroke','font-size':10},normalized?`${normalLabel} = 1 on scan`:tiles[0].unit);
+    const fmt=v=>Number(v.toPrecision(3)).toString(),axisFmt=v=>v!==0&&(Math.abs(v)<.01||Math.abs(v)>=1000)?v.toExponential(1):Number(v.toFixed(2)).toString();for(const value of [baseline+range,baseline,baseline-range])if(value>=0)add('text',{x:left-5,y:Y(value)+3,fill:'#becbda','text-anchor':'end','font-size':10},axisFmt(value));
+    if(showX){for(let i=0;i<=4;i++){const x=axisLength*i/4;add('text',{x:i===4?Math.min(X(x),w-10):X(x),y:h-5,fill:'#becbda','text-anchor':i===4?'end':i===0?'start':'middle','font-size':10},`${x.toFixed(0)}${i===4?' '+row.distance_unit:''}`)}}
+    if(!current.comparison)add('text',{x:left+5,y:top+11,fill:'#fff',stroke:'#000','stroke-width':2,'paint-order':'stroke','font-size':10},normalized?`${normalLabel} = 1 on scan`:metric);
     const cursor=add('line',{x1:X(0),x2:X(0),y1:top,y2:top+ph,stroke:'#fff','stroke-dasharray':'3 3',visibility:'hidden'});
     svg.onpointermove=e=>{const box=svg.getBoundingClientRect(),sx=(e.clientX-box.left)*w/box.width,distance=((sx-left)/pw*span+extent[0])*axisLength;cursor.setAttribute('x1',X(distance));cursor.setAttribute('x2',X(distance));cursor.setAttribute('visibility','visible');
      const readings=tiles.map(t=>{const length=t.x.at(-1),i=Math.round((distance+(t.viewStart||0))/length*(t.x.length-1));return `${t.label}: ${i>=0&&i<t.y.length&&Number.isFinite(t.y[i])?fmt(t.y[i]):'—'}`});
@@ -776,7 +811,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
      readout.textContent=`${distance.toFixed(1)} ${row.distance_unit} · `+readings.join(' · ')};svg.onpointerleave=()=>{cursor.setAttribute('visibility','hidden');setLineCursor(null);for(const ref of referenceCursors)ref.update(null)};
 
    }
-   draw();
+   svg.redraw=draw;draw();
   });
   (structureBody||root).append(noise);
  }

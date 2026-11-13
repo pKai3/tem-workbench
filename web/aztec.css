@@ -77,13 +77,31 @@
 .eds-export-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.eds-export-actions button{font-size:12px;padding:4px 8px;min-height:28px}
 .eds-export-mode{display:inline-flex!important;align-items:center;gap:6px!important;width:auto!important;font-size:11px}.eds-export-mode select{min-height:28px;padding:4px 6px;font-size:12px;max-width:170px}
 .eds-line-references[hidden]{display:none}
+.eds-overlay-line-body{display:grid;grid-template-columns:220px minmax(0,1fr);gap:8px;align-items:start}
+.eds-compare-line-body{column-gap:8px}
+.eds-overlay-line-body.eds-no-reference{grid-template-columns:1fr}
+.eds-overlay-line-body .eds-line-references{display:grid;grid-template-columns:1fr;align-content:start;gap:12px}
+.eds-overlay-line-body .eds-line-references[hidden]{display:none}
+.eds-overlay-line-body .eds-line-reference{width:100%;max-width:none}
+.eds-overlay-line-plots{min-width:0}
+.eds-overlay-scan-section{border:0;padding:0;margin:0 0 12px}
+.eds-has-line-reference>h3,.eds-overlay-scan-section>h3{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.eds-line-reference-stage{background:transparent;overflow:hidden}
+.eds-line-reference-stage>.eds-reference-drawing{width:100%;height:100%}
+.eds-line-reference-label{position:absolute;z-index:2;top:5px;left:5px;max-width:calc(100% - 10px);padding:4px 7px;background:rgba(5,10,16,.78);color:#fff;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
+.eds-comparing .eds-line-tile .eds-line-caption{position:absolute;z-index:2;top:5px;left:5px;max-width:70%;margin:0;min-height:0;gap:4px}
+.eds-comparing .eds-line-caption>span{max-width:100%;padding:3px 6px;background:rgba(5,10,16,.78);font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eds-comparing .eds-line-caption>.eds-line-quantity{color:#fff}
+.eds-comparing .eds-line-tile svg{height:145px}
+.eds-line-metric{position:absolute;z-index:2;top:5px;right:5px;max-width:28%;padding:3px 6px;background:rgba(5,10,16,.78);color:#fff;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+@media(max-width:700px){.eds-overlay-line-body{grid-template-columns:150px minmax(0,1fr);gap:6px}.eds-overlay-line-body .eds-line-reference{width:100%}}
 .eds-comparison-structure{margin-top:20px!important;padding:10px 12px;border-top:1px solid var(--line)}
 .eds-comparison-structure>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:14px;margin-top:12px}
 .eds-structure-entry{min-width:0;border:1px solid var(--line);border-radius:6px;padding:10px}
 .eds-structure-entry h4{font-size:12px;margin:0 0 8px;overflow-wrap:anywhere}
 .eds-structure-entry h4 .hint{font-weight:400}
 .eds-export-labels{margin:8px 0 0}.eds-export-labels summary{font-size:12px}.eds-export-aliases{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-top:8px}.eds-export-aliases label{min-width:0;font-size:11px}.eds-export-aliases label>span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:17px}.eds-export-aliases input{min-height:28px;padding:4px 6px;font-size:12px}
-.eds-line-reference-stage>.eds-reference-drawing{position:static;display:block;width:100%;height:auto;overflow:hidden}
+.eds-line-reference-stage>.eds-reference-drawing{position:static;display:block;width:100%;height:100%;overflow:hidden}
 .eds-line-trimming{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin-top:10px}.eds-line-trimming[hidden]{display:none}.eds-line-trimming>label{width:120px;font-size:12px}.eds-line-trimming>label>span{display:block}.eds-line-trimming input[type=number]{min-height:28px;padding:4px 6px}.eds-trim-positions{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px}.eds-trim-positions label{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 80px;gap:4px 8px;align-items:center;font-size:11px}.eds-trim-positions label>span{grid-column:1/-1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.eds-trim-positions input{min-width:0;width:100%}
 
 .eds-preset-controls{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--line)}.eds-preset-controls select,.eds-preset-controls input{width:180px;min-height:28px;padding:4px 6px;font-size:12px}.eds-preset-controls button{min-height:28px;padding:4px 8px;font-size:12px}
