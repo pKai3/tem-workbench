@@ -18,25 +18,27 @@ def signal_view(numerator, denominator=None, *, sigma=0, normalisation='none'):
     values = np.asarray(numerator, dtype=float)
     if values.ndim not in (1, 2) or not values.size or not np.isfinite(values).all():
         raise ValueError('Choose a finite element profile or map.')
-    if not math.isfinite(sigma) or not 0 <= sigma <= 128:
+    sigmas=np.broadcast_to(np.asarray(sigma,float),(values.ndim,))
+    if not np.isfinite(sigmas).all() or np.any((sigmas<0)|(sigmas>128)):
         raise ValueError('Smoothing must be between 0 and 128 samples/pixels.')
+    has_smoothing=bool(np.any(sigmas))
     smooth = gaussian_filter1d if values.ndim == 1 else gaussian_filter
-    filtered = smooth(values, sigma, mode='reflect') if sigma else values.copy()
+    filtered = smooth(values, sigma, mode='reflect') if has_smoothing else values.copy()
     raw = values.copy()
     valid = np.ones(values.shape, bool)
     if denominator is not None:
         den = np.asarray(denominator, dtype=float)
         if den.shape != values.shape or not np.isfinite(den).all():
             raise ValueError('The ratio channels must use the same finite sample grid.')
-        den_smooth = smooth(den, sigma, mode='reflect') if sigma else den
+        den_smooth = smooth(den, sigma, mode='reflect') if has_smoothing else den
         raw = np.divide(raw, den, out=np.full_like(raw, np.nan), where=den>0)
         filtered = np.divide(filtered, den_smooth, out=np.full_like(filtered, np.nan), where=den_smooth>0)
         valid &= den_smooth > 0
-    if values.ndim == 2 and sigma:
+    if values.ndim == 2 and has_smoothing:
         # As in the map report: exclude a 3σ rim from normalization statistics.
-        edge = int(np.ceil(3*sigma))
-        valid[:edge] = valid[-edge:] = False
-        valid[:, :edge] = valid[:, -edge:] = False
+        ey,ex=np.ceil(3*sigmas).astype(int)
+        if ey:valid[:ey] = valid[-ey:] = False
+        if ex:valid[:, :ex] = valid[:, -ex:] = False
     mask = valid & np.isfinite(filtered)
     baseline = 1.
     if normalisation not in ('none', 'median', 'mean', 'p20'):

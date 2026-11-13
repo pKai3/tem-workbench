@@ -55,7 +55,11 @@ def acquisition_views(reader, options):
     low,high=float(options.get('low',.7)),float(options.get('high',1.3))
     if not np.isfinite([low,high]).all() or high<=low:
         raise AztecReadError('Colour maximum must be greater than minimum.')
-    rows=[]
+    comparison=bool(options.get('comparison',False))
+    smoothing_unit=options.get('smoothing_unit','px')
+    if smoothing_unit not in ('px','nm'):
+        raise AztecReadError('Choose pixels or nm for map smoothing.')
+    rows=[]; pending_images=[]
     for acquisition_id in ids:
         records=[r for r in reader._records.values() if r.get('acquisition_id')==acquisition_id]
         channel_table=requested_table or next((table for table in channel_tables if any(r['table']==table for r in records)),None)
@@ -71,7 +75,7 @@ def acquisition_views(reader, options):
             matches=[r for r in channels if r['Label'].split()[0]==name]
             return matches[0] if len(matches)==1 else None
         den_record=find_channel(denominator) if mode in ('ratio','both') else None
-        if mode in ('ratio','both') and den_record is None:
+        if mode in ('ratio','both') and den_record is None and not comparison:
             raise AztecReadError(f'{denominator} is not uniquely available in {channels[0]["acquisition_label"]}.')
         cache={};units={}
         def values(record):
@@ -88,15 +92,37 @@ def acquisition_views(reader, options):
         row=dict(label=channels[0]['acquisition_label'],kind=kind,tiles=[],acquisition=acquisition_id,
                  channel_table=channel_table,data_kind='composition' if composition else 'signal')
         site_meta=next(a for a in reader.inspect()['acquisitions'] if a['index']==channels[0]['site_id'])
+        row['short_label']=' · '.join(filter(None,[site_meta['specimen'],row['label'].replace(' Data ',' ')]))
         row['label']=' / '.join(filter(None,[site_meta['specimen'],site_meta['label'],row['label']]))
+        geometry=site.get('geometry',{})
+        nm_per_px=(geometry.get('field_width_nm') or 0)*geometry.get('step',0)
         if kind=='map':
             sigma=smoothing
+            shape=values(channels[0]).shape
+            if region and region['kind']=='rectangle':
+                start,end=np.asarray(region['points'],float)
+                size=np.abs(end-start)
+                if np.all(size>0):
+                    row.update(width=float(size[0]*(nm_per_px or 1)),height=float(size[1]*(nm_per_px or 1)),
+                               distance_unit='nm' if nm_per_px else 'px')
+                    if comparison and smoothing_unit=='nm' and nm_per_px:
+                        sigma=(smoothing/(row['height']/shape[0]),smoothing/(row['width']/shape[1]))
+                    if electron is not None:
+                        from scipy.ndimage import map_coordinates
+                        yy,xx=np.meshgrid(np.linspace(start[1],end[1],shape[0],endpoint=False),
+                                          np.linspace(start[0],end[0],shape[1],endpoint=False),indexing='ij')
+                        electron=map_coordinates(electron,[yy,xx],order=1,mode='constant',cval=np.nan)
+            if comparison and smoothing_unit=='nm' and smoothing and (not nm_per_px or 'width' not in row):
+                row['error']='Physical map calibration unavailable; choose pixel smoothing.'
+                rows.append(row);continue
             if electron is not None:row['electron']=png(electron)
         else:
             if not region or region['kind']!='line' or electron is None:
+                if comparison:
+                    row['error']='The line has no decoded electron-image registration.'
+                    rows.append(row);continue
                 raise AztecReadError('The line has no decoded electron-image registration.')
             crop=horizontal_crop(electron,*region['points'])
-            geometry=site['geometry'];nm_per_px=(geometry.get('field_width_nm') or 0)*geometry['step']
             length=crop['length_px']*(nm_per_px or 1)
             count=values(channels[0]).size
             sigma=smoothing/FWHM_PER_SIGMA/(length/(count-1))
@@ -104,6 +130,9 @@ def acquisition_views(reader, options):
                        image_extent=(np.asarray(crop['extent'])/crop['length_px']).tolist(),
                        length=length,distance_unit='nm' if nm_per_px else 'px',
                        calibration='Stored scan calibration and magnification' if nm_per_px else 'Image pixels; physical calibration unavailable')
+            row['electron']=png(electron)
+            row['electron_aspect']=electron.shape[1]/electron.shape[0]
+            row['line_points']=(np.asarray(region['points'])/[electron.shape[1],electron.shape[0]]).tolist()
         order = ['Ti', 'V', 'Fe', 'Al']
         channels.sort(key=lambda r: (order.index(r['Label'].split()[0]) if r['Label'].split()[0] in order else 99, r['Label']))
         def process_channel(record, den=None):
@@ -120,7 +149,7 @@ def acquisition_views(reader, options):
             # variations/depletion. This 10% floor is a display safeguard, not a
             # statistical confidence threshold. Numerical ratios remain unchanged.
             ratio_opacity=np.clip(smoothed_denominator/(.1*denominator_mean),0,1) if denominator_mean>0 else np.zeros_like(smoothed_denominator)
-        def map_image(result, colour, record, ratio=False):
+        def map_image(result, colour, record, tile, field='image', ratio=False):
             # Use the numerator's fixed exposure for both rows. A ratio's exposure is
             # expressed in ratio units using the same acquisition-wide denominator mean.
             # Sparse raw pixel ratios are not a meaningful exposure reference.
@@ -128,9 +157,11 @@ def acquisition_views(reader, options):
             reference_high=float(np.percentile(reference,99))
             if reference_high<=0:reference_high=max(float(np.max(reference)),1.)
             if ratio:reference_high=reference_high/denominator_mean if denominator_mean>0 else 1.
-            return png(result['values'], low=low if norm!='none' else 0,
-                       high=high if norm!='none' else reference_high, colour=colour, diverging=norm!='none',
-                       opacity=ratio_opacity if ratio else None)
+            unit=('Composition ratio' if composition else 'Signal ratio') if ratio else units[record['path']]
+            key=(record['Label'],den_record['Label'] if ratio else '',unit)
+            pending_images.append(dict(tile=tile,field=field,values=result['values'],colour=colour,
+                                       key=key,high=reference_high,opacity=ratio_opacity if ratio else None))
+            tile['ratio_unit' if field=='ratio_image' else 'unit']=unit
         for i,record in enumerate(channels):
             element=record['Label'].split()[0]
             if selected and record['Label'] not in selected and element not in selected:continue
@@ -138,10 +169,13 @@ def acquisition_views(reader, options):
             den=values(den_record) if mode=='ratio' and den_record and record is not den_record else None
             colour=ELEMENT_COLOURS.get(element,['#65cfff','#fa7d8b','#c8a4ff'][i%3])
             label=record['Label']+(' / '+den_record['Label'] if den is not None else '')
-            tile=dict(label=label,colour=colour,path=record['path'])
+            tile=dict(label=label,channel=record['Label'],colour=colour,path=record['path'])
             result,error=process_channel(record,den)
+            if mode=='ratio' and den_record is None:error=f'{denominator} unavailable in this acquisition.'
             if error:tile['error']=error
-            elif kind=='map':tile.update(image=map_image(result,colour,record,den is not None),baseline=result['baseline'])
+            elif kind=='map':
+                map_image(result,colour,record,tile,ratio=den is not None)
+                tile['baseline']=result['baseline']
             else:
                 vals=result['values'];finite=vals[np.isfinite(vals)]
                 ymax=upper if mode=='ratio' and norm=='none' else max(1e-12,float(np.max(finite))*1.1) if finite.size else 1
@@ -149,11 +183,23 @@ def acquisition_views(reader, options):
                             maximum=ymax,baseline=result['baseline'],unit=('Relative composition' if composition else 'Relative signal') if norm!='none' else ('Composition ratio' if composition else 'Signal ratio') if den is not None else units[record['path']])
                 tile['noise_check']=spatial_structure(values(record),den,sigma=sigma)
             if kind=='map' and mode=='both' and record is not den_record:
-                tile['ratio_label']=record['Label']+' / '+den_record['Label']
-                ratio,ratio_error=process_channel(record,values(den_record))
+                tile['ratio_label']=record['Label']+' / '+denominator
+                ratio,ratio_error=process_channel(record,values(den_record)) if den_record else (None,f'{denominator} unavailable in this acquisition.')
                 if ratio_error:tile['ratio_error']=ratio_error
-                else:tile.update(ratio_image=map_image(ratio,colour,record,True),ratio_baseline=ratio['baseline'])
+                else:
+                    map_image(ratio,colour,record,tile,'ratio_image',True)
+                    tile['ratio_baseline']=ratio['baseline']
             row['tiles'].append(tile)
         rows.append(row)
+    # One exposure per quantity/unit across acquisitions; smoothing never changes
+    # the unsmoothed reference. Normalization is explicitly per acquisition.
+    shared={}
+    for item in pending_images:shared[item['key']]=max(shared.get(item['key'],0),item['high'])
+    for item in pending_images:
+        exposure=high if norm!='none' else shared[item['key']] if comparison else item['high']
+        item['tile'][item['field']]=png(item['values'],low=low if norm!='none' else 0,high=exposure,
+                                      colour=item['colour'],diverging=norm!='none',opacity=item['opacity'])
+        item['tile'][item['field']+'_limits']=[low if norm!='none' else 0,exposure]
     return dict(rows=rows,mode=mode,normalisation=norm,smoothing=smoothing,low=low,high=high,
+                comparison=comparison,smoothing_unit=smoothing_unit,
                 note='Channels are smoothed separately before division. Ratios describe recorded signal, not concentration.')

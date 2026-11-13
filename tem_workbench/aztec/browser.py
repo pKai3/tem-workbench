@@ -182,9 +182,15 @@ class AztecBrowser:
         if not isinstance(reader,NativeProjectReader):
             raise AztecReadError('Open a native OIPX project for acquisition views.')
         result = acquisition_views(reader,options)
+        if result.get('comparison'):
+            LOG.info('AZtec comparison: %s acquisitions · %s · shared scales · normalize each=%s · smoothing unit=%s',
+                     len(result['rows']), options.get('channel_table'), result['normalisation'],
+                     result.get('smoothing_unit') if options.get('channel_table')=='XrayMapImages' else 'nm FWHM')
         for row in result['rows']:
             LOG.info('AZtec processed: %s · %s · %s channels · view=%s · denominator=%s · normalize=%s · smoothing=%s',
                      compact(str(reader.path)), compact(row['label']), len(row['tiles']), result['mode'], compact(options.get('denominator')), result['normalisation'], result['smoothing'])
+            if row.get('error'):
+                LOG.warning('AZtec acquisition unavailable: %s · %s',compact(row['label']),compact(row['error']))
             for tile in row['tiles']:
                 for field in ('error', 'ratio_error'):
                     if tile.get(field):
