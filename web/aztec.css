@@ -95,8 +95,9 @@
 .eds-comparing .eds-line-tile svg{height:145px}
 .eds-line-metric{position:absolute;z-index:2;top:5px;right:5px;max-width:28%;padding:3px 6px;background:rgba(5,10,16,.78);color:#fff;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 @media(max-width:700px){.eds-overlay-line-body{grid-template-columns:150px minmax(0,1fr);gap:6px}.eds-overlay-line-body .eds-line-reference{width:100%}}
-.eds-comparing .eds-compare-line-section[data-acquisition]{margin:0;padding:0;border:0;background:#0c131c}
+.eds-comparing .eds-compare-line-section[data-acquisition]{margin:0;padding:0 4px;border:0;background:#0c131c}
 .eds-comparing .eds-compare-line-body,.eds-comparing .eds-overlay-line-body{background:#0c131c}
+.eds-comparing .eds-overlay-line-body{padding:0 4px}
 .eds-comparing .eds-line-plots,.eds-overlay-line-body .eds-line-references{gap:0}
 .eds-comparing .eds-line-readout{margin:0;padding:2px 0 4px}
 .eds-overlay-scan-section{margin:0}

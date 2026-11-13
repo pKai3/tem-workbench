@@ -94,11 +94,11 @@ window.aztecExport=(()=>{
    left+=badge(ctx,part.label,left,top,Math.min(300,x+width-left),part.colour,14)+6;
   }
  }
- const lineWidth=1400,linePad=8,columnGap=6,rowGap=0;
+ const lineWidth=1400,linePad=8,panelInset=6,columnGap=6,rowGap=0;
  const plotHeight=(figure,width)=>Math.max(105,Math.round(width*figure.image.height/Math.max(1,figure.image.width)));
  const plotCrop=(figure,width)=>{const height=plotHeight(figure,width);return {top:height*figure.cropTop,height:height*figure.cropHeight}};
  function lineColumns(captured,comparison){
-  const usable=lineWidth-linePad*2-columnGap;
+  const usable=lineWidth-linePad*2-panelInset*2-columnGap;
   if(!comparison)return {referenceWidth:0,plotWidth:lineWidth-linePad*2};
   const figure=captured.groups[0].figures[0],aspects=[...captured.references.values()].map(ref=>ref.width/ref.height),aspect=aspects.length?Math.max(...aspects):1;
   const ratio=figure.cropHeight*figure.image.height/Math.max(1,figure.image.width)*aspect;
@@ -130,8 +130,8 @@ window.aztecExport=(()=>{
    const leftHeight=referenceCrop.top+references.length*(referenceCrop.height+rowGap);
    const rightHeight=panels.reduce((sum,panel)=>sum+plotHeight(panel.figure,plotWidth)+rowGap,0);
    const height=Math.max(leftHeight,rightHeight),[out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+height)*2));ctx.scale(2,2);ctx.fillStyle='#0c131c';ctx.fillRect(linePad,linePad,lineWidth-2*linePad,height);
-   let y=linePad+referenceCrop.top;for(const id of references){y+=await drawReference(ctx,captured.references.get(id),captured.names[id],linePad,y,referenceWidth,referenceCrop.height)+rowGap}
-   y=linePad;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+referenceWidth+columnGap,y,plotWidth,onlyAcquisition,panel.heading)+rowGap;
+   let y=linePad+referenceCrop.top;for(const id of references){y+=await drawReference(ctx,captured.references.get(id),captured.names[id],linePad+panelInset,y,referenceWidth,referenceCrop.height)+rowGap}
+   y=linePad;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+panelInset+referenceWidth+columnGap,y,plotWidth,onlyAcquisition,panel.heading)+rowGap;
    return out;
   }
   const groups=onlyAcquisition?captured.groups.filter(group=>group.acquisition===onlyAcquisition):captured.groups;
@@ -145,8 +145,8 @@ window.aztecExport=(()=>{
   const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+rows.reduce((sum,row)=>sum+row.height+rowGap,0))*2));ctx.scale(2,2);
   let y=linePad;for(const row of rows){
    ctx.fillStyle='#0c131c';ctx.fillRect(linePad,y,lineWidth-linePad*2,row.height);
-   const {group,reference,width}=row,x=row.showReference?linePad+referenceWidth+columnGap:linePad;
-   if(row.showReference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad,y+row.referenceTop,referenceWidth,row.referenceHeight);
+   const {group,reference,width}=row,x=row.showReference?linePad+panelInset+referenceWidth+columnGap:linePad;
+   if(row.showReference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad+panelInset,y+row.referenceTop,referenceWidth,row.referenceHeight);
    let plotY=y;for(const figure of group.figures)plotY+=await drawPlot(ctx,figure,x,plotY,width,null,row.showReference?'':group.heading)+rowGap;
    y+=row.height+rowGap;
   }
