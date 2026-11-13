@@ -93,3 +93,13 @@
 @media(max-width:600px){.eds-location>label{flex:1 1 180px}}
 .eds-source-picks{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:6px 16px;margin:10px 0}.eds-source-picks label{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px;min-width:0;font-size:12px}.eds-source-picks input{width:auto;min-height:0;margin:0}.eds-source-picks label>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.eds-source-picks .eds-channel-error{grid-column:2;white-space:normal}.eds-source-selection>button{font-size:12px;min-height:26px;padding:4px 8px}.eds-source-selection>p:empty{display:none}
 .eds-file-comparing>.panel-head,.eds-file-comparing>#eds-file-info,.eds-file-comparing>#eds-warnings,.eds-file-comparing>#eds-metadata{display:none}.eds-location>.eds-compare-actions{align-self:end}#eds-status[hidden]+.eds-layout{margin-top:var(--panel-gap)}
+.eds-source-selection>summary,.eds-acquisition-selection>summary{font-weight:600;font-size:13px}
+.eds-acquisition-files{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.eds-acquisition-file{min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:6px}
+.eds-acquisition-file h4{margin:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eds-acquisition-file>small{color:var(--muted);font-size:10px;margin-top:3px}
+.eds-acquisition-picks>div{min-width:0}
+.eds-acquisition-selection+.eds-analysis-controls{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+.eds-map-label{position:absolute;left:5px;top:5px;z-index:2;max-width:calc(100% - 10px);padding:4px 7px;background:rgba(5,10,16,.65);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-sizing:border-box}
+.eds-comparison-cell .eds-tile-value-limits{top:auto;left:auto;right:5px;bottom:5px;z-index:2;pointer-events:none}
+.eds-comparison-cell .eds-crop-reset{position:absolute;right:5px;bottom:29px;z-index:2;margin:0;background:rgba(5,10,16,.75)}

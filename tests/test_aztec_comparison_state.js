@@ -21,4 +21,18 @@ assert.equal(result.preferences[a+':'+table].brightness,2);assert.equal(result.a
 assert.equal(result.presets[store.key('XrayLinescans')][0].ids[0],store.identity(b,'line'));
 assert.equal(store.migrate(result),result);assert.equal(old.comparisonScope,undefined);
 assert.equal(old.presets['compare-'+a+':'+table][0].ids[0],'same');
+// Removing a file must remove its exclusive channels from requests and exports,
+// while preserving explicit deselections in the remaining files.
+const remaining=['Ti Kα1','V Kα1','Fe Kα1'],both=[...remaining,'W Mα1'];
+const removed=store.reconcileChannels(['Ti Kα1','V Kα1','W Mα1'],'W Mα1',remaining,both);
+assert.equal(JSON.stringify(removed.signals),JSON.stringify(['Ti Kα1','V Kα1']));
+assert.equal(removed.denominator,'Ti Kα1');
+const restored=store.reconcileChannels(['V Kα1','W Mα1'],'W Mα1',remaining);
+assert.equal(JSON.stringify(restored.signals),JSON.stringify(['V Kα1']));
+assert.equal(restored.denominator,'Ti Kα1');
+const added=store.reconcileChannels(removed.signals,removed.denominator,both,remaining);
+assert.equal(JSON.stringify(added.signals),JSON.stringify(['Ti Kα1','V Kα1','W Mα1']));
+assert.equal(store.reconcileChannels(added.signals,added.denominator,[]).signals.length,0);
+assert.equal(store.reconcileChannels(added.signals,added.denominator,[]).denominator,'');
 console.log('Comparison migration retains cross-file presets, duplicate names, aliases, crops and trims; direct views stay separate');
+console.log('Removed or stale channels are cleared; new channels and valid deselections are retained');

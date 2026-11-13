@@ -18,6 +18,10 @@ window.aztecLineGeometry={
 window.aztecComparisonState={
  key:table=>'compare:'+table,
  identity:(source,id)=>JSON.stringify([source,id]),
+ reconcileChannels(signals,denominator,available,previous=available){
+  const selected=new Set(signals),before=new Set(previous);
+  return {signals:available.filter(s=>selected.has(s)||!before.has(s)),denominator:available.includes(denominator)?denominator:available.find(s=>s.startsWith('Ti '))||available[0]||''};
+ },
  target(id,source=''){try{const pair=JSON.parse(id);if(Array.isArray(pair)&&pair.length===2)return {source:pair[0],acquisition:pair[1]}}catch{}return {source,acquisition:id}},
  migrate(saved,preferredSource=''){
   if(saved.comparisonScope===2)return saved;
@@ -98,7 +102,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const key=id+':'+table;if(!found.has(key))found.set(key,{id,table,kind,sample:a.specimen||a.label,site:[a.specimen,a.label].filter(Boolean).join(' / '),name:d.attributes.Acquisition,label:[a.specimen,a.label,d.attributes.Acquisition].filter(Boolean).join(' / '),signals:[],paths:[]});const g=found.get(key);g.signals.push(d.attributes.Label);g.paths.push(d.path);
   }return [...found.values()].sort((a,b)=>(a.table==='QuantLinescans')-(b.table==='QuantLinescans'));
  }
- function comparisonGroups(paths){return paths.flatMap(source=>(catalogues.has(source)?groups(catalogues.get(source)):[]).map(g=>({...g,id:comparisonState.identity(source,g.id),source,site:fileName(source)+' / '+g.site,label:fileName(source)+' / '+g.label}))) }
+ function comparisonGroups(paths){return paths.flatMap(source=>(catalogues.has(source)?groups(catalogues.get(source)):[]).map(g=>({...g,id:comparisonState.identity(source,g.id),source,label:fileName(source)+' / '+g.label}))) }
  async function loadCatalogue(path){if(catalogues.has(path))return;try{catalogues.set(path,await api('comparison-catalogue',{path}));sourceErrors.delete(path)}catch(error){sourceErrors.set(path,error.message)}}
  function close(){navigation();document.querySelector('.eds-content-layout').classList.remove('eds-comparing');$('eds-file').classList.remove('eds-file-comparing');clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++openVersion;++version;++layoutVersion;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-analysis-views').style.minHeight='';$('eds-preview').hidden=false}
  async function open(id,comparison=false,channelTable){
@@ -124,7 +128,8 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const preferenceKey=comparison?viewKey(chosen.table):projectKey()+':'+chosen.table,selection=selections[preferenceKey];
   const defaults={mode:kind==='map'?(comparison?'ratio':'both'):'signal',denominator:channelNames.find(s=>s.startsWith('Ti '))||channelNames[0],normalisation:'none',smoothing:kind==='map'?1:10,smoothing_unit:comparison?'nm':'px',brightness:1.5,low:.7,high:1.3,upper:.5,background:true,raw:false,layout:'stacked',spatial:'physical',scale_scope:'element',show_denominator:true,reference_orientation:'native',trim_mode:'full',trim_length:null,line_offsets:{}};
   current={kind,table:chosen.table,all,files,comparison:!!comparison,preferenceKey,ids:comparison?(selection?.ids||all.slice(0,2).map(g=>g.id)):[chosen.id],signals:comparison&&selection?(selection.signals||channelNames):channelNames,options:{...defaults,...preferences[preferenceKey]}};
-  if(!channelNames.includes(current.options.denominator))current.options.denominator=defaults.denominator;
+  const channelSelection=comparisonState.reconcileChannels(current.signals,current.options.denominator,channelNames);
+  current.signals=channelSelection.signals;current.options.denominator=channelSelection.denominator;
   $('eds-dataset-title').textContent=comparison?(kind==='map'?'Map comparison':'Line comparison'):chosen.label;$('eds-dataset-info').textContent=kind==='map'?'Element maps':chosen.table==='QuantLinescans'?'Saved composition profiles · AZtec quantification':'';
   $('eds-preview').hidden=true;$('eds-preview').replaceChildren();$('eds-dataset-details').hidden=true;$('eds-preview-tools').hidden=true;$('eds-preview-note').textContent='';$('eds-preview-error').hidden=true;$('eds-analysis-tools').hidden=false;$('eds-analysis-views').hidden=false;$('eds-analysis-views').replaceChildren();
   state.analysisGroup=comparison?null:chosen.id+':'+chosen.table;
@@ -132,7 +137,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   state.comparisonTable=comparison?chosen.table:null;remember();controls(channelNames);imageScaleAvailability();update();
  }
  function controls(channels){
-  const root=$('eds-analysis-tools');root.replaceChildren();if(current.comparison)presetControls(root);const row=el('div',undefined,'eds-analysis-controls');root.append(row);
+  const root=$('eds-analysis-tools');root.replaceChildren();if(current.comparison){presetControls(root);sourceControls(root);acquisitionControls(root)}const row=el('div',undefined,'eds-analysis-controls');root.append(row);
   const changed=key=>{if(key==='smoothing_unit')smoothing.firstChild.textContent=`Smoothing σ, ${current.options.smoothing_unit}`;keepScroll(updateVisibility);if(['layout','spatial','reference_orientation','trim_mode'].includes(key)){persist();if(current.result)render(current.result)}else update()};
   const toggle=(label,key,choices)=>{const wrap=el('div',undefined,'eds-control');wrap.append(el('span',label));const group=el('div',undefined,'signal-toggle inspector-layout');group.setAttribute('role','group');group.setAttribute('aria-label',label);for(const [value,text] of choices){const b=el('button',text);b.type='button';b.setAttribute('aria-pressed',String(current.options[key]===value));b.onclick=()=>{current.options[key]=value;for(const n of group.children)n.setAttribute('aria-pressed',String(n===b));changed(key)};group.append(b)}wrap.append(group);row.append(wrap);return wrap};
   if(current.comparison&&current.kind==='line'&&comparisonGroups(current.files).some(g=>g.table==='QuantLinescans')){const family=el('div',undefined,'eds-control');family.append(el('span','Profiles'));const buttons=el('div',undefined,'signal-toggle inspector-layout');for(const [table,label] of [['XrayLinescans','Intensity'],['QuantLinescans','Composition']]){const button=el('button',label);button.type='button';button.setAttribute('aria-pressed',String(current.table===table));button.disabled=!comparisonGroups(current.files).some(g=>g.table===table);button.onclick=()=>{const key=viewKey(table);selections[key]={...(selections[key]||{}),files:[...current.files]};open(null,'line',table)};buttons.append(button)}family.append(buttons);row.append(family)}
@@ -174,13 +179,6 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   for(const signal of channels){const label=el('label'),input=el('input');input.type='checkbox';input.checked=true;input.onchange=()=>{if(current.kind==='map'&&current.options.mode==='ratio'&&signal===current.options.denominator)current.options.show_denominator=input.checked;else current.signals=input.checked?[...current.signals,signal]:current.signals.filter(s=>s!==signal);update()};input.value=signal;label.append(input,el('span',signal));picks.append(label)}
   updateVisibility();
   if(current.kind==='line'){const options=el('div',undefined,'eds-channel-picks');const imageToggle=el('div',undefined,'signal-toggle inspector-layout'),imageButton=el('button','Image');imageButton.type='button';imageButton.setAttribute('aria-label','Show electron image');imageButton.setAttribute('aria-pressed',String(current.options.background));imageButton.onclick=()=>{current.options.background=!current.options.background;imageButton.setAttribute('aria-pressed',String(current.options.background));persist();if(current.result)render(current.result)};imageToggle.append(imageButton);options.append(imageToggle);for(const [key,text] of [['raw','Underlying data']]){const label=el('label'),input=el('input');input.type='checkbox';input.checked=current.options[key];input.onchange=()=>{current.options[key]=input.checked;persist();if(current.result)render(current.result)};label.append(input,el('span',text));options.append(label)}footer.append(options)}
-  if(current.comparison){
-   sourceControls(root);
-   const details=el('details',undefined,'eds-comparison-selection');details.open=true;
-   const summary=el('summary',`Acquisitions · ${current.ids.length} selected`);details.append(summary);
-   const list=el('div',undefined,'eds-acquisition-picks');const sites=new Map();
-   for(const group of current.all){if(!sites.has(group.source+'|'+group.site)){const section=el('div');const heading=el('strong',group.site);heading.title=group.source+' / '+group.site;section.append(heading);list.append(section);sites.set(group.source+'|'+group.site,section)}const label=el('label'),input=el('input');input.type='checkbox';input.value=group.id;input.checked=current.ids.includes(group.id);input.setAttribute('aria-label',group.label);input.onchange=()=>{current.ids=input.checked?[...current.ids,group.id]:current.ids.filter(id=>id!==group.id);summary.textContent=`Acquisitions · ${current.ids.length} selected`;update()};label.append(input,el('span',group.name));sites.get(group.source+'|'+group.site).append(label)}details.append(list);root.append(details);
-  }
   if(current.comparison&&current.kind==='line')lineTrimControls(root);
   exportControls(root,footer);
   const help=el('span',undefined,'eds-analysis-help'),helpButton=el('button','ⓘ'),helpText=el('span',(current.comparison?'All links colour or plot limits across selected quantities with compatible units. Per Element links each quantity across acquisitions. Normalized maps use the explicit Colour min/max for either linked setting. Off uses each acquisition’s own range; normalized maps then use a symmetric 1st–99th percentile range around 1. Stacked keeps each element separate within each acquisition. Overlay elements puts selected elements together, one plot per acquisition. Overlay scans compares acquisitions, one plot per element. Traces in an overlay always share one axis. Distance scales stay linked. Normalization independently divides each acquisition by its own baseline. Equal distance preserves field sizes; Fit tiles fits whole images; Crop tiles shows a common field of view; drag any tile to pan all channels from that acquisition, or use arrow keys. Centre crop resets the position. Scale bars describe the displayed magnification. ':'')+'Channels are smoothed before division. Median, Mean or P20 become 1 on the line path; Off places 0 there. Underlying data only changes trace visibility. Map exposure uses unsmoothed P99, fixed while smoothing changes; Linked scales use the largest reference in the selected scale group. Near-empty ratio denominators fade below 10% of their map mean, a display safeguard rather than confidence. Normalized maps use Colour min/max unless independent comparison scales are selected. '+(current.table==='QuantLinescans'?'Composition profiles are saved AZtec quantification.':'Ratios describe recorded signals, not concentration.'),'eds-help-content');
@@ -216,9 +214,27 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   }}
   for(const row of rows){const fields=[...positions.children].find(n=>n.dataset.acquisition===row.acquisition).querySelectorAll('input'),range=ranges[row.acquisition];for(const field of fields){field.max=Math.max(0,row.length-range.length);if(field.type==='range'||document.activeElement!==field)field.value=Number(range.start.toFixed(3));field.disabled=row.length-range.length<.001}}
  }
+ function acquisitionControls(root){
+  const context=current,details=el('details',undefined,'eds-comparison-selection eds-acquisition-selection');details.open=context.acquisitionPickerOpen??true;
+  const summary=el('summary',`Acquisitions · ${context.ids.length} selected`);details.append(summary);
+  const files=el('div',undefined,'eds-acquisition-files');
+  for(const source of context.files){
+   const groups=context.all.filter(g=>g.source===source);if(!groups.length)continue;
+   const section=el('section',undefined,'eds-acquisition-file'),heading=el('h4',fileName(source)),folder=WorkbenchProjectTools.pathText(el('small'),source.slice(0,-fileName(source).length));
+   heading.title=source;section.append(heading,folder);
+   const list=el('div',undefined,'eds-acquisition-picks'),sites=new Map();section.append(list);files.append(section);
+   for(const group of groups){
+    if(!sites.has(group.site)){const site=el('div'),name=el('strong',group.site);name.title=group.site;site.append(name);list.append(site);sites.set(group.site,site)}
+    const label=el('label'),input=el('input');input.type='checkbox';input.value=group.id;input.checked=context.ids.includes(group.id);input.setAttribute('aria-label',group.label);
+    input.onchange=()=>{context.ids=input.checked?[...context.ids,group.id]:context.ids.filter(id=>id!==group.id);summary.textContent=`Acquisitions · ${context.ids.length} selected`;renderExportLabels();update()};
+    label.append(input,el('span',group.name));sites.get(group.site).append(label);
+   }
+  }
+  details.ontoggle=()=>{context.acquisitionPickerOpen=details.open};details.append(files);root.append(details);
+ }
  function sourceControls(root){
-  const context=current,details=el('details',undefined,'eds-comparison-selection eds-source-selection');details.open=context.sourcePickerOpen??!context.all.length;
-  const summary=el('summary',`Project files · ${context.files.length}`),list=el('div',undefined,'eds-source-picks'),status=el('p',undefined,'hint');
+  const context=current,details=el('details',undefined,'eds-comparison-selection eds-source-selection');details.open=context.sourcePickerOpen??true;
+  const summary=el('summary',`Project files · ${context.files.length} selected`),list=el('div',undefined,'eds-source-picks'),status=el('p',undefined,'hint');
   const refresh=el('button','Rescan projects');refresh.type='button';
   details.append(summary,list,refresh,status);root.append(details);
   let discovered=[],scanned=false;
@@ -239,8 +255,8 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
      context.all=comparisonGroups(context.files).filter(g=>g.kind===context.kind&&g.table===context.table);
      if(include){const first=context.all.find(g=>g.source===path);if(first&&!context.ids.includes(first.id)&&context.ids.length<32)context.ids.push(first.id)}
      else context.ids=context.ids.filter(id=>target(id).source!==path);
-     const channels=channelNamesFor(context.all);context.signals=[...new Set([...context.signals,...channels.filter(s=>!oldChannels.includes(s))])];
-     if(!context.options.denominator&&channels.length)context.options.denominator=channels.find(s=>s.startsWith('Ti '))||channels[0];
+     const channels=channelNamesFor(context.all),selection=comparisonState.reconcileChannels(context.signals,context.options.denominator,channels,oldChannels);
+     context.signals=selection.signals;context.options.denominator=selection.denominator;
      context.sourcePickerOpen=true;persist();keepScroll(()=>controls(channels));update();
     };
    }
@@ -275,12 +291,20 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   row.append(select,name,save,remove,status);root.append(row);
  }
  function exportLabel(row){return aliases[itemKey(row.acquisition)]||row.sample_name||current.all.find(g=>g.id===row.acquisition)?.sample||row.short_label||row.label}
+ function updateMapLabels(){
+  for(const caption of $('eds-analysis-views').querySelectorAll('.eds-map-label[data-acquisition]')){const row=current.result?.rows.find(r=>r.acquisition===caption.dataset.acquisition);if(row)caption.textContent=exportLabel(row)}
+ }
+ function renderExportLabels(){
+  const list=$('eds-analysis-tools').querySelector('.eds-export-aliases');if(!list)return;list.replaceChildren();
+  for(const group of current.all.filter(g=>current.ids.includes(g.id))){const label=el('label'),caption=el('span',group.label),input=el('input');caption.title=(group.source?group.source+' / ':'')+group.label;label.append(caption);input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[itemKey(group.id)]||'';input.setAttribute('aria-label','Export label for '+group.label);input.onchange=()=>{const key=itemKey(group.id),value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist();updateMapLabels()};label.append(input);list.append(label)}
+  list.parentElement.hidden=!list.childElementCount;
+ }
  function exportControls(root,footer){
   const buttons=el('div',undefined,'eds-export-actions'),png=el('button','Export PNG'),data=el('button','Export data'),status=el('span',undefined,'hint');status.setAttribute('role','status');
   for(const b of [png,data])b.type='button';buttons.append(png,data,status);footer.append(buttons);
   if(current.comparison)for(const b of [png,data])b.title='Save to the configured output folder for the first selected acquisition’s project.';
   const labels=el('details',undefined,'eds-export-labels');labels.append(el('summary','Export labels'));const list=el('div',undefined,'eds-export-aliases');labels.append(list);root.append(labels);
-  for(const group of current.all){const label=el('label'),caption=el('span',group.label),input=el('input');caption.title=(group.source?group.source+' / ':'')+group.label;label.append(caption);input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[itemKey(group.id)]||'';input.setAttribute('aria-label','Export label for '+group.label);input.onchange=()=>{const key=itemKey(group.id),value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist()};label.append(input);list.append(label)}
+  renderExportLabels();
   async function run(kind){
    if(!current?.result||current.resultVersion!==version){status.textContent='Wait for the current view to finish updating.';return}
    const context=current,result=context.result,options={...context.options},fileId=state.file?.id,source=context.comparison?result.rows[0].source:projectKey();
@@ -352,26 +376,21 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    }
    if(result.mode==='both')for(const channel of selectedSignals())if(channel!==current.options.denominator)columns.push({channel,ratio:true,label:`${channel} / ${current.options.denominator}`});
    const wrap=el('div',undefined,'eds-comparison-maps'),grid=el('div',undefined,'eds-comparison-grid');wrap.append(grid);root.append(wrap);grid.style.setProperty('--columns',columns.length);
-   for(const col of columns){const head=el('div',col.label,'eds-comparison-column');
-    if(!col.electron&&!normalized&&result.shared_scales){const tile=result.rows.flatMap(r=>r.tiles).find(t=>t.channel===col.channel&&!t.error),limits=tile?.[col.ratio?'ratio_image_limits':'image_limits'];if(limits)head.append(el('small',`${limits[0]} – ${Number(limits[1].toPrecision(3))} ${col.ratio?tile.ratio_unit:tile.unit}`))}
-    grid.append(head);
-   }
    const sizes=new Map(),crops=new Map();for(const r of result.rows)if(r.width&&r.height){sizes.set(r.distance_unit,Math.max(sizes.get(r.distance_unit)||0,r.width,r.height));crops.set(r.distance_unit,Math.min(crops.get(r.distance_unit)||Infinity,r.width,r.height))}
    for(const row of result.rows){
-    const label=el('div',row.label,'eds-comparison-row-title');label.style.gridColumn='1 / -1';label.title=(row.source?row.source+' / ':'')+row.label;
-    label.append(el('small',row.width?` · ${row.width.toFixed(1)} × ${row.height.toFixed(1)} ${row.distance_unit}`:' · physical calibration unavailable'));grid.append(label);
     const cropTiles=[];
     for(const col of columns){const tile=row.tiles.find(t=>t.channel===col.channel),error=row.error||(!col.electron?(tile?.[col.ratio?'ratio_error':'error']||(!tile?'Channel unavailable':null)):(!row.electron?'Electron image unavailable':null));
      const cell=el('figure',undefined,'eds-comparison-cell');grid.append(cell);
+     mapLabel(cell,col.electron?exportLabel(row):tile?.[col.ratio?'ratio_label':'label']||col.label,col.electron?row:null);
      if(error){cell.append(el('p',error,'eds-channel-error'));continue}
      const img=el('img');img.src=col.electron?row.electron:tile[col.ratio?'ratio_image':'image'];img.alt=`${row.label} · ${col.label}`;
      if(!col.electron)img.dataset.intensityMap='';
      if(['physical','crop'].includes(current.options.spatial)&&row.width){const size=(current.options.spatial==='crop'?crops:sizes).get(row.distance_unit);img.style.width=`${100*row.width/size}%`;img.style.height=`${100*row.height/size}%`}
      cell.classList.toggle('eds-crop-tile',current.options.spatial==='crop');cell.append(img);
      const redrawScale=mapScaleBar(cell,img,row);cropTiles.push({cell,img,redrawScale});
-     if(!col.electron&&!result.shared_scales){const limits=tile[col.ratio?'ratio_image_limits':'image_limits'];if(limits){const key=el('span',limits.map(v=>Number(v.toPrecision(3))).join(' – '),'eds-tile-value-limits');key.title=normalized?'Independent colour limits; white = 1':`Independent colour limits (${col.ratio?tile.ratio_unit:tile.unit})`;cell.append(key)}}
+     if(!col.electron&&(!result.shared_scales||!normalized)){const limits=tile[col.ratio?'ratio_image_limits':'image_limits'];if(limits){const key=el('span',limits.map(v=>Number(v.toPrecision(3))).join(' – '),'eds-tile-value-limits');key.title=normalized?'Independent colour limits; white = 1':`${result.shared_scales?'Shared':'Independent'} colour limits (${col.ratio?tile.ratio_unit:tile.unit})`;cell.append(key)}}
     }
-    if(current.options.spatial==='crop')panMapRow(cropTiles,row,label);
+    if(current.options.spatial==='crop'&&cropTiles.length)panMapRow(cropTiles,row,cropTiles[0].cell);
     linkMapHover(cropTiles);
    }
    if(normalized&&result.shared_scales)comparisonColourScale(wrap,grid,result);
@@ -573,8 +592,10 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   });
  }
 
+ function mapLabel(cell,text,row){
+  const caption=el('span',text,'eds-map-label');if(row)caption.dataset.acquisition=row.acquisition;cell.append(caption);return caption;
+ }
  function mapScaleBar(cell,img,row){
-  if(!(row?.width>0&&row.distance_unit)){cell.title='Image scale unavailable';return ()=>{}}
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.classList.add('eds-image-scale');svg.setAttribute('role','img');cell.append(svg);
   const draw=()=>{
    if(!cell.isConnected||!img.naturalWidth)return;
@@ -583,6 +604,8 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const factor=Math.min(rect.width/img.naturalWidth,rect.height/img.naturalHeight),width=img.naturalWidth*factor,height=img.naturalHeight*factor;
    const left=rect.left-box.left+(rect.width-width)/2,top=rect.top-box.top+(rect.height-height)/2;
    const x=Math.max(0,left),y=Math.max(0,top),right=Math.min(box.width,left+width),bottom=Math.min(box.height,top+height);
+   const caption=cell.querySelector('.eds-map-label');if(caption){caption.style.left=(x+5)+'px';caption.style.top=(y+5)+'px';caption.style.maxWidth=Math.max(0,right-x-10)+'px'}
+   if(!(row?.width>0&&row.distance_unit))return;
    const unitsPerPixel=row.width/width,target=Math.max(0,right-x)*.28*unitsPerPixel;
    if(!(target>0&&bottom>y))return;
    const power=10**Math.floor(Math.log10(target)),length=([5,2,1].find(n=>n*power<=target)||1)*power,pixels=length/unitsPerPixel;
@@ -607,7 +630,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   for(const {cell,img} of tiles){
    cell.classList.add('eds-pannable');cell.tabIndex=0;cell.setAttribute('role','group');cell.setAttribute('aria-label',img.alt+' · drag or use arrow keys to pan; Home to centre');img.draggable=false;
    let drag=null;
-   cell.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();cell.focus({preventScroll:true});const rect=img.getBoundingClientRect();drag={id:e.pointerId,x:e.clientX,y:e.clientY,centre:[...centre],width:rect.width,height:rect.height};cell.setPointerCapture(e.pointerId);cell.classList.add('eds-panning')};
+   cell.onpointerdown=e=>{if(e.button!==0||e.target.closest('button'))return;e.preventDefault();cell.focus({preventScroll:true});const rect=img.getBoundingClientRect();drag={id:e.pointerId,x:e.clientX,y:e.clientY,centre:[...centre],width:rect.width,height:rect.height};cell.setPointerCapture(e.pointerId);cell.classList.add('eds-panning')};
    cell.onpointermove=e=>{if(drag&&e.pointerId===drag.id)move(drag.centre[0]-(e.clientX-drag.x)/drag.width,drag.centre[1]-(e.clientY-drag.y)/drag.height)};
    const end=e=>{if(drag&&e.pointerId===drag.id){drag=null;cell.classList.remove('eds-panning');if(cell.hasPointerCapture(e.pointerId))cell.releasePointerCapture(e.pointerId)}};
    cell.onpointerup=end;cell.onpointercancel=end;cell.onlostpointercapture=end;cell.ondblclick=()=>move(.5,.5);
@@ -616,9 +639,9 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   move(...centre);
  }
  function imageTile(root,label,source,colour,error,row,stat){
-  const figure=el('figure',undefined,'eds-map-tile'),caption=el('figcaption',label);if(colour)caption.style.color=colour;figure.append(caption);root.append(figure);
-  if(error){figure.append(el('p',error,'eds-channel-error'));return null}
-  const cell=el('div',undefined,'eds-map-image'),img=el('img');img.src=source;img.alt=label;if(colour)img.dataset.intensityMap='';cell.append(img);figure.append(cell);mapScaleBar(cell,img,row);
+  const figure=el('figure',undefined,'eds-map-tile'),cell=el('div',undefined,'eds-map-image');root.append(figure);figure.append(cell);mapLabel(cell,label==='Electron image'?exportLabel(row):label,label==='Electron image'?row:null);
+  if(error){cell.append(el('p',error,'eds-channel-error'));return null}
+  const img=el('img');img.src=source;img.alt=label;if(colour)img.dataset.intensityMap='';cell.append(img);mapScaleBar(cell,img,row);
   return {cell,img};
  }
  function linkMapHover(tiles,path=null){
