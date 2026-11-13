@@ -1,5 +1,5 @@
 /* Live views of the existing EDX report operations. Native inputs stay read-only. */
-window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
+window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop})=>{
  let current=null,version=0,smoothingTimer=null,plotObservers=[];
  const preferences={};
  function clearPlotObservers(){for(const observer of plotObservers)observer.disconnect();plotObservers=[]}
@@ -9,9 +9,9 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
    const key=id+':'+table;if(!found.has(key))found.set(key,{id,table,kind,label:[a.specimen,a.label,d.attributes.Acquisition].filter(Boolean).join(' / '),signals:[],paths:[]});const g=found.get(key);g.signals.push(d.attributes.Label);g.paths.push(d.path);
   }return [...found.values()].sort((a,b)=>(a.table==='QuantLinescans')-(b.table==='QuantLinescans'));
  }
- function close(){clearTimeout(smoothingTimer);clearPlotObservers();++version;current=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-preview').hidden=false}
+ function close(){clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++version;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-preview').hidden=false}
  function open(id,comparison=false,channelTable){
-  const available=groups(),chosen=available.find(g=>g.id===id&&(!channelTable||g.table===channelTable))||available.find(g=>g.kind==='map');if(!chosen)return;
+  const available=groups(),chosen=comparison?available.find(g=>g.kind==='map'):available.find(g=>g.id===id&&(!channelTable||g.table===channelTable));if(!chosen){$('eds-preview-error').textContent='No viewable element channels for this acquisition.';$('eds-preview-error').hidden=false;return}
   clearPlotObservers();
   ++state.previewVersion;const kind=comparison?'map':chosen.kind,all=available.filter(g=>g.kind===kind);
   const channelNames=[...new Set((comparison?all:[chosen]).flatMap(g=>g.signals))].sort((a,b)=>{const order=['Ti','V','Fe','Al'];const rank=x=>{const n=order.indexOf(x.split(' ')[0]);return n<0?99:n};return rank(a)-rank(b)||a.localeCompare(b)});
@@ -20,6 +20,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
   if(!channelNames.includes(current.options.denominator))current.options.denominator=defaults.denominator;
   $('eds-dataset-title').textContent=comparison?'Map comparison':chosen.label;$('eds-dataset-info').textContent=kind==='map'?'Element maps':chosen.table==='QuantLinescans'?'Saved composition profiles · AZtec quantification':'';
   $('eds-preview').hidden=true;$('eds-preview').replaceChildren();$('eds-dataset-details').hidden=true;$('eds-preview-tools').hidden=true;$('eds-preview-note').textContent='';$('eds-preview-error').hidden=true;$('eds-analysis-tools').hidden=false;$('eds-analysis-views').hidden=false;$('eds-analysis-views').replaceChildren();
+  state.analysisGroup=comparison?null:chosen.id+':'+chosen.table;
   if(comparison){state.dataset=null;highlightRegions()}else{state.dataset=state.file.catalogue.datasets.find(d=>d.attributes['Acquisition ID']===chosen.id&&/^\/(SmartLines|SmartMaps)\//.test(d.path))||state.file.catalogue.datasets.find(d=>chosen.paths.includes(d.path));highlightRegions()}
   controls(channelNames);update();
  }
@@ -59,12 +60,13 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
  }
  async function update(){
   clearTimeout(smoothingTimer);const v=++version;if(!current)return;preferences[current.kind]={...current.options};$('eds-preview-error').hidden=true;
-  if(!current.ids.length||!current.signals.length){clearPlotObservers();current.result=null;$('eds-analysis-views').replaceChildren(el('p','Select an acquisition and at least one element.','hint'));$('eds-preview-busy').hidden=true;return}
+  if(!current.ids.length||!current.signals.length){clearPlotObservers();setLineCrop(null);current.result=null;$('eds-analysis-views').replaceChildren(el('p','Select an acquisition and at least one element.','hint'));$('eds-preview-busy').hidden=true;return}
   $('eds-preview-busy').hidden=false;
   try{const result=await api('process',{id:state.file.id,acquisitions:current.ids,signals:current.signals,channel_table:current.table,...current.options});if(v!==version)return;current.result=result;render(result)}catch(error){if(v===version){$('eds-preview-error').textContent=error.message;$('eds-preview-error').hidden=false}}finally{if(v===version)$('eds-preview-busy').hidden=true}
  }
  function render(result){
   clearPlotObservers();
+  setLineCrop(null);
   const root=$('eds-analysis-views');root.replaceChildren();
   if(current.kind==='map'&&result.normalisation!=='none'){const scale=el('div',undefined,'eds-scale');scale.append(el('span',String(result.low)),el('span',undefined,'eds-scale-bar'),el('span',`${result.high} · relative to ${({median:'median',mean:'mean',p20:'P20'})[result.normalisation]}`));root.append(scale)}
   for(const row of result.rows){const section=el('section',undefined,'eds-map-row');if(current.comparison)section.append(el('h3',row.label));root.append(section);
@@ -106,6 +108,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
     svg.replaceChildren();const w=Math.max(150,svg.clientWidth),h=svg.clientHeight,left=w<400?40:48,right=8,top=4,bottom=showX?21:6,pw=Math.max(60,w-left-right),ph=h-top-bottom,centre=top+ph/2;
     svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
     const extent=row.image_extent||[-.035,1.035,-.23,.23],span=extent[1]-extent[0];
+    if(index===0){const halfHeight=ph/2/(pw/span);setLineCrop(tiles[0].path,[extent[0],extent[1],Math.max(extent[2],-halfHeight),Math.min(extent[3],halfHeight)])}
     const X=x=>left+pw*(x/row.length-extent[0])/span,Y=y=>centre-(y-baseline)*(ph/2-7)/range;
     const add=(tag,attrs,text,parent=svg)=>{const n=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;parent.append(n);return n};
     const clipId=`eds-line-clip-${index}`,defs=add('defs',{}),clip=add('clipPath',{id:clipId},undefined,defs);add('rect',{x:left,y:top,width:pw,height:ph},undefined,clip);const plot=add('g',{'clip-path':`url(#${clipId})`});

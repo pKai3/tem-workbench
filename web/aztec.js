@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const $=id=>document.getElementById(id);
-const state={token:'',listing:null,file:null,acquisition:null,dataset:null,site:null,folderVersion:0,fileVersion:0,previewVersion:0,siteVersion:0};
+const state={token:'',listing:null,file:null,acquisition:null,dataset:null,site:null,analysisGroup:null,lineCrop:null,folderVersion:0,fileVersion:0,previewVersion:0,siteVersion:0};
 const saved=()=>{try{return JSON.parse(localStorage.getItem('tem-eds-browser')||'{}')}catch{return {}}};
 const remember=()=>{try{localStorage.setItem('tem-eds-browser',JSON.stringify({folder:state.listing?.path,file:state.file?.catalogue.source.path,dataset:state.dataset?.path,acquisition:state.acquisition?.index}))}catch{/* Browsing also works with storage disabled. */}};
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node}
@@ -11,9 +11,23 @@ function number(value){return Number.isFinite(value)?Number(value).toLocaleStrin
 function size(value){const units=['B','KiB','MiB','GiB'];let i=0;while(value>=1024&&i<3){value/=1024;i++}return `${number(value)} ${units[i]}`}
 function dimensions(shape){return shape===null?'Stored record':shape.length?shape.map(n=>n.toLocaleString()).join(' × '):'Scalar'}
 function valueText(value){return typeof value==='object'?JSON.stringify(value):String(value??'—')}
+function pointLabel(label){return label.replace(/^Spectrum\b/,'Point').replace(/^Preview spectrum$/i,'Preview').replace(/ Sum Spectrum$/i,' sum')}
+function siteContents(a){
+ if(state.file.catalogue.file_type!=='OIPX')return [];
+ const datasets=a.layers.flatMap(l=>l.signals),items=[],seen=new Set();
+ for(const d of datasets){const kind=d.path.split('/')[1],label=d.attributes.Label||'',acquisition=d.attributes.Acquisition;
+  if(kind==='ElectronImages')items.push(label.replace(/^Electron Image /,'Image '));
+  else if(['SmartMaps','SmartLines','XrayMapImages','XrayLinescans','QuantLinescans'].includes(kind)&&acquisition&&!seen.has(d.attributes['Acquisition ID'])){seen.add(d.attributes['Acquisition ID']);items.push(acquisition.replace(/^(Map|Line) Data /,'$1 '))}
+ }
+ const points=datasets.filter(d=>d.path.startsWith('/EDXSpectra/')).map(d=>{
+  const label=d.attributes.Label||'Point',acquisition=d.attributes.Acquisition?.replace(/^(Map|Line) Data /,'$1 ');
+  return /^(Map|Line) Sum Spectrum$/i.test(label)&&acquisition?`${acquisition} sum`:pointLabel(label);
+ });
+ return [items.join(' · '),points.length?`Points: ${points.join(', ')}`:''].filter(Boolean);
+}
 function table(entries){const node=el('table',undefined,'eds-metadata-table');const body=el('tbody');for(const [key,value] of entries){const row=el('tr');row.append(el('th',key),el('td',valueText(value)));body.append(row)}node.append(body);return node}
 async function api(action,body){const response=await fetch(`/api/aztec/${action}`,body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body)}:{});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
-const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions});
+const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions,setLineCrop});
 function openAnalysis(id,comparison=false,channelTable){clearPreview();analysis.open(id,comparison,channelTable);remember()}
 function renderFiles(){
  const root=$('eds-files');root.replaceChildren();const listing=state.listing;if(!listing)return;
@@ -30,14 +44,18 @@ async function openFile(path,restoreDataset,restoreAcquisition){
  const version=++state.fileVersion;++state.previewVersion;status('Reading file contents…');
  try{const file=await api('open',{path});if(version!==state.fileVersion)return;state.file=file;const c=file.catalogue;$('eds-empty').hidden=true;$('eds-file').hidden=false;$('eds-file-info').textContent=`${c.source.path.split(/[\\/]/).at(-1)} · ${size(c.source.size)} · ${c.file_type} ${c.format_version}${c.software_version?' · AZtec '+c.software_version:''}`;
   const restored=c.acquisitions.find(a=>a.index===restoreAcquisition)||c.acquisitions.find(a=>a.layers.some(l=>l.signals.some(d=>d.path===restoreDataset)));
-  $('eds-compare').hidden=!analysis.groups().some(g=>g.kind==='map');renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();renderFiles();remember();if(file.folder!==state.listing?.path)await browse(file.folder);if(version!==state.fileVersion)return;$('eds-file-browser').open=false;status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
+  $('eds-compare').hidden=!analysis.groups().some(g=>g.kind==='map');renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();renderFiles();remember();if(file.folder!==state.listing?.path)await browse(file.folder);if(version!==state.fileVersion)return;$('eds-file-browser').open=false;status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} point records · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
   const target=state.acquisition?.layers.flatMap(l=>l.signals).find(d=>d.path===restoreDataset);if(target)selectDataset(target);
  }catch(error){if(version===state.fileVersion)status(error.message,true)}
 }
 function renderAcquisitions(){
  const root=$('eds-acquisitions');root.replaceChildren();root.hidden=false;
  const groups=new Map();for(const a of state.file.catalogue.acquisitions){const name=a.specimen||'Project';if(!groups.has(name))groups.set(name,[]);groups.get(name).push(a)}
- for(const [name,items] of groups){const group=el('section');group.append(el('h3',name));const list=el('ul');for(const a of items){const item=el('li'),button=el('button',[a.site===a.label?null:a.site,a.label].filter(Boolean).join(' / '),'eds-site');button.type='button';button.dataset.index=a.index;button.setAttribute('aria-current',String(a.index===state.acquisition?.index));button.onclick=()=>{if(a.index!==state.acquisition?.index)renderAcquisition(a.index)};item.append(button);list.append(item)}group.append(list);root.append(group)}
+ for(const [name,items] of groups){const group=el('section');group.append(el('h3',name));const list=el('ul');for(const a of items){
+  const item=el('li'),label=[a.site===a.label?null:a.site,a.label].filter(Boolean).join(' / '),button=el('button',undefined,'eds-site'),contents=siteContents(a);
+  const title=el('span',label,'eds-site-name');title.title=label;button.append(title);for(const text of contents){const note=el('small',text,'eds-site-summary');note.title=text;button.append(note)}
+  button.type='button';button.title=[label,...contents].join('\n');button.setAttribute('aria-label',label);button.dataset.index=a.index;button.setAttribute('aria-current',String(a.index===state.acquisition?.index));button.onclick=()=>{if(a.index!==state.acquisition?.index)renderAcquisition(a.index)};item.append(button);list.append(item)
+ }group.append(list);root.append(group)}
 }
 function renderAcquisition(index){
  ++state.previewVersion;state.dataset=null;state.acquisition=state.file.catalogue.acquisitions.find(a=>a.index===index);for(const button of $('eds-acquisitions').querySelectorAll('.eds-site'))button.setAttribute('aria-current',String(button.dataset.index===String(index)));
@@ -45,12 +63,32 @@ function renderAcquisition(index){
  const a=state.acquisition,c=state.file.catalogue;$('eds-context').textContent=[a?.project,a?.specimen,a?.site===a?.label?null:a?.site].filter(Boolean).join(' / ');$('eds-title').textContent=a?.label||'File contents';
  const notes=[...(c.notes||[]),...c.warnings];$('eds-warnings').textContent=notes.join(' ');$('eds-warnings').hidden=!notes.length;
  const root=$('eds-contents');root.replaceChildren();clearPreview();$('eds-metadata').open=false;$('eds-metadata-body').replaceChildren();
- for(const layer of a?.layers||[]){const details=el('details');details.open=['EDS','Electron Image'].includes(layer.technique);const name=layer.technique==='Layered Image'?layer.path.split('/').at(-1):layer.technique;details.open=state.file.catalogue.file_type==='OIPX'?/Electron images|Element maps|Element profiles|Composition profiles/.test(name):details.open;const summary=el('summary',`${name} · ${layer.signals.length}`);details.append(summary);
-  if(state.file.catalogue.file_type!=='OIPX')details.append(el('p',`${layer.state}${layer.grid_shape?` · ${dimensions(layer.grid_shape)} grid`:''}`,'hint'));
-  const channel=layer.signals.find(d=>/^\/(XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)),acquisitionId=channel?.attributes['Acquisition ID'];if(acquisitionId){const all=el('button','View all elements','eds-item');all.type='button';all.onclick=()=>openAnalysis(acquisitionId,false,channel.path.split('/')[1]);details.append(all)}
-  for(const note of layer.notes)details.append(el('p',note,'eds-warning'));
-  let lastGroup='';for(const d of layer.signals){const relative=state.file.catalogue.file_type==='OIPX'?(d.attributes.Label||d.attributes['Record type']):d.path.slice(layer.path.length+'/Data/'.length);const parts=relative.split('/');const group=parts.length>1?parts.slice(0,-1).join('/'):'Data';if(group!==lastGroup&&state.file.catalogue.file_type!=='OIPX'){details.append(el('p',group,'eds-group-label'));lastGroup=group}const b=el('button',parts.at(-1),'eds-item');b.type='button';b.dataset.path=d.path;b.setAttribute('aria-pressed','false');b.append(el('small',state.file.catalogue.file_type==='OIPX'?(/\/(ElectronImages|XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)?'Preview available':'Contents identified · preview pending'):`${dimensions(d.shape)}${d.attributes.Unit?` · ${d.attributes.Unit}`:''}`));b.onclick=()=>selectDataset(d);details.append(b)}root.append(details);
+ const native=c.file_type==='OIPX',previewable=d=>/^\/(ElectronImages|XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path);
+ const layers=[...(a?.layers||[])];if(native)layers.sort((x,y)=>Number(!x.signals.some(previewable))-Number(!y.signals.some(previewable)));
+ const unavailable=el('details',undefined,'eds-unavailable'),unavailableCount=layers.flatMap(l=>l.signals).filter(d=>!previewable(d)).length;
+ unavailable.append(el('summary',`Other stored data · ${unavailableCount}`));
+ for(const layer of layers){
+  const compact=native&&layer.signals.every(previewable),points=native&&layer.signals.every(d=>d.path.startsWith('/EDXSpectra/')),name=(layer.technique==='Layered Image'?layer.path.split('/').at(-1):layer.technique).replace(/Stored spectra/g,'Points');
+  const section=el(native?'section':'details',undefined,native?'eds-data-group':undefined);
+  if(!native)section.open=['EDS','Electron Image'].includes(layer.technique);
+  const heading=el(native?'h4':'summary',`${name} · ${layer.signals.length}`);heading.title=heading.textContent;section.append(heading);
+  if(!native)section.append(el('p',`${layer.state}${layer.grid_shape?` · ${dimensions(layer.grid_shape)} grid`:''}`,'hint'));
+  for(const note of layer.notes)section.append(el('p',note,'eds-warning'));
+  const buttonRow=compact||points,buttons=buttonRow?el('div',undefined,'eds-data-buttons'):section;if(buttonRow){buttons.setAttribute('role','group');buttons.setAttribute('aria-label',name);section.append(buttons)}
+  if(points)section.append(el('small','Preview not available yet','eds-group-note'));
+  const channel=layer.signals.find(d=>/^\/(XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)),acquisitionId=channel?.attributes['Acquisition ID'];
+  if(acquisitionId){const all=el('button','All','eds-item');all.type='button';all.title='View all elements';all.setAttribute('aria-label','View all elements');all.setAttribute('aria-pressed','false');all.dataset.analysisGroup=acquisitionId+':'+channel.path.split('/')[1];all.onclick=()=>openAnalysis(acquisitionId,false,channel.path.split('/')[1]);buttons.append(all)}
+  let lastGroup='';for(const d of layer.signals){
+   const relative=native?(d.attributes.Label||d.attributes['Record type']):d.path.slice(layer.path.length+'/Data/'.length),parts=relative.split('/'),group=parts.length>1?parts.slice(0,-1).join('/'):'Data',label=parts.at(-1);
+   if(group!==lastGroup&&!native){section.append(el('p',group,'eds-group-label'));lastGroup=group}
+   const symbol=label.split(' ')[0],shortLabel=points?pointLabel(label):compact?(channel&&layer.signals.filter(s=>s.attributes.Label?.split(' ')[0]===symbol).length===1?symbol:label.replace(/^Electron Image /,'Image ')):label;
+   const b=el('button',shortLabel,'eds-item');b.type='button';b.dataset.path=d.path;b.setAttribute('aria-pressed','false');b.setAttribute('aria-label',points?shortLabel:label);if(buttonRow)b.title=label;
+   if(native){if(!previewable(d)&&!points)b.append(el('small','Preview not available yet'))}else b.append(el('small',`${dimensions(d.shape)}${d.attributes.Unit?` · ${d.attributes.Unit}`:''}`));
+   b.onclick=()=>selectDataset(d);buttons.append(b);
+  }
+  (native&&!compact?unavailable:root).append(section);
  }
+ if(native&&unavailableCount)root.append(unavailable);
  if(!root.childElementCount)root.append(el('p','No recognised acquisition layers. All dataset metadata is available below.','hint'));remember();
 }
 function clearPreview(){
@@ -59,21 +97,35 @@ function clearPreview(){
 }
 function selectDataset(d){
  if(/^\/(SmartLines|SmartMaps)\//.test(d.path)&&analysis.groups().some(g=>g.id===d.attributes['Acquisition ID'])){openAnalysis(d.attributes['Acquisition ID']);return}
- state.dataset=d;clearPreview();$('eds-dataset-title').textContent=(d.attributes.Label||d.path.split('/').at(-1));$('eds-dataset-info').textContent=state.file.catalogue.file_type==='OIPX'?d.attributes['Record type']:`${dimensions(d.shape)} · ${d.dtype}${d.attributes.Unit?` · ${d.attributes.Unit}`:''}`;$('eds-dataset-path').textContent=d.path;$('eds-attributes').replaceChildren(table(Object.entries({Storage:d.storage,...d.attributes})));$('eds-sample').replaceChildren();$('eds-dataset-details').hidden=false;$('eds-dataset-details').open=false;$('eds-row').value=1;$('eds-unsigned').checked=false;
- for(const b of $('eds-contents').querySelectorAll('.eds-item[data-path]')){b.setAttribute('aria-pressed',String(b.dataset.path===d.path));if(b.dataset.path===d.path)b.closest('details').open=true}highlightRegions();
+ state.dataset=d;clearPreview();const label=d.attributes.Label||d.path.split('/').at(-1);$('eds-dataset-title').textContent=d.path.startsWith('/EDXSpectra/')?pointLabel(label):label;$('eds-dataset-info').textContent=state.file.catalogue.file_type==='OIPX'?d.attributes['Record type'].replace(/Stored spectra/g,'Points'):`${dimensions(d.shape)} · ${d.dtype}${d.attributes.Unit?` · ${d.attributes.Unit}`:''}`;$('eds-dataset-path').textContent=d.path;$('eds-attributes').replaceChildren(table(Object.entries({Storage:d.storage,...d.attributes})));$('eds-sample').replaceChildren();$('eds-dataset-details').hidden=false;$('eds-dataset-details').open=false;$('eds-row').value=1;$('eds-unsigned').checked=false;
+ highlightRegions();
  remember();preview();
 }
 async function loadSite(image){
- const version=++state.siteVersion;state.site=null;const native=state.file.catalogue.file_type==='OIPX'&&state.acquisition?.index!=='unassigned';$('eds-site-view').hidden=!native;$('eds-site-canvas').replaceChildren();$('eds-site-regions').replaceChildren();$('eds-site-error').hidden=true;$('eds-site-image-label').hidden=true;$('eds-site-note').textContent='';$('eds-site-unpositioned').replaceChildren();if(!native)return;
+ const version=++state.siteVersion;state.site=null;const native=state.file.catalogue.file_type==='OIPX'&&state.acquisition?.index!=='unassigned';$('eds-site-view').hidden=!native;$('eds-site-canvas').replaceChildren();$('eds-site-regions').replaceChildren();$('eds-site-error').hidden=true;$('eds-site-image-label').hidden=true;$('eds-site-help').hidden=true;$('eds-site-unpositioned').replaceChildren();if(!native)return;
  $('eds-site-busy').hidden=false;
- try{const site=await api('site',{id:state.file.id,site:state.acquisition.index,image});if(version!==state.siteVersion)return;state.site=site;const select=$('eds-site-image');select.replaceChildren();for(const im of site.images){const o=el('option',im.label);o.value=im.path;select.append(o)}select.value=site.image_path||'';$('eds-site-image-label').hidden=site.images.length<2;$('eds-site-note').textContent=site.note;
+ try{const site=await api('site',{id:state.file.id,site:state.acquisition.index,image});if(version!==state.siteVersion)return;state.site=site;const select=$('eds-site-image');select.replaceChildren();for(const im of site.images){const o=el('option',im.label);o.value=im.path;select.append(o)}select.value=site.image_path||'';$('eds-site-image-label').hidden=site.images.length<2;
   if(site.preview)drawSite(site);else $('eds-site-canvas').append(el('p',site.note,'hint'));
   for(const item of site.unpositioned||[])$('eds-site-unpositioned').append(el('p',`${item.label}: ${item.reason}`,'hint'));
-  if(site.unpositioned?.length){$('eds-site-error').textContent=`${site.unpositioned.length} saved regions have no decoded outline. See Position details.`;$('eds-site-error').hidden=false}
+  if(site.unpositioned?.length){$('eds-site-help').hidden=false;$('eds-site-error').textContent=`${site.unpositioned.length} saved regions have no decoded outline. See Unplaced regions.`;$('eds-site-error').hidden=false}
  }catch(error){if(version===state.siteVersion){$('eds-site-error').textContent=error.message;$('eds-site-error').hidden=false}}finally{if(version===state.siteVersion)$('eds-site-busy').hidden=true}
 }
 function highlightRegions(){
  const active=new Set((state.site?.regions||[]).filter(r=>r.paths.includes(state.dataset?.path)).map(r=>r.id));for(const node of $('eds-site-view').querySelectorAll('[data-region]'))node.setAttribute('aria-pressed',String(active.has(node.dataset.region)));
+ for(const button of $('eds-contents').querySelectorAll('.eds-item')){
+  const selected=state.analysisGroup?button.dataset.analysisGroup===state.analysisGroup:Boolean(button.dataset.path&&button.dataset.path===state.dataset?.path);
+  button.setAttribute('aria-pressed',String(selected));if(selected){const details=button.closest('details');if(details)details.open=true}
+ }
+}
+function setLineCrop(path,extent){
+ state.lineCrop=path?{path,extent}:null;
+ const svg=$('eds-site-canvas').querySelector('svg');if(!svg)return;
+ svg.querySelector('.eds-line-crop')?.remove();
+ const region=state.site?.regions.find(r=>r.kind==='line'&&r.paths.includes(path));if(!region||!extent)return;
+ const [[x,y],[x2,y2]]=region.points,dx=x2-x,dy=y2-y,[u0,u1,v0,v1]=extent;
+ const polygon=document.createElementNS('http://www.w3.org/2000/svg','polygon');polygon.classList.add('eds-line-crop');
+ polygon.setAttribute('points',[[u0,v0],[u1,v0],[u1,v1],[u0,v1]].map(([u,v])=>`${x+u*dx-v*dy},${y+u*dy+v*dx}`).join(' '));
+ polygon.setAttribute('aria-hidden','true');svg.querySelector('image').after(polygon);
 }
 function drawSite(site){
  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg'),w=site.geometry.width,h=site.geometry.height,unit=Math.max(w,h)/320;
@@ -81,14 +133,14 @@ function drawSite(site){
  const make=(parent,tag,attrs,text)=>{const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;parent.append(n);return n};make(svg,'image',{href:site.preview.image,x:0,y:0,width:w,height:h});
  const choose=region=>{const ds=state.file.catalogue.datasets;const d=ds.find(d=>region.paths.includes(d.path)&&/^\/(XrayMapImages|XrayLinescans)\//.test(d.path))||ds.find(d=>d.path===region.path);if(d){const id=d.attributes['Acquisition ID'];if(id&&analysis.groups().some(g=>g.id===id))openAnalysis(id);else selectDataset(d)}};
  for(const region of [...site.regions].sort((a,b)=>(a.kind!=='rectangle')-(b.kind!=='rectangle'))){
-  const [[x,y],[x2,y2]]=region.points,color='#fff';const group=make(svg,'g',{class:'eds-region',role:'button',tabindex:0,'aria-label':region.label,'data-region':region.id});make(group,'title',{},region.label);group.onclick=()=>choose(region);group.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose(region)}};
+  const [[x,y],[x2,y2]]=region.points,color='#fff';const group=make(svg,'g',{class:'eds-region',role:'button',tabindex:0,'aria-label':pointLabel(region.label),'data-region':region.id});make(group,'title',{},pointLabel(region.label));group.onclick=()=>choose(region);group.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose(region)}};
   if(region.kind==='rectangle'){make(group,'rect',{x,y,width:x2-x,height:y2-y,class:'eds-region-outline'});make(group,'rect',{x,y,width:x2-x,height:y2-y,class:'eds-region-hit'})}
   else if(region.kind==='point'){make(group,'circle',{cx:x,cy:y,r:5*unit,class:'eds-region-outline'});make(group,'path',{d:`M${x-9*unit},${y}h${18*unit} M${x},${y-9*unit}v${18*unit}`,class:'eds-region-outline'});make(group,'circle',{cx:x,cy:y,r:12*unit,class:'eds-region-hit'})}
   else{make(group,'line',{x1:x,y1:y,x2,y2,class:'eds-region-outline'});make(group,'line',{x1:x,y1:y,x2,y2,class:'eds-region-hit'});make(group,'circle',{cx:x,cy:y,r:3*unit,class:'eds-region-start'});const angle=Math.atan2(y2-y,x2-x);make(group,'path',{d:`M${x2},${y2}l${-10*unit*Math.cos(angle-.4)},${-10*unit*Math.sin(angle-.4)} M${x2},${y2}l${-10*unit*Math.cos(angle+.4)},${-10*unit*Math.sin(angle+.4)}`,class:'eds-region-outline'})}
   const label=region.label.replace('Line Data ','L').replace('Map Data ','M').replace('Spectrum ','P');make(group,'text',{x:Math.min(w-30*unit,Math.max(6*unit,x+8*unit)),y:Math.max(15*unit,y-8*unit),class:'eds-region-label','font-size':12*unit},label);
-  const button=el('button',region.label.replace('Line Data ','Line ').replace('Map Data ','Map '),'eds-region-key');button.type='button';button.dataset.region=region.id;button.style.setProperty('--region-colour',color);button.onclick=()=>choose(region);$('eds-site-regions').append(button);
+  const button=el('button',pointLabel(region.label).replace('Line Data ','Line ').replace('Map Data ','Map '),'eds-region-key');button.type='button';button.dataset.region=region.id;button.style.setProperty('--region-colour',color);button.onclick=()=>choose(region);$('eds-site-regions').append(button);
  }
- highlightRegions();
+ highlightRegions();if(state.lineCrop)setLineCrop(state.lineCrop.path,state.lineCrop.extent);
 }
 async function preview(){
  if(!state.dataset)return;const version=++state.previewVersion;const d=state.dataset;$('eds-preview-busy').hidden=false;$('eds-preview-error').hidden=true;$('eds-preview').replaceChildren();$('eds-preview-note').textContent='';
