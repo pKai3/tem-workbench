@@ -94,7 +94,7 @@ window.aztecExport=(()=>{
    left+=badge(ctx,part.label,left,top,Math.min(300,x+width-left),part.colour,14)+6;
   }
  }
- const lineWidth=1400,linePad=8,panelInset=6,columnGap=6,rowGap=0;
+ const lineWidth=1400,linePad=8,panelInset=4,columnGap=6,rowGap=0;
  const plotHeight=(figure,width)=>Math.max(105,Math.round(width*figure.image.height/Math.max(1,figure.image.width)));
  const plotCrop=(figure,width)=>{const height=plotHeight(figure,width);return {top:height*figure.cropTop,height:height*figure.cropHeight}};
  function lineColumns(captured,comparison){

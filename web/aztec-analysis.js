@@ -782,7 +782,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const observer=new ResizeObserver(draw);plotObservers.push(observer);observer.observe(svg);
    function draw(){
     if(!svg.isConnected){observer.disconnect();return}
-    svg.replaceChildren();const w=Math.max(150,svg.clientWidth),h=svg.clientHeight,left=normalized?(w<400?30:32):(w<400?38:42),right=8,top=4,bottom=showX?21:6,pw=Math.max(60,w-left-right),ph=h-top-bottom,centre=top+ph/2;
+    svg.replaceChildren();const w=Math.max(150,svg.clientWidth),h=svg.clientHeight,left=normalized?(w<400?30:32):(w<400?38:42),right=current.comparison?0:8,top=4,bottom=showX?21:6,pw=Math.max(60,w-left-right),ph=h-top-bottom,centre=top+ph/2;
     svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
     svg.dataset.cropTop=top;svg.dataset.cropHeight=ph;
     const nativeExtent=row.image_extent||[-.035,1.035,-.23,.23],axisLength=row.axisLength||row.length,extent=current.comparison?[-.008,1.008,nativeExtent[2],nativeExtent[3]]:row.axisLength?[-.035,1.035,nativeExtent[2],nativeExtent[3]]:nativeExtent,span=extent[1]-extent[0],viewStart=row.viewStart||0,viewLength=row.viewLength||row.length;
