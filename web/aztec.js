@@ -55,7 +55,7 @@ function renderAcquisitions(){
  for(const [name,items] of groups){const group=el('section');group.append(el('h3',name));const list=el('ul');for(const a of items){
   const item=el('li'),label=[a.site===a.label?null:a.site,a.label].filter(Boolean).join(' / '),button=el('button',undefined,'eds-site'),contents=siteContents(a);
   const title=el('span',label,'eds-site-name');title.title=label;button.append(title);for(const text of contents){const note=el('small',text,'eds-site-summary');note.title=text;button.append(note)}
-  button.type='button';button.title=[label,...contents].join('\n');button.setAttribute('aria-label',label);button.dataset.index=a.index;button.setAttribute('aria-current',String(a.index===state.acquisition?.index));button.onclick=()=>{if(a.index!==state.acquisition?.index)renderAcquisition(a.index)};item.append(button);list.append(item)
+  button.type='button';button.title=[label,...contents].join('\n');button.setAttribute('aria-label',label);button.dataset.index=a.index;button.setAttribute('aria-current',String(!state.comparisonKind&&a.index===state.acquisition?.index));button.onclick=()=>{if(state.comparisonKind||a.index!==state.acquisition?.index)renderAcquisition(a.index)};item.append(button);list.append(item)
  }group.append(list);root.append(group)}
 }
 function renderAcquisition(index){

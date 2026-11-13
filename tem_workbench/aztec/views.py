@@ -56,6 +56,7 @@ def acquisition_views(reader, options):
     if not np.isfinite([low,high]).all() or high<=low:
         raise AztecReadError('Colour maximum must be greater than minimum.')
     comparison=bool(options.get('comparison',False))
+    shared_scales=bool(options.get('shared_scales',True))
     smoothing_unit=options.get('smoothing_unit','px')
     if smoothing_unit not in ('px','nm'):
         raise AztecReadError('Choose pixels or nm for map smoothing.')
@@ -196,10 +197,17 @@ def acquisition_views(reader, options):
     shared={}
     for item in pending_images:shared[item['key']]=max(shared.get(item['key'],0),item['high'])
     for item in pending_images:
-        exposure=high if norm!='none' else shared[item['key']] if comparison else item['high']
-        item['tile'][item['field']]=png(item['values'],low=low if norm!='none' else 0,high=exposure,
+        floor=low if norm!='none' else 0
+        exposure=high if norm!='none' else shared[item['key']] if comparison and shared_scales else item['high']
+        if comparison and not shared_scales and norm!='none':
+            finite=item['values'][np.isfinite(item['values'])]
+            if finite.size:
+                # Keep the normalization baseline white in independently scaled maps.
+                delta=max(.01,float(np.max(np.abs(np.percentile(finite,[1,99])-1))))
+                floor,exposure=1-delta,1+delta
+        item['tile'][item['field']]=png(item['values'],low=floor,high=exposure,
                                       colour=item['colour'],diverging=norm!='none',opacity=item['opacity'])
-        item['tile'][item['field']+'_limits']=[low if norm!='none' else 0,exposure]
+        item['tile'][item['field']+'_limits']=[floor,exposure]
     return dict(rows=rows,mode=mode,normalisation=norm,smoothing=smoothing,low=low,high=high,
-                comparison=comparison,smoothing_unit=smoothing_unit,
+                comparison=comparison,shared_scales=shared_scales,smoothing_unit=smoothing_unit,
                 note='Channels are smoothed separately before division. Ratios describe recorded signal, not concentration.')

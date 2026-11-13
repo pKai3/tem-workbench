@@ -46,6 +46,13 @@ class ComparisonTests(unittest.TestCase):
         from tem_workbench.aztec.processing import signal_view
         a=np.zeros((40,40));a[20,20]=1
         np.testing.assert_allclose(signal_view(a,sigma=(1,2))['values'],gaussian_filter(a,(1,2),mode='reflect'))
+    def test_independent_scales_do_not_normalize_the_data(self):
+        a,b=self.view(shared_scales=False)
+        self.assertEqual(a['tiles'][0]['image_limits'],[0,10])
+        self.assertEqual(b['tiles'][0]['image_limits'],[0,20])
+        self.assertEqual(a['tiles'][0]['image'],b['tiles'][0]['image'])
+        self.assertEqual(a['tiles'][0]['baseline'],1)
+        self.assertEqual(b['tiles'][0]['baseline'],1)
 
 
 if __name__=='__main__':unittest.main()

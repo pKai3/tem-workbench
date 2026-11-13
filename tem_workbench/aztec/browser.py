@@ -183,8 +183,8 @@ class AztecBrowser:
             raise AztecReadError('Open a native OIPX project for acquisition views.')
         result = acquisition_views(reader,options)
         if result.get('comparison'):
-            LOG.info('AZtec comparison: %s acquisitions · %s · shared scales · normalize each=%s · smoothing unit=%s',
-                     len(result['rows']), options.get('channel_table'), result['normalisation'],
+            LOG.info('AZtec comparison: %s acquisitions · %s · shared scales=%s · normalize each=%s · smoothing unit=%s',
+                     len(result['rows']), options.get('channel_table'), result['shared_scales'], result['normalisation'],
                      result.get('smoothing_unit') if options.get('channel_table')=='XrayMapImages' else 'nm FWHM')
         for row in result['rows']:
             LOG.info('AZtec processed: %s · %s · %s channels · view=%s · denominator=%s · normalize=%s · smoothing=%s',

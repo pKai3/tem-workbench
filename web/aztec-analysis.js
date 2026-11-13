@@ -1,7 +1,13 @@
 /* Live views of the existing EDX report operations. Native inputs stay read-only. */
 window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLineCursor})=>{
  let current=null,version=0,smoothingTimer=null,plotObservers=[],plotSerial=0,referenceCursors=[];
- const preferences={},selections={};
+ const preferences={},selections={},cropCentres=new Map();
+ function navigation(kind=null){
+  state.comparisonKind=kind;
+  $('eds-compare').setAttribute('aria-pressed',String(kind==='map'));
+  $('eds-compare-lines').setAttribute('aria-pressed',String(kind==='line'));
+  for(const button of $('eds-acquisitions').querySelectorAll('.eds-site'))button.setAttribute('aria-current',String(!kind&&button.dataset.index===String(state.acquisition?.index)));
+ }
  function clearPlotObservers(){for(const observer of plotObservers)observer.disconnect();plotObservers=[];referenceCursors=[];setLineCursor(null)}
  function groups(){
   const found=new Map();for(const a of state.file?.catalogue.acquisitions||[])for(const l of a.layers)for(const d of l.signals){
@@ -9,15 +15,16 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const key=id+':'+table;if(!found.has(key))found.set(key,{id,table,kind,site:[a.specimen,a.label].filter(Boolean).join(' / '),name:d.attributes.Acquisition,label:[a.specimen,a.label,d.attributes.Acquisition].filter(Boolean).join(' / '),signals:[],paths:[]});const g=found.get(key);g.signals.push(d.attributes.Label);g.paths.push(d.path);
   }return [...found.values()].sort((a,b)=>(a.table==='QuantLinescans')-(b.table==='QuantLinescans'));
  }
- function close(){document.querySelector('.eds-content-layout').classList.remove('eds-comparing');$('eds-file').classList.remove('eds-file-comparing');clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++version;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-preview').hidden=false}
+ function close(){navigation();document.querySelector('.eds-content-layout').classList.remove('eds-comparing');$('eds-file').classList.remove('eds-file-comparing');clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++version;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-preview').hidden=false}
  function open(id,comparison=false,channelTable){
   const available=groups(),compareKind=comparison===true?'map':comparison;
   const chosen=comparison?available.find(g=>g.kind===compareKind&&(!channelTable||g.table===channelTable)):available.find(g=>g.id===id&&(!channelTable||g.table===channelTable));if(!chosen){$('eds-preview-error').textContent='No viewable element channels for this acquisition.';$('eds-preview-error').hidden=false;return}
   clearPlotObservers();document.querySelector('.eds-content-layout').classList.toggle('eds-comparing',!!comparison);$('eds-file').classList.toggle('eds-file-comparing',!!comparison);
   ++state.previewVersion;const kind=chosen.kind,all=available.filter(g=>g.kind===kind&&g.table===chosen.table);
+  navigation(comparison?kind:null);
   const channelNames=[...new Set((comparison?all:[chosen]).flatMap(g=>g.signals))].sort((a,b)=>{const order=['Ti','V','Fe','Al'];const rank=x=>{const n=order.indexOf(x.split(' ')[0]);return n<0?99:n};return rank(a)-rank(b)||a.localeCompare(b)});
   const preferenceKey=(comparison?'compare-':'')+state.file.id+':'+chosen.table,selection=selections[preferenceKey];
-  const defaults={mode:kind==='map'?(comparison?'ratio':'both'):'signal',denominator:channelNames.find(s=>s.startsWith('Ti '))||channelNames[0],normalisation:'none',smoothing:kind==='map'?1:10,smoothing_unit:comparison?'nm':'px',brightness:1.5,low:.7,high:1.3,upper:.5,background:true,raw:false,layout:'stacked',spatial:'physical'};
+  const defaults={mode:kind==='map'?(comparison?'ratio':'both'):'signal',denominator:channelNames.find(s=>s.startsWith('Ti '))||channelNames[0],normalisation:'none',smoothing:kind==='map'?1:10,smoothing_unit:comparison?'nm':'px',brightness:1.5,low:.7,high:1.3,upper:.5,background:true,raw:false,layout:'stacked',spatial:'physical',shared_scales:true};
   current={kind,table:chosen.table,all,comparison:!!comparison,preferenceKey,ids:comparison?(selection?.ids.filter(id=>all.some(g=>g.id===id))||all.slice(0,2).map(g=>g.id)):[chosen.id],signals:comparison&&selection?selection.signals.filter(s=>channelNames.includes(s)):channelNames,options:{...defaults,...preferences[preferenceKey]}};
   if(!channelNames.includes(current.options.denominator))current.options.denominator=defaults.denominator;
   $('eds-dataset-title').textContent=comparison?(kind==='map'?'Map comparison':'Line comparison'):chosen.label;$('eds-dataset-info').textContent=kind==='map'?'Element maps':chosen.table==='QuantLinescans'?'Saved composition profiles · AZtec quantification':'';
@@ -34,9 +41,10 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   if(current.kind==='line')toggle('Plots','layout',[['stacked','Stacked'],['overlay','Overlay']]);
   toggle('View','mode',current.kind==='map'?[['signal','Signals'],['ratio','Ratios'],['both','Both']]:[['signal',current.table==='QuantLinescans'?'Composition':'Signals'],['ratio','Ratios']]);
   const denominator=el('label','Divide by'),denSelect=el('select');denSelect.setAttribute('aria-label','Divide by');for(const channel of channels){const option=el('option',channel);option.value=channel;denSelect.append(option)}denSelect.value=current.options.denominator;denSelect.onchange=()=>{current.options.denominator=denSelect.value;updateVisibility();update()};denominator.append(denSelect);row.append(denominator);
+  if(current.comparison)toggle('Shared scales','shared_scales',[[true,'On'],[false,'Off']]);
   toggle(current.comparison?'Normalize each acquisition':'Normalize','normalisation',[['none','Off'],['median','Median'],['mean','Mean'],['p20','P20']]);
   const numeric=(label,key)=>{const wrap=el('label',label),input=el('input');input.type='number';input.step='any';input.min=key==='low'?'':0;input.value=current.options[key];input.setAttribute('aria-label',label);input.onchange=()=>{const v=Number(input.value);if(Number.isFinite(v)){current.options[key]=v;update()}};wrap.append(input);row.append(wrap);return wrap};
-  if(current.comparison&&current.kind==='map'){toggle('Image scale','spatial',[['physical','Equal distance'],['fit','Fit tiles']]);toggle('Smoothing units','smoothing_unit',[['nm','nm'],['px','px']])}
+  if(current.comparison&&current.kind==='map'){toggle('Image scale','spatial',[['physical','Equal distance'],['fit','Fit tiles'],['crop','Crop tiles']]);toggle('Smoothing units','smoothing_unit',[['nm','nm'],['px','px']])}
   const smoothing=el('label',current.kind==='map'?`Smoothing σ, ${current.options.smoothing_unit}`:'Smoothing FWHM, nm','eds-smoothing');
   const smoothingInputs=el('span',undefined,'eds-smoothing-inputs'),range=el('input'),amount=el('input');
   range.type='range';range.min='0';range.max=String(Math.max(current.kind==='map'?32:50,current.options.smoothing));range.step='.5';range.value=current.options.smoothing;range.setAttribute('aria-label','Smoothing');
@@ -54,7 +62,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   }
   const low=numeric('Colour min','low'),high=numeric('Colour max','high'),upper=numeric('Ratio max','upper');
   const updateVisibility=()=>{
-   denominator.hidden=current.options.mode==='signal';low.hidden=high.hidden=current.kind!=='map'||current.options.normalisation==='none';if(brightness)brightness.hidden=current.options.normalisation!=='none';upper.hidden=current.kind!=='line'||current.options.mode!=='ratio'||current.options.normalisation!=='none';
+   denominator.hidden=current.options.mode==='signal';low.hidden=high.hidden=current.kind!=='map'||current.options.normalisation==='none'||current.comparison&&!current.options.shared_scales;if(brightness)brightness.hidden=current.options.normalisation!=='none';upper.hidden=current.kind!=='line'||current.options.mode!=='ratio'||current.options.normalisation!=='none'||current.comparison&&!current.options.shared_scales;
    for(const input of picks.querySelectorAll('input')){input.disabled=current.options.mode==='ratio'&&input.value===current.options.denominator;input.checked=input.disabled?current.comparison&&current.kind==='map':current.signals.includes(input.value);input.parentElement.classList.toggle('eds-channel-inactive',input.disabled);input.parentElement.title=input.disabled?(current.comparison&&current.kind==='map'?'Denominator; shown as the reference signal.':'Used as the denominator; not plotted against itself.'):''}
   };
   const footer=el('div',undefined,'eds-analysis-options');root.append(footer);const picks=el('div',undefined,'eds-channel-picks');footer.append(picks);
@@ -67,7 +75,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const list=el('div',undefined,'eds-acquisition-picks');const sites=new Map();
    for(const group of current.all){if(!sites.has(group.site)){const section=el('div');const heading=el('strong',group.site);heading.title=group.site;section.append(heading);list.append(section);sites.set(group.site,section)}const label=el('label'),input=el('input');input.type='checkbox';input.value=group.id;input.checked=current.ids.includes(group.id);input.setAttribute('aria-label',group.label);input.onchange=()=>{current.ids=[...list.querySelectorAll('input:checked')].map(n=>n.value);summary.textContent=`Acquisitions · ${current.ids.length} selected`;update()};label.append(input,el('span',group.name));sites.get(group.site).append(label)}details.append(list);root.append(details);
   }
-  const help=el('span',undefined,'eds-analysis-help'),helpButton=el('button','ⓘ'),helpText=el('span',(current.comparison?'Scales are shared for the same quantity and units. Off preserves acquisition levels; normalization divides each acquisition by its own baseline. Equal distance preserves calibrated field sizes; Fit tiles preserves proportions in equal cells. ':'')+'Channels are smoothed before division. Median, Mean or P20 become 1 on the line path; Off places 0 there. Underlying data only changes trace visibility. Map exposure uses unsmoothed P99, fixed while smoothing changes; comparisons share the largest reference for each quantity. Near-empty ratio denominators fade below 10% of their map mean, a display safeguard rather than confidence. Normalized maps use Colour min/max. '+(current.table==='QuantLinescans'?'Composition profiles are saved AZtec quantification.':'Ratios describe recorded signals, not concentration.'),'eds-help-content');
+  const help=el('span',undefined,'eds-analysis-help'),helpButton=el('button','ⓘ'),helpText=el('span',(current.comparison?'Shared scales links colour or vertical plot limits for the same quantity. Off uses each acquisition’s own range; normalized maps then use a symmetric 1st–99th percentile range around 1. Overlay lines always share one axis. Distance scales stay linked. Normalization independently divides each acquisition by its own baseline. Equal distance preserves field sizes; Fit tiles fits whole images; Crop tiles shows a common field of view; drag any tile to pan all channels from that acquisition, or use arrow keys. Centre crop resets the position. Scale bars describe the displayed magnification. ':'')+'Channels are smoothed before division. Median, Mean or P20 become 1 on the line path; Off places 0 there. Underlying data only changes trace visibility. Map exposure uses unsmoothed P99, fixed while smoothing changes; Shared scales uses the largest reference for each quantity. Near-empty ratio denominators fade below 10% of their map mean, a display safeguard rather than confidence. Normalized maps use Colour min/max unless independent comparison scales are selected. '+(current.table==='QuantLinescans'?'Composition profiles are saved AZtec quantification.':'Ratios describe recorded signals, not concentration.'),'eds-help-content');
   helpButton.type='button';helpButton.setAttribute('aria-label','Processing and plot help');helpButton.setAttribute('aria-expanded','false');helpButton.onclick=()=>helpButton.setAttribute('aria-expanded',String(helpButton.getAttribute('aria-expanded')!=='true'));helpButton.onkeydown=e=>{if(e.key==='Escape')helpButton.setAttribute('aria-expanded','false')};helpText.setAttribute('role','tooltip');help.append(helpButton,helpText);footer.append(help);
   for(const input of root.querySelectorAll('input,select,button')){const group=input.closest('[role=group]')?.getAttribute('aria-label'),label=input.getAttribute('aria-label')||input.closest('label')?.textContent||input.textContent;input.dataset.diagnosticControl=`aztec.${current.kind}.${group?group+': ':''}${label.trim()}`}
 
@@ -89,8 +97,8 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   if(current.kind==='map'&&result.normalisation!=='none'){const scale=el('div',undefined,'eds-scale');scale.append(el('span',String(result.low)),el('span',undefined,'eds-scale-bar'),el('span',`${result.high} · relative to ${({median:'median',mean:'mean',p20:'P20'})[result.normalisation]}`));root.append(scale)}
   for(const row of result.rows){const section=el('section',undefined,'eds-map-row');if(current.comparison)section.append(el('h3',row.label));root.append(section);
    if(row.kind==='map'){
-    const tiles=el('div',undefined,'eds-map-tiles');section.append(tiles);if(current.comparison&&row.electron&&result.mode!=='both')imageTile(tiles,'Electron image',row.electron);
-    for(const tile of row.tiles){const column=el('div',undefined,'eds-map-pair');tiles.append(column);imageTile(column,tile.label,tile.image,tile.colour,tile.error);if(result.mode==='both'){if(tile.ratio_label)imageTile(column,tile.ratio_label,tile.ratio_image,tile.colour,tile.ratio_error);else if(row.electron)imageTile(column,'Electron image',row.electron)}}
+    const tiles=el('div',undefined,'eds-map-tiles');section.append(tiles);
+    for(const tile of row.tiles){const column=el('div',undefined,'eds-map-pair');tiles.append(column);imageTile(column,tile.label,tile.image,tile.colour,tile.error,row);if(result.mode==='both'){if(tile.ratio_label)imageTile(column,tile.ratio_label,tile.ratio_image,tile.colour,tile.ratio_error,row);else if(row.electron)imageTile(column,'Electron image',row.electron,null,null,row)}}
    }
    else linePlots(section,row,result)
   }
@@ -100,7 +108,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  function selectedSignals(){const signals=current.signals.filter(s=>current.options.mode!=='ratio'||s!==current.options.denominator);if(current.comparison&&current.kind==='map'&&current.options.mode==='ratio')signals.unshift(current.options.denominator);return signals}
  function renderComparison(root,result){
   const normalized=result.normalisation!=='none';
-  const note=el('p',normalized?`Shared scales · each acquisition divided by its own ${result.normalisation==='p20'?'P20':result.normalisation}`:'Shared scales · original values','hint eds-comparison-note');root.append(note);
+  if(current.kind==='line'&&current.options.layout==='overlay'&&!current.options.shared_scales)root.append(el('p','Overlaid traces share an axis; separate scales apply when stacked.','hint'));
   if(current.kind==='map'){
    const columns=[{label:'Electron image',electron:true}];
    for(const channel of selectedSignals()){
@@ -109,23 +117,27 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    if(result.mode==='both')for(const channel of selectedSignals())if(channel!==current.options.denominator)columns.push({channel,ratio:true,label:`${channel} / ${current.options.denominator}`});
    const wrap=el('div',undefined,'eds-comparison-maps'),grid=el('div',undefined,'eds-comparison-grid');wrap.append(grid);root.append(wrap);grid.style.setProperty('--columns',columns.length);
    for(const col of columns){const head=el('div',col.label,'eds-comparison-column');
-    if(!col.electron&&!normalized){const tile=result.rows.flatMap(r=>r.tiles).find(t=>t.channel===col.channel&&!t.error),limits=tile?.[col.ratio?'ratio_image_limits':'image_limits'];if(limits)head.append(el('small',`${limits[0]} – ${Number(limits[1].toPrecision(3))} ${col.ratio?tile.ratio_unit:tile.unit}`))}
+    if(!col.electron&&!normalized&&result.shared_scales){const tile=result.rows.flatMap(r=>r.tiles).find(t=>t.channel===col.channel&&!t.error),limits=tile?.[col.ratio?'ratio_image_limits':'image_limits'];if(limits)head.append(el('small',`${limits[0]} – ${Number(limits[1].toPrecision(3))} ${col.ratio?tile.ratio_unit:tile.unit}`))}
     grid.append(head);
    }
-   const sizes=new Map();for(const r of result.rows)if(r.width&&r.height)sizes.set(r.distance_unit,Math.max(sizes.get(r.distance_unit)||0,r.width,r.height));
+   const sizes=new Map(),crops=new Map();for(const r of result.rows)if(r.width&&r.height){sizes.set(r.distance_unit,Math.max(sizes.get(r.distance_unit)||0,r.width,r.height));crops.set(r.distance_unit,Math.min(crops.get(r.distance_unit)||Infinity,r.width,r.height))}
    for(const row of result.rows){
     const label=el('div',row.label,'eds-comparison-row-title');label.style.gridColumn='1 / -1';label.title=row.label;
     label.append(el('small',row.width?` · ${row.width.toFixed(1)} × ${row.height.toFixed(1)} ${row.distance_unit}`:' · physical calibration unavailable'));grid.append(label);
+    const cropTiles=[];
     for(const col of columns){const tile=row.tiles.find(t=>t.channel===col.channel),error=row.error||(!col.electron?(tile?.[col.ratio?'ratio_error':'error']||(!tile?'Channel unavailable':null)):(!row.electron?'Electron image unavailable':null));
      const cell=el('figure',undefined,'eds-comparison-cell');grid.append(cell);
      if(error){cell.append(el('p',error,'eds-channel-error'));continue}
      const img=el('img');img.src=col.electron?row.electron:tile[col.ratio?'ratio_image':'image'];img.alt=`${row.label} · ${col.label}`;img.title=img.alt;
      if(!col.electron)img.dataset.intensityMap='';
-     if(current.options.spatial==='physical'&&row.width){const size=sizes.get(row.distance_unit);img.style.width=`${100*row.width/size}%`;img.style.height=`${100*row.height/size}%`}
-     cell.append(img);
+     if(['physical','crop'].includes(current.options.spatial)&&row.width){const size=(current.options.spatial==='crop'?crops:sizes).get(row.distance_unit);img.style.width=`${100*row.width/size}%`;img.style.height=`${100*row.height/size}%`}
+     cell.classList.toggle('eds-crop-tile',current.options.spatial==='crop');cell.append(img);
+     const redrawScale=mapScaleBar(cell,img,row);cropTiles.push({cell,img,redrawScale});
+     if(!col.electron&&!result.shared_scales){const limits=tile[col.ratio?'ratio_image_limits':'image_limits'];if(limits){const key=el('span',limits.map(v=>Number(v.toPrecision(3))).join(' – '),'eds-tile-value-limits');key.title=normalized?'Independent colour limits; white = 1':`Independent colour limits (${col.ratio?tile.ratio_unit:tile.unit})`;cell.append(key)}}
     }
+    if(current.options.spatial==='crop')panMapRow(cropTiles,row,label);
    }
-   if(normalized){const scale=el('div',undefined,'eds-comparison-colour-scale');scale.append(el('span',String(result.high)),el('span',undefined,'eds-scale-bar'),el('span',String(result.low)));scale.title=`Shared colour limits; relative to each acquisition’s own ${result.normalisation}`;wrap.append(scale)}
+   if(normalized&&result.shared_scales){const scale=el('div',undefined,'eds-comparison-colour-scale');scale.append(el('span',String(result.high)),el('span',undefined,'eds-scale-bar'),el('span',String(result.low)));scale.title=`Shared colour limits; relative to each acquisition’s own ${result.normalisation}`;wrap.append(scale)}
   }else{
    const rows=result.rows.filter(r=>!r.error);
    for(const row of result.rows.filter(r=>r.error))root.append(el('p',`${row.label}: ${row.error}`,'eds-channel-error'));
@@ -142,12 +154,12 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     const byQuantity=new Map();for(const row of rows)for(const tile of row.tiles.filter(t=>!t.error)){const key=tile.scaleKey+row.distance_unit;if(!byQuantity.has(key))byQuantity.set(key,{tiles:[],row});byQuantity.get(key).tiles.push({...tile,label:row.short_label||row.label,source:row.label,colour:row.compareColour})}
     for(const {tiles,row} of byQuantity.values()){
      const section=el('section',undefined,'eds-compare-line-section');section.append(el('h3',row.tiles.find(t=>t.scaleKey===tiles[0].scaleKey).label));root.append(section);
-     linePlots(section,{...row,background:null,overlay:true,length:lengths.get(row.distance_unit),axisLength:lengths.get(row.distance_unit),sharedRanges:ranges,tiles},result);
+     linePlots(section,{...row,background:null,overlay:true,length:lengths.get(row.distance_unit),axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.shared_scales?ranges:null,tiles},result);
     }
    }else for(const row of rows){
     const section=el('section',undefined,'eds-compare-line-section');section.append(el('h3',row.label));root.append(section);
     const body=el('div',undefined,'eds-compare-line-body'),ref=el('div'),plots=el('div');section.append(body);body.append(ref,plots);lineReference(ref,row);
-    linePlots(plots,{...row,overlay:false,axisLength:lengths.get(row.distance_unit),sharedRanges:ranges},result);
+    linePlots(plots,{...row,overlay:false,axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.shared_scales?ranges:null},result);
    }
   }
  }
@@ -164,7 +176,49 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   referenceCursors.push({unit:row.distance_unit,update:distance=>{if(distance===null||distance<0||distance>row.length){cursor.setAttribute('visibility','hidden');return}const f=distance/row.length,x=a[0]+dx*f,y=a[1]+dy*f,size=7*1000/Math.max(1,svg.clientWidth);for(const [key,value]of Object.entries({x1:x-nx*size,y1:y-ny*size,x2:x+nx*size,y2:y+ny*size,visibility:'visible'}))cursor.setAttribute(key,value)}});
  }
 
- function imageTile(root,label,source,colour,error){const figure=el('figure',undefined,'eds-map-tile'),caption=el('figcaption',label);if(colour)caption.style.color=colour;figure.append(caption);if(error)figure.append(el('p',error,'eds-channel-error'));else{const img=el('img');img.src=source;img.alt=label;if(colour)img.dataset.intensityMap='';figure.append(img)}root.append(figure)}
+ function mapScaleBar(cell,img,row){
+  if(!(row?.width>0&&row.distance_unit)){cell.title='Image scale unavailable';return ()=>{}}
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.classList.add('eds-image-scale');svg.setAttribute('role','img');cell.append(svg);
+  const draw=()=>{
+   if(!cell.isConnected||!img.naturalWidth)return;
+   const box=cell.getBoundingClientRect(),rect=img.getBoundingClientRect();if(!box.width||!rect.width)return;
+   // Account for the real image inside object-fit: contain, not its padded box.
+   const factor=Math.min(rect.width/img.naturalWidth,rect.height/img.naturalHeight),width=img.naturalWidth*factor,height=img.naturalHeight*factor;
+   const left=rect.left-box.left+(rect.width-width)/2,top=rect.top-box.top+(rect.height-height)/2;
+   const x=Math.max(0,left),y=Math.max(0,top),right=Math.min(box.width,left+width),bottom=Math.min(box.height,top+height);
+   const unitsPerPixel=row.width/width,target=Math.max(0,right-x)*.28*unitsPerPixel;
+   if(!(target>0&&bottom>y))return;
+   const power=10**Math.floor(Math.log10(target)),length=([5,2,1].find(n=>n*power<=target)||1)*power,pixels=length/unitsPerPixel;
+   const label=row.distance_unit==='nm'&&length>=1000?`${Number((length/1000).toPrecision(3))} µm`:`${Number(length.toPrecision(3))} ${row.distance_unit}`;
+   svg.replaceChildren();svg.setAttribute('viewBox',`0 0 ${box.width} ${box.height}`);svg.setAttribute('aria-label',label+' scale bar');svg.dataset.length=length;svg.dataset.pixels=pixels;
+   const add=(tag,attrs,text)=>{const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;svg.append(n)};
+   const start=x+Math.min(8,(right-x)*.06),base=bottom-Math.min(9,(bottom-y)*.1);
+   for(const [stroke,sw] of [['#000',5],['#fff',3]])add('line',{x1:start,x2:start+pixels,y1:base,y2:base,stroke,'stroke-width':sw});
+   add('text',{x:start,y:base-7,fill:'#fff',stroke:'#000','stroke-width':3,'paint-order':'stroke','stroke-linejoin':'round','font-size':10},label);
+  };
+  img.addEventListener('load',draw,{once:true});const observer=new ResizeObserver(draw);observer.observe(cell);plotObservers.push(observer);draw();return draw;
+ }
+ function panMapRow(tiles,row,label){
+  if(!tiles.length)return;
+  const key=state.file.id+':'+row.acquisition;
+  let centre=cropCentres.get(key)||[.5,.5];
+  const factors=tiles[0].img.style;const sx=parseFloat(factors.width)/100||1,sy=parseFloat(factors.height)/100||1;
+  if(sx<=1&&sy<=1)return;
+  const clamp=(value,scale)=>scale>1?Math.max(.5/scale,Math.min(1-.5/scale,value)):.5;
+  const move=(x,y)=>{centre=[clamp(x,sx),clamp(y,sy)];cropCentres.set(key,centre);for(const {img,redrawScale} of tiles){img.style.transform=`translate(${-100*centre[0]}%,${-100*centre[1]}%)`;redrawScale()}};
+  const reset=el('button','Centre crop','eds-crop-reset');reset.type='button';reset.onclick=()=>move(.5,.5);label.append(reset);
+  for(const {cell,img} of tiles){
+   cell.classList.add('eds-pannable');cell.tabIndex=0;cell.setAttribute('role','group');cell.setAttribute('aria-label',img.alt+' · drag or use arrow keys to pan; Home to centre');cell.title='Drag to pan this acquisition across all its tiles. Double-click or Home to centre.';img.draggable=false;
+   let drag=null;
+   cell.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();cell.focus({preventScroll:true});const rect=img.getBoundingClientRect();drag={id:e.pointerId,x:e.clientX,y:e.clientY,centre:[...centre],width:rect.width,height:rect.height};cell.setPointerCapture(e.pointerId);cell.classList.add('eds-panning')};
+   cell.onpointermove=e=>{if(drag&&e.pointerId===drag.id)move(drag.centre[0]-(e.clientX-drag.x)/drag.width,drag.centre[1]-(e.clientY-drag.y)/drag.height)};
+   const end=e=>{if(drag&&e.pointerId===drag.id){drag=null;cell.classList.remove('eds-panning');if(cell.hasPointerCapture(e.pointerId))cell.releasePointerCapture(e.pointerId)}};
+   cell.onpointerup=end;cell.onpointercancel=end;cell.onlostpointercapture=end;cell.ondblclick=()=>move(.5,.5);
+   cell.onkeydown=e=>{const step=e.shiftKey?.1:.025;const delta={ArrowLeft:[-step/sx,0],ArrowRight:[step/sx,0],ArrowUp:[0,-step/sy],ArrowDown:[0,step/sy]}[e.key];if(delta){e.preventDefault();move(centre[0]+delta[0],centre[1]+delta[1])}else if(e.key==='Home'){e.preventDefault();move(.5,.5)}};
+  }
+  move(...centre);
+ }
+ function imageTile(root,label,source,colour,error,row){const figure=el('figure',undefined,'eds-map-tile'),caption=el('figcaption',label);if(colour)caption.style.color=colour;figure.append(caption);if(error)figure.append(el('p',error,'eds-channel-error'));else{const stage=el('div',undefined,'eds-map-image'),img=el('img');img.src=source;img.alt=label;if(colour)img.dataset.intensityMap='';stage.append(img);figure.append(stage);mapScaleBar(stage,img,row)}root.append(figure)}
  function applyMapBrightness(){const gain=current?.result?.normalisation==='none'?current.options.brightness:1;for(const img of $('eds-analysis-views').querySelectorAll('img[data-intensity-map]'))img.style.filter=`brightness(${gain})`}
 
  function noisePlot(root,tiles){
@@ -202,7 +256,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   for(const tile of row.tiles){const check=tile.noise_check,tr=el('tr');tr.append(el('td',tile.label));if(check?.available){for(const value of [check.observed_cv,check.shuffled_cv,check.shuffled_95])tr.append(el('td',(100*value).toFixed(1)+'%'))}else{const cell=el('td',check?.reason||'Unavailable');cell.colSpan=3;tr.append(cell)}table.append(tr)}noise.append(table);
   noise.append(el('p','Variation = standard deviation ÷ mean of the smoothed profile, excluding 3σ at each end. The 95th percentile is a reference for this shuffle model, not a confidence interval. Numerator/denominator stay paired; channels are smoothed before division. Display normalization does not affect the result. Spatially correlated errors and instrument/systematic uncertainty are not estimated.','hint'));
   const rangeFor=tiles=>{
-   if(!normalized&&result.mode==='ratio')return Math.max(...tiles.map(t=>t.maximum));
+   if(!normalized&&result.mode==='ratio'&&(!current.comparison||display.shared_scales))return Math.max(...tiles.map(t=>t.maximum));
    // Underlying data is a display overlay; it must never change the plot scale.
    let delta=normalized?.2:1e-12;for(const tile of tiles)for(const value of tile.y)if(Number.isFinite(value))delta=Math.max(delta,Math.abs(value-baseline));return delta*1.12;
   };
