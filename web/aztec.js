@@ -250,7 +250,7 @@ $('eds-sources').onchange=e=>changeProject(e.target.value);
 $('eds-compare').onclick=()=>openAnalysis(null,'map');
 $('eds-compare-lines').onclick=()=>openAnalysis(null,'line');
 $('eds-site-image').onchange=e=>loadSite(e.target.value);
-$('eds-catalogue').onclick=async()=>{if(!state.file)return;const button=$('eds-catalogue');button.disabled=true;status('Saving catalogue…');try{const saved=await api('export',{id:state.file.id,format:'catalogue'});status('Saved: '+saved.path)}catch(error){status(error.message,true)}finally{button.disabled=false}};
+$('eds-catalogue').onclick=async()=>{if(!state.file)return;const button=$('eds-catalogue'),notice=WorkbenchExportNotice.show;button.disabled=true;notice('Saving catalogue…','Preparing the file…');try{const saved=await api('export',{id:state.file.id,format:'catalogue'});notice('✓ Export saved · '+saved.path.split(/[\\/]/).at(-1),saved.path,'saved')}catch(error){notice('Export failed',error.message,'error')}finally{button.disabled=false}};
 async function changeProject(id){
  const version=++projectVersion;remember();project=id;WorkbenchWorkspace.set('active_project',project);$('eds-sources').value=project;
  const bookmark=WorkbenchWorkspace.bookmark(project,'aztec');restoring=true;

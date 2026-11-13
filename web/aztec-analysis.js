@@ -138,7 +138,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   state.comparisonTable=comparison?chosen.table:null;remember();controls(channelNames);imageScaleAvailability();update();
  }
  function controls(channels){
-  const root=$('eds-analysis-tools');root.replaceChildren();if(current.comparison){presetControls(root);sourceControls(root);acquisitionControls(root)}const row=el('div',undefined,'eds-analysis-controls');root.append(row);
+  const root=$('eds-analysis-tools');root.replaceChildren();if(current.comparison){presetControls(root);sourceControls(root);acquisitionControls(root)}const row=el('div',undefined,'eds-analysis-controls');if(current.comparison&&current.kind==='line')row.classList.add('eds-line-comparison-controls');root.append(row);
   const changed=key=>{if(key==='smoothing_unit')smoothing.firstChild.textContent=`Smoothing σ, ${current.options.smoothing_unit}`;keepScroll(updateVisibility);if(['layout','spatial','reference_orientation','trim_mode'].includes(key)){persist();if(current.result)render(current.result)}else update()};
   const toggle=(label,key,choices)=>{const wrap=el('div',undefined,'eds-control');wrap.append(el('span',label));const group=el('div',undefined,'signal-toggle inspector-layout');group.setAttribute('role','group');group.setAttribute('aria-label',label);for(const [value,text] of choices){const b=el('button',text);b.type='button';b.setAttribute('aria-pressed',String(current.options[key]===value));b.onclick=()=>{current.options[key]=value;for(const n of group.children)n.setAttribute('aria-pressed',String(n===b));changed(key)};group.append(b)}wrap.append(group);row.append(wrap);return wrap};
   if(current.comparison&&current.kind==='line'&&comparisonGroups(current.files).some(g=>g.table==='QuantLinescans')){const family=el('div',undefined,'eds-control');family.append(el('span','Profiles'));const buttons=el('div',undefined,'signal-toggle inspector-layout');for(const [table,label] of [['XrayLinescans','Intensity'],['QuantLinescans','Composition']]){const button=el('button',label);button.type='button';button.setAttribute('aria-pressed',String(current.table===table));button.disabled=!comparisonGroups(current.files).some(g=>g.table===table);button.onclick=()=>{const key=viewKey(table);selections[key]={...(selections[key]||{}),files:[...current.files]};open(null,'line',table)};buttons.append(button)}family.append(buttons);row.append(family)}
@@ -146,6 +146,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   if(current.comparison&&current.kind==='line'){toggle('Reference image','reference_orientation',[['native','Original'],['right','Arrow right']]);toggle('Scan length','trim_mode',[['full','Full'],['equal','Equal']])}
   toggle('View','mode',current.kind==='map'?[['signal','Signals'],['ratio','Ratios'],['both','Both']]:[['signal',current.table==='QuantLinescans'?'Composition':'Signals'],['ratio','Ratios']]);
   const denominator=el('label','Divide by'),denSelect=el('select');denSelect.setAttribute('aria-label','Divide by');for(const channel of channels){const option=el('option',channel);option.value=channel;denSelect.append(option)}denSelect.value=current.options.denominator;denSelect.onchange=()=>{current.options.denominator=denSelect.value;updateVisibility();update()};denominator.append(denSelect);row.append(denominator);
+  if(current.comparison&&current.kind==='line')row.append(el('span',undefined,'eds-controls-break'));
   if(current.comparison)toggle('Shared scales','scale_scope',[['all','All'],['element','Per Element'],['off','Off']]);
   toggle(current.comparison?'Normalize each acquisition':'Normalize','normalisation',[['none','Off'],['median','Median'],['mean','Mean'],['p20','P20']]);
   const numeric=(label,key)=>{const wrap=el('label',label),input=el('input');input.type='number';input.step='any';input.min=key==='low'?'':0;input.value=current.options[key];input.setAttribute('aria-label',label);input.onchange=()=>{const v=Number(input.value);if(Number.isFinite(v)){current.options[key]=v;update()}};wrap.append(input);row.append(wrap);return wrap};
@@ -176,7 +177,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    denominator.hidden=current.options.mode==='signal';low.hidden=high.hidden=current.kind!=='map'||current.options.normalisation==='none'||current.comparison&&current.options.scale_scope!=='all';if(brightness)brightness.hidden=current.options.normalisation!=='none';upper.hidden=current.kind!=='line'||current.options.mode!=='ratio'||current.options.normalisation!=='none'||current.comparison&&current.options.scale_scope==='off';
    for(const input of picks.querySelectorAll('input')){const denominatorPick=current.options.mode==='ratio'&&input.value===current.options.denominator;input.disabled=denominatorPick&&current.kind!=='map';input.checked=denominatorPick?(current.kind==='map'&&current.options.show_denominator):current.signals.includes(input.value);input.parentElement.classList.toggle('eds-channel-inactive',input.disabled);input.parentElement.title=input.disabled?(current.comparison&&current.kind==='map'?'Denominator; shown as the reference signal.':'Used as the denominator; not plotted against itself.'):''}
   };
-  const footer=el('div',undefined,'eds-analysis-options');root.append(footer);const picks=el('div',undefined,'eds-channel-picks');footer.append(picks);
+  const footer=el('div',undefined,'eds-analysis-options');if(current.comparison&&current.kind==='line')footer.classList.add('eds-line-comparison-options');root.append(footer);const picks=el('div',undefined,'eds-channel-picks');footer.append(picks);
   for(const signal of channels){const label=el('label'),input=el('input');input.type='checkbox';input.checked=true;input.onchange=()=>{if(current.kind==='map'&&current.options.mode==='ratio'&&signal===current.options.denominator)current.options.show_denominator=input.checked;else current.signals=input.checked?[...current.signals,signal]:current.signals.filter(s=>s!==signal);update()};input.value=signal;label.append(input,el('span',signal));picks.append(label)}
   updateVisibility();
   if(current.kind==='line'){const options=el('div',undefined,'eds-channel-picks');const imageToggle=el('div',undefined,'signal-toggle inspector-layout'),imageButton=el('button','Image');imageButton.type='button';imageButton.setAttribute('aria-label','Show electron image');imageButton.setAttribute('aria-pressed',String(current.options.background));imageButton.onclick=()=>{current.options.background=!current.options.background;imageButton.setAttribute('aria-pressed',String(current.options.background));persist();if(current.result)render(current.result)};imageToggle.append(imageButton);options.append(imageToggle);for(const [key,text] of [['raw','Underlying data']]){const label=el('label'),input=el('input');input.type='checkbox';input.checked=current.options[key];input.onchange=()=>{current.options[key]=input.checked;persist();if(current.result)render(current.result)};label.append(input,el('span',text));options.append(label)}footer.append(options)}
@@ -304,7 +305,14 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   list.parentElement.hidden=!list.childElementCount;
  }
  function exportControls(root,footer){
-  const buttons=el('div',undefined,'eds-export-actions'),png=el('button','Export PNG'),data=el('button','Export data'),status=el('span',undefined,'hint');status.setAttribute('role','status');
+  const buttons=el('div',undefined,'eds-export-actions'),png=el('button','Export PNG'),data=el('button','Export data'),notice=window.WorkbenchExportNotice.show;
+  const buttonTimers=new Map(),buttonLabels=new Map([[png,png.textContent],[data,data.textContent]]);
+  const buttonState=(button,state)=>{
+   clearTimeout(buttonTimers.get(button));button.dataset.exportState=state;
+   button.textContent=state==='busy'?'Exporting…':state==='saved'?'✓ Saved':'Export failed';
+   button.setAttribute('aria-busy',String(state==='busy'));
+   if(state!=='busy')buttonTimers.set(button,setTimeout(()=>{button.textContent=buttonLabels.get(button);delete button.dataset.exportState;button.removeAttribute('aria-busy')},5000));
+  };
   for(const b of [png,data])b.type='button';
   let pngMode;
   if(current.comparison&&current.kind==='line'){
@@ -312,7 +320,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    for(const [value,name] of [['all','All in one image'],['individual','One per acquisition']]){const option=el('option',name);option.value=value;pngMode.append(option)}
    label.append(pngMode);buttons.append(label);
   }
-  buttons.append(png,data,status);footer.append(buttons);
+  buttons.append(png,data);footer.append(buttons);
   if(current.comparison){
    data.title='Save to the configured output folder for the first selected acquisition’s project.';
    const updatePngTitle=()=>{png.title=pngMode?.value==='individual'?'Save one PNG per acquisition to its source project’s output folder.':'Save to the configured output folder for the first selected acquisition’s project.'};
@@ -321,11 +329,12 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const labels=el('details',undefined,'eds-export-labels');labels.append(el('summary','Export labels'));const list=el('div',undefined,'eds-export-aliases');labels.append(list);root.append(labels);
   renderExportLabels();
   async function run(kind){
-   if(!current?.result||current.resultVersion!==version){status.textContent='Wait for the current view to finish updating.';return}
+   if(!current?.result||current.resultVersion!==version){notice('Export unavailable','Wait for the current view to finish updating.','error');return}
    const context=current,result=context.result,options={...context.options},fileId=state.file?.id,source=context.comparison?result.rows[0].source:projectKey();
    const names=Object.fromEntries(result.rows.map(r=>[r.acquisition,exportLabel(r)]));
    const lineRanges=context.kind==='line'&&context.comparison?window.aztecLineGeometry.ranges(result.rows,options):{};
-   png.disabled=data.disabled=true;if(pngMode)pngMode.disabled=true;status.textContent=kind==='png'?'Preparing PNG…':'Preparing data…';
+   const active=kind==='png'?png:data;
+   png.disabled=data.disabled=true;if(pngMode)pngMode.disabled=true;buttonState(active,'busy');notice(kind==='png'?'Exporting PNG…':'Exporting data…','Preparing the file…');
    try{
     if(!window.aztecExport)throw new Error('Restart TEM Workbench and reload to load the export tools.');
     let saved;
@@ -336,20 +345,20 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
       if(!ids.length)throw new Error('There are no line plots to export.');
       try{
        for(const [index,id] of ids.entries()){
-        status.textContent=`Saving PNG ${index+1} of ${ids.length}…`;
+        notice(`Saving PNG ${index+1} of ${ids.length}…`,names[id]);
         const image=await window.aztecExport.png({...settings,snapshot,onlyAcquisition:id});
         saved=await api('export',{id:fileId,...acquisitionRequest(context,[id]),format:'png',kind:'line',comparison:true,individual:true,export_label:names[id],image});
         paths.push(saved.path);
        }
       }catch(error){if(paths.length)error.message=`Saved ${paths.length} of ${ids.length} PNGs. ${error.message}`;throw error}
-      status.textContent=`Saved ${paths.length} PNG${paths.length===1?'':'s'}. ${paths.length===1?paths[0]:''}`;status.title=paths.join('\n');return;
+      notice(paths.length===1?'✓ Export saved · '+paths[0].split(/[\\/]/).at(-1):`✓ ${paths.length} PNGs saved`,paths.join('\n'),'saved');buttonState(active,'saved');return;
      }
      const snapshot=context.kind==='line'?window.aztecExport.captureLines(settings):null;
      const image=await window.aztecExport.png({...settings,snapshot});
      saved=await api('export',{id:fileId,...acquisitionRequest(context),format:'png',kind:context.kind,comparison:context.comparison,image});
     }else saved=await api('export',{id:fileId,...acquisitionRequest(context),signals:selectedSignals(),channel_table:context.table,comparison:context.comparison,...options,export_labels:names,export_line_ranges:lineRanges,format:'data'});
-    status.textContent='Saved: '+saved.path;status.title=saved.path;
-   }catch(error){status.textContent=error.message;console.error('AZtec export failed:',error)}finally{png.disabled=data.disabled=false;if(pngMode)pngMode.disabled=false}
+    notice('✓ Export saved · '+saved.path.split(/[\\/]/).at(-1),saved.path,'saved');buttonState(active,'saved');
+   }catch(error){notice('Export failed',error.message,'error');buttonState(active,'error');console.error('AZtec export failed:',error)}finally{png.disabled=data.disabled=false;if(pngMode)pngMode.disabled=false}
   }
   png.onclick=()=>run('png');data.onclick=()=>run('data');
  }

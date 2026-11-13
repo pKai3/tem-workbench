@@ -75,7 +75,15 @@
 
 .eds-correlation-cell{position:relative}.eds-correlation-reference{position:absolute;left:calc(50% + 2.1ch);top:3px;margin-left:4px}
 .eds-export-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.eds-export-actions button{font-size:12px;padding:4px 8px;min-height:28px}
-.eds-export-mode{display:inline-flex!important;align-items:center;gap:6px!important;width:auto!important;font-size:11px}.eds-export-mode select{min-height:28px;padding:4px 6px;font-size:12px;max-width:170px}
+.eds-line-comparison-controls{gap:12px 16px}.eds-controls-break{flex-basis:100%;height:0}
+.eds-line-comparison-options{gap:10px 14px}
+.eds-line-comparison-options .eds-analysis-help{order:1}
+.eds-line-comparison-options .eds-export-actions{order:2;flex-basis:100%;align-items:end;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.eds-line-comparison-options .eds-export-mode{width:190px;min-width:0}
+.eds-line-comparison-options .eds-export-mode select{width:100%;max-width:none;min-height:32px}
+.eds-line-comparison-options .eds-export-actions button{min-height:32px;padding:5px 10px}
+@media(max-width:900px){.eds-controls-break{display:none}}
+.eds-export-mode{display:flex;flex-direction:column;align-items:stretch;gap:4px;font-size:11px}.eds-export-mode select{min-height:28px;padding:4px 6px;font-size:12px;max-width:170px}
 .eds-line-references[hidden]{display:none}
 .eds-overlay-line-body{display:grid;grid-template-columns:220px minmax(0,1fr);gap:8px;align-items:start}
 .eds-compare-line-body{column-gap:8px}
@@ -120,7 +128,6 @@
 #eds-filter{width:100%}#eds-scan-status:empty{display:none}
 .eds-file-name,.eds-entry small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #eds-acquisitions{border:0;padding:0;margin:0}
-.eds-export-actions [role=status]{overflow-wrap:anywhere;min-width:0}
 @media(max-width:600px){.eds-location>label{flex:1 1 180px}}
 .eds-source-picks{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:6px 16px;margin:10px 0}.eds-source-picks label{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px;min-width:0;font-size:12px}.eds-source-picks input{width:auto;min-height:0;margin:0}.eds-source-picks label>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.eds-source-picks .eds-channel-error{grid-column:2;white-space:normal}.eds-source-selection>button{font-size:12px;min-height:26px;padding:4px 8px}.eds-source-selection>p:empty{display:none}
 .eds-file-comparing>.panel-head,.eds-file-comparing>#eds-file-info,.eds-file-comparing>#eds-warnings,.eds-file-comparing>#eds-metadata{display:none}.eds-location>.eds-compare-actions{align-self:end}#eds-status[hidden]+.eds-layout{margin-top:var(--panel-gap)}

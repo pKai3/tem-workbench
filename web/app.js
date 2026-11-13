@@ -2247,31 +2247,7 @@ $('clear-grid').onclick=()=>{
  if(id&&running)api('cancel',{job_id:id}).catch(e=>message(e.message,true));
 };
 const exportButtonTimers=new Map();
-let exportNoticeTimer=null;
-function hideExportNotice(){
- clearTimeout(exportNoticeTimer);exportNoticeTimer=null;
- const notice=$('export-notice');
- if(notice.hidePopover&&notice.matches(':popover-open'))notice.hidePopover();
- notice.hidden=true;
-}
-function exportNotice(title,detail='',state='busy'){
- clearTimeout(exportNoticeTimer);exportNoticeTimer=null;
- const notice=$('export-notice');notice.dataset.state=state;
- // A modal makes elements outside it inert, including top-layer popovers.
- const host=[...document.querySelectorAll('dialog:modal')].at(-1)||document.body;
- if(notice.parentElement!==host)host.append(notice);
- notice.setAttribute('role',state==='error'?'alert':'status');
- notice.setAttribute('aria-live',state==='error'?'assertive':'polite');
- $('export-notice-title').textContent=title;$('export-notice-detail').textContent=detail;notice.hidden=false;
- // Manual popovers stay visible above open dialogs without moving keyboard focus.
- if(notice.showPopover&&!notice.matches(':popover-open'))notice.showPopover();
- if(state==='saved')exportNoticeTimer=setTimeout(hideExportNotice,5000);
-}
-document.addEventListener('close',event=>{
- const notice=$('export-notice');
- if(event.target.contains?.(notice)&&!notice.hidden)exportNotice($('export-notice-title').textContent,$('export-notice-detail').textContent,notice.dataset.state);
-},true);
-$('export-notice-close').onclick=hideExportNotice;
+const exportNotice=WorkbenchExportNotice.show;
 const jobProgressCards=new Map();
 function syncJobProgressHost(){
  const dock=$('job-progress'),host=[...document.querySelectorAll('dialog:modal')].at(-1)||document.body;
