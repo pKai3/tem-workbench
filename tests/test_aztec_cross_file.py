@@ -75,6 +75,8 @@ class CrossFileTests(unittest.TestCase):
             # This compact native fixture has arrays but no electron registration.
             with patch.object(NativeProjectReader,'site',return_value={'regions':[]}):
                 result=browser.process(opened['id'],dict(targets=targets,comparison=True,mode='signal',smoothing=0,channel_table='XrayMapImages'))
+                independent=browser.process(None,dict(targets=targets,comparison=True,mode='signal',smoothing=0,channel_table='XrayMapImages'))
+            self.assertEqual([r['acquisition'] for r in result['rows']],[r['acquisition'] for r in independent['rows']])
             self.assertEqual(len({r['acquisition'] for r in result['rows']}),5)
             self.assertEqual(len({r['native_acquisition'] for r in result['rows']}),1)
             with self.assertRaisesRegex(AztecReadError,'Remove this file'):

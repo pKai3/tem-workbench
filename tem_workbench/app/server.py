@@ -690,12 +690,15 @@ class Workbench:
 
     def export_aztec(self, body):
         from tem_workbench.aztec.export import save_export
-        source = self.aztec.source_path(body['id'])
+        if body.get('comparison') and body.get('targets'):
+            source = self.aztec.comparison_reader(body['targets'][0]['source']).path
+        else:
+            source = self.aztec.source_path(body['id'])
         with self.lock:
             output = folder_paths.output_folder(self.engine.sources, self.config['output_root'], path=source)
         kind = body.get('format')
         if kind == 'data':
-            result = self.aztec.process(body['id'], {**body, 'export_data': True})
+            result = self.aztec.process(body.get('id'), {**body, 'export_data': True})
             raw = base64.b64decode(result['data'], validate=True)
             suffix, label = 'zip', 'data'
         elif kind == 'catalogue':
@@ -987,7 +990,7 @@ def make_handler(app):
                 elif self.path == '/api/aztec/site':
                     self.send(app.aztec.site(body['id'], body['site'], body.get('image')))
                 elif self.path == '/api/aztec/process':
-                    self.send(app.aztec.process(body['id'], body))
+                    self.send(app.aztec.process(body.get('id'), body))
                 elif self.path == '/api/browse-folders':
                     self.send(folder_paths.browse(body.get('path'), app.root))
                 elif self.path == '/api/sources':

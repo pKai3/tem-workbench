@@ -7,6 +7,7 @@
  <div class="eds-location">
   <label>Project<select id="eds-sources"><option value="">All projects</option></select></label>
   <button id="eds-project-settings" type="button">Project settings…</button>
+  <div class="eds-compare-actions"><button id="eds-compare" type="button">Compare maps</button><button id="eds-compare-lines" type="button">Compare lines</button></div>
   <div class="eds-file-choice"><span class="hint">Open file</span><strong id="eds-current-file">Choose a file from the list</strong></div><button id="eds-rescan" type="button">Rescan files</button>
  </div>
  <dialog id="eds-project-dialog" aria-labelledby="eds-project-title"><div class="panel-head"><h2 id="eds-project-title">Project sources and outputs</h2><button id="eds-project-close" type="button" aria-label="Close project settings">×</button></div><div id="project-settings"></div></dialog>
@@ -16,7 +17,7 @@
   <section class="panel eds-file" aria-label="File contents">
    <div id="eds-empty"><h2>Choose a file to see what it contains</h2><p class="hint">Open your native OIPX project with its data folder. Browse specimens, sites and stored data before choosing what to process.</p></div>
    <div id="eds-file" hidden>
-    <div class="panel-head"><div><p id="eds-context" class="hint"></p><h2 id="eds-title"></h2></div><div class="eds-compare-actions"><button id="eds-compare" type="button" hidden>Compare maps</button><button id="eds-compare-lines" type="button" hidden>Compare lines</button></div></div>
+    <div class="panel-head"><div><p id="eds-context" class="hint"></p><h2 id="eds-title"></h2></div></div>
     <p id="eds-file-info" class="hint"></p>
     <p id="eds-warnings" class="eds-warning" hidden></p>
     <div class="eds-content-layout">

@@ -8,8 +8,8 @@ const saved=()=>{try{return JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-brows
 function remember(){
  if(restoring)return;
  const previous=WorkbenchWorkspace.bookmark(project,'aztec');
- if(!state.file&&previous.file)return; // Keep unavailable-file bookmarks for reconnection.
- const bookmark={folder:state.listing?.path||'',file:state.file?.catalogue.source.path,dataset:state.dataset?.path,acquisition:state.acquisition?.index,comparison:state.comparisonKind||null,comparisonTable:state.comparisonTable||null,analysisGroup:state.analysisGroup,image:state.site?.image_path||(previous.acquisition===state.acquisition?.index?previous.image:null)};
+ if(!state.file&&previous.file&&!state.comparisonKind)return; // Keep unavailable-file bookmarks for reconnection.
+ const bookmark={folder:state.listing?.path||'',file:state.file?.catalogue.source.path||previous.file,dataset:state.dataset?.path,acquisition:state.acquisition?.index,comparison:state.comparisonKind||null,comparisonTable:state.comparisonTable||null,analysisGroup:state.analysisGroup,image:state.site?.image_path||(previous.acquisition===state.acquisition?.index?previous.image:null)};
  WorkbenchWorkspace.remember(project,'aztec',bookmark);
  const owner=WorkbenchWorkspace.projectForPath(bookmark.file||bookmark.folder);
  if(owner&&owner!==project)WorkbenchWorkspace.remember(owner,'aztec',bookmark);
@@ -74,7 +74,7 @@ async function openFile(path,restoreDataset,restoreAcquisition,restoreComparison
  const version=++state.fileVersion;++state.previewVersion;status('Reading file contents…');
  try{const file=await api('open',{path});if(version!==state.fileVersion)return;state.file=file;const c=file.catalogue;$('eds-empty').hidden=true;$('eds-file').hidden=false;$('eds-file-info').textContent=`${c.source.path.split(/[\\/]/).at(-1)} · ${size(c.source.size)} · ${c.file_type} ${c.format_version}${c.software_version?' · AZtec '+c.software_version:''}`;
   const restored=c.acquisitions.find(a=>a.index===restoreAcquisition)||c.acquisitions.find(a=>a.layers.some(l=>l.signals.some(d=>d.path===restoreDataset)));
-  $('eds-compare').hidden=!analysis.groups().some(g=>g.kind==='map');$('eds-compare-lines').hidden=!analysis.groups().some(g=>g.kind==='line');renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();state.listing={path:file.folder};renderFileChoice();renderFiles();remember();status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
+  renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();state.listing={path:file.folder};renderFileChoice();renderFiles();remember();status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
   const target=state.acquisition?.layers.flatMap(l=>l.signals).find(d=>d.path===restoreDataset);if(['map','line'].includes(restoreComparison)){analysis.open(null,restoreComparison,restoreTable);remember()}else if(bookmark.analysisGroup){const [id,table]=bookmark.analysisGroup.split(':');openAnalysis(id,false,table)}else if(target)selectDataset(target);
   if(bookmark.image)await loadSite(bookmark.image);
  }catch(error){if(version===state.fileVersion)status(error.message,true)}
@@ -261,6 +261,7 @@ async function changeProject(id){
   state.listing={path:bookmark.folder||sources.find(s=>s.id===project)?.path||''};status('Choose an AZtec file.');
   await scanFiles();if(version!==projectVersion)return;
   if(bookmark.file&&state.files.some(file=>file.path===bookmark.file))await openFile(bookmark.file,bookmark.dataset,bookmark.acquisition,bookmark.comparison,bookmark.comparisonTable,bookmark);
+  else if(bookmark.comparison)await analysis.open(null,bookmark.comparison,bookmark.comparisonTable);
   else if(state.files.length===1)await openFile(state.files[0].path);
  }finally{if(version===projectVersion){restoring=false;remember()}}
 }

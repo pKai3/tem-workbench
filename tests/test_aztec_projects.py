@@ -42,6 +42,7 @@ class AztecProjectTests(unittest.TestCase):
             sources[1]['output'] = ''
             self.assertEqual(output_folder(sources, default, path=source), default)
             browser = SimpleNamespace(source_path=lambda key: source, catalogue=lambda key: {'site': 'Site 1'},
+                                      comparison_reader=lambda path: SimpleNamespace(path=Path(path)),
                                       process=lambda key, body: {'data': base64.b64encode(b'ZIP fixture').decode()})
             app = SimpleNamespace(aztec=browser, lock=RLock(), engine=SimpleNamespace(sources=sources), config={'output_root': str(default)})
             png = BytesIO(); Image.new('RGB', (3, 2)).save(png, format='PNG')
@@ -52,6 +53,10 @@ class AztecProjectTests(unittest.TestCase):
             self.assertEqual(first.parent, default)
             self.assertNotEqual(first, second)
             self.assertEqual(first.read_bytes(), png.getvalue())
+            sources[1]['output']=str(root/'comparison-output')
+            independent=Path(Workbench.export_aztec(app,{**body,'id':None,'targets':[dict(source=str(source),acquisition='map') ]})['path'])
+            self.assertEqual(independent.parent,root/'comparison-output')
+            sources[1]['output']=''
             for kind, extension in [('data','.zip'), ('catalogue','.json')]:
                 saved = Path(Workbench.export_aztec(app, dict(id='opened', format=kind))['path'])
                 self.assertEqual(saved.parent, default)

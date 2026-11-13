@@ -272,7 +272,7 @@ class AztecBrowser:
         from time import monotonic
         with self._lock:
             reader=self._readers.get(key)
-        if not isinstance(reader,NativeProjectReader):
+        if 'targets' not in options and not isinstance(reader,NativeProjectReader):
             raise AztecReadError('Open a native OIPX project for acquisition views.')
         started=monotonic()
         sources=None
@@ -290,11 +290,12 @@ class AztecBrowser:
                     continue
                 seen.add(identity)
                 try:
-                    additional=reader if path==reader.path else self.comparison_reader(path)
+                    additional=reader if isinstance(reader,NativeProjectReader) and path==reader.path else self.comparison_reader(path)
                     additional.inspect()
                 except (OSError,AztecReadError) as error:
                     raise AztecReadError(f'{path.name}: {error}. Remove this file from the comparison or restore it.') from error
                 sources.append((additional,target['acquisition'],str(path)))
+            reader=sources[0][0]
         structure_only=bool(options.get('structure_only',False))
         if structure_only:
             LOG.info('AZtec map spatial check started: %s · %s acquisitions · 256 paired shuffles · ten smoothing widths', compact(str(reader.path)), len(sources if sources is not None else options.get('acquisitions',[])))
