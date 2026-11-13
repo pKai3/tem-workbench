@@ -25,6 +25,14 @@ def output_folder(sources, default, *, source_id=None, path=None):
 DEFAULTS = {'data_root': './data', 'output_root': './output'}
 
 
+def output_folders(sources, default=None):
+    """All configured export destinations, excluded from source discovery."""
+    values = [s['output'] for s in sources if s.get('output')]
+    if default:
+        values.append(default)
+    return frozenset(Path(value).expanduser().resolve() for value in values)
+
+
 def resolve_folder(value, root):
     value = str(value).strip().strip('"').strip("'")
     if not value:
@@ -219,8 +227,10 @@ def save_sources(config_path, root, config, sources, output):
         path = resolve_folder(source['path'], root)
         if not path.is_dir():
             raise ValueError(f'Source folder is unavailable: {path}')
-        if any(path == p or path.is_relative_to(p) or p.is_relative_to(path) for p in paths):
-            raise ValueError('Source folders must be separate, without overlapping parent folders.')
+        if path in paths:
+            raise ValueError('That source folder is already listed. Choose a different folder.')
+        if any(path.is_relative_to(p) or p.is_relative_to(path) for p in paths):
+            raise ValueError('Project source folders must not overlap. Output folders may be inside a source folder.')
         paths.add(path)
         name = str(source.get('name') or path.name).strip()
         if name in ('', '.', '..') or '/' in name or '\\' in name or name in names:

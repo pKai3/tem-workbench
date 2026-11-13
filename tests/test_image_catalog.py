@@ -93,7 +93,37 @@ class CatalogTests(unittest.TestCase):
         second=next(r for r in rows if r['source_id']=='b')
         self.assertEqual(restarted.output_for(second['id']), (self.root/'main-output').resolve())
         self.assertFalse(restarted.file_rows[second['id']]['calibrated'])
-        with self.assertRaisesRegex(ValueError,'overlapping'):
+        with self.assertRaisesRegex(ValueError,'Project source folders must not overlap'):
             save_sources(self.root/'config.json',self.root,{},[dict(path=str(a)),dict(path=str(a/'ST'))],str(self.root/'out'))
+
+    def test_output_inside_source_is_saved_and_not_catalogued(self):
+        source = self.root/'project'; source.mkdir()
+        default = source/'exports'; custom = source/'analysis'/'output'
+        config = save_sources(self.root/'config.json', self.root, {}, [
+            dict(id='project', name='Project', path=str(source), output=str(custom))], str(default))
+        pixels = np.arange(4096, dtype=np.uint16).reshape(64, 64)
+        Image.fromarray(pixels).save(source/'original.tif')
+        Image.fromarray(pixels+1).save(default/'export.tif')
+        Image.fromarray(pixels+2).save(custom/'export.tif')
+        # A sibling whose name starts with the output folder's name stays visible.
+        (source/'exports-originals').mkdir()
+        Image.fromarray(pixels+3).save(source/'exports-originals'/'second.tif')
+        (source/'export-alias.tif').symlink_to(custom/'export.tif')
+        engine = Engine(resolve_config(config, self.root)); engine.catalog()
+        self.assertEqual({r['name'] for r in engine.file_rows.values()}, {'original', 'second'})
+        self.assertEqual(engine.output_for(next(iter(engine.file_rows))), custom.resolve())
+
+    def test_source_overlap_and_output_containing_source_still_rejected(self):
+        source = self.root/'project'; nested = source/'child'; nested.mkdir(parents=True)
+        config_path = self.root/'config.json'
+        for paths in [(source, nested), (nested, source)]:
+            with self.assertRaisesRegex(ValueError, 'Output folders may be inside a source folder'):
+                save_sources(config_path, self.root, {}, [dict(path=str(p)) for p in paths], self.root/'out')
+        with self.assertRaisesRegex(ValueError, 'already listed'):
+            save_sources(config_path, self.root, {}, [dict(path=str(source))]*2, self.root/'out')
+        for output in (source, self.root):
+            with self.assertRaisesRegex(ValueError, 'Output must not be the source folder or an ancestor'):
+                save_sources(config_path, self.root, {}, [dict(path=str(source))], output)
+        self.assertFalse(config_path.exists())
 
 if __name__=='__main__':unittest.main()

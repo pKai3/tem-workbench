@@ -143,8 +143,7 @@ class Engine:
         if self.settings.get('demo_only'):
             return rows
         calibrations = json.loads(self.raster_store.read_text()) if self.raster_store.exists() else {}
-        outputs = {folder_paths.resolve_folder(self.settings.get('output_root', './output'), ROOT)}
-        outputs.update(Path(s['output']).resolve() for s in self.sources if s.get('output'))
+        outputs = folder_paths.output_folders(self.sources, folder_paths.resolve_folder(self.settings.get('output_root', './output'), ROOT))
         candidates, seen = [], set()
         from tem_workbench.storage.mode_folders import diffraction_files
         for source in self.sources:

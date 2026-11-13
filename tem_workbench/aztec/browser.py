@@ -5,7 +5,6 @@ from pathlib import Path
 import base64
 import math
 import logging
-import os
 import threading
 import uuid
 
@@ -13,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from tem_workbench.storage import folder_paths
-from tem_workbench.storage.mode_folders import aztec_folders
+from tem_workbench.storage.mode_folders import aztec_folders, scan_folders
 from tem_workbench.runtime.diagnostics import compact
 from .h5oina import H5OinaReader, AztecReadError, SourceChangedError, MAX_READ_BYTES
 from .native import NativeProjectReader
@@ -27,18 +26,18 @@ class AztecBrowser:
         self._comparison_readers = OrderedDict()
         self._lock = threading.RLock()
 
-    def files(self, sources, project=None):
+    def files(self, sources, project=None, *, outputs=()):
         """List supported files throughout the project without decoding every dataset."""
         selected = [s for s in sources if not project or s['id'] == project]
         if project and not selected:
             raise AztecReadError('Choose a configured project.')
         files, errors, seen = [], [], set()
+        outputs = folder_paths.output_folders(sources) | frozenset(outputs)
         for source in sorted(selected, key=lambda s: len(Path(s['path']).parts), reverse=True):
             root = Path(source['path']).expanduser().resolve()
             def failed(error):
                 errors.append(f'{error.filename}: {error.strerror}')
-            for directory, folders, names in os.walk(root, followlinks=False, onerror=failed):
-                folders[:] = sorted(n for n in folders if not n.startswith('.') and not (Path(directory)/n).is_symlink())
+            for directory, names in scan_folders(root, outputs, onerror=failed):
                 for name in names:
                     path = Path(directory)/name
                     if path.suffix.lower() not in ('.oipx', '.h5oina') or path.is_symlink():
@@ -58,25 +57,28 @@ class AztecBrowser:
         LOG.info('AZtec project scan: %s · %s files · %s folder errors', project or 'all', len(files), len(errors))
         return dict(files=files, errors=errors)
 
-    def browse(self, path, root, sources=None, project=None):
+    def browse(self, path, root, sources=None, project=None, *, outputs=()):
         sources = sources or []
+        outputs = folder_paths.output_folders(sources) | frozenset(Path(p).resolve() for p in outputs)
         selected = next((s for s in sources if s['id'] == project), None)
         if not path and sources:
             if selected:
                 path = selected['path']
             else:
-                directories = [dict(name=s['name'], path=s['path']) for s in sources if aztec_folders(s['path'])]
+                directories = [dict(name=s['name'], path=s['path']) for s in sources if aztec_folders(s['path'], outputs)]
                 return dict(path='', parent='', home='', directories=directories, files=[], drives=[])
         listing = folder_paths.browse(path, root)
         location = Path(listing['path'])
         scope = next((Path(s['path']).resolve() for s in sources if location.is_relative_to(Path(s['path']).resolve())), location)
-        identified = aztec_folders(scope)
+        identified = aztec_folders(scope, outputs)
         listing['directories'] = [d for d in listing['directories'] if Path(d['path']) in identified]
         if location == scope:
             listing['parent'] = str(scope) if selected else ''
         listing['home'] = selected['path'] if selected else ''
         files = []
         for child in Path(listing['path']).iterdir():
+            if child.is_symlink() or any(child.resolve().is_relative_to(output) for output in outputs):
+                continue
             if child.suffix.lower() not in ('.h5oina', '.oip', '.oipx'):
                 continue
             try:

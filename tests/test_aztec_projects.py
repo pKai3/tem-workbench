@@ -11,9 +11,30 @@ from PIL import Image
 from tem_workbench.aztec.browser import AztecBrowser
 from tem_workbench.app.server import Workbench
 from tem_workbench.storage.folder_paths import output_folder
+from tem_workbench.storage.mode_folders import aztec_folders
 
 
 class AztecProjectTests(unittest.TestCase):
+    def test_nested_outputs_excluded_from_file_list_and_folder_navigation(self):
+        with TemporaryDirectory() as temp:
+            root = Path(temp).resolve(); default = root/'exports'; custom = root/'analysis'/'results'
+            for name in ['native.oipx', 'exports/result.h5oina', 'analysis/results/copy.oipx',
+                         'exports-originals/acquired.h5oina']:
+                path = root/name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b'placeholder')
+            sources = [dict(id='project', name='Project', path=str(root), output=str(custom))]
+            browser = AztecBrowser()
+            # Populate the navigation cache before exclusions change.
+            self.assertIn(custom, aztec_folders(root))
+            for project in (None, 'project'):
+                files = browser.files(sources, project, outputs=[default])['files']
+                self.assertEqual({f['relative_path'] for f in files}, {'native.oipx', 'exports-originals/acquired.h5oina'})
+            listing = browser.browse(root, root, sources, 'project', outputs=[default])
+            self.assertEqual({d['name'] for d in listing['directories']}, {'exports-originals'})
+            self.assertEqual([f['name'] for f in listing['files']], ['native.oipx'])
+            # Old folder bookmarks inside an output directory cannot expose its files.
+            self.assertEqual(browser.browse(custom, root, sources, 'project', outputs=[default])['files'], [])
+            self.assertEqual(aztec_folders(default, [default]), frozenset())
+
     def test_recursive_supported_files_deduplicate_nested_sources(self):
         with TemporaryDirectory() as temp:
             root = Path(temp).resolve()

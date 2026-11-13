@@ -9,17 +9,38 @@ _cache = {}
 _lock = threading.RLock()
 
 
-def aztec_folders(root):
+def scan_folders(root, outputs=(), *, onerror=None):
+    """Walk source directories without entering configured output trees."""
+    root = Path(root).expanduser().resolve()
+    outputs = frozenset(Path(p).expanduser().resolve() for p in outputs)
+
+    def excluded(path):
+        return any(path.is_relative_to(output) for output in outputs)
+
+    if excluded(root):
+        return
+    for directory, folders, names in os.walk(root, followlinks=False, onerror=onerror):
+        directory = Path(directory)
+        folders[:] = sorted(n for n in folders if not n.startswith('.')
+                            and not (directory/n).is_symlink()
+                            and not excluded((directory/n).resolve()))
+        # File aliases into an output tree must not reintroduce exported images.
+        yield directory, [n for n in names if not (directory/n).is_symlink()
+                          or not excluded((directory/n).resolve())]
+
+
+def aztec_folders(root, outputs=()):
     """Return acquisition folders and ancestors; brief cache for navigation."""
     root = Path(root).resolve()
+    outputs = frozenset(Path(p).expanduser().resolve() for p in outputs)
+    key = (root, outputs)
     now = time.monotonic()
     with _lock:
-        previous = _cache.get(root)
+        previous = _cache.get(key)
         if previous and now - previous[0] < 15:
             return previous[1]
     found = set()
-    for directory, folders, names in os.walk(root, followlinks=False):
-        folders[:] = [n for n in folders if not n.startswith('.') and not (Path(directory)/n).is_symlink()]
+    for directory, names in scan_folders(root, outputs):
         if any(Path(name).suffix.lower() in AZTEC_SUFFIXES and (Path(directory)/name).is_file() for name in names):
             path = Path(directory)
             found.add(path)
@@ -28,7 +49,7 @@ def aztec_folders(root):
     with _lock:
         if len(_cache) >= 64:
             _cache.clear()
-        _cache[root] = (now, result)
+        _cache[key] = (now, result)
     return result
 
 
@@ -40,9 +61,7 @@ def diffraction_files(root, outputs=()):
     """
     root = Path(root).resolve()
     aztec_roots = set()
-    for directory, folders, names in os.walk(root, followlinks=False):
-        directory = Path(directory)
-        folders[:] = sorted(n for n in folders if not n.startswith('.') and (directory/n).resolve() not in outputs)
+    for directory, names in scan_folders(root, outputs):
         if any(Path(n).suffix.lower() in AZTEC_SUFFIXES for n in names):
             aztec_roots.add(directory)
         in_aztec = any(directory.is_relative_to(p) for p in aztec_roots)

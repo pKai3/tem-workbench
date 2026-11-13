@@ -976,9 +976,11 @@ def make_handler(app):
                 elif self.path == '/api/workspace':
                     self.send(app.workspace.patch(body.get('records'), body.get('only_missing') is True))
                 elif self.path == '/api/aztec/browse':
-                    self.send(app.aztec.browse(body.get('path'), app.root, app.engine.sources, body.get('project')))
+                    self.send(app.aztec.browse(body.get('path'), app.root, app.engine.sources, body.get('project'),
+                                              outputs=folder_paths.output_folders(app.engine.sources, app.config['output_root'])))
                 elif self.path == '/api/aztec/files':
-                    self.send(app.aztec.files(app.engine.sources, body.get('project')))
+                    self.send(app.aztec.files(app.engine.sources, body.get('project'),
+                                             outputs=folder_paths.output_folders(app.engine.sources, app.config['output_root'])))
                 elif self.path == '/api/aztec/export':
                     self.send(app.export_aztec(body))
                 elif self.path == '/api/aztec/open':
