@@ -5,19 +5,20 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
  function clearPlotObservers(){for(const observer of plotObservers)observer.disconnect();plotObservers=[]}
  function groups(){
   const found=new Map();for(const a of state.file?.catalogue.acquisitions||[])for(const l of a.layers)for(const d of l.signals){
-   const kind=d.path.startsWith('/XrayMapImages/')?'map':d.path.startsWith('/XrayLinescans/')?'line':null,id=d.attributes['Acquisition ID'];if(!kind||!id)continue;
-   if(!found.has(id))found.set(id,{id,kind,label:[a.specimen,a.label,d.attributes.Acquisition].filter(Boolean).join(' / '),signals:[],paths:[]});const g=found.get(id);g.signals.push(d.attributes.Label);g.paths.push(d.path);
-  }return [...found.values()];
+   const table=d.path.split('/')[1],kind=table==='XrayMapImages'?'map':['XrayLinescans','QuantLinescans'].includes(table)?'line':null,id=d.attributes['Acquisition ID'];if(!kind||!id)continue;
+   const key=id+':'+table;if(!found.has(key))found.set(key,{id,table,kind,label:[a.specimen,a.label,d.attributes.Acquisition].filter(Boolean).join(' / '),signals:[],paths:[]});const g=found.get(key);g.signals.push(d.attributes.Label);g.paths.push(d.path);
+  }return [...found.values()].sort((a,b)=>(a.table==='QuantLinescans')-(b.table==='QuantLinescans'));
  }
  function close(){clearTimeout(smoothingTimer);clearPlotObservers();++version;current=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-preview').hidden=false}
- function open(id,comparison=false){
-  const available=groups(),chosen=available.find(g=>g.id===id)||available.find(g=>g.kind==='map');if(!chosen)return;
+ function open(id,comparison=false,channelTable){
+  const available=groups(),chosen=available.find(g=>g.id===id&&(!channelTable||g.table===channelTable))||available.find(g=>g.kind==='map');if(!chosen)return;
   clearPlotObservers();
   ++state.previewVersion;const kind=comparison?'map':chosen.kind,all=available.filter(g=>g.kind===kind);
   const channelNames=[...new Set((comparison?all:[chosen]).flatMap(g=>g.signals))].sort((a,b)=>{const order=['Ti','V','Fe','Al'];const rank=x=>{const n=order.indexOf(x.split(' ')[0]);return n<0?99:n};return rank(a)-rank(b)||a.localeCompare(b)});
-  const defaults={mode:kind==='map'?'both':'signal',denominator:channelNames.find(s=>s.startsWith('Ti '))||channelNames[0],normalisation:'none',smoothing:kind==='map'?6:10,low:.7,high:1.3,upper:.5,background:true,raw:false,layout:'stacked'};
-  current={kind,all,comparison,ids:comparison?all.map(g=>g.id):[chosen.id],signals:channelNames,options:{...defaults,...preferences[kind],...(comparison?{mode:'both',normalisation:'median'}:{})}};
-  $('eds-dataset-title').textContent=comparison?'Map comparison':chosen.label;$('eds-dataset-info').textContent=kind==='map'?'Element maps':'';
+  const defaults={mode:kind==='map'?'both':'signal',denominator:channelNames.find(s=>s.startsWith('Ti '))||channelNames[0],normalisation:'none',smoothing:kind==='map'?1:10,brightness:1.5,low:.7,high:1.3,upper:.5,background:true,raw:false,layout:'stacked'};
+  current={kind,table:chosen.table,all,comparison,ids:comparison?all.map(g=>g.id):[chosen.id],signals:channelNames,options:{...defaults,...preferences[kind],...(comparison?{mode:'both',normalisation:'median'}:{})}};
+  if(!channelNames.includes(current.options.denominator))current.options.denominator=defaults.denominator;
+  $('eds-dataset-title').textContent=comparison?'Map comparison':chosen.label;$('eds-dataset-info').textContent=kind==='map'?'Element maps':chosen.table==='QuantLinescans'?'Saved composition profiles · AZtec quantification':'';
   $('eds-preview').hidden=true;$('eds-preview').replaceChildren();$('eds-dataset-details').hidden=true;$('eds-preview-tools').hidden=true;$('eds-preview-note').textContent='';$('eds-preview-error').hidden=true;$('eds-analysis-tools').hidden=false;$('eds-analysis-views').hidden=false;$('eds-analysis-views').replaceChildren();
   if(comparison){state.dataset=null;highlightRegions()}else{state.dataset=state.file.catalogue.datasets.find(d=>d.attributes['Acquisition ID']===chosen.id&&/^\/(SmartLines|SmartMaps)\//.test(d.path))||state.file.catalogue.datasets.find(d=>chosen.paths.includes(d.path));highlightRegions()}
   controls(channelNames);update();
@@ -27,7 +28,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
   const changed=key=>{updateVisibility();if(key==='layout'){preferences[current.kind]={...current.options};if(current.result)render(current.result)}else update()};
   const toggle=(label,key,choices)=>{const wrap=el('div',undefined,'eds-control');wrap.append(el('span',label));const group=el('div',undefined,'signal-toggle inspector-layout');group.setAttribute('role','group');group.setAttribute('aria-label',label);for(const [value,text] of choices){const b=el('button',text);b.type='button';b.setAttribute('aria-pressed',String(current.options[key]===value));b.onclick=()=>{current.options[key]=value;for(const n of group.children)n.setAttribute('aria-pressed',String(n===b));changed(key)};group.append(b)}wrap.append(group);row.append(wrap);return wrap};
   if(current.kind==='line')toggle('Plots','layout',[['stacked','Stacked'],['overlay','Overlay']]);
-  toggle('View','mode',current.kind==='map'?[['signal','Signals'],['ratio','Ratios'],['both','Both']]:[['signal','Signals'],['ratio','Ratios']]);
+  toggle('View','mode',current.kind==='map'?[['signal','Signals'],['ratio','Ratios'],['both','Both']]:[['signal',current.table==='QuantLinescans'?'Composition':'Signals'],['ratio','Ratios']]);
   const denominator=el('label','Divide by'),denSelect=el('select');denSelect.setAttribute('aria-label','Divide by');for(const channel of channels){const option=el('option',channel);option.value=channel;denSelect.append(option)}denSelect.value=current.options.denominator;denSelect.onchange=()=>{current.options.denominator=denSelect.value;update()};denominator.append(denSelect);row.append(denominator);
   toggle('Normalize','normalisation',[['none','Off'],['median','Median'],['mean','Mean'],['p20','P20']]);
   const numeric=(label,key)=>{const wrap=el('label',label),input=el('input');input.type='number';input.step='any';input.min=key==='low'?'':0;input.value=current.options[key];input.setAttribute('aria-label',label);input.onchange=()=>{const v=Number(input.value);if(Number.isFinite(v)){current.options[key]=v;update()}};wrap.append(input);row.append(wrap);return wrap};
@@ -36,15 +37,23 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
   range.type='range';range.min='0';range.max=String(Math.max(current.kind==='map'?32:50,current.options.smoothing));range.step='.5';range.value=current.options.smoothing;range.setAttribute('aria-label','Smoothing');
   amount.type='number';amount.min='0';amount.step='.5';amount.value=current.options.smoothing;amount.setAttribute('aria-label','Smoothing value');
   const smoothChange=(value,immediate)=>{const n=Number(value);if(!Number.isFinite(n)||n<0)return;current.options.smoothing=n;range.max=String(Math.max(Number(range.max),n));range.value=n;amount.value=n;clearTimeout(smoothingTimer);++version;$('eds-preview-busy').hidden=false;if(immediate)update();else smoothingTimer=setTimeout(update,140)};
-  range.oninput=()=>smoothChange(range.value,false);range.onchange=()=>smoothChange(range.value,true);amount.onchange=()=>smoothChange(amount.value,true);
+  range.oninput=()=>smoothChange(range.value,false);range.onchange=()=>smoothChange(range.value,true);amount.oninput=()=>smoothChange(amount.value,false);amount.onchange=()=>smoothChange(amount.value,true);
   smoothingInputs.append(range,amount);smoothing.append(smoothingInputs);row.append(smoothing);
+  let brightness;
+  if(current.kind==='map'){
+   brightness=el('label','Map brightness ×','eds-smoothing');const inputs=el('span',undefined,'eds-smoothing-inputs'),slider=el('input'),value=el('input');
+   slider.type='range';slider.min='.25';slider.max='8';slider.step='.05';slider.value=current.options.brightness;slider.setAttribute('aria-label','Map brightness');
+   value.type='number';value.min='.25';value.max='8';value.step='.05';value.value=current.options.brightness;value.setAttribute('aria-label','Map brightness value');
+   const brighten=n=>{n=Number(n);if(!Number.isFinite(n)||n<.25||n>8)return;current.options.brightness=n;slider.value=value.value=n;preferences[current.kind]={...current.options};applyMapBrightness()};
+   slider.oninput=()=>brighten(slider.value);value.oninput=()=>brighten(value.value);value.onchange=()=>brighten(value.value);inputs.append(slider,value);brightness.append(inputs);row.append(brightness);
+  }
   const low=numeric('Colour min','low'),high=numeric('Colour max','high'),upper=numeric('Ratio max','upper');
-  const updateVisibility=()=>{denominator.hidden=current.options.mode==='signal';low.hidden=high.hidden=current.kind!=='map'||current.options.normalisation==='none';upper.hidden=current.kind!=='line'||current.options.mode!=='ratio'||current.options.normalisation!=='none'};updateVisibility();
+  const updateVisibility=()=>{denominator.hidden=current.options.mode==='signal';low.hidden=high.hidden=current.kind!=='map'||current.options.normalisation==='none';if(brightness)brightness.hidden=current.options.normalisation!=='none';upper.hidden=current.kind!=='line'||current.options.mode!=='ratio'||current.options.normalisation!=='none'};updateVisibility();
   const footer=el('div',undefined,'eds-analysis-options');root.append(footer);const picks=el('div',undefined,'eds-channel-picks');footer.append(picks);
   for(const signal of channels){const label=el('label'),input=el('input');input.type='checkbox';input.checked=true;input.onchange=()=>{current.signals=[...picks.querySelectorAll('input:checked')].map(n=>n.value);update()};input.value=signal;label.append(input,el('span',signal));picks.append(label)}
   if(current.kind==='line'){const options=el('div',undefined,'eds-channel-picks');const imageToggle=el('div',undefined,'signal-toggle inspector-layout'),imageButton=el('button','Image');imageButton.type='button';imageButton.setAttribute('aria-label','Show electron image');imageButton.setAttribute('aria-pressed',String(current.options.background));imageButton.onclick=()=>{current.options.background=!current.options.background;imageButton.setAttribute('aria-pressed',String(current.options.background));preferences[current.kind]={...current.options};if(current.result)render(current.result)};imageToggle.append(imageButton);options.append(imageToggle);for(const [key,text] of [['raw','Underlying data']]){const label=el('label'),input=el('input');input.type='checkbox';input.checked=current.options[key];input.onchange=()=>{current.options[key]=input.checked;preferences[current.kind]={...current.options};if(current.result)render(current.result)};label.append(input,el('span',text));options.append(label)}footer.append(options)}
   if(current.comparison){const details=el('details');details.open=true;details.append(el('summary','Maps'));const list=el('div',undefined,'eds-channel-picks');for(const group of current.all){const label=el('label'),input=el('input');input.type='checkbox';input.value=group.id;input.checked=true;input.onchange=()=>{current.ids=[...list.querySelectorAll('input:checked')].map(n=>n.value);update()};label.append(input,el('span',group.label));list.append(label)}details.append(list);root.append(details)}
-  const help=el('span',undefined,'eds-analysis-help'),helpButton=el('button','ⓘ'),helpText=el('span','Signals are smoothed separately before division. Normalization divides each smoothed signal or ratio by its own median, mean or P20. In line views that reference value (1) lies on the physical scan path, at the centre of the image crop. Unnormalized traces use 0 on the scan path. Overlay uses one shared vertical scale for every channel. Map normalization excludes a 3σ rim. Smoothing is optional; sparse channels with a zero median need Mean or Off. Ratios are recorded signals, not concentrations.','eds-help-content');
+  const help=el('span',undefined,'eds-analysis-help'),helpButton=el('button','ⓘ'),helpText=el('span','Signals are smoothed separately before division. Normalization divides each smoothed signal or ratio by its own median, mean or P20. In line views that reference value (1) lies on the physical scan path, at the centre of the image crop. Unnormalized traces use 0 on the scan path. Overlay uses one shared vertical scale for every channel. Map normalization excludes a 3σ rim. Smoothing is optional; sparse channels with a zero median need Mean or Off. Map brightness changes display only, leaving zero black and the electron image unchanged. Each unnormalized map keeps the intensity range of its unsmoothed data when smoothing changes. Normalized maps use Colour min/max instead. '+(current.table==='QuantLinescans'?'Composition values are saved AZtec quantification; ratios divide these values, not raw X-ray counts.':'Ratios are recorded signals, not concentrations.'),'eds-help-content');
   helpButton.type='button';helpButton.setAttribute('aria-label','Processing and plot help');helpButton.setAttribute('aria-expanded','false');helpButton.onclick=()=>helpButton.setAttribute('aria-expanded',String(helpButton.getAttribute('aria-expanded')!=='true'));helpButton.onkeydown=e=>{if(e.key==='Escape')helpButton.setAttribute('aria-expanded','false')};helpText.setAttribute('role','tooltip');help.append(helpButton,helpText);footer.append(help);
 
  }
@@ -52,7 +61,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
   clearTimeout(smoothingTimer);const v=++version;if(!current)return;preferences[current.kind]={...current.options};$('eds-preview-error').hidden=true;
   if(!current.ids.length||!current.signals.length){clearPlotObservers();current.result=null;$('eds-analysis-views').replaceChildren(el('p','Select an acquisition and at least one element.','hint'));$('eds-preview-busy').hidden=true;return}
   $('eds-preview-busy').hidden=false;
-  try{const result=await api('process',{id:state.file.id,acquisitions:current.ids,signals:current.signals,...current.options});if(v!==version)return;current.result=result;render(result)}catch(error){if(v===version){$('eds-preview-error').textContent=error.message;$('eds-preview-error').hidden=false}}finally{if(v===version)$('eds-preview-busy').hidden=true}
+  try{const result=await api('process',{id:state.file.id,acquisitions:current.ids,signals:current.signals,channel_table:current.table,...current.options});if(v!==version)return;current.result=result;render(result)}catch(error){if(v===version){$('eds-preview-error').textContent=error.message;$('eds-preview-error').hidden=false}}finally{if(v===version)$('eds-preview-busy').hidden=true}
  }
  function render(result){
   clearPlotObservers();
@@ -65,9 +74,11 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions})=>{
    }
    else linePlots(section,row,result)
   }
+  applyMapBrightness();
   $('eds-preview-note').textContent=current.kind==='line'?'':result.note;
  }
- function imageTile(root,label,source,colour,error){const figure=el('figure',undefined,'eds-map-tile'),caption=el('figcaption',label);if(colour)caption.style.color=colour;figure.append(caption);if(error)figure.append(el('p',error,'eds-channel-error'));else{const img=el('img');img.src=source;img.alt=label;figure.append(img)}root.append(figure)}
+ function imageTile(root,label,source,colour,error){const figure=el('figure',undefined,'eds-map-tile'),caption=el('figcaption',label);if(colour)caption.style.color=colour;figure.append(caption);if(error)figure.append(el('p',error,'eds-channel-error'));else{const img=el('img');img.src=source;img.alt=label;if(colour)img.dataset.intensityMap='';figure.append(img)}root.append(figure)}
+ function applyMapBrightness(){const gain=current?.result?.normalisation==='none'?current.options.brightness:1;for(const img of $('eds-analysis-views').querySelectorAll('img[data-intensity-map]'))img.style.filter=`brightness(${gain})`}
 
  function linePlots(root,row,result){
   for(const tile of row.tiles.filter(t=>t.error))root.append(el('p',`${tile.label}: ${tile.error}`,'eds-channel-error'));row={...row,tiles:row.tiles.filter(t=>!t.error)};

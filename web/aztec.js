@@ -14,7 +14,7 @@ function valueText(value){return typeof value==='object'?JSON.stringify(value):S
 function table(entries){const node=el('table',undefined,'eds-metadata-table');const body=el('tbody');for(const [key,value] of entries){const row=el('tr');row.append(el('th',key),el('td',valueText(value)));body.append(row)}node.append(body);return node}
 async function api(action,body){const response=await fetch(`/api/aztec/${action}`,body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body)}:{});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
 const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions});
-function openAnalysis(id,comparison=false){clearPreview();analysis.open(id,comparison);remember()}
+function openAnalysis(id,comparison=false,channelTable){clearPreview();analysis.open(id,comparison,channelTable);remember()}
 function renderFiles(){
  const root=$('eds-files');root.replaceChildren();const listing=state.listing;if(!listing)return;
  const query=$('eds-filter').value.toLowerCase();
@@ -47,7 +47,7 @@ function renderAcquisition(index){
  const root=$('eds-contents');root.replaceChildren();clearPreview();$('eds-metadata').open=false;$('eds-metadata-body').replaceChildren();
  for(const layer of a?.layers||[]){const details=el('details');details.open=['EDS','Electron Image'].includes(layer.technique);const name=layer.technique==='Layered Image'?layer.path.split('/').at(-1):layer.technique;details.open=state.file.catalogue.file_type==='OIPX'?/Electron images|Element maps|Element profiles|Composition profiles/.test(name):details.open;const summary=el('summary',`${name} · ${layer.signals.length}`);details.append(summary);
   if(state.file.catalogue.file_type!=='OIPX')details.append(el('p',`${layer.state}${layer.grid_shape?` · ${dimensions(layer.grid_shape)} grid`:''}`,'hint'));
-  const acquisitionId=layer.signals.find(d=>/^\/(XrayMapImages|XrayLinescans)\//.test(d.path))?.attributes['Acquisition ID'];if(acquisitionId){const all=el('button','View all elements','eds-item');all.type='button';all.onclick=()=>openAnalysis(acquisitionId);details.append(all)}
+  const channel=layer.signals.find(d=>/^\/(XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)),acquisitionId=channel?.attributes['Acquisition ID'];if(acquisitionId){const all=el('button','View all elements','eds-item');all.type='button';all.onclick=()=>openAnalysis(acquisitionId,false,channel.path.split('/')[1]);details.append(all)}
   for(const note of layer.notes)details.append(el('p',note,'eds-warning'));
   let lastGroup='';for(const d of layer.signals){const relative=state.file.catalogue.file_type==='OIPX'?(d.attributes.Label||d.attributes['Record type']):d.path.slice(layer.path.length+'/Data/'.length);const parts=relative.split('/');const group=parts.length>1?parts.slice(0,-1).join('/'):'Data';if(group!==lastGroup&&state.file.catalogue.file_type!=='OIPX'){details.append(el('p',group,'eds-group-label'));lastGroup=group}const b=el('button',parts.at(-1),'eds-item');b.type='button';b.dataset.path=d.path;b.setAttribute('aria-pressed','false');b.append(el('small',state.file.catalogue.file_type==='OIPX'?(/\/(ElectronImages|XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)?'Preview available':'Contents identified · preview pending'):`${dimensions(d.shape)}${d.attributes.Unit?` · ${d.attributes.Unit}`:''}`));b.onclick=()=>selectDataset(d);details.append(b)}root.append(details);
  }

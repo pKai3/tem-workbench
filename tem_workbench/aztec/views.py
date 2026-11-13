@@ -40,6 +40,10 @@ def acquisition_views(reader, options):
     mode=options.get('mode','signal');norm=options.get('normalisation','none')
     if mode not in ('signal','ratio','both'):
         raise AztecReadError('Choose element signals, ratios, or both.')
+    channel_tables=('XrayMapImages','XrayLinescans','QuantLinescans')
+    requested_table=options.get('channel_table')
+    if requested_table is not None and requested_table not in channel_tables:
+        raise AztecReadError('Choose saved element or composition profiles.')
     denominator=options.get('denominator','Ti');selected=options.get('signals',[])
     if not isinstance(selected,list) or len(selected)>32:
         raise AztecReadError('Choose up to 32 element channels.')
@@ -52,11 +56,12 @@ def acquisition_views(reader, options):
     rows=[]
     for acquisition_id in ids:
         records=[r for r in reader._records.values() if r.get('acquisition_id')==acquisition_id]
-        channels=[r for r in records if r['table'] in ('XrayMapImages','XrayLinescans')]
+        channel_table=requested_table or next((table for table in channel_tables if any(r['table']==table for r in records)),None)
+        channels=[r for r in records if r['table']==channel_table]
         if not channels:
-            raise AztecReadError('No saved element channels in this acquisition.')
+            raise AztecReadError('No saved channels of this type in this acquisition.')
         kind='map' if channels[0]['table']=='XrayMapImages' else 'line'
-        channel_table=channels[0]['table'];channels=[r for r in channels if r['table']==channel_table]
+        composition=channel_table=='QuantLinescans'
         # Preserve full line labels in the output; do not silently choose between emission families.
         by_label={r['Label']:r for r in channels}
         def find_channel(name):
@@ -66,18 +71,20 @@ def acquisition_views(reader, options):
         den_record=find_channel(denominator) if mode in ('ratio','both') else None
         if mode in ('ratio','both') and den_record is None:
             raise AztecReadError(f'{denominator} is not uniquely available in {channels[0]["acquisition_label"]}.')
-        cache={}
+        cache={};units={}
         def values(record):
             if record['path'] not in cache:
                 result=reader.preview(record['path']);a=result.get('array',result.get('y'))
                 if a is None or tuple(np.shape(a))!=tuple(result['shape']):
                     raise AztecReadError('Processing requires the full saved channel grid.')
                 cache[record['path']]=np.asarray(a,float)
+                units[record['path']]=result.get('unit','Stored value')
             return cache[record['path']]
         site=reader.site(channels[0]['site_id'])
         region=next((r for r in site['regions'] if channels[0]['path'] in r['paths']),None)
         electron=reader.preview(site['image_path'])['array'] if site.get('image_path') else None
-        row=dict(label=channels[0]['acquisition_label'],kind=kind,tiles=[],acquisition=acquisition_id)
+        row=dict(label=channels[0]['acquisition_label'],kind=kind,tiles=[],acquisition=acquisition_id,
+                 channel_table=channel_table,data_kind='composition' if composition else 'signal')
         site_meta=next(a for a in reader.inspect()['acquisitions'] if a['index']==channels[0]['site_id'])
         row['label']=' / '.join(filter(None,[site_meta['specimen'],site_meta['label'],row['label']]))
         if kind=='map':
@@ -104,8 +111,14 @@ def acquisition_views(reader, options):
                 # A zero baseline in one sparse channel must not hide valid channels.
                 return None, str(error)
         def map_image(result, colour):
+            # Keep the display scale fixed when smoothing spreads sparse pixels.
+            # Re-stretching each smoothed map to its own P99 caused a brightness jump.
+            reference=result['raw'][np.isfinite(result['raw'])]
+            reference_high=float(np.percentile(reference,99)) if reference.size else 1.
+            if reference_high<=0:
+                reference_high=max(float(np.max(reference)),1.) if reference.size else 1.
             return png(result['values'], low=low if norm!='none' else 0,
-                       high=high if norm!='none' else None, colour=colour, diverging=norm!='none')
+                       high=high if norm!='none' else reference_high, colour=colour, diverging=norm!='none')
         for i,record in enumerate(channels):
             element=record['Label'].split()[0]
             if selected and record['Label'] not in selected and element not in selected:continue
@@ -121,7 +134,7 @@ def acquisition_views(reader, options):
                 vals=result['values'];finite=vals[np.isfinite(vals)]
                 ymax=upper if mode=='ratio' and norm=='none' else max(1e-12,float(np.max(finite))*1.1) if finite.size else 1
                 tile.update(x=np.linspace(0,length,len(vals)).tolist(),y=finite_list(vals),raw=finite_list(result['raw']),
-                            maximum=ymax,baseline=result['baseline'],unit='Relative signal' if norm!='none' else 'Signal ratio' if den is not None else 'cps')
+                            maximum=ymax,baseline=result['baseline'],unit=('Relative composition' if composition else 'Relative signal') if norm!='none' else ('Composition ratio' if composition else 'Signal ratio') if den is not None else units[record['path']])
             if kind=='map' and mode=='both' and record is not den_record:
                 tile['ratio_label']=record['Label']+' / '+den_record['Label']
                 ratio,ratio_error=process_channel(record,values(den_record))
