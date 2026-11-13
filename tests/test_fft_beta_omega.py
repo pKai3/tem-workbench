@@ -5,9 +5,9 @@ import json
 import unittest
 from unittest.mock import patch
 import numpy as np
-import analysis_core as core
-import diffraction_fitting
-from engine import Engine
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import diffraction_fitting
+from tem_workbench.app.engine import Engine
 
 
 def fixture(omega=True):
@@ -79,18 +79,18 @@ class FFTLinkedTests(unittest.TestCase):
     def test_cancel_linked_search(self):
         import threading
         from concurrent.futures import CancelledError
-        import beta_omega
+        from tem_workbench.analysis import beta_omega
         event=threading.Event();event.set()
         with self.assertRaises(CancelledError):
             beta_omega.fit([dict(qx=3.,qy=0.,weight=1.),dict(qx=0.,qy=4.,weight=1.)],.1,2.5,10,
                            parents=[dict(zone=[0,0,1],mirror=1,factor=1.)],cancel_event=event)
 
     def test_linked_support_survives_grid_and_batch_summaries(self):
-        import phase_support
-        import overlap_maps
-        import batch_grids
-        import batch_stability
-        from server import Workbench
+        from tem_workbench.mapping import phase_support
+        from tem_workbench.mapping import overlap_maps
+        from tem_workbench.mapping import batch_grids
+        from tem_workbench.mapping import batch_stability
+        from tem_workbench.app.server import Workbench
         engine,item,roi,settings=fixture()
         result=engine.analyze(item,roi,settings,images=False)
         original=copy.deepcopy(result['models'])

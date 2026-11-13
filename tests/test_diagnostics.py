@@ -5,12 +5,12 @@ import threading
 import unittest
 from unittest.mock import patch
 
-import diagnostics
+from tem_workbench.runtime import diagnostics
 
 
 class DiagnosticsTests(unittest.TestCase):
     def test_request_logging_survives_grid_start_and_rejects_nonobjects(self):
-        from server import make_handler
+        from tem_workbench.app.server import make_handler
         app=SimpleNamespace(token='local',lock=threading.RLock(),
             engine=SimpleNamespace(load=lambda key:{'id':key},validate=lambda *args:({},{})),
             grid=lambda *args,**kwargs:{'id':'new-job','state':'running'})

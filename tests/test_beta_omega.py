@@ -5,11 +5,11 @@ from pathlib import Path
 import tempfile
 import unittest
 import numpy as np
-import analysis_core as core
-import beta_omega as joint
-import raster_images
-from engine import Engine
-from crystal_templates import allowed
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import beta_omega as joint
+from tem_workbench.storage import raster_images
+from tem_workbench.app.engine import Engine
+from tem_workbench.analysis.crystal_templates import allowed
 
 
 # [011]beta diffraction positions in units (sqrt(2)/3, 2/3)/a_beta.
@@ -162,7 +162,7 @@ class BetaOmegaTests(unittest.TestCase):
 
 
     def test_union_uses_common_score_and_evidence_costs(self):
-        import analysis_core as core
+        from tem_workbench.analysis import analysis_core as core
         peaks=fixture()
         r=joint.fit(peaks,.12,1.6,10.56,settings={'peak_evidence_weight':.3,'missing_peak_weight':1.2})
         m=r['fit']; common=core.score_prediction_nodes(peaks,m['predicted_nodes'],.12)

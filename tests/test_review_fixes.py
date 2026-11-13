@@ -3,10 +3,10 @@ import copy
 import unittest
 from unittest.mock import patch
 import numpy as np
-import analysis_core as core
-import peak_evidence as evidence
-import scale_fitting as fitting
-from engine import Engine
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import peak_evidence as evidence
+from tem_workbench.analysis import scale_fitting as fitting
+from tem_workbench.app.engine import Engine
 
 
 class ReviewFixes(unittest.TestCase):

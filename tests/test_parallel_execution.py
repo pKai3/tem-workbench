@@ -7,10 +7,10 @@ import time
 import unittest
 from unittest.mock import patch
 import numpy as np
-from engine import Engine
-from parallel_execution import RegionPool, worker_count
-from server import Workbench
-import diffraction
+from tem_workbench.app.engine import Engine
+from tem_workbench.runtime.parallel_execution import RegionPool, worker_count
+from tem_workbench.app.server import Workbench
+from tem_workbench.analysis import diffraction
 
 
 def image():
@@ -61,7 +61,7 @@ class SpawnChecks(unittest.TestCase):
     def test_worker_limit_validation(self):
         for value in [-1,17,True,2.5,'2']:
             with self.assertRaises(ValueError):worker_count(value)
-        with patch('parallel_execution.os.cpu_count',return_value=2):
+        with patch('tem_workbench.runtime.parallel_execution.os.cpu_count',return_value=2):
             self.assertEqual(worker_count(),1)
             self.assertEqual(worker_count(16),16)
 
@@ -70,10 +70,10 @@ class SpawnChecks(unittest.TestCase):
         array,info,_=pattern()
         for value in [-1,17,True,2.5,'2']:
             with self.assertRaises(ValueError):diffraction.validate(info,{'smoothing_workers':value})
-        with patch('diffraction.os.cpu_count',return_value=32):
+        with patch('tem_workbench.analysis.diffraction.os.cpu_count',return_value=32):
             for count in (10,12,14,16):
                 self.assertEqual(diffraction.smoothing_worker_count(count),count)
-        with patch('diffraction.os.cpu_count',return_value=1):
+        with patch('tem_workbench.analysis.diffraction.os.cpu_count',return_value=1):
             self.assertEqual(diffraction.smoothing_worker_count(8),1)
         settings=diffraction.validate(info,{'smoothing_workers':1}); cache={}
         with patch.object(diffraction,'_prepare_detector',return_value={'spots':[]}) as prepare:
@@ -110,7 +110,7 @@ class CoordinatorChecks(unittest.TestCase):
             deadline=time.monotonic()+3
             while not predicate() and time.monotonic()<deadline:time.sleep(.02)
             self.assertTrue(predicate())
-        with patch('server.RegionPool',ControlledPool):
+        with patch('tem_workbench.app.server.RegionPool',ControlledPool):
             job_id=app.grid(item,{},2,False,1,workers=2)['id']
             try:
                 wait_for(lambda: pools and len(pools[0].tasks)==2)
@@ -137,7 +137,7 @@ class CoordinatorChecks(unittest.TestCase):
             def diagnostics(self):return []
             def close(self):pass
         self.assertIsNone(app.grid_summary())
-        with patch('server.RegionPool',StalledPool) as pool:
+        with patch('tem_workbench.app.server.RegionPool',StalledPool) as pool:
             job_id=app.grid(item,{'enabled_phases':['BCC']},2,False,1,workers=0)['id']
             try:
                 summary=app.grid_summary()
@@ -171,7 +171,7 @@ class CoordinatorChecks(unittest.TestCase):
             def submit(self,roi):return Future()
             def diagnostics(self):return []
             def close(self):pass
-        with patch('server.RegionPool',StalledPool), patch('server.GRID_WAIT_LOG_SECONDS',.01):
+        with patch('tem_workbench.app.server.RegionPool',StalledPool), patch('tem_workbench.app.server.GRID_WAIT_LOG_SECONDS',.01):
             with self.assertLogs('tem_workbench.grid_diagnostics',level='WARNING') as logs:
                 job_id=app.grid(item,{},2,False,1,workers=2)['id']
                 deadline=time.monotonic()+3
@@ -199,7 +199,7 @@ class CoordinatorChecks(unittest.TestCase):
                     if error:raise RuntimeError('Worker failed')
                 return dict(roi=roi,classification=dict(label='unresolved'),periodicity={},models=[],elapsed_ms=1)
             def close(self):self.pool.shutdown(wait=True,cancel_futures=True)
-        with patch('server.RegionPool',FakePool):
+        with patch('tem_workbench.app.server.RegionPool',FakePool):
             job_id=app.grid(item,{},2,True,1.9,workers=2)['id']
             self.assertTrue(reached.wait(5))
             # Main analysis lock is available while workers are occupied.

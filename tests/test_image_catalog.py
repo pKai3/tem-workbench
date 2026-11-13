@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from image_catalog import ImageCatalog
-from folder_paths import save_sources, resolve_config
-from engine import Engine
+from tem_workbench.storage.image_catalog import ImageCatalog
+from tem_workbench.storage.folder_paths import save_sources, resolve_config
+from tem_workbench.app.engine import Engine
 from PIL import Image
 import numpy as np
 
@@ -45,7 +45,7 @@ class CatalogTests(unittest.TestCase):
         first = self.root/'first.dm4'; first.write_bytes(b'image')
         row = self.scan([first])[0]
         self.catalog.save_metadata({row['content_sha256']: {'image_kind':'diffraction'}}, 'v1')
-        with patch('image_catalog.hashlib.sha256', side_effect=AssertionError('unchanged file rehashed')):
+        with patch('tem_workbench.storage.image_catalog.hashlib.sha256', side_effect=AssertionError('unchanged file rehashed')):
             self.scan([first])
         moved=first.rename(self.root/'moved.dm4')
         row=self.scan([moved])[0]

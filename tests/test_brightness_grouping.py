@@ -4,9 +4,9 @@ import unittest
 
 import numpy as np
 
-import analysis_core as core
-import brightness_grouping as brightness
-import diffraction_fitting as fitting
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import brightness_grouping as brightness
+from tem_workbench.analysis import diffraction_fitting as fitting
 
 
 def fixture(levels=(800., 100.), names=('BCC', 'OMEGA'), shared=False):

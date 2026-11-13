@@ -2,7 +2,7 @@
 import unittest
 import numpy as np
 from tools.crop_size_diagnostic import sampling_plan, RecordingEngine, expected_match
-from engine import Engine
+from tem_workbench.app.engine import Engine
 
 class CropDiagnosticTests(unittest.TestCase):
     def test_plan_same_centres_no_clipping(self):

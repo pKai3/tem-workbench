@@ -9,15 +9,15 @@ import unittest
 from concurrent.futures import CancelledError
 from unittest.mock import patch
 import numpy as np
-import analysis_core as core
-import scale_fitting
-import shared_spectra as spectra
-import pca_fitting as fitting
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import scale_fitting
+from tem_workbench.components import shared_spectra as spectra
+from tem_workbench.components import pca_fitting as fitting
 from test_shared_spectra import INFO, SETTINGS, OPTIONS
 
 
 def synthetic():
-    templates = json.loads((Path(__file__).resolve().parents[1]/'templates.json').read_text())
+    templates = json.loads((Path(__file__).resolve().parents[1]/'tem_workbench/resources/templates.json').read_text())
     for t in templates:
         for key in ('hkl', 'q', 'g'): t[key] = np.array(t[key])
     t = next(t for t in scale_fitting.prepare_templates(templates)

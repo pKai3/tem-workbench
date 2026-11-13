@@ -6,15 +6,15 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import numpy as np
-import analysis_core as core
-from crystal_templates import allowed, fcc_templates, reciprocal
-import diffraction
-from engine import Engine
-import folder_paths
-import peak_evidence
-import phase_comparison
-import scale_fitting as fitting
-from server import Workbench
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis.crystal_templates import allowed, fcc_templates, reciprocal
+from tem_workbench.analysis import diffraction
+from tem_workbench.app.engine import Engine
+from tem_workbench.storage import folder_paths
+from tem_workbench.analysis import peak_evidence
+from tem_workbench.analysis import phase_comparison
+from tem_workbench.analysis import scale_fitting as fitting
+from tem_workbench.app.server import Workbench
 from test_diffraction import pattern
 
 
@@ -110,7 +110,7 @@ class FittingBand(unittest.TestCase):
                   pixel_x_nm=.06,pixel_y_nm=.06,can_index=False)
         with tempfile.TemporaryDirectory() as directory:
             app=Workbench(folder_paths.DEFAULTS,root=Path(directory))
-            with patch('server.threading.Thread'):
+            with patch('tem_workbench.app.server.threading.Thread'):
                 app.grid({'info':info},{'g_max':6.},2,False,5.)
             with self.assertRaisesRegex(ValueError,'sample the full'):
                 app.grid({'info':info},{'g_max':10.},2,False,5.)

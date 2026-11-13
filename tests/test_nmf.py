@@ -9,11 +9,11 @@ import unittest
 from concurrent.futures import CancelledError
 from unittest.mock import patch
 import numpy as np
-import shared_spectra as spectra
-import nmf_fitting as fitting
-import nmf_phase_maps as phase_maps
-import scale_fitting
-import analysis_core as core
+from tem_workbench.components import shared_spectra as spectra
+from tem_workbench.components import nmf_fitting as fitting
+from tem_workbench.components import nmf_phase_maps as phase_maps
+from tem_workbench.analysis import scale_fitting
+from tem_workbench.analysis import analysis_core as core
 from test_shared_spectra import INFO, SETTINGS, OPTIONS
 
 
@@ -146,7 +146,7 @@ class NmfTests(unittest.TestCase):
         with self.assertRaises(ValueError):fitting.validate_options({**r,'plan':{'method':'pca'}},{})
 
     def test_calibrated_split_bcc_recovered_and_checked(self):
-        templates=json.loads((Path(__file__).resolve().parents[1]/'templates.json').read_text())
+        templates=json.loads((Path(__file__).resolve().parents[1]/'tem_workbench/resources/templates.json').read_text())
         for t in templates:
             for key in ('hkl','q','g'):t[key]=np.array(t[key])
         templates=scale_fitting.prepare_templates(templates)
@@ -191,7 +191,7 @@ class NmfTests(unittest.TestCase):
         self.assertTrue(support['windows'][0]['peak_positions'])
         self.assertEqual(support['model_passing_counts']['0'],len(r['raw_spectra']))
         r['phase_support']=support
-        from pca_fitting import window_detail
+        from tem_workbench.components.pca_fitting import window_detail
         detail=window_detail(r,0,0)
         self.assertEqual(detail['kind'],'nmf_window')
         self.assertTrue(detail['candidates'][0]['valid'])

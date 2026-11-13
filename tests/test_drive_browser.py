@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch
-import folder_paths
+from tem_workbench.storage import folder_paths
 
 class DriveBrowserTests(unittest.TestCase):
     def test_drive_roots_include_other_drives_without_probing(self):

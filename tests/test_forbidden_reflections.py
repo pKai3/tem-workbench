@@ -1,8 +1,8 @@
 import copy
 import unittest
 import numpy as np
-from crystal_templates import reciprocal, allowed
-from forbidden_reflections import inspect, annotate
+from tem_workbench.analysis.crystal_templates import reciprocal, allowed
+from tem_workbench.analysis.forbidden_reflections import inspect, annotate
 
 
 def model(phase, zone, indices, a=.33, c=.468, angle=.47):

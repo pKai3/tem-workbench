@@ -1,10 +1,10 @@
 """Component peak defaults and the native FFT positional allowance."""
 import unittest
 import numpy as np
-import analysis_core as core
-import nmf_fitting as fitting
-import pca_fitting as pca
-import shared_spectra as spectra
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.components import nmf_fitting as fitting
+from tem_workbench.components import pca_fitting as pca
+from tem_workbench.components import shared_spectra as spectra
 from test_pca_fitting import synthetic
 
 

@@ -8,9 +8,9 @@ from unittest.mock import patch
 
 import numpy as np
 from PIL import Image
-from engine import Engine
-from server import Workbench
-import folder_paths
+from tem_workbench.app.engine import Engine
+from tem_workbench.app.server import Workbench
+from tem_workbench.storage import folder_paths
 
 
 class LivePreviewTests(TestCase):
@@ -66,7 +66,7 @@ class ProjectRenameTests(TestCase):
             before=app.config_path.read_bytes()
             for name in ('', '../other', 'a/b'):
                 with self.assertRaises(ValueError):app.rename_source('primary',name)
-            with patch('folder_paths.atomic_json',side_effect=OSError('disk full')):
+            with patch('tem_workbench.storage.folder_paths.atomic_json',side_effect=OSError('disk full')):
                 with self.assertRaises(OSError):app.rename_source('primary','Not saved')
             self.assertEqual(app.config_path.read_bytes(),before)
             self.assertEqual(engine.sources[0]['name'],'Renamed project')

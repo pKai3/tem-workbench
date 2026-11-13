@@ -2,7 +2,7 @@
 import copy
 import unittest
 import numpy as np
-import analysis_core as core
+from tem_workbench.analysis import analysis_core as core
 
 
 POINTS = np.array([[3.,0.], [0.,4.], [3.,4.], [6.,0.], [6.,4.],

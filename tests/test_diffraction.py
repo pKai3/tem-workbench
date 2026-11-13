@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import numpy as np
-import diffraction
-import peak_evidence
-from engine import Engine
-from server import Workbench
-import folder_paths
+from tem_workbench.analysis import diffraction
+from tem_workbench.analysis import peak_evidence
+from tem_workbench.app.engine import Engine
+from tem_workbench.app.server import Workbench
+from tem_workbench.storage import folder_paths
 
 
 def pattern():
@@ -47,7 +47,7 @@ class DiffractionChecks(unittest.TestCase):
         array,info,observed=pattern()
         engine=Engine({})
         item=dict(array=array,info=info,limits=[99.,351.])
-        with patch('analysis_core.fft2',side_effect=AssertionError('Direct diffraction must not FFT pixels')):
+        with patch('tem_workbench.analysis.analysis_core.fft2',side_effect=AssertionError('Direct diffraction must not FFT pixels')):
             result=engine.analyze(item,dict(x=0,y=0,w=768,h=768),dict(scale_mode='auto_hcp_ac'),images=False)
         spectrum=result['spectrum']
         self.assertEqual(len(spectrum['peaks']),5)
@@ -82,7 +82,7 @@ class DiffractionChecks(unittest.TestCase):
             self.assertFalse(peak['radius_estimated_from_smoothing'])
         measured = np.array([q for p in spectrum['peaks'] for q in p['observed_spots']])
         self.assertLess(np.linalg.norm(observed[:, None]-measured[None], axis=2).min(axis=1).max(), .03)
-        with patch('diffraction._prepare_detector', side_effect=AssertionError('Unexpected refilter')):
+        with patch('tem_workbench.analysis.diffraction._prepare_detector', side_effect=AssertionError('Unexpected refilter')):
             changed, _ = diffraction.spectrum(array, {**settings, 'spot_snr': 30.}, cache)
         self.assertLessEqual(changed['observed_spot_count'], len(observed))
         # Distinct observations on the same side must not be folded together.

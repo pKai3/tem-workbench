@@ -2,7 +2,7 @@ import copy
 import threading
 import unittest
 from concurrent.futures import CancelledError
-from window_size_probe import WindowSizeProbe, plan, summarize
+from tem_workbench.mapping.window_size_probe import WindowSizeProbe, plan, summarize
 
 INFO = dict(width=1024,height=1024,pixel_x_nm=.02,pixel_y_nm=.02,image_kind='real_space')
 SETTINGS = dict(fft_smoothing_sigma=.65,g_max=10,fft_auto_strength=False,fft_auto_objective='rank')

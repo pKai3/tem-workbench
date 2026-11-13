@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-import spot_intensity as photometry
+from tem_workbench.analysis import spot_intensity as photometry
 
 
 class SpotIntensityTests(unittest.TestCase):

@@ -2,9 +2,9 @@
 import unittest
 from unittest.mock import patch
 import numpy as np
-import analysis_core as core
-import demo_data
-from engine import Engine
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.storage import demo_data
+from tem_workbench.app.engine import Engine
 
 
 class AutoStrengthChecks(unittest.TestCase):

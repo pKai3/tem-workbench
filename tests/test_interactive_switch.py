@@ -2,7 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import unittest
-from server import Workbench
+from tem_workbench.app.server import Workbench
 
 
 class InteractiveSwitchTests(unittest.TestCase):

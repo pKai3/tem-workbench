@@ -6,9 +6,9 @@ import time
 import unittest
 from types import SimpleNamespace
 import numpy as np
-import peak_evidence
-import adaptive_refinement as adaptive
-from server import Workbench
+from tem_workbench.analysis import peak_evidence
+from tem_workbench.mapping import adaptive_refinement as adaptive
+from tem_workbench.app.server import Workbench
 
 
 def model(phase='HCP', zone=(1, -1, 0), score=.7, valid=True):
@@ -104,7 +104,7 @@ class GridChecks(unittest.TestCase):
             def submit(self,roi):return self.pool.submit(app.engine.analyze,item,roi,{})
             def close(self):self.pool.shutdown(wait=True,cancel_futures=True)
         from unittest.mock import patch
-        with patch('server.RegionPool',TestPool):
+        with patch('tem_workbench.app.server.RegionPool',TestPool):
             job_id=app.grid(item,dict(scale_mode='fixed'),2,True,1.,enabled,workers=2)['id']
             if interrupt:
                 self.assertTrue(app.engine.waiting.wait(2))

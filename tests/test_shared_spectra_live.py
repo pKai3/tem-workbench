@@ -5,8 +5,8 @@ import time
 import unittest
 from unittest.mock import patch
 from concurrent.futures import CancelledError
-import pca_fitting as fitting
-import shared_spectra as spectra
+from tem_workbench.components import pca_fitting as fitting
+from tem_workbench.components import shared_spectra as spectra
 from test_pca_combinations import split_pattern, OPTIONS
 
 

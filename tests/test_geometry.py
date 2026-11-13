@@ -1,7 +1,7 @@
 """Geometry checks distinguish a second pattern from a repeated primary fit."""
 import unittest
 import numpy as np
-import analysis_core as core
+from tem_workbench.analysis import analysis_core as core
 
 
 class SecondaryGeometry(unittest.TestCase):

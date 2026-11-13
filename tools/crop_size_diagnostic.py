@@ -18,8 +18,8 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from engine import Engine
-import analysis_core as core
+from tem_workbench.app.engine import Engine
+from tem_workbench.analysis import analysis_core as core
 import numpy as np
 
 MODES=('manual','geometry','rank')

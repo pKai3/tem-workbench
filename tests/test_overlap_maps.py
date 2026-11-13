@@ -7,9 +7,9 @@ import unittest
 import numpy as np
 from concurrent.futures import Future
 from unittest.mock import patch
-import overlap_maps as maps
-from server import Workbench
-from engine import Engine
+from tem_workbench.mapping import overlap_maps as maps
+from tem_workbench.app.server import Workbench
+from tem_workbench.app.engine import Engine
 
 INFO=dict(width=256,height=256,pixel_x_nm=.03,pixel_y_nm=.03,image_kind='real_space')
 
@@ -264,7 +264,7 @@ class OverlapTests(unittest.TestCase):
             def submit(self,roi):
                 f=Future();f.set_result(dict(roi=roi,classification=dict(label='insufficient'),periodicity={},models=[],elapsed_ms=0));return f
             def close(self):pass
-        with patch('server.RegionPool',Pool):
+        with patch('tem_workbench.app.server.RegionPool',Pool):
             id=app.grid(dict(info=INFO),dict(enabled_phases=['HCP','BCC']),2,True,1,workers=1,
                         overlap=dict(window_nm=4,spacing_nm=2,passes=3,sample_edges=True))['id']
             app.grid_thread.join(10)

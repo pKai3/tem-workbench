@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 import numpy as np
 from PIL import Image
-from engine import Engine
-import raster_images as raster
+from tem_workbench.app.engine import Engine
+from tem_workbench.storage import raster_images as raster
 
 class RasterTests(unittest.TestCase):
     def setUp(self):

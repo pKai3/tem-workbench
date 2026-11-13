@@ -3,7 +3,7 @@ import random
 from pathlib import Path
 import subprocess
 import unittest
-from phase_blend import blend_support
+from tem_workbench.mapping.phase_blend import blend_support
 
 class PhaseBlendTests(unittest.TestCase):
     def test_endpoints_midpoints_and_strength(self):

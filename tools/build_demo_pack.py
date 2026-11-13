@@ -7,7 +7,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from demo_data import source_id
+from tem_workbench.storage.demo_data import source_id
 
 
 def build(output, sources, folder=False):

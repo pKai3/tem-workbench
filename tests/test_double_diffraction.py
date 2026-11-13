@@ -5,8 +5,8 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 import numpy as np
-import double_diffraction as dd
-import beta_omega
+from tem_workbench.analysis import double_diffraction as dd
+from tem_workbench.analysis import beta_omega
 from tests.test_forbidden_reflections import model, peak
 
 
@@ -158,7 +158,7 @@ class DoubleDiffractionTests(unittest.TestCase):
         self.assertEqual(dd.scoring_factor(report, peaks), 0.)
 
     def test_cached_candidate_weight_and_other_terms_are_independent(self):
-        from engine import Engine
+        from tem_workbench.app.engine import Engine
         m, peaks = example()
         m.update(score=.4, position_score=.4, position_valid=True, valid=True,
                  scale_mode='fixed', scale_penalty=0., peak_evidence={})

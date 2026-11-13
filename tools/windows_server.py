@@ -71,7 +71,7 @@ def run_server(control):
     verify(Path(sys.executable), ROOT, os.environ.copy(), full=False)
     notify(phase='starting')
     nonce = os.environ.pop('TEM_DESKTOP_TOKEN')
-    from server import main as serve
+    from tem_workbench.app.server import main as serve
     def ready(server, url):
         notify(phase='ready', url=url, nonce=nonce)
         threading.Thread(target=watch_control, args=(control, server), daemon=True).start()

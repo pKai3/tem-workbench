@@ -317,9 +317,9 @@ These adjustments do not simulate reflection intensities, thickness, defocus or 
 
 ### Crystal pattern generation
 
-`crystal_templates.py` defines the reciprocal coordinates and allowed-reflection rules. Cubic reflections use **g = (h, k, l) / a**; FCC allows indices all odd or all even, while BCC requires an even sum. HCP uses its hexagonal metric and basis selection rule. `fcc_templates()` generates the finite FCC zone library. Existing HCP/BCC zone templates are stored in `templates.json`.
+`tem_workbench/analysis/crystal_templates.py` defines the reciprocal coordinates and allowed-reflection rules. Cubic reflections use **g = (h, k, l) / a**; FCC allows indices all odd or all even, while BCC requires an even sum. HCP uses its hexagonal metric and basis selection rule. `fcc_templates()` generates the finite FCC zone library. Existing HCP/BCC zone templates are stored in `tem_workbench/resources/templates.json`.
 
-`scale_fitting.prepare_templates()` enumerates integer plane indices, applies the structure rule and zone law **hu + kv + lw = 0** (three-index coordinates internally), and projects the surviving reciprocal vectors into the detector plane. The reflection range follows the selected inner/outer cutoffs and lattice references rather than a fixed number of shells. Changing HCP a/c also updates the reciprocal-plane projection so its lengths and angles follow the new hexagonal metric. `prediction_points()` applies the fitted reciprocal scale; the search then rotates the predictions to match the observed points. These are allowed positions, not simulated intensities. `materials.py` supplies preset references and validates custom dimensions.
+`scale_fitting.prepare_templates()` enumerates integer plane indices, applies the structure rule and zone law **hu + kv + lw = 0** (three-index coordinates internally), and projects the surviving reciprocal vectors into the detector plane. The reflection range follows the selected inner/outer cutoffs and lattice references rather than a fixed number of shells. Changing HCP a/c also updates the reciprocal-plane projection so its lengths and angles follow the new hexagonal metric. `prediction_points()` applies the fitted reciprocal scale; the search then rotates the predictions to match the observed points. These are allowed positions, not simulated intensities. `tem_workbench/analysis/materials.py` supplies preset references and validates custom dimensions.
 
 ## Interpretation and limitations
 
@@ -336,22 +336,34 @@ Supported input is finite, two-dimensional DM4 data with length or reciprocal-le
 
 ## Development
 
+Application modules live in `tem_workbench/`: `analysis/` holds numerical fitting,
+`mapping/` grid and map operations, `components/` PCA/NMF workflows, `storage/`
+image/project access, `app/` application orchestration and HTTP endpoints, and
+`runtime/` workers and diagnostics. Shared reference files are in `resources/`.
+Use package-qualified imports; resource locations come from `tem_workbench.paths`
+and do not depend on the current working directory.
+
+The top-level `server.py` remains the console entry point used by installed
+launchers. `workbench_environment.py` and `workbench_updates.py` intentionally
+remain standalone: setup and frozen update recovery must work before the
+application dependencies are installed, or while application files are replaced.
+
 | Component | Responsibility |
 | --- | --- |
-| `analysis_core.py` | FFT processing, peak detection, fixed-scale matching and geometry checks. |
-| `diffraction.py` | Reciprocal calibration, beam-centre estimation, direct spot detection and detector exclusions. |
-| `orthorhombic.py` | Primitive orthorhombic metric seeds, independent cell fitting and dimensional observability. |
-| `scale_fitting.py` | Bounded automatic scale fitting, candidate ranking and cached reranking. |
-| `materials.py`, `crystal_templates.py` | Material references, reciprocal coordinates and allowed-reflection generation. |
-| `phase_comparison.py` | Prediction counts and shared-evidence ambiguity checks. |
-| `peak_evidence.py` | Independent weak-maxima detection, prediction-site audits and ranking adjustments. |
-| `adaptive_refinement.py` | Same-child comparisons and mixed assignability checks for passing parents. |
-| `folder_paths.py`, `workbench_project.py` | Local directory links and reusable region definitions. |
-| `engine.py` | Image loading, region analysis, previews and fit caches. |
-| `server.py` | Local HTTP endpoints, grid jobs and JSON exports. |
+| `tem_workbench/analysis/analysis_core.py` | FFT processing, peak detection, fixed-scale matching and geometry checks. |
+| `tem_workbench/analysis/diffraction.py` | Reciprocal calibration, beam-centre estimation, direct spot detection and detector exclusions. |
+| `tem_workbench/analysis/orthorhombic.py` | Primitive orthorhombic metric seeds, independent cell fitting and dimensional observability. |
+| `tem_workbench/analysis/scale_fitting.py` | Bounded automatic scale fitting, candidate ranking and cached reranking. |
+| `tem_workbench/analysis/materials.py`, `tem_workbench/analysis/crystal_templates.py` | Material references, reciprocal coordinates and allowed-reflection generation. |
+| `tem_workbench/analysis/phase_comparison.py` | Prediction counts and shared-evidence ambiguity checks. |
+| `tem_workbench/analysis/peak_evidence.py` | Independent weak-maxima detection, prediction-site audits and ranking adjustments. |
+| `tem_workbench/mapping/adaptive_refinement.py` | Same-child comparisons and mixed assignability checks for passing parents. |
+| `tem_workbench/storage/folder_paths.py`, `tem_workbench/storage/workbench_project.py` | Local directory links and reusable region definitions. |
+| `tem_workbench/app/engine.py` | Image loading, region analysis, previews and fit caches. |
+| `tem_workbench/app/server.py` | Local HTTP endpoints, grid jobs and JSON exports. |
 | `web/` | Buildless browser interface. |
-| `demo_data.py`, `demo/` | Optional demo catalog and legacy decoder. |
-| `engine_provenance.json` | Numerical provenance and recorded limitations. |
+| `tem_workbench/storage/demo_data.py`, `demo/` | Optional demo catalog and legacy decoder. |
+| `tem_workbench/resources/engine_provenance.json` | Numerical provenance and recorded limitations. |
 
 Run the focused numerical checks with:
 

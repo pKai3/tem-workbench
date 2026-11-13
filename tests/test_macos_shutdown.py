@@ -100,7 +100,7 @@ class NativeShutdownTests(unittest.TestCase):
     def probe(self, mode):
         directory = self.base / mode
         directory.mkdir()
-        (directory / 'server.command').write_text(
+        (directory / 'tem_workbench.app.server.command').write_text(
             '#!/bin/zsh\ntrap "exit 0" TERM\n'
             'touch "${0:A:h}/ready"\nwhile true; do /bin/sleep 0.1; done\n')
         try:
@@ -111,12 +111,12 @@ class NativeShutdownTests(unittest.TestCase):
                 ack = json.loads((directory / 'stopped.json').read_text())
                 request = json.loads((directory / 'request.json').read_text())
                 self.assertEqual(ack['nonce'], request['nonce'])
-            if (directory / 'server.pid').exists():
+            if (directory / 'tem_workbench.app.server.pid').exists():
                 with self.assertRaises(ProcessLookupError):
-                    os.killpg(int((directory / 'server.pid').read_text()), 0)
+                    os.killpg(int((directory / 'tem_workbench.app.server.pid').read_text()), 0)
         finally:
             # Only the disposable processes started by this probe are affected.
-            for name, group in (('server.pid', True), ('helper.pid', False)):
+            for name, group in (('tem_workbench.app.server.pid', True), ('helper.pid', False)):
                 if (directory / name).exists():
                     try:
                         (os.killpg if group else os.kill)(int((directory / name).read_text()), signal.SIGTERM)

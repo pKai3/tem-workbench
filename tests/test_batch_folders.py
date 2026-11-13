@@ -2,7 +2,7 @@ import csv
 from pathlib import Path
 import tempfile
 import unittest
-from batch_grids import summary_folder, folder_summaries, write_folder_csv, BatchGrids
+from tem_workbench.mapping.batch_grids import summary_folder, folder_summaries, write_folder_csv, BatchGrids
 import test_batch_stability
 import test_manual_batch
 
@@ -17,7 +17,7 @@ class FolderSummaries(unittest.TestCase):
         self.assertEqual(summary_folder('STOther/file.dm4',['ST'],True),'STOther')
 
     def test_folder_csv_both_modes(self):
-        from batch_grids import summarize
+        from tem_workbench.mapping.batch_grids import summarize
         for overlap in [False,True]:
             with self.subTest(overlap=overlap),tempfile.TemporaryDirectory() as tmp:
                 job=test_batch_stability.StabilityBatch().job() if overlap else test_manual_batch.BatchSummaries().job()

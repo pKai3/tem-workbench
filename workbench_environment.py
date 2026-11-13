@@ -22,7 +22,8 @@ def check_project_files(root):
     if (root / '.tem-update.lock').exists():
         raise RuntimeError('An update is in progress or needs recovery. Open Check for updates '
                            'in the desktop launcher to restore the previous version before starting.')
-    required = ('server.py', 'analysis_core.py', 'web/index.html', 'web/app.js',
+    required = ('server.py', 'tem_workbench/app/server.py', 'tem_workbench/analysis/analysis_core.py',
+                'tem_workbench/resources/templates.json', 'web/index.html', 'web/app.js',
                 'requirements.txt', 'requirements-desktop.txt', 'workbench_environment.py')
     unavailable = []
     for name in required:
@@ -141,7 +142,8 @@ for name in ('requirements.txt', 'requirements-desktop.txt'):
 QUICK_CHECK = PREFLIGHT_CHECK + "\nprint('Dependencies OK. No data processed.', flush=True)\n"
 CHECK = PREFLIGHT_CHECK + r'''
 import importlib
-for module in ('numpy', 'scipy.ndimage', 'scipy.optimize', 'PIL.Image', 'h5py', 'ncempy.io.dm'):
+for module in ('numpy', 'scipy.ndimage', 'scipy.optimize', 'PIL.Image', 'h5py', 'ncempy.io.dm',
+               'tem_workbench.app.server'):
     importlib.import_module(module)
 print('Dependencies and imports OK. No data processed.', flush=True)
 '''

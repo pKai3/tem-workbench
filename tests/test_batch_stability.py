@@ -7,8 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from PIL import Image
-from engine import Engine
-from batch_grids import BatchGrids, summarize, sample_summaries, map_png, png_exports
+from tem_workbench.app.engine import Engine
+from tem_workbench.mapping.batch_grids import BatchGrids, summarize, sample_summaries, map_png, png_exports
 import test_parallel_execution as parallel_tests
 from test_parallel_execution import image
 
@@ -86,8 +86,8 @@ class StabilityBatch(unittest.TestCase):
             self.assertEqual(len(set(hashes)),len(products))
 
     def test_strength_png_uses_scores_and_reconstructs_legacy_fields(self):
-        import overlap_maps
-        from phase_blend import blend_support
+        from tem_workbench.mapping import overlap_maps
+        from tem_workbench.mapping.phase_blend import blend_support
         job=self.job()
         for r in job['regions']:
             r['models'][0]['score']=.8;r['models'][1]['score']=.4
@@ -139,7 +139,7 @@ class StabilityBatch(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             app.config=dict(output_root=tmp);app.engine=LocalEngine({});app.batch=BatchGrids(app)
             try:
-                with patch('batch_grids.Engine',LocalEngine):
+                with patch('tem_workbench.mapping.batch_grids.Engine',LocalEngine):
                     app.batch.start(dict(file_ids=['a','bad','b'],workers=2,export_png=True,png_views=['support_all','hex','support_phases'],
                         settings=dict(enabled_phases=['HCP','BCC']),
                         overlap=dict(size_mode='image_percent',window_percent=50,spacing_mode='fixed_nm',spacing_nm=2,layout='hex',passes=3,sample_edges=True)))

@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
-import demo_data
-from demo_packs import download_url, install_archive, DemoDownload
+from tem_workbench.storage import demo_data
+from tem_workbench.storage.demo_packs import download_url, install_archive, DemoDownload
 from tools.build_demo_pack import build
 
 
@@ -27,7 +27,7 @@ class DemoPackTests(unittest.TestCase):
         build(self.archive, [self.source])
         with zipfile.ZipFile(self.archive) as z:
             self.assertEqual(z.namelist(), [self.name])
-        with patch.object(demo_data, 'DIRECTORY', self.demos), patch('engine.Engine.file_preview', return_value=b'generated preview') as render:
+        with patch.object(demo_data, 'DIRECTORY', self.demos), patch('tem_workbench.app.engine.Engine.file_preview', return_value=b'generated preview') as render:
             self.assertEqual(demo_data.catalog_entries(), [])
             self.assertEqual(install_archive(self.archive, self.demos/'packs'), 1)
             self.assertEqual(install_archive(self.archive, self.demos/'packs'), 1)
@@ -50,14 +50,14 @@ class DemoPackTests(unittest.TestCase):
             z.writestr(self.name, self.original)
             z.writestr(Path(self.name).with_suffix('.PNG').name, b'existing preview')
             z.writestr('pack.json', '{obsolete manifest ignored}')
-        with patch('engine.Engine.file_preview') as render:
+        with patch('tem_workbench.app.engine.Engine.file_preview') as render:
             install_archive(self.archive, self.demos/'packs')
             render.assert_not_called()
         target = next((self.demos/'packs').iterdir())
         self.assertEqual((target/Path(self.name).with_suffix('.png')).read_bytes(), b'existing preview')
         # Removing a local preview makes the next install regenerate it only.
         (target/Path(self.name).with_suffix('.png')).unlink()
-        with patch('engine.Engine.file_preview', return_value=b'new preview') as render:
+        with patch('tem_workbench.app.engine.Engine.file_preview', return_value=b'new preview') as render:
             install_archive(self.archive, self.demos/'packs')
             render.assert_called_once()
 
@@ -73,7 +73,7 @@ class DemoPackTests(unittest.TestCase):
 
     def test_preview_failure_does_not_publish_partial_pack(self):
         build(self.archive, [self.source])
-        with patch('engine.Engine.file_preview', side_effect=ValueError('bad image')):
+        with patch('tem_workbench.app.engine.Engine.file_preview', side_effect=ValueError('bad image')):
             with self.assertRaisesRegex(ValueError, 'Could not generate'):
                 install_archive(self.archive, self.demos/'packs')
         self.assertEqual(list((self.demos/'packs').iterdir()), [])
@@ -90,7 +90,7 @@ class DemoPackTests(unittest.TestCase):
         from PIL import Image
         build(self.archive, [self.source])
         meta = {'Calibrations Dimension 1 Units':'1/nm', 'Calibrations Dimension 2 Units':'1/nm'}
-        with patch('engine.Engine.read_dm4', return_value=(np.arange(4096).reshape(64,64), meta)):
+        with patch('tem_workbench.app.engine.Engine.read_dm4', return_value=(np.arange(4096).reshape(64,64), meta)):
             install_archive(self.archive, self.demos/'packs')
         preview = next(self.demos.rglob('*.png'))
         with Image.open(preview) as image:
@@ -107,7 +107,7 @@ class DemoPackTests(unittest.TestCase):
             def __exit__(self,*args): self.file.close()
             def read(self,n): return self.file.read(n)
         download = DemoDownload(self.demos/'packs')
-        with patch('urllib.request.urlopen', return_value=Response()), patch('engine.Engine.file_preview', return_value=b'preview'):
+        with patch('urllib.request.urlopen', return_value=Response()), patch('tem_workbench.app.engine.Engine.file_preview', return_value=b'preview'):
             download.work(Response.url)
         self.assertEqual(download.status()['state'], 'complete')
 

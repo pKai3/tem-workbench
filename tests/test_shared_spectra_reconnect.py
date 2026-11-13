@@ -4,8 +4,8 @@ import json
 import threading
 import unittest
 from unittest.mock import patch
-import shared_spectra as spectra
-import pca_fitting as fitting
+from tem_workbench.components import shared_spectra as spectra
+from tem_workbench.components import pca_fitting as fitting
 from test_pca_combinations import split_pattern, OPTIONS
 from test_shared_spectra import INFO, SETTINGS, OPTIONS as SAMPLING
 

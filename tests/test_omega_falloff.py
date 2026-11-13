@@ -2,11 +2,11 @@
 import unittest
 from unittest.mock import patch
 import numpy as np
-import analysis_core as core
-import beta_omega
-import scale_fitting
-import diffraction_fitting
-from engine import Engine
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import beta_omega
+from tem_workbench.analysis import scale_fitting
+from tem_workbench.analysis import diffraction_fitting
+from tem_workbench.app.engine import Engine
 
 class OmegaFalloffTests(unittest.TestCase):
     def test_shared_nodes_stay_tight_and_chance_widens(self):

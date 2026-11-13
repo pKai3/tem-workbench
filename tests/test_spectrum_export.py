@@ -8,9 +8,9 @@ from types import SimpleNamespace
 import unittest
 
 import numpy as np
-from engine import Engine
+from tem_workbench.app.engine import Engine
 from PIL import Image
-from server import Workbench, SPECTRUM_MAX_FRAMES, SPECTRUM_MAX_PIXELS
+from tem_workbench.app.server import Workbench, SPECTRUM_MAX_FRAMES, SPECTRUM_MAX_PIXELS
 
 
 class SpectrumExportTests(unittest.TestCase):

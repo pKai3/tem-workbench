@@ -9,9 +9,9 @@ import unittest
 from concurrent.futures import CancelledError
 from unittest.mock import patch
 import numpy as np
-import analysis_core as core
-import pca_fitting as fitting
-import shared_spectra as spectra
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.components import pca_fitting as fitting
+from tem_workbench.components import shared_spectra as spectra
 from test_pca_fitting import synthetic
 
 

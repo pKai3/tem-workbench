@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-import folder_paths
+from tem_workbench.storage import folder_paths
 
 
 def locked(code=32):
@@ -13,7 +13,7 @@ def locked(code=32):
 
 class FileLockTests(unittest.TestCase):
     def test_transient_lock_retries_and_returns_result(self):
-        with patch('folder_paths.time.sleep') as sleep:
+        with patch('tem_workbench.storage.folder_paths.time.sleep') as sleep:
             from unittest.mock import Mock
             action = Mock(side_effect=[locked(), locked(33), 'ok'])
             self.assertEqual(folder_paths.retry_sharing_violation(action, 'test'), 'ok')
@@ -21,7 +21,7 @@ class FileLockTests(unittest.TestCase):
             self.assertEqual([c.args[0] for c in sleep.call_args_list], [0.1, 0.2])
 
     def test_non_sharing_errors_are_not_retried(self):
-        with patch('folder_paths.time.sleep') as sleep:
+        with patch('tem_workbench.storage.folder_paths.time.sleep') as sleep:
             for error in [locked(5), FileNotFoundError('missing')]:
                 def fail():
                     raise error
@@ -33,7 +33,7 @@ class FileLockTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'state.json'
             path.write_text('previous')
-            with patch('folder_paths.os.replace', side_effect=locked()) as replace, patch('folder_paths.time.sleep'):
+            with patch('tem_workbench.storage.folder_paths.os.replace', side_effect=locked()) as replace, patch('tem_workbench.storage.folder_paths.time.sleep'):
                 with self.assertRaises(PermissionError):
                     folder_paths.atomic_json(path, {'new': True})
             self.assertEqual(replace.call_count, 5)
@@ -52,7 +52,7 @@ class FileLockTests(unittest.TestCase):
                 if calls == 1:
                     raise locked()
                 return real(source, target)
-            with patch('folder_paths.os.replace', side_effect=replace), patch('folder_paths.time.sleep'):
+            with patch('tem_workbench.storage.folder_paths.os.replace', side_effect=replace), patch('tem_workbench.storage.folder_paths.time.sleep'):
                 folder_paths.atomic_json(path, {'new': True})
             self.assertIn('"new": true', path.read_text())
             self.assertEqual(list(Path(directory).iterdir()), [path])

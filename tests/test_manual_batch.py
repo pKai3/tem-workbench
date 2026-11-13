@@ -8,12 +8,12 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 from PIL import Image
-import diffraction
-from batch_grids import eligibility, summarize, sample_summaries, map_png, BatchGrids
+from tem_workbench.analysis import diffraction
+from tem_workbench.mapping.batch_grids import eligibility, summarize, sample_summaries, map_png, BatchGrids
 from test_diffraction import pattern
 import test_parallel_execution as parallel_tests
 from test_parallel_execution import image
-from engine import Engine
+from tem_workbench.app.engine import Engine
 
 class ManualPeaks(unittest.TestCase):
     def test_add_remove_pair_and_cache(self):
@@ -153,7 +153,7 @@ class BatchSummaries(unittest.TestCase):
             def close(self):self.pool.shutdown(wait=True,cancel_futures=True)
         with tempfile.TemporaryDirectory() as tmp:
             app.config=dict(output_root=tmp);app.engine=LocalEngine({});app.batch=BatchGrids(app)
-            with patch('batch_grids.Engine',LocalEngine),patch('server.RegionPool',Pool):
+            with patch('tem_workbench.mapping.batch_grids.Engine',LocalEngine),patch('tem_workbench.app.server.RegionPool',Pool):
                 app.batch.start(dict(file_ids=['first','second','third'],count=2,minimum_nm=1,adaptive=False,workers=1))
                 try:
                     self.assertTrue(reached.wait(10))
@@ -192,7 +192,7 @@ class BatchSummaries(unittest.TestCase):
                 return item
         with tempfile.TemporaryDirectory() as tmp:
             app.config=dict(output_root=tmp);app.engine=LocalEngine({});app.batch=BatchGrids(app)
-            with patch('batch_grids.Engine',LocalEngine):
+            with patch('tem_workbench.mapping.batch_grids.Engine',LocalEngine):
                 app.batch.start(dict(file_ids=['a','bad','b'],count=2,minimum_nm=1,adaptive=False,workers=2,export_png=True,settings={'enabled_phases':['BCC']}))
                 app.batch.thread.join(60)
             status=app.batch.status();self.assertEqual(status['state'],'complete',status)

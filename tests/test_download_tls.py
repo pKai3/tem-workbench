@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 from urllib.error import URLError
 
-import demo_packs
+from tem_workbench.storage import demo_packs
 
 
 class DownloadTLSTests(unittest.TestCase):

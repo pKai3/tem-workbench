@@ -1,9 +1,9 @@
 """Soft positional evidence must admit offsets without giving away full credit."""
 import unittest
 import numpy as np
-import analysis_core as core
-import beta_omega
-import peak_evidence
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import beta_omega
+from tem_workbench.analysis import peak_evidence
 
 
 class PositionalMatchingTests(unittest.TestCase):

@@ -6,8 +6,8 @@ import unittest
 from unittest.mock import Mock, patch
 import numpy as np
 from PIL import Image
-from engine import Engine
-from preview_files import PreviewBatch, sidecar_path
+from tem_workbench.app.engine import Engine
+from tem_workbench.storage.preview_files import PreviewBatch, sidecar_path
 
 
 class PreviewChecks(unittest.TestCase):
@@ -40,11 +40,11 @@ class PreviewChecks(unittest.TestCase):
 
     def test_diffraction_preview_does_not_estimate_or_fit_and_limits_size(self):
         with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder).resolve();source=root/'diffraction.dm4';source.touch()
+            root=Path(folder).resolve();source=root/'tem_workbench.analysis.diffraction.dm4';source.touch()
             engine=Engine(dict(data_root=str(root)));engine.catalog()
             raw=np.linspace(0, 10000, 1600*800, dtype=np.float32).reshape(1600, 800)
             meta={f'Calibrations Dimension {d} Units':'1/nm' for d in (1,2)}
-            with patch.object(engine,'read_dm4',return_value=(raw,meta)), patch('engine.diffraction.estimate_center',side_effect=AssertionError('should not run')):
+            with patch.object(engine,'read_dm4',return_value=(raw,meta)), patch('tem_workbench.app.engine.diffraction.estimate_center',side_effect=AssertionError('should not run')):
                 preview=engine.file_preview(source.name)
             with Image.open(BytesIO(preview)) as image:
                 self.assertEqual(image.size,(700,1400))

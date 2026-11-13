@@ -2,8 +2,8 @@
 import copy
 import unittest
 import numpy as np
-import analysis_core as core
-import phase_comparison as comparison
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import phase_comparison as comparison
 
 
 class SharedEvidence(unittest.TestCase):

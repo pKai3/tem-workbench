@@ -4,9 +4,9 @@ import json
 import unittest
 from unittest.mock import patch
 import numpy as np
-import component_maps
-import shared_spectra as spectra
-import pca_fitting
+from tem_workbench.components import component_maps
+from tem_workbench.components import shared_spectra as spectra
+from tem_workbench.components import pca_fitting
 from test_shared_spectra import INFO, SETTINGS, OPTIONS
 from test_pca_combinations import split_pattern
 

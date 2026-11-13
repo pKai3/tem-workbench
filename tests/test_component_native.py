@@ -5,14 +5,14 @@ import unittest
 from concurrent.futures import CancelledError
 import numpy as np
 
-import analysis_core as core
-import component_validation as native
-from component_execution import ComponentPool
-from engine import Engine
-import nmf_phase_maps
-import pca_fitting
-import shared_spectra
-import scale_fitting
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.components import component_validation as native
+from tem_workbench.components.component_execution import ComponentPool
+from tem_workbench.app.engine import Engine
+from tem_workbench.components import nmf_phase_maps
+from tem_workbench.components import pca_fitting
+from tem_workbench.components import shared_spectra
+from tem_workbench.analysis import scale_fitting
 
 
 def fixture():

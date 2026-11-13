@@ -3,12 +3,12 @@ import itertools
 import json
 import unittest
 import numpy as np
-import analysis_core as core
-from crystal_templates import allowed, reciprocal
-from engine import Engine
-from materials import reference_settings
-import scale_fitting as fitting
-from forbidden_reflections import inspect
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis.crystal_templates import allowed, reciprocal
+from tem_workbench.app.engine import Engine
+from tem_workbench.analysis.materials import reference_settings
+from tem_workbench.analysis import scale_fitting as fitting
+from tem_workbench.analysis.forbidden_reflections import inspect
 
 
 class OmegaTests(unittest.TestCase):

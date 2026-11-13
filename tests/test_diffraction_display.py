@@ -8,8 +8,8 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-import diffraction
-from engine import Engine
+from tem_workbench.analysis import diffraction
+from tem_workbench.app.engine import Engine
 from tests.test_diffraction import pattern
 
 
@@ -48,7 +48,7 @@ class DiffractionDisplayChecks(unittest.TestCase):
         roi = dict(x=0, y=0, w=768, h=768)
         settings = dict(enabled_phases=[], diffraction={'center_x':402., 'center_y':364.})
         engine = Engine({})
-        with patch('analysis_core.fft2', side_effect=AssertionError('No FFT of diffraction pixels')):
+        with patch('tem_workbench.analysis.analysis_core.fft2', side_effect=AssertionError('No FFT of diffraction pixels')):
             result = engine.analyze(item, roi, settings, images=True)
             numerical = engine.analyze(item, roi, settings, images=False)
         self.assertEqual(result['spectrum'], numerical['spectrum'])

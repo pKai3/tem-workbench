@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import unittest
 
-from hypothesis_selection import automatic_pool, SORTS
+from tem_workbench.components.hypothesis_selection import automatic_pool, SORTS
 
 
 def fixture(count=100):

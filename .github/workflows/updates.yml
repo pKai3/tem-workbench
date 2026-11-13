@@ -6,6 +6,7 @@ on:
     paths:
       - 'workbench_updates.py'
       - 'workbench_environment.py'
+      - 'tem_workbench/**'
       - 'tools/*.py'
       - 'tools/*.sh'
       - 'tools/*.bat'

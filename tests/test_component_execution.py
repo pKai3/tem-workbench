@@ -9,11 +9,11 @@ import unittest
 from concurrent.futures import CancelledError
 import numpy as np
 
-from component_execution import ComponentPool, selected_workers
-import pca_fitting
-import nmf_fitting
-import nmf_phase_maps
-import shared_spectra
+from tem_workbench.components.component_execution import ComponentPool, selected_workers
+from tem_workbench.components import pca_fitting
+from tem_workbench.components import nmf_fitting
+from tem_workbench.components import nmf_phase_maps
+from tem_workbench.components import shared_spectra
 from test_pca_combinations import split_pattern, OPTIONS
 
 
@@ -95,7 +95,7 @@ class ComponentExecutionTests(unittest.TestCase):
         self.assertFalse(folder.exists())
 
     def test_workbench_shutdown_waits_for_component_workers_and_cleanup(self):
-        from server import Workbench
+        from tem_workbench.app.server import Workbench
         result,templates=split_pattern();ready=threading.Event();stop=threading.Event();state={}
         def run():
             try:

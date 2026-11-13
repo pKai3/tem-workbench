@@ -3,10 +3,10 @@ import tempfile
 from io import BytesIO
 import numpy as np
 from PIL import Image
-import analysis_core as core
-import region_masks
-from engine import Engine
-from workbench_project import Project
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import region_masks
+from tem_workbench.app.engine import Engine
+from tem_workbench.storage.workbench_project import Project
 
 class PolygonRegions(unittest.TestCase):
     def setUp(self):

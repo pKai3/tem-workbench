@@ -7,15 +7,15 @@ from unittest.mock import patch
 
 import numpy as np
 
-import analysis_core as core
-from crystal_templates import reciprocal
-import diffraction
-from engine import Engine
-import folder_paths
-from materials import MATERIAL_PRESETS, reference_settings
-import peak_evidence
-import scale_fitting as fitting
-from server import Workbench
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis.crystal_templates import reciprocal
+from tem_workbench.analysis import diffraction
+from tem_workbench.app.engine import Engine
+from tem_workbench.storage import folder_paths
+from tem_workbench.analysis.materials import MATERIAL_PRESETS, reference_settings
+from tem_workbench.analysis import peak_evidence
+from tem_workbench.analysis import scale_fitting as fitting
+from tem_workbench.app.server import Workbench
 from test_diffraction import pattern
 
 

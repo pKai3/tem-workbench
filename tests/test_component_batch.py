@@ -9,8 +9,8 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 
-from component_batch import ComponentBatch
-import shared_spectra
+from tem_workbench.components.component_batch import ComponentBatch
+from tem_workbench.components import shared_spectra
 from test_pca_combinations import split_pattern
 from test_shared_spectra import INFO, SETTINGS, OPTIONS
 
@@ -54,7 +54,7 @@ class ComponentBatchTests(unittest.TestCase):
     def patches(self):
         from contextlib import ExitStack
         stack=ExitStack()
-        stack.enter_context(patch('component_batch.Engine',BatchEngine))
+        stack.enter_context(patch('tem_workbench.components.component_batch.Engine',BatchEngine))
         stack.enter_context(patch.object(shared_spectra,'compute',side_effect=self.computed))
         stack.enter_context(patch.object(shared_spectra,'export_staging_root',return_value=self.folder/'staging'))
         return stack
@@ -91,7 +91,7 @@ class ComponentBatchTests(unittest.TestCase):
         self.assertEqual(json.loads(Path(status['manifest']).read_text())['finished'],3)
 
     def test_cancel_during_fit_exports_partial_and_does_not_start_next_image(self):
-        import pca_fitting
+        from tem_workbench.components import pca_fitting
         entered=threading.Event()
         def blocked(result,templates,options,cancel,progress):
             entered.set();cancel.wait(10);shared_spectra.check_cancel(cancel)

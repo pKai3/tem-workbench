@@ -7,8 +7,8 @@ import zlib
 import numpy as np
 from unittest.mock import patch
 
-import peak_evidence as evidence
-from engine import Engine
+from tem_workbench.analysis import peak_evidence as evidence
+from tem_workbench.app.engine import Engine
 
 
 def model():
@@ -87,7 +87,7 @@ class FalloffTests(unittest.TestCase):
                       spectrum={'df': .2, 'peaks': [{'profile_id': 0, 'qx': 3, 'qy': 0}]}, width_nm=5, height_nm=5,
                       _fit_cache=zlib.compress(json.dumps([model()]).encode()))
         original = copy.deepcopy(result)
-        with patch('engine.core.retain', side_effect=lambda ms: ms), patch.object(engine, 'classify', return_value={}):
+        with patch('tem_workbench.app.engine.core.retain', side_effect=lambda ms: ms), patch.object(engine, 'classify', return_value={}):
             updated = engine.rescore(result, 0, half_weight_nm_inv=8)
             restored = engine.rescore(updated, 0, half_weight_nm_inv=0)
         self.assertEqual(result, original)
@@ -127,7 +127,7 @@ class FalloffTests(unittest.TestCase):
         result=dict(settings=dict(scale_mode='fixed',peak_evidence_weight=.3,g_min=2.5,g_max=10),
                     spectrum={'df':.2,'peaks':[{'profile_id':0,'qx':3,'qy':0}]},width_nm=5,height_nm=5,
                     _fit_cache=zlib.compress(json.dumps([model()]).encode()))
-        with patch('engine.core.retain',side_effect=lambda ms:ms),patch.object(engine,'classify',return_value={}):
+        with patch('tem_workbench.app.engine.core.retain',side_effect=lambda ms:ms),patch.object(engine,'classify',return_value={}):
             bonus_only=engine.rescore(result,0,evidence_weight=0)
             stronger=engine.rescore(bonus_only,0,missing_weight=1.5)
             restored=engine.rescore(stronger,0,evidence_weight=.3,missing_weight=.3)
@@ -149,7 +149,7 @@ class FalloffTests(unittest.TestCase):
             with self.assertRaises(ValueError):engine.validate(item,roi,dict(missing_peak_weight=value))
 
     def test_grid_rescore_propagates_independent_cost_and_rejects_invalid_before_mutation(self):
-        from server import Workbench
+        from tem_workbench.app.server import Workbench
         app=Workbench.__new__(Workbench);app.engine=Engine.__new__(Engine);app.job_lock=threading.RLock()
         app.jobs={'example':dict(state='complete',settings=dict(peak_evidence_weight=.3),regions=[{}],grid={})}
         with patch.object(app.engine,'rescore',return_value={}) as rescore,patch.object(app,'status',return_value={}):

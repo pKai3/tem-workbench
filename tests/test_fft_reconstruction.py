@@ -8,11 +8,11 @@ from unittest.mock import patch
 import numpy as np
 from scipy.fft import fft2
 from PIL import Image
-import analysis_core as core
-import fft_reconstruction as reconstruction
-import region_masks
-from engine import Engine
-from server import Workbench
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import fft_reconstruction as reconstruction
+from tem_workbench.analysis import region_masks
+from tem_workbench.app.engine import Engine
+from tem_workbench.app.server import Workbench
 
 
 class ReconstructionTests(unittest.TestCase):
@@ -101,8 +101,8 @@ class ReconstructionTests(unittest.TestCase):
             app=Workbench.__new__(Workbench);app.lock=RLock();app.ifft_lock=Lock();app.ifft_cache=None
             engine=Engine({});app.engine=SimpleNamespace(load=lambda _:item,validate=engine.validate,output_for=lambda _:Path(directory))
             body=dict(file_id='test',roi=dict(x=0,y=0,w=96,h=64),settings=dict(fft_window='none',remove_mean=False),masks=dict(mode='reject',keep_dc=True,spots=[]))
-            with patch('fft_reconstruction.prepare',wraps=reconstruction.prepare) as prepare:
-                with patch('fft_reconstruction.reconstruct',side_effect=AssertionError('FFT preview must not compute iFFT')):
+            with patch('tem_workbench.analysis.fft_reconstruction.prepare',wraps=reconstruction.prepare) as prepare:
+                with patch('tem_workbench.analysis.fft_reconstruction.reconstruct',side_effect=AssertionError('FFT preview must not compute iFFT')):
                     spectrum_preview=app.reconstruct_fft(dict(body,preview_only=True))
                 self.assertNotIn('image',spectrum_preview)
                 preview=app.reconstruct_fft(body)
@@ -126,7 +126,7 @@ class ReconstructionTests(unittest.TestCase):
             np.testing.assert_allclose(reconstructed,a,atol=1e-6)
             # Taper changes invalidate the complex FFT cache and travel in recipes.
             body['settings'].update(fft_window='tukey',fft_tukey_alpha=.2)
-            with patch('fft_reconstruction.prepare',wraps=reconstruction.prepare) as prepare:
+            with patch('tem_workbench.analysis.fft_reconstruction.prepare',wraps=reconstruction.prepare) as prepare:
                 first=app.reconstruct_fft(body)
                 app.reconstruct_fft(body)
                 self.assertEqual(prepare.call_count,1)

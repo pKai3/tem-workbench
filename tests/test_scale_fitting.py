@@ -3,14 +3,14 @@ import json
 from pathlib import Path
 import unittest
 import numpy as np
-import analysis_core as core
-import scale_fitting as fitting
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import scale_fitting as fitting
 
 
 class ScaleFits(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        templates = json.loads((Path(__file__).resolve().parents[1]/'templates.json').read_text())
+        templates = json.loads((Path(__file__).resolve().parents[1]/'tem_workbench/resources/templates.json').read_text())
         for template in templates:
             for key in ('hkl', 'q', 'g'):
                 template[key] = np.array(template[key])

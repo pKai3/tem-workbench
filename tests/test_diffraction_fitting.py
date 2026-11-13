@@ -3,11 +3,11 @@ import copy
 import itertools
 from unittest.mock import patch
 import numpy as np
-import analysis_core as core
-import beta_omega
-import diffraction_fitting as fitting
-from engine import Engine
-from materials import reference_settings
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import beta_omega
+from tem_workbench.analysis import diffraction_fitting as fitting
+from tem_workbench.app.engine import Engine
+from tem_workbench.analysis.materials import reference_settings
 
 
 class UnifiedDiffractionTests(unittest.TestCase):

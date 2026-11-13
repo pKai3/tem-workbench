@@ -6,10 +6,10 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import double_diffraction
-import forbidden_reflections
-from engine import Engine
-from server import Workbench
+from tem_workbench.analysis import double_diffraction
+from tem_workbench.analysis import forbidden_reflections
+from tem_workbench.app.engine import Engine
+from tem_workbench.app.server import Workbench
 from tests.test_parallel_execution import image
 
 
@@ -129,7 +129,7 @@ class MapUpdateConcurrencyTests(unittest.TestCase):
             previous = copy.deepcopy(app.jobs)
             if not aggregation_failure:
                 app.engine.rescore = Mock(side_effect=ValueError('region failed'))
-            with patch('server.overlap_maps.aggregate', side_effect=ValueError('aggregate failed')):
+            with patch('tem_workbench.app.server.overlap_maps.aggregate', side_effect=ValueError('aggregate failed')):
                 with self.assertRaisesRegex(ValueError, 'failed'):
                     app.rescore('grid', .1)
             self.assertEqual(app.jobs, previous)

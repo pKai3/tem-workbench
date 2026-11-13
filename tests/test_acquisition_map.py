@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from acquisition_map import MetadataIndex, describe, stage_position, reference_crop, acquisition_batches
+from tem_workbench.storage.acquisition_map import MetadataIndex, describe, stage_position, reference_crop, acquisition_batches
 from io import BytesIO
 import numpy as np
 from PIL import Image

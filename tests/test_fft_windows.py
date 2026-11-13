@@ -3,9 +3,9 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 from scipy.fft import fft2
-import analysis_core as core
-import fft_reconstruction
-from engine import Engine
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.analysis import fft_reconstruction
+from tem_workbench.app.engine import Engine
 
 
 class FFTWindowTests(unittest.TestCase):

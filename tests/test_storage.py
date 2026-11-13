@@ -4,10 +4,10 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-import folder_paths
-from workbench_project import Project
-from server import Workbench
-import demo_data
+from tem_workbench.storage import folder_paths
+from tem_workbench.storage.workbench_project import Project
+from tem_workbench.app.server import Workbench
+from tem_workbench.storage import demo_data
 
 
 class StorageChecks(unittest.TestCase):
@@ -20,7 +20,7 @@ class StorageChecks(unittest.TestCase):
             self.assertEqual(saved['python_executable'],'python')
             self.assertEqual(folder_paths.resolve_config(saved,root)['data_root'],str(base/'images'))
             before=config_path.read_bytes()
-            with patch('folder_paths.atomic_json',side_effect=OSError('write failed')):
+            with patch('tem_workbench.storage.folder_paths.atomic_json',side_effect=OSError('write failed')):
                 with self.assertRaises(OSError):
                     folder_paths.save_locations(config_path,root,saved,base/'other-images',base/'other-results')
             self.assertEqual((root/'data').resolve(),base/'images')
@@ -63,7 +63,7 @@ class StorageChecks(unittest.TestCase):
                 project.delete_region(dict(revision=1,id=one['region']['id']))
             with self.assertRaisesRegex(ValueError,'no longer exists'):
                 project.delete_region(dict(revision=2,id='absent'))
-            with patch('workbench_project.atomic_json',side_effect=OSError('write failed')):
+            with patch('tem_workbench.storage.workbench_project.atomic_json',side_effect=OSError('write failed')):
                 with self.assertRaises(OSError):project.delete_region(dict(revision=2,id=one['region']['id']))
             self.assertEqual(project.path.read_bytes(),before)
             deleted=project.delete_region(dict(revision=2,id=one['region']['id']))

@@ -11,11 +11,11 @@ from types import SimpleNamespace
 
 import numpy as np
 from PIL import Image
-from server import Workbench
-from batch_grids import BatchGrids
-import component_grid
-import component_maps
-import shared_spectra
+from tem_workbench.app.server import Workbench
+from tem_workbench.mapping.batch_grids import BatchGrids
+from tem_workbench.components import component_grid
+from tem_workbench.components import component_maps
+from tem_workbench.components import shared_spectra
 from test_pca_combinations import split_pattern
 from test_shared_spectra import INFO, SETTINGS
 
@@ -131,7 +131,7 @@ class ComponentGridTests(unittest.TestCase):
     def test_existing_batch_exports_multiple_map_products_and_numeric_results(self):
         original=self.app.pca
         for method in ('pca','nmf'):
-            with patch('batch_grids.Engine',Engine),patch.object(shared_spectra,'compute',side_effect=self.compute),patch.object(shared_spectra,'export_staging_root',return_value=self.folder/'staging'):
+            with patch('tem_workbench.mapping.batch_grids.Engine',Engine),patch.object(shared_spectra,'compute',side_effect=self.compute),patch.object(shared_spectra,'export_staging_root',return_value=self.folder/'staging'):
                 started=self.app.batch.start(dict(file_ids=['a','b'],settings=self.settings,overlap=self.overlap,
                     component={**self.component,'method':method},workers=1,export_png=True,
                     png_views=['strength_all','support_phases','hex','raw'],summary_folders=['project'],flatten_folders=True))

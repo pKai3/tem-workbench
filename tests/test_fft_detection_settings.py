@@ -5,8 +5,8 @@ import json
 from io import BytesIO
 from PIL import Image
 import numpy as np
-import analysis_core as core
-from engine import Engine
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.app.engine import Engine
 
 
 class FFTDetectionChecks(unittest.TestCase):

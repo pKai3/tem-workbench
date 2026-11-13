@@ -2,6 +2,16 @@
 
 Last updated: 13 November 2026
 
+## Package organisation and AZtec provisioning — approved 13 November 2026
+
+**Approved order:** complete the package reorganisation on `main`, verify and push it, then create `codex/aztec` for AZtec provisioning. This supersedes the earlier proposal-only status of folderisation. No release or architecture-diagram refresh requested.
+
+**Completed on main:** moved 45 application modules into `tem_workbench/{app,analysis,mapping,components,storage,runtime}` with explicit package imports and reference data under `tem_workbench/resources`. Kept the small console entry point and standalone setup/update recovery modules at the root for installed launcher and frozen recovery compatibility. Numerical behaviour and stored project/config paths are unchanged. Worker imports, source hashes, resource locations, tests, tools, preflight checks and current developer documentation follow the package layout. Desktop CI also watches package changes.
+
+**Validation:** 541 Python checks (527 pass, 14 platform/environment skips), including real spawned ordinary/PCA/NMF workers, setup/update recovery and two added outside-installation launch/resource checks. Two export checks use temporary local staging for the restricted environment; the read-only process-list check passes with process access. All 39 JavaScript suites pass. No research files or personal configuration are moved.
+
+**Next, on the AZtec branch:** provision independent, read-only reader/domain modules using H5OINA TEM EDS and SEM EBSD exports as the first supported source. Retain acquired versus processed states, units, calibration and source identifiers; validate against the inspected exports. Native OIP/OIPX decoding and a complete interactive workspace remain later stages, with support boundaries explicit. Start with an inspectable acquisition/dataset catalogue and bounded data access, rather than connecting AZtec data to diffraction fitting.
+
 ## Local configuration cleanup and installer visibility — 13 November 2026
 
 **Requested and completed locally:** remove obsolete configuration from this installation without changing current project sources or saved work. Archived then removed the old `data`/`output` shortcuts, three redundant path overrides, and four obsolete filename-keyed calibration entries superseded by existing content-keyed calibrations (three identical copies and one earlier calibration of the same pixel data). The archive lives in the installation's application-support cleanup folder. Resolved source/output settings, all four current calibrations, image registry, saved regions and environment pointer were checked and preserved. No source images or output folders were removed; the running application was not restarted.

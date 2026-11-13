@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from server import Workbench
+from tem_workbench.app.server import Workbench
 
 
 def result_digest(regions):

@@ -8,7 +8,7 @@ from concurrent.futures import CancelledError
 from unittest.mock import patch
 import numpy as np
 from scipy import linalg
-import shared_spectra as pca
+from tem_workbench.components import shared_spectra as pca
 
 INFO=dict(width=512,height=512,pixel_x_nm=.04,pixel_y_nm=.04,image_kind='real_space',name='synthetic',sha256_pixels='test-hash')
 SETTINGS=dict(g_min=2.5,g_max=10.,fft_window='tukey',fft_tukey_alpha=.5,remove_mean=True)
@@ -88,7 +88,7 @@ class SharedSpectraTests(unittest.TestCase):
         with self.assertRaises(CancelledError):pca.compute(self.image,INFO,SETTINGS,OPTIONS,cancel)
 
     def test_window_limit_matches_ordinary_grid_including_passes_and_rim(self):
-        import component_grid
+        from tem_workbench.components import component_grid
         info={**INFO,'width':428,'height':428}
         options=dict(window_nm=1.28,spacing_nm=.16,components=2)
         self.assertEqual(pca.overlap_maps.MAX_WINDOWS,10000)
@@ -184,7 +184,7 @@ class SharedSpectraTests(unittest.TestCase):
                     if failure=='write':args[1].write(b'partial')
                     raise TimeoutError(60,'Operation timed out')
                 # mkdir fails naturally; the patched copy must never be reached.
-                with patch.object(pca,'export_staging_root',return_value=staging), patch('shared_spectra.'+target,side_effect=fail), self.assertLogs('tem_workbench',level='WARNING'):
+                with patch.object(pca,'export_staging_root',return_value=staging), patch('tem_workbench.components.shared_spectra.'+target,side_effect=fail), self.assertLogs('tem_workbench',level='WARNING'):
                     response=pca.export(self.result,output)
                 self.assertTrue(response['saved_locally'])
                 self.assertIn('Complete export saved locally',response['warning'])
@@ -230,8 +230,8 @@ class SharedSpectraTests(unittest.TestCase):
 
     def test_server_start_uses_validated_source_snapshot_and_guards_jobs(self):
         from types import SimpleNamespace
-        from server import Workbench
-        from engine import Engine
+        from tem_workbench.app.server import Workbench
+        from tem_workbench.app.engine import Engine
         app=Workbench.__new__(Workbench)
         app.lock=threading.RLock();app.job_lock=threading.RLock()
         app.closing=False;app.grid_thread=None

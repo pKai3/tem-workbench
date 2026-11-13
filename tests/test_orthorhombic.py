@@ -1,12 +1,12 @@
 """Generic primitive geometry, dimensional observability and scoring integration."""
 import unittest
 import numpy as np
-import analysis_core as core
-from engine import Engine
-from materials import reference_settings
-from crystal_templates import reciprocal, allowed
-from orthorhombic import transform
-import scale_fitting as fitting
+from tem_workbench.analysis import analysis_core as core
+from tem_workbench.app.engine import Engine
+from tem_workbench.analysis.materials import reference_settings
+from tem_workbench.analysis.crystal_templates import reciprocal, allowed
+from tem_workbench.analysis.orthorhombic import transform
+from tem_workbench.analysis import scale_fitting as fitting
 
 class Orthorhombic(unittest.TestCase):
     @classmethod
