@@ -94,13 +94,21 @@ window.aztecExport=(()=>{
    left+=badge(ctx,part.label,left,top,Math.min(300,x+width-left),part.colour,14)+6;
   }
  }
- const lineWidth=1400,linePad=14,lineGap=12,referenceWidth=280;
+ const lineWidth=1400,linePad=8,columnGap=6,rowGap=0;
  const plotHeight=(figure,width)=>Math.max(105,Math.round(width*figure.image.height/Math.max(1,figure.image.width)));
  const plotCrop=(figure,width)=>{const height=plotHeight(figure,width);return {top:height*figure.cropTop,height:height*figure.cropHeight}};
- async function drawReference(ctx,reference,label,x,y,height){
-  ctx.fillStyle=background;ctx.fillRect(x,y,referenceWidth,height);
-  if(reference){const image=await load(svgSource(reference)),scale=Math.min(referenceWidth/reference.width,height/reference.height),w=reference.width*scale,h=reference.height*scale,left=x+(referenceWidth-w)/2,top=y+(height-h)/2;ctx.drawImage(image,left,top,w,h);badge(ctx,label||'Acquisition',left+6,top+6,Math.max(30,w-12))}
-  else{ctx.fillStyle=ink;ctx.font='15px system-ui';ctx.fillText('Reference image unavailable',x+12,y+height/2);badge(ctx,label||'Acquisition',x+6,y+6,referenceWidth-12)}
+ function lineColumns(captured,comparison){
+  const usable=lineWidth-linePad*2-columnGap;
+  if(!comparison)return {referenceWidth:0,plotWidth:lineWidth-linePad*2};
+  const figure=captured.groups[0].figures[0],aspects=[...captured.references.values()].map(ref=>ref.width/ref.height),aspect=aspects.length?Math.max(...aspects):1;
+  const ratio=figure.cropHeight*figure.image.height/Math.max(1,figure.image.width)*aspect;
+  const referenceWidth=Math.max(120,Math.min(usable*.6,Math.round(usable*ratio/(1+ratio))));
+  return {referenceWidth,plotWidth:usable-referenceWidth};
+ }
+ async function drawReference(ctx,reference,label,x,y,width,height){
+  ctx.fillStyle='#0c131c';ctx.fillRect(x,y,width,height);
+  if(reference){const image=await load(svgSource(reference)),scale=Math.min(width/reference.width,height/reference.height),w=reference.width*scale,h=reference.height*scale,left=x+(width-w)/2,top=y+(height-h)/2;ctx.drawImage(image,left,top,w,h);badge(ctx,label||'Acquisition',left+6,top+6,Math.max(30,w-12))}
+  else{ctx.fillStyle=ink;ctx.font='15px system-ui';ctx.fillText('Reference image unavailable',x+12,y+height/2);badge(ctx,label||'Acquisition',x+6,y+6,width-12)}
   return height;
  }
  async function drawPlot(ctx,figure,x,y,width,acquisition,heading=''){
@@ -112,34 +120,35 @@ window.aztecExport=(()=>{
   return height;
  }
  async function lines({snapshot,root,names,result,options,comparison,onlyAcquisition}){
-  const captured=snapshot||captureLines({root,names,result,options,comparison}),plotWidth=lineWidth-linePad*2-referenceWidth-lineGap;
+  const captured=snapshot||captureLines({root,names,result,options,comparison}),{referenceWidth,plotWidth}=lineColumns(captured,comparison);
   if(onlyAcquisition&&!captured.acquisitions.includes(onlyAcquisition))throw new Error('The selected acquisition has no line plots.');
   const references=onlyAcquisition?captured.acquisitions.filter(id=>id===onlyAcquisition):captured.acquisitions;
   if(captured.layout==='overlay'){
    const panels=captured.groups.flatMap(group=>group.figures.map(figure=>({figure,heading:group.heading})))
     .filter(panel=>!onlyAcquisition||panel.figure.legend.some(part=>part.acquisition===onlyAcquisition));
    const referenceCrop=panels.length?plotCrop(panels[0].figure,plotWidth):{top:0,height:180};
-   const leftHeight=referenceCrop.top+references.length*(referenceCrop.height+lineGap);
-   const rightHeight=panels.reduce((sum,panel)=>sum+plotHeight(panel.figure,plotWidth)+lineGap,0);
-   const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+Math.max(leftHeight,rightHeight))*2));ctx.scale(2,2);
-   let y=linePad+referenceCrop.top;for(const id of references){y+=await drawReference(ctx,captured.references.get(id),captured.names[id],linePad,y,referenceCrop.height)+lineGap}
-   y=linePad;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+referenceWidth+lineGap,y,plotWidth,onlyAcquisition,panel.heading)+lineGap;
+   const leftHeight=referenceCrop.top+references.length*(referenceCrop.height+rowGap);
+   const rightHeight=panels.reduce((sum,panel)=>sum+plotHeight(panel.figure,plotWidth)+rowGap,0);
+   const height=Math.max(leftHeight,rightHeight),[out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+height)*2));ctx.scale(2,2);ctx.fillStyle='#0c131c';ctx.fillRect(linePad,linePad,lineWidth-2*linePad,height);
+   let y=linePad+referenceCrop.top;for(const id of references){y+=await drawReference(ctx,captured.references.get(id),captured.names[id],linePad,y,referenceWidth,referenceCrop.height)+rowGap}
+   y=linePad;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+referenceWidth+columnGap,y,plotWidth,onlyAcquisition,panel.heading)+rowGap;
    return out;
   }
   const groups=onlyAcquisition?captured.groups.filter(group=>group.acquisition===onlyAcquisition):captured.groups;
   const rows=groups.map(group=>{
    const reference=captured.references.get(group.acquisition),available=!!reference||comparison;
    const width=available?plotWidth:lineWidth-linePad*2;
-   const plots=group.figures.reduce((sum,figure)=>sum+plotHeight(figure,width)+lineGap,0);
+   const plots=group.figures.reduce((sum,figure)=>sum+plotHeight(figure,width)+rowGap,0);
    const crop=plotCrop(group.figures[0],width);
    return {group,reference,showReference:available,width,referenceTop:crop.top,referenceHeight:crop.height,height:plots};
   });
-  const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+rows.reduce((sum,row)=>sum+row.height+lineGap,0))*2));ctx.scale(2,2);
+  const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+rows.reduce((sum,row)=>sum+row.height+rowGap,0))*2));ctx.scale(2,2);
   let y=linePad;for(const row of rows){
-   const {group,reference,width}=row,x=row.showReference?linePad+referenceWidth+lineGap:linePad;
-   if(row.showReference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad,y+row.referenceTop,row.referenceHeight);
-   let plotY=y;for(const figure of group.figures)plotY+=await drawPlot(ctx,figure,x,plotY,width,null,row.showReference?'':group.heading)+lineGap;
-   y+=row.height+lineGap;
+   ctx.fillStyle='#0c131c';ctx.fillRect(linePad,y,lineWidth-linePad*2,row.height);
+   const {group,reference,width}=row,x=row.showReference?linePad+referenceWidth+columnGap:linePad;
+   if(row.showReference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad,y+row.referenceTop,referenceWidth,row.referenceHeight);
+   let plotY=y;for(const figure of group.figures)plotY+=await drawPlot(ctx,figure,x,plotY,width,null,row.showReference?'':group.heading)+rowGap;
+   y+=row.height+rowGap;
   }
   return out;
  }
