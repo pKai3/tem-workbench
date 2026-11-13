@@ -39,13 +39,15 @@ class DataArchive:
         if self.bytes>256*1024*1024:
             raise AztecReadError('This data export is too large. Select fewer acquisitions or channels.')
         self.entries.append((dict(acquisition=row['acquisition'],label=label,operation=operation,
+                                  source=row.get('source') or str(self.source),native_acquisition=row.get('native_acquisition',row['acquisition']),
                                   shape=list(values.shape),unit=unit,**metadata),values))
 
     def finish(self, result):
         stream=BytesIO()
         rows={row['acquisition']:row for row in result['rows']}
-        manifest=dict(format='TEM Workbench acquisition data',format_version=1,
+        manifest=dict(format='TEM Workbench acquisition data',format_version=2,
                       created=datetime.now(timezone.utc).isoformat(),source=str(self.source),
+                      sources=list(dict.fromkeys(row.get('source') or str(self.source) for row in result['rows'])),
                       settings=self.options,acquisitions=[],datasets=[],
                       note='Original and processed folders retain full acquisition arrays. Selected line segments '
                            'are additionally saved in selected/ when equal-length trimming is enabled; these '

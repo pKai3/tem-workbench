@@ -15,7 +15,7 @@ from PIL import Image
 from tem_workbench.storage import folder_paths
 from tem_workbench.storage.mode_folders import aztec_folders
 from tem_workbench.runtime.diagnostics import compact
-from .h5oina import H5OinaReader, AztecReadError, MAX_READ_BYTES
+from .h5oina import H5OinaReader, AztecReadError, SourceChangedError, MAX_READ_BYTES
 from .native import NativeProjectReader
 
 LOG = logging.getLogger('tem_workbench.aztec')
@@ -24,6 +24,7 @@ LOG = logging.getLogger('tem_workbench.aztec')
 class AztecBrowser:
     def __init__(self):
         self._readers = OrderedDict()
+        self._comparison_readers = OrderedDict()
         self._lock = threading.RLock()
 
     def files(self, sources, project=None):
@@ -114,6 +115,34 @@ class AztecBrowser:
         if reader is None:
             raise AztecReadError('Reopen the file before exporting.')
         return reader.path
+
+    def comparison_reader(self, path):
+        """Load additional native projects without evicting the open site viewer."""
+        path = Path(path).expanduser().resolve()
+        if path.suffix.lower() != '.oipx':
+            raise AztecReadError('Comparisons currently use saved channels in native OIPX files.')
+        with self._lock:
+            reader = self._comparison_readers.get(path)
+            if reader is None:
+                reader = NativeProjectReader(path)
+                reader.inspect()
+                self._comparison_readers[path] = reader
+            self._comparison_readers.move_to_end(path)
+            while len(self._comparison_readers) > 32:
+                self._comparison_readers.popitem(last=False)
+        return reader
+
+    def comparison_catalogue(self, path):
+        reader = self.comparison_reader(path)
+        try:
+            catalogue = reader.inspect()
+        except SourceChangedError:
+            with self._lock:
+                self._comparison_readers.pop(reader.path, None)
+            reader = self.comparison_reader(path)
+            catalogue = reader.inspect()
+        LOG.info('AZtec comparison source: %s', compact(str(reader.path)))
+        return catalogue
 
     def catalogue(self, key):
         with self._lock:
@@ -246,16 +275,36 @@ class AztecBrowser:
         if not isinstance(reader,NativeProjectReader):
             raise AztecReadError('Open a native OIPX project for acquisition views.')
         started=monotonic()
+        sources=None
+        if 'targets' in options:
+            targets=options['targets']
+            if not options.get('comparison') or not isinstance(targets,list) or not 1 <= len(targets) <= 32:
+                raise AztecReadError('Select one or more comparison acquisitions (up to 32).')
+            sources=[];seen=set()
+            for target in targets:
+                if not isinstance(target,dict) or not isinstance(target.get('source'),str) or not isinstance(target.get('acquisition'),str):
+                    raise AztecReadError('Each comparison acquisition needs its source file and native ID.')
+                path=Path(target['source']).expanduser().resolve()
+                identity=(str(path),target['acquisition'])
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                try:
+                    additional=reader if path==reader.path else self.comparison_reader(path)
+                    additional.inspect()
+                except (OSError,AztecReadError) as error:
+                    raise AztecReadError(f'{path.name}: {error}. Remove this file from the comparison or restore it.') from error
+                sources.append((additional,target['acquisition'],str(path)))
         structure_only=bool(options.get('structure_only',False))
         if structure_only:
-            LOG.info('AZtec map spatial check started: %s · %s acquisitions · 256 paired shuffles · ten smoothing widths', compact(str(reader.path)), len(options.get('acquisitions',[])))
+            LOG.info('AZtec map spatial check started: %s · %s acquisitions · 256 paired shuffles · ten smoothing widths', compact(str(reader.path)), len(sources if sources is not None else options.get('acquisitions',[])))
         export_arrays=None
         if options.get('export_data'):
             from .export import DataArchive
             if structure_only:
                 raise AztecReadError('Export acquisition data separately from the spatial check.')
             export_arrays=DataArchive(reader.path,options)
-        result = acquisition_views(reader,options,structure_only=structure_only,export_arrays=export_arrays)
+        result = acquisition_views(reader,options,structure_only=structure_only,export_arrays=export_arrays,sources=sources)
         if structure_only:
             for row in result['rows']:
                 for tile in row['tiles']:
@@ -264,12 +313,12 @@ class AztecBrowser:
                              f"{check['structure_ratio']:.3f}× shuffled median" if check['available'] else compact(check['reason']))
             LOG.info('AZtec map spatial check complete: %.2f s',monotonic()-started)
         if result.get('comparison'):
-            LOG.info('AZtec comparison: %s acquisitions · %s · shared scales=%s · normalize each=%s · smoothing unit=%s',
-                     len(result['rows']), options.get('channel_table'), result['scale_scope'], result['normalisation'],
+            LOG.info('AZtec comparison: %s acquisitions from %s files · %s · shared scales=%s · normalize each=%s · smoothing unit=%s',
+                     len(result['rows']), len({row['source'] for row in result['rows']}), options.get('channel_table'), result['scale_scope'], result['normalisation'],
                      result.get('smoothing_unit') if options.get('channel_table')=='XrayMapImages' else 'nm FWHM')
         for row in result['rows']:
             LOG.info('AZtec processed: %s · %s · %s channels · view=%s · denominator=%s · normalize=%s · smoothing=%s',
-                     compact(str(reader.path)), compact(row['label']), len(row['tiles']), result['mode'], compact(options.get('denominator')), result['normalisation'], result['smoothing'])
+                     compact(row.get('source') or str(reader.path)), compact(row['label']), len(row['tiles']), result['mode'], compact(options.get('denominator')), result['normalisation'], result['smoothing'])
             if row.get('error'):
                 LOG.warning('AZtec acquisition unavailable: %s · %s',compact(row['label']),compact(row['error']))
             for tile in row['tiles']:

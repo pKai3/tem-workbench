@@ -93,3 +93,4 @@
 #eds-acquisitions{border:0;padding:0;margin:0}
 .eds-export-actions [role=status]{overflow-wrap:anywhere;min-width:0}
 @media(max-width:600px){#eds-project-dialog .source-row{grid-template-columns:1fr}.eds-location>label{flex:1 1 180px}}
+.eds-source-picks{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:6px 16px;margin:10px 0}.eds-source-picks label{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px;min-width:0;font-size:12px}.eds-source-picks input{width:auto;min-height:0;margin:0}.eds-source-picks label>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.eds-source-picks .eds-channel-error{grid-column:2;white-space:normal}.eds-source-selection>button{font-size:12px;min-height:26px;padding:4px 8px}.eds-source-selection>p:empty{display:none}

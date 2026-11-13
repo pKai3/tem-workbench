@@ -1,6 +1,8 @@
 """Interactive versions of the existing element-map and horizontal-scan reports."""
 import base64
+import json
 from io import BytesIO
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -35,9 +37,14 @@ def finite_list(values):
     return [float(v) if np.isfinite(v) else None for v in values]
 
 
-def acquisition_views(reader, options, *, structure_only=False, export_arrays=None):
+def acquisition_key(source, acquisition):
+    """Stable across reader sessions; native acquisition IDs are only file-local."""
+    return json.dumps([str(source), acquisition], ensure_ascii=False, separators=(',', ':'))
+
+
+def acquisition_views(reader, options, *, structure_only=False, export_arrays=None, sources=None):
     reader.inspect()
-    ids=options.get('acquisitions',[])
+    ids=options.get('acquisitions',[]) if sources is None else sources
     if not isinstance(ids,list) or not 1 <= len(ids) <= 32:
         raise AztecReadError('Select one or more acquisitions (up to 32).')
     mode=options.get('mode','signal');norm=options.get('normalisation','none')
@@ -65,7 +72,15 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
     if smoothing_unit not in ('px','nm'):
         raise AztecReadError('Choose pixels or nm for map smoothing.')
     rows=[]; pending_images=[]
-    for acquisition_id in ids:
+    for item in ids:
+        if sources is None:
+            acquisition_id=item
+            source=str(getattr(reader,'path',''))
+            identity=acquisition_id
+        else:
+            reader,acquisition_id,source=item
+            reader.inspect()
+            identity=acquisition_key(source,acquisition_id)
         records=[r for r in reader._records.values() if r.get('acquisition_id')==acquisition_id]
         channel_table=requested_table or next((table for table in channel_tables if any(r['table']==table for r in records)),None)
         channels=[r for r in records if r['table']==channel_table]
@@ -98,12 +113,16 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
         site=reader.site(channels[0]['site_id'])
         region=next((r for r in site['regions'] if channels[0]['path'] in r['paths']),None)
         electron=reader.preview(site['image_path'])['array'] if site.get('image_path') and not structure_only else None
-        row=dict(label=channels[0]['acquisition_label'],kind=kind,tiles=[],acquisition=acquisition_id,
+        row=dict(label=channels[0]['acquisition_label'],kind=kind,tiles=[],acquisition=identity,
+                 source=source,native_acquisition=acquisition_id,
                  channel_table=channel_table,data_kind='composition' if composition else 'signal')
         site_meta=next(a for a in reader.inspect()['acquisitions'] if a['index']==channels[0]['site_id'])
         row['sample_name']=site_meta['specimen'] or site_meta['label']
         row['short_label']=' · '.join(filter(None,[site_meta['specimen'],row['label'].replace(' Data ',' ')]))
         row['label']=' / '.join(filter(None,[site_meta['specimen'],site_meta['label'],row['label']]))
+        if sources is not None:
+            row['label']=Path(source).name+' / '+row['label']
+            row['short_label']=Path(source).stem+' · '+row['short_label']
         geometry=site.get('geometry',{})
         nm_per_px=(geometry.get('field_width_nm') or 0)*geometry.get('step',0)
         if kind=='map':

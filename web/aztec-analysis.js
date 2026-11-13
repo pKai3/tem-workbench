@@ -20,10 +20,16 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  let savedViews={};try{const saved=JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-comparison-v1')||'{}');if(saved&&typeof saved==='object')savedViews=saved}catch{}
  const object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
  const preferences=object(savedViews.preferences),selections=object(savedViews.selections),cropCentres=new Map(Object.entries(object(savedViews.crops))),aliases=object(savedViews.aliases),presets=object(savedViews.presets),structureCache=new Map();
- let persistTimer=null;
+ let persistTimer=null,openVersion=0;
+ const catalogues=new Map(),sourceErrors=new Map();
  const projectKey=()=>state.file?.catalogue.source.path||'';
+ const identity=(source,id)=>JSON.stringify([source,id]);
+ const target=id=>{try{const pair=JSON.parse(id);if(Array.isArray(pair)&&pair.length===2)return {source:pair[0],acquisition:pair[1]}}catch{}return {source:projectKey(),acquisition:id}};
+ const acquisitionRequest=(context,ids=context.ids)=>context.comparison?{targets:ids.map(target)}:{acquisitions:ids};
+ const fileName=path=>path.split(/[\\/]/).pop();
+ const channelNamesFor=all=>[...new Set(all.flatMap(g=>g.signals))].sort((a,b)=>{const order=['Ti','V','Fe','Al'],rank=x=>{const n=order.indexOf(x.split(' ')[0]);return n<0?99:n};return rank(a)-rank(b)||a.localeCompare(b)});
  function persist(){
-  if(current){preferences[current.preferenceKey]={...current.options};selections[current.preferenceKey]={ids:[...current.ids],signals:[...current.signals]}}
+  if(current){preferences[current.preferenceKey]={...current.options};selections[current.preferenceKey]={ids:[...current.ids],signals:[...current.signals],files:[...(current.files||[])]}}
   clearTimeout(persistTimer);
   try{WorkbenchWorkspace.writeRaw('tem-eds-comparison-v1',JSON.stringify({preferences,selections,aliases,presets,crops:Object.fromEntries([...cropCentres].slice(-200))}))}
   catch(error){console.warn('AZtec comparison settings could not be saved:',error.message)}
@@ -43,23 +49,49 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   for(const button of $('eds-acquisitions').querySelectorAll('.eds-site'))button.setAttribute('aria-current',String(!kind&&button.dataset.index===String(state.acquisition?.index)));
  }
  function clearPlotObservers(){for(const observer of plotObservers)observer.disconnect();plotObservers=[];referenceCursors=[];setLineCursor(null);setMapCursor(null)}
- function groups(){
-  const found=new Map();for(const a of state.file?.catalogue.acquisitions||[])for(const l of a.layers)for(const d of l.signals){
+ function groups(catalogue=state.file?.catalogue){
+  const found=new Map();for(const a of catalogue?.acquisitions||[])for(const l of a.layers)for(const d of l.signals){
    const table=d.path.split('/')[1],kind=table==='XrayMapImages'?'map':['XrayLinescans','QuantLinescans'].includes(table)?'line':null,id=d.attributes['Acquisition ID'];if(!kind||!id)continue;
    const key=id+':'+table;if(!found.has(key))found.set(key,{id,table,kind,sample:a.specimen||a.label,site:[a.specimen,a.label].filter(Boolean).join(' / '),name:d.attributes.Acquisition,label:[a.specimen,a.label,d.attributes.Acquisition].filter(Boolean).join(' / '),signals:[],paths:[]});const g=found.get(key);g.signals.push(d.attributes.Label);g.paths.push(d.path);
   }return [...found.values()].sort((a,b)=>(a.table==='QuantLinescans')-(b.table==='QuantLinescans'));
  }
- function close(){navigation();document.querySelector('.eds-content-layout').classList.remove('eds-comparing');$('eds-file').classList.remove('eds-file-comparing');clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++version;++layoutVersion;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-analysis-views').style.minHeight='';$('eds-preview').hidden=false}
- function open(id,comparison=false,channelTable){
-  const available=groups(),compareKind=comparison===true?'map':comparison;
-  const chosen=comparison?available.find(g=>g.kind===compareKind&&(!channelTable||g.table===channelTable)):available.find(g=>g.id===id&&(!channelTable||g.table===channelTable));if(!chosen){$('eds-preview-error').textContent='No viewable element channels for this acquisition.';$('eds-preview-error').hidden=false;return}
+ function comparisonGroups(paths){return paths.flatMap(source=>(catalogues.has(source)?groups(catalogues.get(source)):[]).map(g=>({...g,id:identity(source,g.id),source,site:fileName(source)+' / '+g.site,label:fileName(source)+' / '+g.label}))) }
+ async function loadCatalogue(path){if(catalogues.has(path))return;try{catalogues.set(path,await api('comparison-catalogue',{path}));sourceErrors.delete(path)}catch(error){sourceErrors.set(path,error.message)}}
+ function close(){navigation();document.querySelector('.eds-content-layout').classList.remove('eds-comparing');$('eds-file').classList.remove('eds-file-comparing');clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++openVersion;++version;++layoutVersion;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-analysis-views').style.minHeight='';$('eds-preview').hidden=false}
+ async function open(id,comparison=false,channelTable){
+  const turn=++openVersion,source=projectKey();clearTimeout(smoothingTimer);++version;current=null;
+  if(!comparison){show(id,false,channelTable);return}
+  catalogues.set(source,state.file.catalogue);
+  const kind=comparison===true?'map':comparison,table=channelTable||groups().find(g=>g.kind===kind)?.table||(kind==='map'?'XrayMapImages':'XrayLinescans');
+  const key='compare-'+source+':'+table,selection=selections[key];
+  const files=[...new Set([...(selection?.files||[source]),...(selection?.ids||[]).map(id=>target(id).source)])];
+  $('eds-preview-busy').hidden=false;
+  await Promise.allSettled(files.map(loadCatalogue));
+  if(turn!==openVersion||source!==projectKey())return;
+  // Upgrade older file-local presets without discarding aliases, crops or trims.
+  if(selection){
+   selection.ids=(selection.ids||[]).map(id=>{
+    const ref=target(id),keyId=identity(ref.source,ref.acquisition),oldKey=source+':'+id,newKey=source+':'+keyId;
+    if(id!==keyId){
+     if(aliases[oldKey]!==undefined)aliases[newKey]=aliases[oldKey];else delete aliases[newKey];
+     if(cropCentres.has(oldKey))cropCentres.set(newKey,cropCentres.get(oldKey));else cropCentres.delete(newKey);
+     const offsets=preferences[key]?.line_offsets;if(offsets&&offsets[id]!==undefined)offsets[keyId]=offsets[id];
+    }
+    return keyId;
+   });selection.files=files;
+  }
+  show(id,comparison,table,files);
+ }
+ function show(id,comparison=false,channelTable,files=[]){
+  const available=comparison?comparisonGroups(files):groups(),compareKind=comparison===true?'map':comparison;
+  const chosen=comparison?(available.find(g=>g.kind===compareKind&&(!channelTable||g.table===channelTable))||{kind:compareKind,table:channelTable,signals:[]}):available.find(g=>g.id===id&&(!channelTable||g.table===channelTable));if(!chosen){$('eds-preview-error').textContent='No viewable element channels for this acquisition.';$('eds-preview-error').hidden=false;return}
   clearPlotObservers();document.querySelector('.eds-content-layout').classList.toggle('eds-comparing',!!comparison);$('eds-file').classList.toggle('eds-file-comparing',!!comparison);
   ++state.previewVersion;const kind=chosen.kind,all=available.filter(g=>g.kind===kind&&g.table===chosen.table);
   navigation(comparison?kind:null);
-  const channelNames=[...new Set((comparison?all:[chosen]).flatMap(g=>g.signals))].sort((a,b)=>{const order=['Ti','V','Fe','Al'];const rank=x=>{const n=order.indexOf(x.split(' ')[0]);return n<0?99:n};return rank(a)-rank(b)||a.localeCompare(b)});
+  const channelNames=channelNamesFor(comparison?all:[chosen]);
   const preferenceKey=(comparison?'compare-':'')+projectKey()+':'+chosen.table,selection=selections[preferenceKey];
   const defaults={mode:kind==='map'?(comparison?'ratio':'both'):'signal',denominator:channelNames.find(s=>s.startsWith('Ti '))||channelNames[0],normalisation:'none',smoothing:kind==='map'?1:10,smoothing_unit:comparison?'nm':'px',brightness:1.5,low:.7,high:1.3,upper:.5,background:true,raw:false,layout:'stacked',spatial:'physical',scale_scope:'element',show_denominator:true,reference_orientation:'native',trim_mode:'full',trim_length:null,line_offsets:{}};
-  current={kind,table:chosen.table,all,comparison:!!comparison,preferenceKey,ids:comparison?(selection?.ids?.filter(id=>all.some(g=>g.id===id))||all.slice(0,2).map(g=>g.id)):[chosen.id],signals:comparison&&selection?(selection.signals||channelNames).filter(s=>channelNames.includes(s)):channelNames,options:{...defaults,...preferences[preferenceKey]}};
+  current={kind,table:chosen.table,all,files,comparison:!!comparison,preferenceKey,ids:comparison?(selection?.ids||all.slice(0,2).map(g=>g.id)):[chosen.id],signals:comparison&&selection?(selection.signals||channelNames):channelNames,options:{...defaults,...preferences[preferenceKey]}};
   if(!channelNames.includes(current.options.denominator))current.options.denominator=defaults.denominator;
   $('eds-dataset-title').textContent=comparison?(kind==='map'?'Map comparison':'Line comparison'):chosen.label;$('eds-dataset-info').textContent=kind==='map'?'Element maps':chosen.table==='QuantLinescans'?'Saved composition profiles · AZtec quantification':'';
   $('eds-preview').hidden=true;$('eds-preview').replaceChildren();$('eds-dataset-details').hidden=true;$('eds-preview-tools').hidden=true;$('eds-preview-note').textContent='';$('eds-preview-error').hidden=true;$('eds-analysis-tools').hidden=false;$('eds-analysis-views').hidden=false;$('eds-analysis-views').replaceChildren();
@@ -71,7 +103,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const root=$('eds-analysis-tools');root.replaceChildren();if(current.comparison)presetControls(root);const row=el('div',undefined,'eds-analysis-controls');root.append(row);
   const changed=key=>{if(key==='smoothing_unit')smoothing.firstChild.textContent=`Smoothing σ, ${current.options.smoothing_unit}`;keepScroll(updateVisibility);if(['layout','spatial','reference_orientation','trim_mode'].includes(key)){persist();if(current.result)render(current.result)}else update()};
   const toggle=(label,key,choices)=>{const wrap=el('div',undefined,'eds-control');wrap.append(el('span',label));const group=el('div',undefined,'signal-toggle inspector-layout');group.setAttribute('role','group');group.setAttribute('aria-label',label);for(const [value,text] of choices){const b=el('button',text);b.type='button';b.setAttribute('aria-pressed',String(current.options[key]===value));b.onclick=()=>{current.options[key]=value;for(const n of group.children)n.setAttribute('aria-pressed',String(n===b));changed(key)};group.append(b)}wrap.append(group);row.append(wrap);return wrap};
-  if(current.comparison&&current.kind==='line'&&groups().some(g=>g.table==='QuantLinescans')){const family=el('div',undefined,'eds-control');family.append(el('span','Profiles'));const buttons=el('div',undefined,'signal-toggle inspector-layout');for(const [table,label] of [['XrayLinescans','Intensity'],['QuantLinescans','Composition']]){const button=el('button',label);button.type='button';button.setAttribute('aria-pressed',String(current.table===table));button.disabled=!groups().some(g=>g.table===table);button.onclick=()=>open(null,'line',table);buttons.append(button)}family.append(buttons);row.append(family)}
+  if(current.comparison&&current.kind==='line'&&comparisonGroups(current.files).some(g=>g.table==='QuantLinescans')){const family=el('div',undefined,'eds-control');family.append(el('span','Profiles'));const buttons=el('div',undefined,'signal-toggle inspector-layout');for(const [table,label] of [['XrayLinescans','Intensity'],['QuantLinescans','Composition']]){const button=el('button',label);button.type='button';button.setAttribute('aria-pressed',String(current.table===table));button.disabled=!comparisonGroups(current.files).some(g=>g.table===table);button.onclick=()=>{const key='compare-'+projectKey()+':'+table;selections[key]={...(selections[key]||{}),files:[...current.files]};open(null,'line',table)};buttons.append(button)}family.append(buttons);row.append(family)}
   if(current.kind==='line')toggle('Plots','layout',current.comparison?[['stacked','Stacked'],['elements','Overlay elements'],['overlay','Overlay scans']]:[['stacked','Stacked'],['overlay','Overlay']]);
   if(current.comparison&&current.kind==='line'){toggle('Reference image','reference_orientation',[['native','Original'],['right','Arrow right']]);toggle('Scan length','trim_mode',[['full','Full'],['equal','Equal']])}
   toggle('View','mode',current.kind==='map'?[['signal','Signals'],['ratio','Ratios'],['both','Both']]:[['signal',current.table==='QuantLinescans'?'Composition':'Signals'],['ratio','Ratios']]);
@@ -111,10 +143,11 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   updateVisibility();
   if(current.kind==='line'){const options=el('div',undefined,'eds-channel-picks');const imageToggle=el('div',undefined,'signal-toggle inspector-layout'),imageButton=el('button','Image');imageButton.type='button';imageButton.setAttribute('aria-label','Show electron image');imageButton.setAttribute('aria-pressed',String(current.options.background));imageButton.onclick=()=>{current.options.background=!current.options.background;imageButton.setAttribute('aria-pressed',String(current.options.background));persist();if(current.result)render(current.result)};imageToggle.append(imageButton);options.append(imageToggle);for(const [key,text] of [['raw','Underlying data']]){const label=el('label'),input=el('input');input.type='checkbox';input.checked=current.options[key];input.onchange=()=>{current.options[key]=input.checked;persist();if(current.result)render(current.result)};label.append(input,el('span',text));options.append(label)}footer.append(options)}
   if(current.comparison){
+   sourceControls(root);
    const details=el('details',undefined,'eds-comparison-selection');details.open=true;
    const summary=el('summary',`Acquisitions · ${current.ids.length} selected`);details.append(summary);
    const list=el('div',undefined,'eds-acquisition-picks');const sites=new Map();
-   for(const group of current.all){if(!sites.has(group.site)){const section=el('div');const heading=el('strong',group.site);heading.title=group.site;section.append(heading);list.append(section);sites.set(group.site,section)}const label=el('label'),input=el('input');input.type='checkbox';input.value=group.id;input.checked=current.ids.includes(group.id);input.setAttribute('aria-label',group.label);input.onchange=()=>{current.ids=[...list.querySelectorAll('input:checked')].map(n=>n.value);summary.textContent=`Acquisitions · ${current.ids.length} selected`;update()};label.append(input,el('span',group.name));sites.get(group.site).append(label)}details.append(list);root.append(details);
+   for(const group of current.all){if(!sites.has(group.source+'|'+group.site)){const section=el('div');const heading=el('strong',group.site);heading.title=group.source+' / '+group.site;section.append(heading);list.append(section);sites.set(group.source+'|'+group.site,section)}const label=el('label'),input=el('input');input.type='checkbox';input.value=group.id;input.checked=current.ids.includes(group.id);input.setAttribute('aria-label',group.label);input.onchange=()=>{current.ids=input.checked?[...current.ids,group.id]:current.ids.filter(id=>id!==group.id);summary.textContent=`Acquisitions · ${current.ids.length} selected`;update()};label.append(input,el('span',group.name));sites.get(group.source+'|'+group.site).append(label)}details.append(list);root.append(details);
   }
   if(current.comparison&&current.kind==='line')lineTrimControls(root);
   exportControls(root,footer);
@@ -151,20 +184,56 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   }}
   for(const row of rows){const fields=[...positions.children].find(n=>n.dataset.acquisition===row.acquisition).querySelectorAll('input'),range=ranges[row.acquisition];for(const field of fields){field.max=Math.max(0,row.length-range.length);if(field.type==='range'||document.activeElement!==field)field.value=Number(range.start.toFixed(3));field.disabled=row.length-range.length<.001}}
  }
+ function sourceControls(root){
+  const context=current,details=el('details',undefined,'eds-comparison-selection eds-source-selection');details.open=!!context.sourcePickerOpen;
+  const summary=el('summary',`Project files · ${context.files.length}`),list=el('div',undefined,'eds-source-picks'),status=el('p',undefined,'hint');
+  const refresh=el('button','Rescan projects');refresh.type='button';
+  details.append(summary,list,refresh,status);root.append(details);
+  let discovered=[],scanned=false;
+  function draw(){
+   list.replaceChildren();
+   const paths=[...new Set([...context.files,...discovered.map(f=>f.path)])];
+   for(const path of paths){
+    const file=discovered.find(f=>f.path===path),label=el('label'),input=el('input'),caption=el('span',file?`${file.project} / ${file.relative_path}`:fileName(path));
+    input.type='checkbox';input.checked=context.files.includes(path);input.setAttribute('aria-label','Include '+path);caption.title=path;label.append(input,caption);list.append(label);
+    if(sourceErrors.has(path)){const error=el('span',sourceErrors.get(path),'eds-channel-error');label.append(error)}
+    input.onchange=async()=>{
+     const include=input.checked;input.disabled=true;status.textContent=include?'Reading file contents…':'';++version;
+     if(include){catalogues.delete(path);await loadCatalogue(path)}
+     if(current!==context)return;
+     if(include&&sourceErrors.has(path)){input.checked=false;input.disabled=false;status.textContent=sourceErrors.get(path);update();return}
+     const oldChannels=channelNamesFor(context.all);
+     context.files=include?[...context.files,path]:context.files.filter(p=>p!==path);
+     context.all=comparisonGroups(context.files).filter(g=>g.kind===context.kind&&g.table===context.table);
+     if(include){const first=context.all.find(g=>g.source===path);if(first&&!context.ids.includes(first.id)&&context.ids.length<32)context.ids.push(first.id)}
+     else context.ids=context.ids.filter(id=>target(id).source!==path);
+     const channels=channelNamesFor(context.all);context.signals=[...new Set([...context.signals,...channels.filter(s=>!oldChannels.includes(s))])];
+     if(!context.options.denominator&&channels.length)context.options.denominator=channels.find(s=>s.startsWith('Ti '))||channels[0];
+     context.sourcePickerOpen=true;persist();keepScroll(()=>controls(channels));update();
+    };
+   }
+  }
+  async function scan(){
+   refresh.disabled=true;status.textContent='Scanning configured projects…';
+   try{const result=await api('files',{});if(current!==context)return;discovered=result.files.filter(f=>f.kind==='OIPX');scanned=true;draw();status.textContent=result.errors?.length?result.errors.join(' · '):discovered.length?'':'No other native OIPX files found in configured projects.'}
+   catch(error){status.textContent=error.message}finally{refresh.disabled=false}
+  }
+  details.ontoggle=()=>{context.sourcePickerOpen=details.open;if(details.open&&!scanned&&!refresh.disabled)scan()};refresh.onclick=scan;draw();
+ }
  function presetControls(root){
   const context=current,key=context.preferenceKey,items=Array.isArray(presets[key])?presets[key]:[];presets[key]=items;
   const row=el('div',undefined,'eds-preset-controls'),select=el('select'),name=el('input'),save=el('button','Save comparison'),remove=el('button','Delete'),status=el('span',undefined,'hint');
   select.setAttribute('aria-label','Saved comparisons');name.type='text';name.maxLength=80;name.placeholder='Comparison name';name.setAttribute('aria-label','Comparison name');save.type=remove.type='button';status.setAttribute('role','status');remove.disabled=true;
   const populate=selected=>{select.replaceChildren();const placeholder=el('option','Saved comparisons…');placeholder.value='';select.append(placeholder);for(const item of items){const option=el('option',item.name);option.value=item.name;select.append(option)}select.value=selected||'';remove.disabled=!select.value};populate();
-  select.onchange=()=>{const item=items.find(p=>p.name===select.value);if(!item)return;
-   preferences[key]={...item.options};selections[key]={ids:[...item.ids],signals:[...item.signals]};
+  select.onchange=async()=>{const item=items.find(p=>p.name===select.value);if(!item)return;
+   preferences[key]=structuredClone(item.options);selections[key]={ids:[...item.ids],signals:[...item.signals],files:item.files};
    for(const id of item.ids){const cropKey=projectKey()+':'+id;if(item.crops?.[id])cropCentres.set(cropKey,[...item.crops[id]]);else cropCentres.delete(cropKey);if(item.aliases?.[id])aliases[cropKey]=item.aliases[id];else delete aliases[cropKey]}
    // open() reads the saved selection; do not overwrite it with the old view.
-   const table=context.table,kind=context.kind;current=null;persist();const views=$('eds-analysis-views');views.style.minHeight=views.getBoundingClientRect().height+'px';keepScroll(()=>open(null,kind,table));
+   const table=context.table,kind=context.kind;current=null;persist();const views=$('eds-analysis-views');views.style.minHeight=views.getBoundingClientRect().height+'px';const top=window.scrollY,left=window.scrollX,pending=open(null,kind,table),turn=openVersion;await pending;if(turn!==openVersion||current?.preferenceKey!==key)return;window.scrollTo({top,left,behavior:'instant'});
    const chosen=$('eds-analysis-tools').querySelector('[aria-label="Saved comparisons"]'),input=$('eds-analysis-tools').querySelector('[aria-label="Comparison name"]');chosen.value=item.name;input.value=item.name;$('eds-analysis-tools').querySelector('.eds-preset-delete').disabled=false;
   };
   save.onclick=()=>{const label=name.value.trim();if(!label){status.textContent='Enter a name.';name.focus({preventScroll:true});return}
-   const item={name:label,options:{...context.options},ids:[...context.ids],signals:[...context.signals],aliases:{},crops:{}};
+   const item={name:label,options:structuredClone(context.options),files:[...context.files],ids:[...context.ids],signals:[...context.signals],aliases:{},crops:{}};
    for(const id of item.ids){const p=projectKey()+':'+id;if(aliases[p])item.aliases[id]=aliases[p];if(cropCentres.has(p))item.crops[id]=[...cropCentres.get(p)]}
    const index=items.findIndex(p=>p.name===label);if(index<0)items.push(item);else items[index]=item;persist();populate(label);status.textContent='Saved';
   };
@@ -176,7 +245,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const buttons=el('div',undefined,'eds-export-actions'),png=el('button','Export PNG'),data=el('button','Export data'),status=el('span',undefined,'hint');status.setAttribute('role','status');
   for(const b of [png,data])b.type='button';buttons.append(png,data,status);footer.append(buttons);
   const labels=el('details',undefined,'eds-export-labels');labels.append(el('summary','Export labels'));const list=el('div',undefined,'eds-export-aliases');labels.append(list);root.append(labels);
-  for(const group of current.all){const label=el('label'),caption=el('span',group.label),input=el('input');caption.title=group.label;label.append(caption);input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[projectKey()+':'+group.id]||'';input.setAttribute('aria-label','Export label for '+group.label);input.onchange=()=>{const key=projectKey()+':'+group.id,value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist()};label.append(input);list.append(label)}
+  for(const group of current.all){const label=el('label'),caption=el('span',group.label),input=el('input');caption.title=(group.source?group.source+' / ':'')+group.label;label.append(caption);input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[projectKey()+':'+group.id]||'';input.setAttribute('aria-label','Export label for '+group.label);input.onchange=()=>{const key=projectKey()+':'+group.id,value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist()};label.append(input);list.append(label)}
   async function run(kind){
    if(!current?.result||current.resultVersion!==version){status.textContent='Wait for the current view to finish updating.';return}
    const context=current,result=context.result,options={...context.options},fileId=state.file.id,source=state.file.catalogue.source.path;
@@ -189,7 +258,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     if(kind==='png'){
      const image=await window.aztecExport.png({result,options,kind:context.kind,comparison:context.comparison,signals:selectedSignals(),names,source,crops:Object.fromEntries(result.rows.map(r=>[r.acquisition,cropCentres.get(projectKey()+':'+r.acquisition)])),root:$('eds-analysis-views')});
      saved=await api('export',{id:fileId,format:'png',kind:context.kind,comparison:context.comparison,image});
-    }else saved=await api('export',{id:fileId,acquisitions:[...context.ids],signals:selectedSignals(),channel_table:context.table,comparison:context.comparison,...options,export_labels:names,export_line_ranges:lineRanges,format:'data'});
+    }else saved=await api('export',{id:fileId,...acquisitionRequest(context),signals:selectedSignals(),channel_table:context.table,comparison:context.comparison,...options,export_labels:names,export_line_ranges:lineRanges,format:'data'});
     status.textContent='Saved: '+saved.path;status.title=saved.path;
    }catch(error){status.textContent=error.message;console.error('AZtec export failed:',error)}finally{png.disabled=data.disabled=false}
   }
@@ -197,11 +266,11 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  }
  async function update(){
   clearTimeout(smoothingTimer);const v=++version;if(!current)return;persist();$('eds-preview-error').hidden=true;
-  selections[current.preferenceKey]={ids:[...current.ids],signals:[...current.signals]};
+  selections[current.preferenceKey]={ids:[...current.ids],signals:[...current.signals],files:[...(current.files||[])]};
   const signals=selectedSignals();
   if(!current.ids.length||!signals.length){clearPlotObservers();setLineCrop(null);current.result=null;$('eds-analysis-views').replaceChildren(el('p','Select an acquisition and at least one element.','hint'));$('eds-preview-busy').hidden=true;return}
   $('eds-preview-busy').hidden=false;
-  try{const result=await api('process',{id:state.file.id,acquisitions:current.ids,signals,channel_table:current.table,comparison:current.comparison,...current.options});if(v!==version)return;if(current.comparison&&result.scale_scope!==current.options.scale_scope)throw new Error('This running server has not loaded the three scale options. Restart TEM Workbench, then reload this page.');current.result=result;current.resultVersion=v;render(result)}catch(error){if(v===version){$('eds-preview-error').textContent=error.message;$('eds-preview-error').hidden=false}}finally{if(v===version)$('eds-preview-busy').hidden=true}
+  try{const result=await api('process',{id:state.file.id,...acquisitionRequest(current),signals,channel_table:current.table,comparison:current.comparison,...current.options});if(v!==version)return;if(current.comparison&&result.scale_scope!==current.options.scale_scope)throw new Error('This running server has not loaded the three scale options. Restart TEM Workbench, then reload this page.');current.result=result;current.resultVersion=v;render(result)}catch(error){if(v===version){$('eds-preview-error').textContent=error.message;$('eds-preview-error').hidden=false}}finally{if(v===version)$('eds-preview-busy').hidden=true}
  }
  function keepScroll(change){
   const left=window.scrollX,top=window.scrollY;change();window.scrollTo({left,top,behavior:'instant'});
@@ -254,7 +323,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    }
    const sizes=new Map(),crops=new Map();for(const r of result.rows)if(r.width&&r.height){sizes.set(r.distance_unit,Math.max(sizes.get(r.distance_unit)||0,r.width,r.height));crops.set(r.distance_unit,Math.min(crops.get(r.distance_unit)||Infinity,r.width,r.height))}
    for(const row of result.rows){
-    const label=el('div',row.label,'eds-comparison-row-title');label.style.gridColumn='1 / -1';label.title=row.label;
+    const label=el('div',row.label,'eds-comparison-row-title');label.style.gridColumn='1 / -1';label.title=(row.source?row.source+' / ':'')+row.label;
     label.append(el('small',row.width?` · ${row.width.toFixed(1)} × ${row.height.toFixed(1)} ${row.distance_unit}`:' · physical calibration unavailable'));grid.append(label);
     const cropTiles=[];
     for(const col of columns){const tile=row.tiles.find(t=>t.channel===col.channel),error=row.error||(!col.electron?(tile?.[col.ratio?'ratio_error':'error']||(!tile?'Channel unavailable':null)):(!row.electron?'Electron image unavailable':null));
@@ -387,7 +456,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    for(let i=0;i<ids.length;i++){
     if(current!==context||context.structureKey!==key||!details.isConnected)return;
     status.textContent=`Checking map ${i+1} of ${ids.length} · 256 shuffles…`;
-    const options={...request,acquisitions:[ids[i]]},cacheKey=JSON.stringify(options);
+    const options={...request,...acquisitionRequest(context,[ids[i]])},cacheKey=JSON.stringify(options);
     if(!structureCache.has(cacheKey)){
      const pending=structureQueue.then(()=>{
       if(current!==context||context.structureKey!==key)throw new Error('Settings changed');
