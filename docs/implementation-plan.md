@@ -12,7 +12,13 @@ Last updated: 13 November 2026
 
 Implementation `50402fc`. Additional verification: all three native Mac shutdown checks pass; an extracted release archive starts through the stable console entry point from an unrelated working directory and serves configuration, HTML, JavaScript and CSS. Fixture filenames remain independent of Python module paths. Archive built locally for verification only; no release published.
 
-**Next, on the AZtec branch:** provision independent, read-only reader/domain modules using H5OINA TEM EDS and SEM EBSD exports as the first supported source. Retain acquired versus processed states, units, calibration and source identifiers; validate against the inspected exports. Native OIP/OIPX decoding and a complete interactive workspace remain later stages, with support boundaries explicit. Start with an inspectable acquisition/dataset catalogue and bounded data access, rather than connecting AZtec data to diffraction fitting.
+**Completed foundation on `codex/aztec`:** independent, read-only H5OINA 8.0 reader/domain modules and a command-line acquisition/dataset catalogue. Retained units, native numeric types, energy calibration, source identifiers and file identity; signal arrays are fetched through bounded slices. Grid reshaping requires a matching row count and explicitly refuses to align unbinned spectra with binned profiles/maps. Catalogue export never overwrites an existing file. Native OIP/OIPX decoding and a complete interactive workspace remain later stages, with support boundaries explicit. No AZtec data enters diffraction fitting.
+
+**Scope clarification:** the user wants full control of underlying data and favours points/lines/maps for now, while leaving EBSD open. Prioritise the first EDS interface; retain the already implemented acquired/processed EBSD catalogue separation, phase definitions and metadata without building EBSD controls or re-indexing. Raw and processed signals must remain separately selectable, and transformations/ratios must be explicit in future processing recipes.
+
+**Reader verification:** synthetic point/line/map and EBSD fixtures; all 21 supplied H5OINA files open. 376 numeric slices and 361 full scalar/image grids match direct HDF5 reads exactly; 15 EDS energy axes also agree. Source files are opened read-only. Point data is synthetic-tested only because the supplied TEM exports contain lines and maps. See [AZtec reader notes](aztec.md) for API, limits, provenance and remaining work.
+
+All 13 reader checks and the focused setup/package checks pass (36 total, five platform skips). Streaming retains every spectrum within a per-read memory budget; the budget does not cap acquisition size. Folderisation on main (`0780330`) passed GitHub's analysis/browser and Windows/macOS desktop checks before AZtec provisioning was committed. No release published.
 
 ## Local configuration cleanup and installer visibility — 13 November 2026
 

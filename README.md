@@ -336,6 +336,11 @@ Supported input is finite, two-dimensional DM4 data with length or reciprocal-le
 
 ## Development
 
+The experimental [AZtec reader foundation](docs/aztec.md) provides read-only
+H5OINA inspection and bounded access to EDS point/line/map data. Its interactive
+workspace is not implemented yet; see the [implementation plan](docs/implementation-plan.md)
+for approved scope and follow-ups.
+
 Application modules live in `tem_workbench/`: `analysis/` holds numerical fitting,
 `mapping/` grid and map operations, `components/` PCA/NMF workflows, `storage/`
 image/project access, `app/` application orchestration and HTTP endpoints, and
