@@ -1,5 +1,7 @@
 """Registration controls for cropped images, spatial selection and unknown regions."""
+import base64
 from contextlib import closing
+from io import BytesIO
 from pathlib import Path
 import sqlite3
 import struct
@@ -8,6 +10,7 @@ import unittest
 import uuid
 
 import numpy as np
+from PIL import Image
 
 from tem_workbench.aztec.browser import AztecBrowser
 from tem_workbench.aztec.geometry import region_geometry
@@ -90,6 +93,17 @@ class AztecGeometryTests(unittest.TestCase):
         site=browser.site(opened['id'],site_id)
         self.assertEqual(site['preview']['image'],browser.preview(opened['id'],site['image_path'])['image'])
         with self.assertRaises(AztecReadError):browser.site(opened['id'],site_id,'/ElectronImages/unknown')
+
+    def test_comparison_thumbnails_highlight_the_requested_region(self):
+        browser=AztecBrowser();images=[]
+        for kind in ('map','line'):
+            result=browser.comparison_thumbnail(self.path,self.ids['MapAcquires'],kind)
+            image=Image.open(BytesIO(base64.b64decode(result['image'].split(',',1)[1])))
+            self.assertLessEqual(max(image.size),128)
+            pixels=np.asarray(image)
+            self.assertTrue(np.any(pixels[...,0]>pixels[...,1]))
+            images.append(pixels)
+        self.assertFalse(np.array_equal(*images))
 
 
 if __name__=='__main__':unittest.main()

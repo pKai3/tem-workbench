@@ -15,6 +15,11 @@ assert.equal(presets.length,2);assert.notEqual(presets[0].name,presets[1].name);
 assert.equal(presets[0].ids[0],qa);assert.equal(presets[0].options.line_offsets[qa],12);
 assert.equal(presets[0].aliases[qa],'A');assert.deepEqual(presets[0].crops[qa],[.2,.4]);
 assert.equal(presets[1].ids[0],qb);assert.equal(presets[1].options.line_offsets[qb],3);
+assert.equal(presets[1].ids[1],qa);
+assert.equal(store.compatibleUnit('Window-count ratio'),'Signal ratio');
+assert.equal(store.compatibleUnit('Relative window count'),'Relative signal');
+assert.equal(JSON.stringify(['V Kα1',store.compatibleUnit('Window-count ratio'),'ratio']),
+ JSON.stringify(['V Kα1',store.compatibleUnit('Signal ratio'),'ratio']));
 assert.equal(result.aliases['compare:'+qa],'Sample A');assert.deepEqual(result.crops['compare:'+qa],[.2,.4]);
 assert.equal(result.selections[key].ids[0],qa);assert.equal(result.preferences[key].scale_scope,'all');
 assert.equal(result.preferences[a+':'+table].brightness,2);assert.equal(result.aliases[a+':same'],'Sample A');

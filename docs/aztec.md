@@ -31,6 +31,10 @@ without replacing settings already on disk. Browser storage is a local cache,
 so clearing it does not delete the disk workspace. Include this JSON with your
 configuration backups. Research inputs are never changed. Comparisons can use
 acquisitions from different native AZtec project files.
+The comparison Acquisitions disclosure shows small registered reference-image
+previews with the selected map or line marked. Move earlier/later in its
+display-order list to change row, overlay-reference and export order; saved
+comparisons retain that order.
 
 `NativeProjectReader` reads supported OIPX records without deserializing .NET
 objects. Stored spectrum blobs are matched by UUID and label; verified versions

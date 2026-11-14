@@ -10,7 +10,7 @@ import threading
 import uuid
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from tem_workbench.storage import folder_paths
 from tem_workbench.storage.mode_folders import aztec_folders, scan_folders
@@ -153,6 +153,54 @@ class AztecBrowser:
             catalogue = reader.inspect()
         LOG.info('AZtec comparison source: %s', compact(str(reader.path)))
         return catalogue
+
+    def comparison_thumbnail(self, path, acquisition, kind):
+        """Small registered electron image with the selected map or line marked."""
+        if kind not in ('map', 'line'):
+            raise AztecReadError('Choose a map or line for its reference preview.')
+        reader = self.comparison_reader(path)
+        records = [r for r in reader._records.values() if r.get('acquisition_id') == acquisition]
+        table = 'SmartMaps' if kind == 'map' else 'SmartLines'
+        record = next((r for r in records if r['table'] == table), None)
+        if record is None:
+            raise AztecReadError('This acquisition has no native ' + kind + ' region.')
+        site = reader.site(record['site_id'])
+        region = next((r for r in site['regions'] if record['path'] in r['paths']
+                       and r['kind'] == ('rectangle' if kind == 'map' else 'line')), None)
+        if region is None or not site.get('image_path'):
+            return {'image': None, 'note': 'Registered reference image unavailable.'}
+        values = reader.preview(site['image_path'])['array'].astype(float)
+        finite = values[np.isfinite(values)]
+        if not finite.size:
+            return {'image': None, 'note': 'Reference image has no finite pixels.'}
+        low, high = np.percentile(finite, [1, 99])
+        shade = np.uint8(np.clip((values - low) / (high - low or 1), 0, 1) * 255)
+        image = Image.fromarray(shade).convert('RGBA')
+        factor = min(128 / image.width, 112 / image.height)
+        image = image.resize((max(1, round(image.width * factor)),
+                              max(1, round(image.height * factor))), Image.Resampling.BILINEAR)
+        scale_x, scale_y = image.width / values.shape[1], image.height / values.shape[0]
+        points = [(float(x) * scale_x, float(y) * scale_y) for x, y in region['points']]
+        overlay = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        colour = (238, 133, 245, 255)
+        if kind == 'map':
+            (x0, y0), (x1, y1) = points
+            draw.rectangle((min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)),
+                           fill=(238, 133, 245, 48), outline=colour, width=3)
+        else:
+            (x0, y0), (x1, y1) = points
+            draw.line((x0, y0, x1, y1), fill=(15, 15, 20, 255), width=5)
+            draw.line((x0, y0, x1, y1), fill=colour, width=3)
+            length = math.hypot(x1 - x0, y1 - y0)
+            if length:
+                dx, dy = (x1 - x0) / length, (y1 - y0) / length
+                draw.polygon([(x1, y1), (x1 - 9 * dx - 4 * dy, y1 - 9 * dy + 4 * dx),
+                              (x1 - 9 * dx + 4 * dy, y1 - 9 * dy - 4 * dx)], fill=colour)
+        output = BytesIO()
+        Image.alpha_composite(image, overlay).convert('RGB').save(output, format='PNG')
+        return {'image': 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode(),
+                'note': 'Reference electron image with the selected ' + kind + ' highlighted.'}
 
     def catalogue(self, key):
         with self._lock:

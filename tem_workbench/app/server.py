@@ -990,6 +990,8 @@ def make_handler(app):
                     self.send(app.aztec.open(body['path']))
                 elif self.path == '/api/aztec/comparison-catalogue':
                     self.send(app.aztec.comparison_catalogue(body['path']))
+                elif self.path == '/api/aztec/comparison-thumbnail':
+                    self.send(app.aztec.comparison_thumbnail(body['path'], body['acquisition'], body['kind']))
                 elif self.path == '/api/aztec/preview':
                     self.send(app.aztec.preview(body['id'], body['dataset'], body.get('row', 0), body.get('unsigned', False), body.get('energy_low'), body.get('energy_high')))
                 elif self.path == '/api/aztec/site':
