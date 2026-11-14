@@ -92,6 +92,7 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
         if structure_only and kind!='map':
             raise AztecReadError('Choose element maps for this spatial check.')
         composition=channel_table=='QuantLinescans'
+        reconstructed=any(r.get('derived') for r in channels)
         # Preserve full line labels in the output; do not silently choose between emission families.
         by_label={r['Label']:r for r in channels}
         def find_channel(name):
@@ -101,10 +102,17 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
         den_record=find_channel(denominator) if mode in ('ratio','both') else None
         if mode in ('ratio','both') and den_record is None and not comparison:
             raise AztecReadError(f'{denominator} is not uniquely available in {channels[0]["acquisition_label"]}.')
-        cache={};units={}
+        cache={};units={};derived_cache={}
         def values(record):
             if record['path'] not in cache:
-                result=reader.preview(record['path']);a=result.get('array',result.get('y'))
+                if record.get('derived'):
+                    source_path=record['source_path']
+                    if source_path not in derived_cache:
+                        derived_cache[source_path]=reader.derived_line_profiles(source_path)
+                    a=derived_cache[source_path][record['Label']]
+                    result={'shape':a.shape,'unit':'cps'}
+                else:
+                    result=reader.preview(record['path']);a=result.get('array',result.get('y'))
                 if a is None or tuple(np.shape(a))!=tuple(result['shape']):
                     raise AztecReadError('Processing requires the full saved channel grid.')
                 cache[record['path']]=np.asarray(a,float)
@@ -115,7 +123,9 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
         electron=reader.preview(site['image_path'])['array'] if site.get('image_path') and not structure_only else None
         row=dict(label=channels[0]['acquisition_label'],kind=kind,tiles=[],acquisition=identity,
                  source=source,native_acquisition=acquisition_id,
-                 channel_table=channel_table,data_kind='composition' if composition else 'signal')
+                 channel_table=channel_table,data_kind='reconstructed' if reconstructed else 'composition' if composition else 'signal')
+        if reconstructed:
+            row['profile_note']='Reconstructed Kα1 window counts/s from native raw spectra; approximate channel edges and background retained. The V window also includes Ti Kβ.'
         site_meta=next(a for a in reader.inspect()['acquisitions'] if a['index']==channels[0]['site_id'])
         row['sample_name']=site_meta['specimen'] or site_meta['label']
         row['short_label']=' · '.join(filter(None,[site_meta['specimen'],row['label'].replace(' Data ',' ')]))
@@ -123,6 +133,9 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
         if sources is not None:
             row['label']=Path(source).name+' / '+row['label']
             row['short_label']=Path(source).stem+' · '+row['short_label']
+        if reconstructed:
+            row['label']+=' · reconstructed Kα1 window cps'
+            row['short_label']+=' · window cps'
         geometry=site.get('geometry',{})
         nm_per_px=(geometry.get('field_width_nm') or 0)*geometry.get('step',0)
         if kind=='map':
@@ -176,7 +189,8 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
             row['smoothing_sigma_px']=np.asarray(sigma).tolist()
             for record in channels:
                 if not selected or record['Label'] in selected or record['Label'].split()[0] in selected or record is den_record:
-                    export_arrays.add(row,record['Label'],'original',values(record),units[record['path']],path=record['path'])
+                    export_arrays.add(row,record['Label'],'reconstructed' if record.get('derived') else 'original',
+                                      values(record),units[record['path']],path=record.get('source_path',record['path']))
         def process_channel(record, den=None):
             try:
                 return signal_view(values(record), den, sigma=sigma, normalisation=norm), None
@@ -226,9 +240,9 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
                 vals=result['values'];finite=vals[np.isfinite(vals)]
                 ymax=upper if mode=='ratio' and norm=='none' else max(1e-12,float(np.max(finite))*1.1) if finite.size else 1
                 tile.update(x=np.linspace(0,length,len(vals)).tolist(),y=finite_list(vals),raw=finite_list(result['raw']),
-                            maximum=ymax,baseline=result['baseline'],unit=('Relative composition' if composition else 'Relative signal') if norm!='none' else ('Composition ratio' if composition else 'Signal ratio') if den is not None else units[record['path']])
+                            maximum=ymax,baseline=result['baseline'],unit=('Relative composition' if composition else 'Relative window count' if reconstructed else 'Relative signal') if norm!='none' else ('Composition ratio' if composition else 'Window-count ratio' if reconstructed else 'Signal ratio') if den is not None else units[record['path']])
                 if export_arrays is not None:
-                    export_arrays.add(row,tile['label'],'processed',vals,tile['unit'],path=record['path'],baseline=result['baseline'])
+                    export_arrays.add(row,tile['label'],'processed',vals,tile['unit'],path=record.get('source_path',record['path']),baseline=result['baseline'])
                 tile['noise_check']=spatial_structure(values(record),den,sigma=sigma)
             if kind=='map' and mode=='both' and record is not den_record:
                 tile['ratio_label']=record['Label']+' / '+denominator
@@ -289,4 +303,4 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
                 colour_scale_scope=scale_scope if comparison else 'all',
                 structure_only=structure_only,
                 suggested_colour_limits=[float(1-auto_delta),float(1+auto_delta)] if norm!='none' else None,
-                note='Channels are smoothed separately before division. Ratios describe recorded signal, not concentration.')
+                note='Channels are smoothed separately before division. Reconstructed window-count ratios retain background and overlap; no fitted peak area is implied.' if any(row['data_kind']=='reconstructed' for row in rows) else 'Channels are smoothed separately before division. Ratios describe recorded signal, not concentration.')

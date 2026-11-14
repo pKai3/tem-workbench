@@ -52,7 +52,8 @@ class DataArchive:
                       note='Original and processed folders retain full acquisition arrays. Selected line segments '
                            'are additionally saved in selected/ when equal-length trimming is enabled; these '
                            'retain actual sample positions without interpolation. CSV maps are row-major y × x grids. '
-                           'Original values retain saved units. Processed values apply smoothing before division '
+                           'Original values retain saved units; reconstructed/ contains native-spectrum Kα1 window '
+                           'estimates before display processing, where available. Processed values apply smoothing before division '
                            'and optional per-acquisition normalization; display brightness and colour clipping '
                            'are not applied. NaN marks unavailable ratios. Recorded-signal ratios are not concentrations.')
         for row in result['rows']:

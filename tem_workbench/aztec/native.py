@@ -14,6 +14,7 @@ import uuid
 import numpy as np
 
 from .h5oina import AztecReadError, SourceChangedError, MAX_READ_BYTES, _source
+from .spectral_windows import K_ALPHA_WINDOWS, reconstructed_line_profiles
 
 NAMES = {'ElectronImages': 'Electron images', 'EDXSpectra': 'Stored spectra',
          'SmartMaps': 'Raw map data', 'SmartLines': 'Raw line data',
@@ -203,6 +204,35 @@ class NativeProjectReader:
             record['acquisition_id'] = acquisition['id'] if acquisition else None
             record['acquisition_label'] = acquisition['Label'] if acquisition else None
             groups[site['id'] if site else 'unassigned'][1].append((record, descriptor))
+        # Offer explicitly derived windows only where a native raw line has saved
+        # composition profiles but no saved intensity profiles. The synthetic
+        # records are never presented as objects stored in the OIPX database.
+        for raw in tuple(records.values()):
+            if raw['table'] != 'SmartLines' or not raw.get('acquisition_id'):
+                continue
+            same = [r for r in records.values() if r.get('acquisition_id') == raw['acquisition_id']]
+            if any(r['table'] == 'XrayLinescans' for r in same) or not any(r['table'] == 'FileGroups' for r in same):
+                continue
+            elements = {r['Label'].split()[0] for r in same if r['table'] == 'QuantLinescans'}
+            for label, *_ in K_ALPHA_WINDOWS:
+                if label.split()[0] not in elements:
+                    continue
+                ident = str(uuid.uuid5(uuid.UUID(raw['id']), label))
+                path = '/XrayLinescans/' + ident
+                derived = dict(table='XrayLinescans', id=ident, path=path, Label=label,
+                               acquisition_id=raw['acquisition_id'],
+                               acquisition_label=raw['acquisition_label'],
+                               site_id=raw['site_id'], source_path=raw['path'], derived=True)
+                attrs = {'Label': label, 'Acquisition': raw['acquisition_label'],
+                         'Acquisition ID': raw['acquisition_id'], 'Unit': 'cps',
+                         'Record type': 'Reconstructed Kα1 window',
+                         'Source': 'Native raw line spectra',
+                         'Method': 'Raw positions grouped to saved profile spacing; fractional channel edges; live-time-normalized.'}
+                descriptor = dict(path=path, shape=None, dtype='derived float64',
+                                  storage='computed from native OIPX spectra', attributes=attrs, value=None)
+                records[path] = derived
+                descriptors.append(descriptor)
+                groups[raw['site_id']][1].append((derived, descriptor))
         acquisitions = []
         for ident, (site, items) in groups.items():
             if not items:
@@ -211,12 +241,12 @@ class NativeProjectReader:
             layers = {}
             for record, descriptor in items:
                 parent = descriptor['attributes'].get('Acquisition', '')
-                category = NAMES.get(record['table'], 'Other stored records')
+                category = 'Reconstructed Kα1 windows' if record.get('derived') else NAMES.get(record['table'], 'Other stored records')
                 name = (parent + ' / ' if parent else '') + category
                 layer = layers.setdefault(name, dict(path=name, technique=name, state='stored', header={}, signals=[], grid_shape=None, geometry_header=None, notes=[]))
                 layer['signals'].append(descriptor)
             priority = ['Electron images', 'Raw map data', 'Element maps', 'Raw line data', 'Element profiles',
-                        'Composition profiles', 'Stored spectra', 'Saved composites', 'Saved phase images',
+                        'Reconstructed Kα1 windows', 'Composition profiles', 'Stored spectra', 'Saved composites', 'Saved phase images',
                         'Quantification', 'Quantification results', 'Other stored records']
             ordered = sorted(layers.values(), key=lambda l: (priority.index(l['technique'].split(' / ')[-1]), l['technique']))
             acquisitions.append(dict(index=ident, identifier=ident, label=site['Label'], project=project['Label'], specimen=specimen, site=site['Label'], layers=ordered))
@@ -290,6 +320,33 @@ class NativeProjectReader:
         self.unchanged()
         return {'spectra': spectra, 'live_time': live, 'real_time': real}
 
+    def calibrated_raw_line(self, path):
+        """Keep the line-sum consistency check shared by both raw views."""
+        raw = self.raw_line_spectra(path)
+        acquisition = self._records[path]['acquisition_id']
+        sums = [r for r in self._records.values() if r['table'] == 'EDXSpectra'
+                and r['acquisition_id'] == acquisition and r['Label'] == 'Line Sum Spectrum']
+        if len(sums) != 1:
+            raise AztecReadError('The raw line has no unique calibrated sum spectrum.')
+        summed = self.preview(sums[0]['path'])
+        energy = np.asarray(summed['x'], dtype=float)
+        spectra = raw['spectra']
+        if (len(energy) != spectra.shape[1] or not np.all(np.diff(energy) > 0)
+                or not np.array_equal(spectra.sum(axis=0), summed['y'])):
+            raise AztecReadError('The native line spectra do not match the calibrated sum spectrum.')
+        return raw, energy
+
+    def derived_line_profiles(self, source_path):
+        """Measure verified Kα1 windows on the saved composition-profile grid."""
+        raw, energy = self.calibrated_raw_line(source_path)
+        acquisition = self._records[source_path]['acquisition_id']
+        quant = [r for r in self._records.values() if r['table'] == 'QuantLinescans'
+                 and r['acquisition_id'] == acquisition]
+        sizes = {self.preview(r['path'])['shape'][0] for r in quant}
+        if len(sizes) != 1:
+            raise AztecReadError('The saved composition profiles have inconsistent spacing.')
+        return reconstructed_line_profiles(raw['spectra'], raw['live_time'], energy, sizes.pop())
+
     def preview(self, path, *, energy_low=None, energy_high=None):
         self.inspect()
         record = self._records.get(path)
@@ -297,19 +354,15 @@ class NativeProjectReader:
             raise AztecReadError('Choose an item in this project.')
         base = {'path': path, 'kind': 'metadata', 'note': 'Stored record identified. Numerical preview is not decoded for this record type yet.'}
         table = record['table']
+        if record.get('derived'):
+            values = self.derived_line_profiles(record['source_path'])[record['Label']]
+            return {**base, 'kind': 'plot', 'x': list(range(1, len(values) + 1)),
+                    'y': values, 'shape': [len(values)], 'dtype': '<f8', 'unit': 'cps',
+                    'x_label': 'Saved profile position', 'y_label': 'Window counts/s',
+                    'note': 'Reconstructed from native raw spectra using Kα1 channel windows verified on STA Line 1. Raw positions are grouped to saved profile spacing and divided by summed live time. Approximate for this acquisition; background and overlapping peaks remain.'}
         if table == 'SmartLines':
-            raw = self.raw_line_spectra(path)
-            sums = [r for r in self._records.values() if r['table'] == 'EDXSpectra'
-                    and r['acquisition_id'] == record['acquisition_id']
-                    and r['Label'] == 'Line Sum Spectrum']
-            if len(sums) != 1:
-                raise AztecReadError('The raw line has no unique calibrated sum spectrum.')
-            summed = self.preview(sums[0]['path'])
-            energy = np.asarray(summed['x'], dtype=float)
+            raw, energy = self.calibrated_raw_line(path)
             spectra = raw['spectra']
-            if (len(energy) != spectra.shape[1] or not np.all(np.diff(energy) > 0)
-                    or not np.array_equal(spectra.sum(axis=0), summed['y'])):
-                raise AztecReadError('The native line spectra do not match the calibrated sum spectrum.')
             try:
                 low = float(energy[0]) if energy_low is None else float(energy_low)
                 high = float(energy[-1]) if energy_high is None else float(energy_high)

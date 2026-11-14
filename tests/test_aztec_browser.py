@@ -115,6 +115,30 @@ class AztecBrowserTests(unittest.TestCase):
         preview=self.browser.preview(opened['id'],'/EDXSpectra/'+self.ids['EDXSpectra'])
         self.assertEqual(preview['kind'],'metadata');self.assertNotIn('y',preview)
 
+    def test_composition_only_raw_line_catalogues_derived_windows_separately(self):
+        smart,group,quant=(str(uuid.uuid4()) for _ in range(3))
+        with closing(sqlite3.connect(self.path)) as con, con:
+            con.execute('DELETE FROM XrayLinescans')
+            parent=con.execute('SELECT Id FROM DataNodes WHERE AssociatedId=?',
+                               (self.ids['MapAcquires'],)).fetchone()[0]
+            for table,ident,label in [('SmartLines',smart,'EDS Data'),
+                                      ('FileGroups',group,'Files'),
+                                      ('QuantLinescans',quant,'Al Wt%')]:
+                con.execute(f'CREATE TABLE {table}(EntityId TEXT PRIMARY KEY, Label TEXT, ObjectBlob BLOB)')
+                con.execute(f'INSERT INTO {table} VALUES(?,?,?)',(ident,label,b'raw'))
+                con.execute('INSERT INTO DataNodes VALUES(?,?,?,?,?)',
+                            (str(uuid.uuid4()),parent,ident,1,0))
+        reader=NativeProjectReader(self.path);catalogue=reader.inspect()
+        derived=[d for d in catalogue['datasets'] if d['attributes'].get('Record type')=='Reconstructed Kα1 window']
+        self.assertEqual([d['attributes']['Label'] for d in derived],['Al Kα1'])
+        self.assertEqual(derived[0]['attributes']['Source'],'Native raw line spectra')
+        self.assertNotIn('XrayLinescans',catalogue['inventory'])
+        self.assertEqual(derived[0]['storage'],'computed from native OIPX spectra')
+        with patch.object(reader,'derived_line_profiles',return_value={'Al Kα1':np.array([3.,4.])}):
+            preview=reader.preview(derived[0]['path'])
+        self.assertEqual(preview['unit'],'cps')
+        np.testing.assert_array_equal(preview['y'],[3.,4.])
+
     def test_native_point_counts_calibration_and_truncation(self):
         ident=self.ids['EDXSpectra'];label=b'Sum spectrum'
         counts=np.array([0, 3, 70000, 5],dtype='<i4')

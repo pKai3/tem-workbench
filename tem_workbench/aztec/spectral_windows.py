@@ -10,6 +10,8 @@ from functools import lru_cache
 import numpy as np
 import xraylib
 
+from .h5oina import AztecReadError
+
 
 PEAK_TYPES = (
     ('Kα1', 'KA1_LINE', 'L3 → K'),
@@ -47,6 +49,37 @@ K_ALPHA_WINDOWS = (
     ('V Kα1', 4.952216, 4.883, 5.022),
     ('Fe Kα1', 6.404006, 6.326, 6.482),
 )
+
+# Channel-edge weights measured from the native STA Line 1 raw spectra against
+# its four saved Kα1 profiles. These belong to its nominal -0.2 keV / 10 eV
+# calibration. Applied to another acquisition they are reconstructed estimates,
+# not saved AZtec signals or fitted elemental peak areas.
+NATIVE_K_ALPHA_EDGES = {
+    'Al Kα1': (164, 173, .3180470, .2147838),
+    'Ti Kα1': (464, 478, .2717661, .0468036),
+    'V Kα1': (508, 522, .4140137, .4659562),
+    'Fe Kα1': (652, 668, .0903694, .4960871),
+}
+
+
+def reconstructed_line_profiles(spectra, live_time, energy_kev, rows):
+    """Rebin native raw positions to saved profile spacing and measure Kα1 cps."""
+    counts = np.asarray(spectra)
+    times = np.asarray(live_time, dtype=float)
+    energy = np.asarray(energy_kev, dtype=float)
+    if (counts.ndim != 2 or counts.shape[1] != 2048 or times.shape != (counts.shape[0],)
+            or energy.shape != (2048,) or not isinstance(rows, int) or rows < 1
+            or not np.allclose(energy, -.2 + np.arange(2048) * .01, rtol=0, atol=1e-6)):
+        raise AztecReadError('This raw line has an unverified channel calibration or profile grid.')
+    group, remainder = divmod(len(times), rows)
+    if group < 1 or remainder >= group or not np.isfinite(times).all() or np.any(times <= 0):
+        raise AztecReadError('The raw line does not match the saved profile spacing or live times.')
+    used = rows * group
+    grouped = counts[:used].astype(float).reshape(rows, group, 2048).sum(axis=1)
+    exposure = times[:used].reshape(rows, group).sum(axis=1)
+    return {label: (left * grouped[:, first] + grouped[:, first + 1:last].sum(axis=1)
+                    + right * grouped[:, last]) / exposure
+            for label, (first, last, left, right) in NATIVE_K_ALPHA_EDGES.items()}
 
 
 def measured_windows(energy_kev, counts, live_time=None):

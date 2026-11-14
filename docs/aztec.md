@@ -47,6 +47,15 @@ editable energy window. The window keeps background and overlapping peaks;
 it is not a fitted element-specific peak area. Raw map spectra and arbitrary
 region spectrum extraction remain undecoded. Legacy OIP is not yet supported.
 
+When a native line has saved composition but no saved Kα1 intensity profiles,
+the browser can reconstruct Al, Ti, V and Fe Kα1 window-count profiles from its
+own raw spectra. Each saved-profile position groups eight raw positions and
+uses their summed live time. Channel-edge weights were checked against a line
+that has both raw spectra and saved Kα1 profiles. The new channels are visibly
+marked reconstructed in the line viewer and numerical export, and use no
+H5OINA data. They are approximate for acquisitions without a saved intensity
+profile and retain background and overlapping peaks.
+
 Stored point and sum spectra, and individual H5OINA raw spectrum rows, show
 reference X-ray transition markers for selected elements. The line energies
 and K/L/M transition names come from [xraylib](https://github.com/tschoonj/xraylib)
@@ -131,11 +140,12 @@ until exposure, background/deconvolution and covariance are established; see
   inspected EDS files include unbinned spectra alongside binned scalar outputs.
   The catalogue reports this mismatch; `read_grid` refuses to reshape them onto
   the wrong grid. Explicit rebinning and spatial correspondence are future work.
-- **Signal types remain separate.** Window integrals, peak areas, weight percent,
-  atomic percent, raw counts and live times keep their original paths and units.
-  A signal is only available if the source contains it. Ratios must name both
-  operands and their processing; this reader does not calculate compositions or
-  substitute counts for corrected elemental signals.
+- **Signal types remain separate.** Saved window integrals, peak areas, weight
+  percent, atomic percent, raw counts and live times keep their original paths
+  and units. Reconstructed native window counts are explicitly labelled and
+  never presented as stored or fitted peak areas. Ratios name both operands and
+  their processing; this reader does not calculate compositions or substitute
+  counts for corrected elemental signals.
 - **Coordinates are retained, not guessed.** X/Y arrays, steps, stage positions,
   relative offsets, scan rotations and units remain available. Grid reshaping
   preserves native storage order; it does not flip or rotate an image. Signed
