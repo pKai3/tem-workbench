@@ -29,8 +29,8 @@ The header's Saved indicator gives its full path; save failures remain visible
 with a retry button. Existing browser preferences migrate on first connection,
 without replacing settings already on disk. Browser storage is a local cache,
 so clearing it does not delete the disk workspace. Include this JSON with your
-configuration backups. Research inputs are never changed. Comparisons between
-different AZtec project files remain planned work.
+configuration backups. Research inputs are never changed. Comparisons can use
+acquisitions from different native AZtec project files.
 
 `NativeProjectReader` reads supported OIPX records without deserializing .NET
 objects. Stored spectrum blobs are matched by UUID and label; verified versions
@@ -41,8 +41,11 @@ inspected TEM project decode, including six named points, saved preview spectra
 and existing sums. The Line 1 sum exactly matches all 2,048 channels summed from
 its H5OINA export. The native saved axis and the export's refined calibration
 differ slightly; matching counts does not establish identical energy axes.
-Raw line/map event streams and arbitrary region spectrum extraction remain
-undecoded. Legacy OIP is not yet supported.
+Native SmartLines spectrum tiles and per-position live times are now decoded
+read-only. Their raw view shows a spectrum heatmap and the count rate inside an
+editable energy window. The window keeps background and overlapping peaks;
+it is not a fitted element-specific peak area. Raw map spectra and arbitrary
+region spectrum extraction remain undecoded. Legacy OIP is not yet supported.
 
 ## What works
 
