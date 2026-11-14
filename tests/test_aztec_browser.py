@@ -1,6 +1,8 @@
 """Native browsing stays separate from decoding, with bounded read-only previews."""
+import base64
 import hashlib
 from contextlib import closing
+from io import BytesIO
 import json
 from pathlib import Path
 import shutil
@@ -13,6 +15,7 @@ from unittest.mock import patch
 
 import h5py
 import numpy as np
+from PIL import Image
 
 from tem_workbench.aztec.browser import AztecBrowser
 from tem_workbench.aztec.h5oina import AztecReadError, SourceChangedError
@@ -63,13 +66,74 @@ class AztecBrowserTests(unittest.TestCase):
         self.browser=AztecBrowser()
 
     def test_project_file_overviews_use_saved_overview_images(self):
-        self.assertEqual(self.browser.project_overviews(self.path)['previews'], [])
+        fallback=self.browser.project_overviews(self.path)['previews']
+        self.assertEqual([(p['sample'],p['site'],p['overview']) for p in fallback],
+                         [('Specimen A','Site',False)])
         with closing(sqlite3.connect(self.path)) as con, con:
             con.execute("UPDATE Analyses SET Label='Overview'")
         previews=AztecBrowser().project_overviews(self.path)['previews']
         self.assertEqual(len(previews), 1)
         self.assertEqual(previews[0]['sample'], 'Specimen A')
+        self.assertTrue(previews[0]['overview'])
         self.assertTrue(previews[0]['image'].startswith('data:image/png;base64,'))
+
+    def test_project_preview_chooses_largest_image_for_sample(self):
+        ident=str(uuid.uuid4());label='Larger image'
+        payload=b'\x06\0\0\0\0'+bytes([len(label)])+label.encode()+struct.pack('<III',2,8,8)+b'\0'*24+uuid.UUID(ident).bytes_le
+        with closing(sqlite3.connect(self.path)) as con, con:
+            con.execute('INSERT INTO ElectronImages VALUES(?,?,?,?)',(ident,label,'200.0',blob(payload)))
+            parent=con.execute('SELECT Id FROM DataNodes WHERE AssociatedId=?',(self.ids['Analyses'],)).fetchone()[0]
+            con.execute('INSERT INTO DataNodes VALUES(?,?,?,?,?)',(str(uuid.uuid4()),parent,ident,1,1))
+            overview_id,overview_node=str(uuid.uuid4()),str(uuid.uuid4())
+            sample_node=con.execute('SELECT Id FROM DataNodes WHERE AssociatedId=?',(self.ids['Samples'],)).fetchone()[0]
+            con.execute('INSERT INTO Analyses VALUES(?,?,?,?)',(overview_id,'Overview','200.0',b'overview'))
+            con.execute('INSERT INTO DataNodes VALUES(?,?,?,?,?)',(overview_node,sample_node,overview_id,1,1))
+            con.execute('UPDATE DataNodes SET ParentId=? WHERE AssociatedId=?',(overview_node,self.ids['ElectronImages']))
+        np.arange(64,dtype='<u2').tofile(self.root/'data'/f'{ident}.dat')
+        browser=AztecBrowser();preview=browser.project_overviews(self.path)['previews'][0]
+        self.assertEqual((preview['site'],preview['overview']),('Site',False))
+        self.assertEqual(browser.comparison_reader(self.path).electron_image_shape('/ElectronImages/'+ident),(8,8))
+        image=Image.open(BytesIO(base64.b64decode(preview['image'].split(',',1)[1])))
+        self.assertEqual(image.size,(180,180))
+
+    def test_native_ebsd_fields_and_saved_colours(self):
+        map_id,colour_id,contrast_id=(str(uuid.uuid4()) for _ in range(3))
+        count=8
+        phase=np.array([0,1,1,2,2,1,0,2],dtype='u1')
+        euler=np.arange(count*3,dtype='<f4').reshape(count,3)/10
+        mad=np.arange(count,dtype='<f4')/2
+        contrast=np.arange(count,dtype='u1')+20
+        raw=(b'OINA.Ebsd.Data=002'+phase.tobytes()+euler.tobytes()+mad.tobytes()+
+             contrast.tobytes()+(contrast+1).tobytes()+(contrast+2).tobytes()+
+             (contrast+3).tobytes()+np.zeros(count,dtype='<f4').tobytes()+
+             np.arange(count,dtype='<f4').tobytes())
+        (self.root/'data'/f'{map_id}.dat').write_bytes(raw)
+        with closing(sqlite3.connect(self.path)) as con, con:
+            con.execute('CREATE TABLE EbsdMaps(EntityId TEXT PRIMARY KEY, Label TEXT, Version TEXT, ObjectBlob BLOB)')
+            con.execute('CREATE TABLE EbsdMapImages(EntityId TEXT PRIMARY KEY, Label TEXT, Version TEXT, ObjectBlob BLOB)')
+            parent=con.execute('SELECT Id FROM DataNodes WHERE AssociatedId=?',(self.ids['MapAcquires'],)).fetchone()[0]
+            con.execute('INSERT INTO EbsdMaps VALUES(?,?,?,?)',(map_id,'EBSD Data','200.0',b'map'))
+            con.execute('INSERT INTO DataNodes VALUES(?,?,?,?,?)',(str(uuid.uuid4()),parent,map_id,1,1))
+            for ident,label,kind in [(colour_id,'IPF Z Color',5),(contrast_id,'Band Contrast',1)]:
+                payload=(b'\x06\0\0\0\0'+bytes([len(label)])+label.encode()+
+                         struct.pack('<III',kind,4,2)+b'\0'*24+uuid.UUID(ident).bytes_le)
+                con.execute('INSERT INTO EbsdMapImages VALUES(?,?,?,?)',(ident,label,'200.0',blob(payload)))
+                con.execute('INSERT INTO DataNodes VALUES(?,?,?,?,?)',(str(uuid.uuid4()),parent,ident,1,2))
+        (self.root/'data'/f'{colour_id}.dat').write_bytes(bytes([0x11,0x22,0x33,0xff])*count)
+        (self.root/'data'/f'{contrast_id}.dat').write_bytes(contrast.tobytes())
+        reader=NativeProjectReader(self.path);catalogue=reader.inspect()
+        self.assertEqual(sum(d['attributes']['Record type']=='Decoded EBSD field' for d in catalogue['datasets']),10)
+        np.testing.assert_array_equal(reader.preview(f'/EbsdMaps/{map_id}/phase')['array'],phase.reshape(2,4))
+        np.testing.assert_allclose(reader.preview(f'/EbsdMaps/{map_id}/euler_2')['array'],euler[:,1].reshape(2,4))
+        np.testing.assert_array_equal(reader.preview(f'/EbsdMaps/{map_id}/band_contrast')['array'],contrast.reshape(2,4))
+        self.assertEqual(reader.preview(f'/EbsdMapImages/{colour_id}')['array'][0,0].tolist(),[0x33,0x22,0x11,0xff])
+        browser=AztecBrowser();opened=browser.open(self.path)
+        image=browser.preview(opened['id'],f'/EbsdMapImages/{colour_id}')['image']
+        pixel=Image.open(BytesIO(base64.b64decode(image.split(',',1)[1]))).getpixel((0,0))
+        self.assertEqual(pixel,(0x33,0x22,0x11,0xff))
+        contrast_image=browser.preview(opened['id'],f'/EbsdMapImages/{contrast_id}')['image']
+        contrast_pixel=Image.open(BytesIO(base64.b64decode(contrast_image.split(',',1)[1]))).getpixel((0,0))
+        self.assertEqual(contrast_pixel,20)
 
     def test_native_inventory_does_not_decode_payloads(self):
         with patch.object(NativeProjectReader,'record_blob',side_effect=AssertionError('eager payload')):

@@ -21,9 +21,24 @@ NAMES = {'ElectronImages': 'Electron images', 'EDXSpectra': 'Stored spectra',
          'XrayMapImages': 'Element maps', 'XrayLinescans': 'Element profiles',
          'QuantLinescans': 'Composition profiles', 'QuantMapData': 'Quantification',
          'LayerMaps': 'Saved composites', 'EdPhaseImages': 'Saved phase images',
-         'TEMQuantResults': 'Quantification results'}
+         'TEMQuantResults': 'Quantification results', 'EbsdMaps': 'EBSD data container',
+         'EbsdMapImages': 'EBSD display maps'}
 STRUCTURE = {'DataNodes', 'Project', 'Samples', 'Analyses', 'MapAcquires'}
 MAX_RECORDS = 20_000
+# OINA.Ebsd.Data=002 stores planar fields, 29 bytes per scan position.
+# Offsets and units were checked against all three G9 full-map H5OINA exports.
+EBSD_FIELDS = {
+    'phase': ('Phase', 'u1', 0, None, 'phase ID'),
+    'euler_1': ('Euler φ1', '<f4', 1, 0, 'radians'),
+    'euler_2': ('Euler Φ', '<f4', 1, 1, 'radians'),
+    'euler_3': ('Euler φ2', '<f4', 1, 2, 'radians'),
+    'mean_angular_deviation': ('Mean angular deviation', '<f4', 13, None, 'degrees'),
+    'band_contrast': ('Band contrast', 'u1', 17, None, 'stored value'),
+    'band_slope': ('Band slope', 'u1', 18, None, 'stored value'),
+    'bands': ('Bands', 'u1', 19, None, 'count'),
+    'error': ('Error', 'u1', 20, None, 'stored code'),
+    'pattern_quality': ('Pattern quality', '<f4', 25, None, 'stored value'),
+}
 
 
 def quoted(name):
@@ -233,6 +248,28 @@ class NativeProjectReader:
                 records[path] = derived
                 descriptors.append(descriptor)
                 groups[raw['site_id']][1].append((derived, descriptor))
+        for raw in tuple(records.values()):
+            if raw['table'] != 'EbsdMaps' or raw['path'] not in self._attachments:
+                continue
+            source = self._attachments[raw['path']]
+            if not 18 < source.size <= MAX_READ_BYTES or (source.size - 18) % 29:
+                continue
+            with Path(source.path).open('rb') as stream:
+                if stream.read(18) != b'OINA.Ebsd.Data=002':
+                    continue
+            for field, (label, dtype, _, _, unit) in EBSD_FIELDS.items():
+                path = raw['path'] + '/' + field
+                derived = dict(table='EbsdMaps', id=raw['id'], path=path, Label=label,
+                               acquisition_id=raw['acquisition_id'], acquisition_label=raw['acquisition_label'],
+                               site_id=raw['site_id'], source_path=raw['path'], derived='ebsd', field=field)
+                attrs = {'Label': label, 'Acquisition': raw['acquisition_label'],
+                         'Acquisition ID': raw['acquisition_id'], 'Record type': 'Decoded EBSD field',
+                         'Unit': unit, 'Source': 'Native EBSD map companion'}
+                descriptor = dict(path=path, shape=None, dtype=dtype,
+                                  storage='decoded from native OIPX data', attributes=attrs, value=None)
+                records[path] = derived
+                descriptors.append(descriptor)
+                groups[raw['site_id']][1].append((derived, descriptor))
         acquisitions = []
         for ident, (site, items) in groups.items():
             if not items:
@@ -241,11 +278,14 @@ class NativeProjectReader:
             layers = {}
             for record, descriptor in items:
                 parent = descriptor['attributes'].get('Acquisition', '')
-                category = 'Reconstructed Kα1 windows' if record.get('derived') else NAMES.get(record['table'], 'Other stored records')
+                category = ('Reconstructed Kα1 windows' if record.get('derived') is True else
+                            'EBSD fields' if record.get('derived') == 'ebsd' else
+                            NAMES.get(record['table'], 'Other stored records'))
                 name = (parent + ' / ' if parent else '') + category
                 layer = layers.setdefault(name, dict(path=name, technique=name, state='stored', header={}, signals=[], grid_shape=None, geometry_header=None, notes=[]))
                 layer['signals'].append(descriptor)
-            priority = ['Electron images', 'Raw map data', 'Element maps', 'Raw line data', 'Element profiles',
+            priority = ['Electron images', 'EBSD display maps', 'EBSD fields', 'EBSD data container',
+                        'Raw map data', 'Element maps', 'Raw line data', 'Element profiles',
                         'Reconstructed Kα1 windows', 'Composition profiles', 'Stored spectra', 'Saved composites', 'Saved phase images',
                         'Quantification', 'Quantification results', 'Other stored records']
             ordered = sorted(layers.values(), key=lambda l: (priority.index(l['technique'].split(' / ')[-1]), l['technique']))
@@ -254,11 +294,16 @@ class NativeProjectReader:
         for record in records.values():
             record.pop('chain', None)
         self._records = records
+        notes = []
+        if tables.get('SmartLines'):
+            notes.append('Native raw line spectra can be inspected. Raw map spectra and arbitrary region extraction are not decoded yet.')
+        if tables.get('EbsdMaps'):
+            notes.append('Saved EBSD display maps and phase, Euler, angular-deviation, band and quality fields can be inspected. Raw EBSP patterns and FSD images are not decoded.')
         self._catalogue = dict(source={**asdict(self.source), 'reader': 'native-oipx-1'}, project_id=self.project_id(),
             format_version=project.get('Version'), software_version=None, manufacturer='Oxford Instruments',
             file_type='OIPX', schema_version=1, acquisitions=acquisitions, datasets=descriptors,
             inventory=tables, warnings=[], native_tree=list(nodes.values()),
-            notes=['Native raw line spectra can be inspected. Raw map spectra and arbitrary region extraction are not decoded yet.'])
+            notes=notes)
         return self._catalogue
 
     def site(self, site_id, image_path=None):
@@ -277,6 +322,92 @@ class NativeProjectReader:
             if not row or row[0] is None:
                 raise AztecReadError('No native payload is available for this item.')
             return row[0]
+
+    def electron_image_shape(self, path):
+        """Read validated image dimensions without opening the pixel companion."""
+        self.inspect()
+        record = self._records.get(path)
+        if record is None or record['table'] != 'ElectronImages':
+            raise AztecReadError('Choose a native electron image.')
+        for payload in blob_payloads(self.record_blob(record)):
+            if len(payload) < 60 or payload[:5] != b'\x06\0\0\0\0':
+                continue
+            label, offset = native_string(payload, 5)
+            if label != record['Label'] or offset + 52 > len(payload):
+                continue
+            kind, width, height = struct.unpack_from('<III', payload, offset)
+            ident = str(uuid.UUID(bytes_le=payload[offset+36:offset+52]))
+            if ident == record['id'] and kind == 2 and width and height and width * height * 2 <= MAX_READ_BYTES:
+                return height, width
+        raise AztecReadError('Native electron image dimensions are not decoded for this record.')
+
+    def ebsd_display_layout(self, path):
+        """Validate the saved EBSD display image header and companion size."""
+        self.inspect()
+        record = self._records.get(path)
+        if record is None or record['table'] != 'EbsdMapImages':
+            raise AztecReadError('Choose a native EBSD display image.')
+        source = self._attachments.get(path)
+        if source is None:
+            raise AztecReadError('The native EBSD display companion is unavailable.')
+        for payload in blob_payloads(self.record_blob(record)):
+            if len(payload) < 60 or payload[:5] != b'\x06\0\0\0\0':
+                continue
+            label, offset = native_string(payload, 5)
+            if label != record['Label'] or offset + 52 > len(payload):
+                continue
+            kind, width, height = struct.unpack_from('<III', payload, offset)
+            ident = str(uuid.UUID(bytes_le=payload[offset+36:offset+52]))
+            stride = {1: 1, 5: 4}.get(kind)
+            if (ident == record['id'] and stride and width and height
+                    and width * height * stride == source.size and source.size <= MAX_READ_BYTES):
+                return kind, height, width
+        raise AztecReadError('Native EBSD display image layout is not decoded for this record.')
+
+    def ebsd_field_preview(self, record):
+        source_record = self._records[record['source_path']]
+        source = self._attachments.get(source_record['path'])
+        if source is None:
+            raise AztecReadError('The native EBSD map companion is unavailable.')
+        target = Path(source.path)
+        if _source(target) != source:
+            raise SourceChangedError('Native EBSD map companion changed; reopen the project.')
+        if not 18 < source.size <= MAX_READ_BYTES or (source.size - 18) % 29:
+            raise AztecReadError('Native EBSD map layout differs from the validated format.')
+        data = target.read_bytes()
+        if _source(target) != source:
+            raise SourceChangedError('Native EBSD map companion changed during reading; reopen the project.')
+        if data[:18] != b'OINA.Ebsd.Data=002' or len(data) != source.size:
+            raise AztecReadError('Native EBSD map layout differs from the validated format.')
+        count = (len(data) - 18) // 29
+        shapes = set()
+        for image in self._records.values():
+            if image['table'] == 'EbsdMapImages' and image.get('acquisition_id') == source_record['acquisition_id']:
+                try:
+                    _, height, width = self.ebsd_display_layout(image['path'])
+                    shapes.add((height, width))
+                except SourceChangedError:
+                    raise
+                except AztecReadError:
+                    pass
+        if len(shapes) != 1:
+            raise AztecReadError('Native EBSD map dimensions are not uniquely registered.')
+        height, width = shapes.pop()
+        if height * width != count:
+            raise AztecReadError('Native EBSD field count does not match its display maps.')
+        label, dtype, offset, component, unit = EBSD_FIELDS[record['field']]
+        values = np.frombuffer(data, dtype=dtype, count=count * (3 if component is not None else 1),
+                               offset=18 + offset * count)
+        if component is not None:
+            values = values.reshape(count, 3)[:, component]
+        values = values.copy().reshape(height, width)
+        if np.issubdtype(values.dtype, np.floating) and not np.isfinite(values).all():
+            raise AztecReadError('Native EBSD field contains non-finite values.')
+        note = 'Native EBSD field from the saved map; Workbench applies no re-indexing or cleanup.'
+        if record['field'] == 'mean_angular_deviation':
+            note += ' Native values are degrees; H5OINA exports store radians.'
+        return {'path': record['path'], 'kind': 'image', 'array': values, 'shape': [height, width],
+                'dtype': dtype, 'unit': unit, 'note': note, 'label': label}
 
     def raw_line_spectra(self, path):
         """Read the native raw spectra and per-position acquisition times for a SmartLine."""
@@ -354,6 +485,8 @@ class NativeProjectReader:
             raise AztecReadError('Choose an item in this project.')
         base = {'path': path, 'kind': 'metadata', 'note': 'Stored record identified. Numerical preview is not decoded for this record type yet.'}
         table = record['table']
+        if record.get('derived') == 'ebsd':
+            return self.ebsd_field_preview(record)
         if record.get('derived'):
             values = self.derived_line_profiles(record['source_path'])[record['Label']]
             return {**base, 'kind': 'plot', 'x': list(range(1, len(values) + 1)),
@@ -382,6 +515,29 @@ class NativeProjectReader:
                                       'maximum': float(energy[-1])},
                     'spectrum_array': spectra,
                     'note': 'Native raw spectra; counts divided by each position’s live time. The energy window includes background and overlapping peaks. No element fitting, background subtraction or spatial rebinning.'}
+        if table == 'EbsdMapImages':
+            kind, height, width = self.ebsd_display_layout(path)
+            source = self._attachments[path]
+            target = Path(source.path)
+            if _source(target) != source:
+                raise SourceChangedError('Native EBSD display companion changed; reopen the project.')
+            data = target.read_bytes()
+            if _source(target) != source or len(data) != source.size:
+                raise SourceChangedError('Native EBSD display companion changed during reading; reopen the project.')
+            if kind == 5:
+                bgra = np.frombuffer(data, dtype='u1').reshape(height, width, 4)
+                values = bgra[:, :, [2, 1, 0, 3]].copy()
+                note = 'Saved EBSD display colours (BGRA bytes converted to RGBA); not recalculated from orientation.'
+                unit = 'stored colour'
+            else:
+                values = np.frombuffer(data, dtype='u1').copy().reshape(height, width)
+                phase_index = 'Phase Color' in record['Label']
+                note = ('Saved EBSD phase indices, stretched to greyscale for visibility; the native colour palette is not decoded.'
+                        if phase_index else 'Saved EBSD greyscale display; no cleanup or contrast adjustment.')
+                unit = 'stored index' if phase_index else 'stored intensity'
+            return {**base, 'kind': 'image', 'array': values, 'shape': [height, width],
+                    'dtype': 'u1', 'unit': unit, 'note': note,
+                    'display_raw': kind == 5 or not phase_index}
         if table not in ('XrayLinescans', 'QuantLinescans', 'ElectronImages', 'XrayMapImages', 'EDXSpectra'):
             return base
         data = self.record_blob(record)

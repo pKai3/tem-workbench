@@ -155,18 +155,39 @@ class AztecBrowser:
         return catalogue
 
     def project_overviews(self, path):
-        """Load only saved Overview electron images for a file-list preview."""
+        """Choose the largest decodable electron image per sample."""
         reader = self.comparison_reader(path)
-        previews = []
+        candidates = {}
         for acquisition in reader.inspect()['acquisitions']:
-            if acquisition['site'].casefold() != 'overview':
+            sample = acquisition.get('specimen')
+            if not sample:
                 continue
-            image_path = next((signal['path'] for layer in acquisition['layers']
-                               for signal in layer['signals']
-                               if signal['path'].startswith('/ElectronImages/')), None)
-            if not image_path:
+            for layer in acquisition['layers']:
+                for signal in layer['signals']:
+                    image_path = signal['path']
+                    if not image_path.startswith('/ElectronImages/'):
+                        continue
+                    try:
+                        height, width = reader.electron_image_shape(image_path)
+                    except SourceChangedError:
+                        raise
+                    except AztecReadError:
+                        continue
+                    candidates.setdefault(sample, []).append((acquisition['site'].casefold() == 'overview',
+                                                               width * height, acquisition['site'], image_path))
+        previews = []
+        for sample, choices in candidates.items():
+            values = None
+            for overview, _, site, image_path in sorted(choices, key=lambda item: (item[1], item[0]), reverse=True):
+                try:
+                    values = reader.preview(image_path)['array'].astype(float)
+                    break
+                except SourceChangedError:
+                    raise
+                except AztecReadError:
+                    continue
+            if values is None:
                 continue
-            values = reader.preview(image_path)['array'].astype(float)
             finite = values[np.isfinite(values)]
             if not finite.size:
                 continue
@@ -178,7 +199,7 @@ class AztecBrowser:
                                   max(1, round(image.height * factor))), Image.Resampling.BILINEAR)
             output = BytesIO()
             image.save(output, format='PNG')
-            previews.append({'sample': acquisition.get('specimen') or acquisition['label'],
+            previews.append({'sample': sample, 'site': site, 'overview': overview,
                              'image': 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode()})
         return {'previews': previews}
 
@@ -249,16 +270,24 @@ class AztecBrowser:
             result = reader.preview(path, energy_low=energy_low, energy_high=energy_high)
             if result['kind'] == 'image':
                 values = result.pop('array')
-                finite = values[np.isfinite(values)]
-                low, high = (float(finite.min()), float(finite.max())) if finite.size else (None, None)
-                scaled = np.zeros(values.shape)
-                if finite.size and high > low:
-                    scaled = np.nan_to_num((values.astype(float)-low)/(high-low), nan=0., posinf=1., neginf=0.)
-                image = Image.fromarray(np.uint8(np.clip(scaled, 0, 1)*255))
+                display_raw = result.pop('display_raw', False)
+                if values.ndim == 3 and values.shape[2] in (3, 4) and values.dtype == np.uint8:
+                    image = Image.fromarray(values)
+                elif display_raw and values.ndim == 2 and values.dtype == np.uint8:
+                    image = Image.fromarray(values)
+                    result.update(minimum=float(values.min()), maximum=float(values.max()))
+                else:
+                    finite = values[np.isfinite(values)]
+                    low, high = (float(finite.min()), float(finite.max())) if finite.size else (None, None)
+                    scaled = np.zeros(values.shape)
+                    if finite.size and high > low:
+                        scaled = np.nan_to_num((values.astype(float)-low)/(high-low), nan=0., posinf=1., neginf=0.)
+                    image = Image.fromarray(np.uint8(np.clip(scaled, 0, 1)*255))
+                    result.update(minimum=low, maximum=high)
                 image.thumbnail((640, 640), Image.Resampling.NEAREST)
                 output = BytesIO(); image.save(output, format='PNG')
                 result.update(image='data:image/png;base64,'+base64.b64encode(output.getvalue()).decode(),
-                              grid=values.shape, minimum=low, maximum=high, sample=numeric(values[:2, :8]))
+                              grid=values.shape[:2], sample=numeric(values[:2, :8]))
             elif result['kind'] == 'plot':
                 spectra = result.pop('spectrum_array', None)
                 if spectra is not None:

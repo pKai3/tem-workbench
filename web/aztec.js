@@ -31,6 +31,7 @@ function siteContents(a){
  const datasets=a.layers.flatMap(l=>l.signals),items=[],seen=new Set();
  for(const d of datasets){const kind=d.path.split('/')[1],label=d.attributes.Label||'',acquisition=d.attributes.Acquisition;
   if(kind==='ElectronImages')items.push(label.replace(/^Electron Image /,'Image '));
+  else if(kind==='EbsdMaps'&&d.path.split('/').length===3&&acquisition&&!seen.has(d.attributes['Acquisition ID'])){seen.add(d.attributes['Acquisition ID']);items.push(acquisition.replace(/^Map Data /,'EBSD map '))}
   else if(['SmartMaps','SmartLines','XrayMapImages','XrayLinescans','QuantLinescans'].includes(kind)&&acquisition&&!seen.has(d.attributes['Acquisition ID'])){seen.add(d.attributes['Acquisition ID']);items.push(acquisition.replace(/^(Map|Line) Data /,'$1 '))}
  }
  const points=datasets.filter(d=>d.path.startsWith('/EDXSpectra/')&&!isSavedPreview(d)&&! /^(Map|Line) Sum Spectrum$/i.test(d.attributes.Label||'')).map(d=>pointLabel(d.attributes.Label||'Point'));
@@ -59,14 +60,13 @@ function projectOverviewStrip(path){
  overviewRequests.get(path).then(result=>{
   if(!strip.isConnected)return;
   for(const preview of result.previews){
-   const tile=el('span',undefined,'eds-project-overview'),image=el('img'),label=`${preview.sample} overview`;
-   image.src=preview.image;image.alt=label;tile.tabIndex=0;tile.setAttribute('role','button');tile.setAttribute('aria-label','Enlarge '+label);tile.append(image,el('span',preview.sample));
+   const tile=el('span',undefined,'eds-project-overview'),image=el('img'),label=preview.overview?`${preview.sample} overview`:`${preview.sample} · ${preview.site}`;
+   image.src=preview.image;image.alt=label;tile.tabIndex=0;tile.setAttribute('role','button');tile.setAttribute('aria-label','Select project using '+label);tile.append(image,el('span',preview.sample));
    tile.addEventListener('mouseenter',()=>showOverviewZoom(preview.image,tile,label));
    tile.addEventListener('mouseleave',()=>{if(document.activeElement!==tile)closeOverviewZoom()});
    tile.addEventListener('focus',()=>showOverviewZoom(preview.image,tile,label));
    tile.addEventListener('blur',closeOverviewZoom);
-   tile.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();tile.focus({preventScroll:true});showOverviewZoom(preview.image,tile,label)});
-   tile.addEventListener('keydown',event=>{if(event.key==='Escape'){closeOverviewZoom();tile.blur()}else if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();showOverviewZoom(preview.image,tile,label)}});
+   tile.addEventListener('keydown',event=>{if(event.key==='Escape'){closeOverviewZoom();tile.blur()}else if(event.key==='Enter'||event.key===' '){event.preventDefault();closeOverviewZoom();const button=tile.closest('button');if(button)button.click();else tile.closest('label')?.querySelector('input')?.click()}});
    strip.append(tile);
   }
  });
@@ -90,7 +90,7 @@ function renderFiles(){
  for(const file of matches){
   const button=el('button',undefined,'eds-entry'),name=el('span',file.name,'eds-file-name');button.type='button';button.append(name);
   const folder=file.relative_path.split(/[\\/]/).slice(0,-1).join(' / '),context=[project?'':file.project,folder].filter(Boolean).join(' / ');
-  if(context)button.append(WorkbenchProjectTools.pathText(el('small'),context));button.title=file.path;button.setAttribute('aria-current',String(file.path===state.file?.catalogue.source.path));button.onclick=()=>openFile(file.path);host.append(button);
+  if(context)button.append(WorkbenchProjectTools.pathText(el('small'),context));name.title=file.path;button.setAttribute('aria-current',String(file.path===state.file?.catalogue.source.path));button.onclick=()=>openFile(file.path);host.append(button);
   if(file.kind==='OIPX'&&file.project_id)button.append(projectOverviewStrip(file.path));
  }
  if(!matches.length)host.append(el('p',query?'No matching files.':'No supported AZtec files found. Choose another project or check its source folder in Project settings.','hint'));
@@ -130,7 +130,7 @@ async function openFile(path,restoreDataset,restoreAcquisition,restoreComparison
  const version=++state.fileVersion;++state.previewVersion;status('Reading file contents…');
  try{const file=await api('open',{path});if(version!==state.fileVersion)return;state.file=file;const c=file.catalogue;$('eds-empty').hidden=true;$('eds-file').hidden=false;$('eds-file-info').textContent=`${c.source.path.split(/[\\/]/).at(-1)} · ${size(c.source.size)} · ${c.file_type} ${c.format_version}${c.software_version?' · AZtec '+c.software_version:''}`;
   const restored=c.acquisitions.find(a=>a.index===restoreAcquisition)||c.acquisitions.find(a=>a.layers.some(l=>l.signals.some(d=>d.path===restoreDataset)));
-  renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();state.listing={path:file.folder};renderFileChoice();renderFiles();remember();status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} maps · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
+  renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();state.listing={path:file.folder};renderFileChoice();renderFiles();remember();status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} EDS maps${c.inventory.EbsdMaps?` · ${c.inventory.EbsdMaps} EBSD maps`:''} · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
   const target=state.acquisition?.layers.flatMap(l=>l.signals).find(d=>d.path===restoreDataset);if(['map','line'].includes(restoreComparison)){analysis.open(null,restoreComparison,restoreTable);remember()}else if(bookmark.analysisGroup){const [id,table]=bookmark.analysisGroup.split(':');openAnalysis(id,false,table)}else if(target)selectDataset(target);
   if(bookmark.image)await loadSite(bookmark.image);
  }catch(error){if(version===state.fileVersion)status(error.message,true)}
@@ -150,7 +150,7 @@ function renderAcquisition(index){
  const a=state.acquisition,c=state.file.catalogue;$('eds-context').textContent=[a?.project,a?.specimen,a?.site===a?.label?null:a?.site].filter(Boolean).join(' / ');$('eds-title').textContent=a?.label||'File contents';
  const notes=[...(c.notes||[]),...c.warnings];$('eds-warnings').textContent=notes.join(' ');$('eds-warnings').hidden=!notes.length;
  const root=$('eds-contents');root.replaceChildren();clearPreview();$('eds-metadata').open=false;$('eds-metadata-body').replaceChildren();
- const native=c.file_type==='OIPX',previewable=d=>!isSavedPreview(d)&&/^\/(ElectronImages|XrayMapImages|XrayLinescans|QuantLinescans|SmartLines|EDXSpectra)\//.test(d.path);
+ const native=c.file_type==='OIPX',previewable=d=>!isSavedPreview(d)&&(/^\/(ElectronImages|XrayMapImages|XrayLinescans|QuantLinescans|SmartLines|EDXSpectra|EbsdMapImages)\//.test(d.path)||d.attributes['Record type']==='Decoded EBSD field');
  const layers=(a?.layers||[]).flatMap(l=>{const previews=l.signals.filter(isSavedPreview);return previews.length?[{...l,signals:l.signals.filter(d=>!isSavedPreview(d))},{...l,path:'Saved preview spectra',technique:'Saved preview spectra',signals:previews}]:[l]});if(native)layers.sort((x,y)=>Number(!x.signals.some(previewable))-Number(!y.signals.some(previewable)));
  const channelsByAcquisition=new Set(layers.flatMap(l=>l.signals).filter(d=>/^\/(XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)).map(d=>d.attributes['Acquisition ID']));
  const sums=new Map(layers.flatMap(l=>l.signals).filter(d=>d.path.startsWith('/EDXSpectra/')&&/^(Line|Map) Sum Spectrum$/i.test(d.attributes.Label||'')&&channelsByAcquisition.has(d.attributes['Acquisition ID'])).map(d=>[d.attributes['Acquisition ID'],d]));

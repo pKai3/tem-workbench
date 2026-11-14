@@ -111,6 +111,11 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  const acquisitionRequest=(context,ids=context.ids)=>context.comparison?{targets:ids.map(target)}:{acquisitions:ids};
  const fileName=path=>path.split(/[\\/]/).pop();
  const channelNamesFor=all=>[...new Set(all.flatMap(g=>g.signals))].sort((a,b)=>{const order=['Ti','V','Fe','Al'],rank=x=>{const n=order.indexOf(x.split(' ')[0]);return n<0?99:n};return rank(a)-rank(b)||a.localeCompare(b)});
+ const selectedChannelNames=context=>channelNamesFor(context.all.filter(group=>context.ids.includes(group.id)));
+ function reconcileSelectedChannels(context,previous){
+  const channels=selectedChannelNames(context),selection=comparisonState.reconcileChannels(context.signals,context.options.denominator,channels,previous);
+  context.signals=selection.signals;context.options.denominator=selection.denominator;return channels;
+ }
  function persist(){
   if(current){preferences[current.preferenceKey]={...current.options};selections[current.preferenceKey]={ids:[...current.ids],signals:[...current.signals],files:[...(current.files||[])]}}
   clearTimeout(persistTimer);
@@ -178,13 +183,13 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const preferenceKey=comparison?viewKey(chosen.table):projectKey()+':'+chosen.table,selection=selections[preferenceKey];
   const defaults={mode:kind==='map'?(comparison?'ratio':'both'):'signal',denominator:channelNames.find(s=>s.startsWith('Ti '))||channelNames[0],normalisation:'none',smoothing:kind==='map'?1:10,smoothing_unit:comparison?'nm':'px',brightness:1.5,low:.7,high:1.3,upper:.5,background:true,raw:false,layout:'stacked',spatial:'physical',scale_scope:'element',show_denominator:true,reference_orientation:'native',trim_mode:'full',trim_length:null,line_offsets:{}};
   current={kind,table:chosen.table,all,files,comparison:!!comparison,preferenceKey,ids:comparison?(selection?.ids||all.slice(0,2).map(g=>g.id)):[chosen.id],signals:comparison&&selection?(selection.signals||channelNames):channelNames,options:{...defaults,...preferences[preferenceKey]}};
-  const channelSelection=comparisonState.reconcileChannels(current.signals,current.options.denominator,channelNames);
+  const activeChannels=selectedChannelNames(current),channelSelection=comparisonState.reconcileChannels(current.signals,current.options.denominator,activeChannels);
   current.signals=channelSelection.signals;current.options.denominator=channelSelection.denominator;
   $('eds-dataset-title').textContent=comparison?(kind==='map'?'Map comparison':'Line comparison'):chosen.label;$('eds-dataset-info').textContent=kind==='map'?'Element maps':chosen.derived?'Reconstructed Kα1 window counts/s · native raw spectra':chosen.table==='QuantLinescans'?'Saved composition profiles · AZtec quantification':'';
   $('eds-preview').hidden=true;$('eds-preview').replaceChildren();$('eds-dataset-details').hidden=true;$('eds-preview-tools').hidden=true;$('eds-preview-note').textContent='';$('eds-preview-error').hidden=true;$('eds-analysis-tools').hidden=false;$('eds-analysis-views').hidden=false;$('eds-analysis-views').replaceChildren();
   state.analysisGroup=comparison?null:chosen.id+':'+chosen.table;
   if(comparison){state.dataset=null;highlightRegions()}else{state.dataset=state.file.catalogue.datasets.find(d=>d.attributes['Acquisition ID']===chosen.id&&/^\/(SmartLines|SmartMaps)\//.test(d.path))||state.file.catalogue.datasets.find(d=>chosen.paths.includes(d.path));highlightRegions()}
-  state.comparisonTable=comparison?chosen.table:null;remember();controls(channelNames);imageScaleAvailability();update();
+  state.comparisonTable=comparison?chosen.table:null;remember();controls(activeChannels);imageScaleAvailability();update();
  }
  function controls(channels){
   const root=$('eds-analysis-tools');root.replaceChildren();if(current.comparison){presetControls(root);sourceControls(root);acquisitionControls(root)}let row=el('div',undefined,'eds-analysis-controls');root.append(row);
@@ -281,7 +286,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    box.loadThumbnail=()=>{
     const key=group.source+'|'+JSON.stringify(catalogues.get(group.source)?.source||{})+'|'+group.id+'|'+group.kind;
     if(!thumbnailRequests.has(key))thumbnailRequests.set(key,api('comparison-thumbnail',{path:group.source,acquisition:target(group.id).acquisition,kind:group.kind}));
-    thumbnailRequests.get(key).then(result=>{if(!image.isConnected)return;if(result.image){image.src=zoom.src=result.image;image.hidden=false;status.hidden=true;if(box.matches(':hover')||document.activeElement===box)showZoom()}else status.textContent='No image';box.title=result.note||image.alt}).catch(()=>{thumbnailRequests.delete(key);if(status.isConnected)status.textContent='No image'});
+    thumbnailRequests.get(key).then(result=>{if(!image.isConnected)return;if(result.image){image.src=zoom.src=result.image;image.hidden=false;status.hidden=true;if(box.matches(':hover')||document.activeElement===box)showZoom()}else status.textContent='No image';box.setAttribute('aria-description',result.note||image.alt)}).catch(()=>{thumbnailRequests.delete(key);if(status.isConnected)status.textContent='No image'});
    };
    if(immediate||!thumbnailObserver)box.loadThumbnail();else thumbnailObserver.observe(box);return box;
   };
@@ -311,7 +316,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     const siteKey=group.sample+' / '+group.siteName;
     if(!sites.has(siteKey)){const site=el('div',undefined,'eds-acquisition-site'),name=el('strong',group.siteName);name.title=group.site;site.append(name);samples.get(group.sample).append(site);sites.set(siteKey,site)}
     const label=el('label',undefined,'eds-acquisition-choice'),input=el('input');input.type='checkbox';input.value=group.id;input.checked=context.ids.includes(group.id);input.setAttribute('aria-label',group.label);
-    input.onchange=()=>{context.ids=input.checked?[...context.ids,group.id]:context.ids.filter(id=>id!==group.id);summary.textContent=`Acquisitions · ${context.ids.length} selected`;drawSelected();update()};
+    input.onchange=()=>{const before=selectedChannelNames(context);context.ids=input.checked?[...context.ids,group.id]:context.ids.filter(id=>id!==group.id);const channels=reconcileSelectedChannels(context,before);keepScroll(()=>controls(channels));update()};
     label.append(input,preview(group,true),el('span',group.name));sites.get(siteKey).append(label);
    }
   }
@@ -322,7 +327,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const summary=el('summary',`Project files · ${context.files.length} selected`),list=el('div',undefined,'eds-source-picks'),status=el('p',undefined,'hint');
   const refresh=el('button','Rescan projects');refresh.type='button';
   details.append(summary,list,refresh,status);root.append(details);
-  let discovered=[],scanned=false;
+  let discovered=context.discoveredFiles||[],scanned=!!context.sourceScanned;
   function draw(){
    list.replaceChildren();
    const paths=[...new Set([...context.files,...discovered.map(f=>f.path)])];
@@ -335,20 +340,19 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
      if(include){catalogues.delete(path);await loadCatalogue(path)}
      if(current!==context)return;
      if(include&&sourceErrors.has(path)){input.checked=false;input.disabled=false;status.textContent=sourceErrors.get(path);update();return}
-     const oldChannels=channelNamesFor(context.all);
+     const oldChannels=selectedChannelNames(context);
      context.files=include?[...context.files,path]:context.files.filter(p=>p!==path);
      context.all=comparisonGroups(context.files).filter(g=>g.kind===context.kind&&g.table===context.table);
      if(include){const first=context.all.find(g=>g.source===path);if(first&&!context.ids.includes(first.id)&&context.ids.length<32)context.ids.push(first.id)}
      else context.ids=context.ids.filter(id=>target(id).source!==path);
-     const channels=channelNamesFor(context.all),selection=comparisonState.reconcileChannels(context.signals,context.options.denominator,channels,oldChannels);
-     context.signals=selection.signals;context.options.denominator=selection.denominator;
+     const channels=reconcileSelectedChannels(context,oldChannels);
      context.sourcePickerOpen=true;persist();keepScroll(()=>controls(channels));update();
     };
    }
   }
   async function scan(){
    refresh.disabled=true;status.textContent='Scanning configured projects…';
-   try{const result=await api('files',{});if(current!==context)return;discovered=result.files.filter(f=>f.kind==='OIPX');scanned=true;draw();status.textContent=result.errors?.length?result.errors.join(' · '):discovered.length?'':'No other native OIPX files found in configured projects.'}
+   try{const result=await api('files',{});if(current!==context)return;discovered=result.files.filter(f=>f.kind==='OIPX');scanned=true;context.discoveredFiles=discovered;context.sourceScanned=true;draw();status.textContent=result.errors?.length?result.errors.join(' · '):discovered.length?'':'No other native OIPX files found in configured projects.'}
    catch(error){status.textContent=error.message}finally{refresh.disabled=false}
   }
   details.ontoggle=()=>{context.sourcePickerOpen=details.open;if(details.open&&!scanned&&!refresh.disabled)scan()};refresh.onclick=scan;draw();

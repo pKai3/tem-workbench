@@ -15,8 +15,9 @@ H5OINA files together. Search filters filenames and subfolder names; Rescan file
 refreshes the list. All projects combines the configured sources. Project settings
 uses the same source/output editor and folder picker as the diffraction viewer.
 Native project entries in the Files list and comparison Project files selector
-show saved Overview electron images for each sample; hover, focus or tap a
-thumbnail to see it larger. These images load after file discovery.
+show the largest decoded electron image per sample. Hover or focus enlarges a
+thumbnail; clicking it opens or selects the project. These images load after
+file discovery.
 The diffraction
 image collection excludes those acquisition folders and their raster exports;
 native DM4 images in mixed folders remain available.
@@ -39,6 +40,18 @@ and site. Small registered reference-image previews mark the map or line and
 enlarge on hover, focus or tap. Below the choices, each selected card combines
 its export label with Move earlier/later controls; saved comparisons retain
 the resulting row, overlay-reference and export order.
+The site cards have a fixed width and larger reference previews. Map and line
+channel choices follow the currently selected acquisitions, removing channels
+that none of those acquisitions contain.
+
+Native EBSD OIPX maps expose saved phase IDs, Euler angles in radians, mean
+angular deviation in degrees, band contrast, band slope, band count, error code
+and pattern quality as separate images. Saved IPF/Euler colour maps are displayed
+from their native BGRA bytes; phase-colour indices are stretched to greyscale
+without a decoded native palette. The smaller EBSD scans are separate coarse
+acquisitions, not downsampled pixels from the three full maps, which were checked against
+their H5OINA exports. Workbench does not re-index or clean these fields. Raw
+EBSP patterns and FSD images remain undecoded.
 
 `NativeProjectReader` reads supported OIPX records without deserializing .NET
 objects. Stored spectrum blobs are matched by UUID and label; verified versions
