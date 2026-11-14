@@ -2,9 +2,9 @@
 
 Last updated: 14 November 2026
 
-## AZtec follow-up release — approved 14 November 2026
+## AZtec follow-up release — completed 14 November 2026
 
-The user requested the next version after the line-comparison, native-spectrum, acquisition-selection and EBSD inspection work below. Prepare concise release notes and publish through the manual **Publish Workbench release** workflow, retaining its full analysis/browser and Windows/macOS verification gates. Record the published tag, run and asset checks here after completion.
+The user requested the next version after the line-comparison, native-spectrum, acquisition-selection and EBSD inspection work below. The manual **Publish Workbench release** workflow passed the full analysis/browser suite and Windows/macOS update and launcher gates, then published [v1.0.37](https://github.com/pKai3/tem-workbench/releases/tag/v1.0.37) at `e57febb`. [Release run](https://github.com/pKai3/tem-workbench/actions/runs/43585373253). The downloaded ZIP passed its published SHA-256 checksum (`91cafa6bbe4438aa5d59ef60bfd85b7e3419a060a10b4cb095687438e302e4d2`), archive integrity check and embedded-version check; the uploaded checksum file's digest also matched the release API. No other source files were changed by release preparation.
 
 ## AZtec merge and release — completed 13 November 2026
 
