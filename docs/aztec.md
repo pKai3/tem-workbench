@@ -48,8 +48,9 @@ Native EBSD OIPX maps expose saved phase IDs, Euler angles in radians, mean
 angular deviation in degrees, band contrast, band slope, band count, error code
 and pattern quality as separate images. Saved IPF/Euler colour maps are displayed
 from their native BGRA bytes; phase-colour indices are stretched to greyscale
-without a decoded native palette. The smaller EBSD scans are separate coarse
-acquisitions, not downsampled pixels from the three full maps, which were checked against
+without a decoded native palette. Each full map has a smaller saved preview;
+the preview pixels are not a simple resize and are not treated as independent
+analytical maps. The three full maps were checked against
 their H5OINA exports. Workbench does not re-index or clean these fields. Raw
 EBSP patterns and FSD images remain undecoded.
 
@@ -176,10 +177,11 @@ until exposure, background/deconvolution and covariance are established; see
   before and after opening. This is a stale-file guard, not a content checksum or
   proof of scientific provenance. Catalogue and reader versions are exported.
 
-## EBSD groundwork
+## EBSD inspection and remaining analysis
 
-EBSD-specific interface and analysis are deferred while EDS is developed.
-Existing reader support keeps acquired EBSD arrays and Data Processing results
+The native browser now shows full-map EBSD fields and paired saved previews;
+EBSD processing and re-indexing remain separate future work. H5OINA reader
+support keeps acquired EBSD arrays and Data Processing results
 as separate layers with their own phase definitions. When processed data lacks
 grid dimensions, the catalogue explicitly identifies the acquired EBSD header
 used for geometry. It does not infer cleanliness from filenames or folder names,

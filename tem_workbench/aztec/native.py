@@ -248,6 +248,7 @@ class NativeProjectReader:
                 records[path] = derived
                 descriptors.append(descriptor)
                 groups[raw['site_id']][1].append((derived, descriptor))
+        ebsd_points = {}
         for raw in tuple(records.values()):
             if raw['table'] != 'EbsdMaps' or raw['path'] not in self._attachments:
                 continue
@@ -257,6 +258,31 @@ class NativeProjectReader:
             with Path(source.path).open('rb') as stream:
                 if stream.read(18) != b'OINA.Ebsd.Data=002':
                     continue
+            ebsd_points[raw['path']] = (source.size - 18) // 29
+        ebsd_by_site = {}
+        for raw in records.values():
+            if raw['path'] in ebsd_points:
+                ebsd_by_site.setdefault(raw['site_id'], []).append(raw)
+        preview_of = {}
+        for maps in ebsd_by_site.values():
+            if len(maps) != 2:
+                continue
+            small, full = sorted(maps, key=lambda record: ebsd_points[record['path']])
+            ratio = ebsd_points[full['path']] / ebsd_points[small['path']]
+            if 20 <= ratio <= 30 and small.get('acquisition_id') and full.get('acquisition_id'):
+                preview_of[small['acquisition_id']] = full['acquisition_label']
+        for raw in records.values():
+            if raw['table'] in ('EbsdMaps', 'EbsdMapImages') and raw.get('acquisition_id') in preview_of:
+                raw['ebsd_preview_of'] = preview_of[raw['acquisition_id']]
+        for descriptor in descriptors:
+            raw = records.get(descriptor['path'])
+            if raw and raw.get('ebsd_preview_of'):
+                descriptor['attributes']['Preview of'] = raw['ebsd_preview_of']
+                descriptor['attributes']['Record type'] = ('EBSD preview image' if raw['table'] == 'EbsdMapImages'
+                                                           else 'EBSD preview source')
+        for raw in tuple(records.values()):
+            if raw['path'] not in ebsd_points or raw.get('ebsd_preview_of'):
+                continue
             for field, (label, dtype, _, _, unit) in EBSD_FIELDS.items():
                 path = raw['path'] + '/' + field
                 derived = dict(table='EbsdMaps', id=raw['id'], path=path, Label=label,
@@ -277,14 +303,17 @@ class NativeProjectReader:
             chain = ancestry(ident); specimen = next((r['Label'] for r in chain if r['table'] == 'Samples'), None)
             layers = {}
             for record, descriptor in items:
-                parent = descriptor['attributes'].get('Acquisition', '')
+                parent = record.get('ebsd_preview_of') or descriptor['attributes'].get('Acquisition', '')
                 category = ('Reconstructed Kα1 windows' if record.get('derived') is True else
                             'EBSD fields' if record.get('derived') == 'ebsd' else
+                            'EBSD previews' if record['table'] == 'EbsdMapImages' and record.get('ebsd_preview_of') else
+                            'EBSD preview source' if record['table'] == 'EbsdMaps' and record.get('ebsd_preview_of') else
                             NAMES.get(record['table'], 'Other stored records'))
                 name = (parent + ' / ' if parent else '') + category
                 layer = layers.setdefault(name, dict(path=name, technique=name, state='stored', header={}, signals=[], grid_shape=None, geometry_header=None, notes=[]))
                 layer['signals'].append(descriptor)
-            priority = ['Electron images', 'EBSD display maps', 'EBSD fields', 'EBSD data container',
+            priority = ['Electron images', 'EBSD display maps', 'EBSD fields', 'EBSD previews',
+                        'EBSD data container', 'EBSD preview source',
                         'Raw map data', 'Element maps', 'Raw line data', 'Element profiles',
                         'Reconstructed Kα1 windows', 'Composition profiles', 'Stored spectra', 'Saved composites', 'Saved phase images',
                         'Quantification', 'Quantification results', 'Other stored records']
@@ -298,12 +327,13 @@ class NativeProjectReader:
         if tables.get('SmartLines'):
             notes.append('Native raw line spectra can be inspected. Raw map spectra and arbitrary region extraction are not decoded yet.')
         if tables.get('EbsdMaps'):
-            notes.append('Saved EBSD display maps and phase, Euler, angular-deviation, band and quality fields can be inspected. Raw EBSP patterns and FSD images are not decoded.')
+            notes.append('Saved EBSD display maps and phase, Euler, angular-deviation, band and quality fields can be inspected. Reduced companion maps are previews of the full maps. Raw EBSP patterns and FSD images are not decoded.')
         self._catalogue = dict(source={**asdict(self.source), 'reader': 'native-oipx-1'}, project_id=self.project_id(),
             format_version=project.get('Version'), software_version=None, manufacturer='Oxford Instruments',
             file_type='OIPX', schema_version=1, acquisitions=acquisitions, datasets=descriptors,
             inventory=tables, warnings=[], native_tree=list(nodes.values()),
-            notes=notes)
+            notes=notes, ebsd_map_counts={'full': tables.get('EbsdMaps', 0) - len(preview_of),
+                                          'previews': len(preview_of)})
         return self._catalogue
 
     def site(self, site_id, image_path=None):
@@ -535,6 +565,8 @@ class NativeProjectReader:
                 note = ('Saved EBSD phase indices, stretched to greyscale for visibility; the native colour palette is not decoded.'
                         if phase_index else 'Saved EBSD greyscale display; no cleanup or contrast adjustment.')
                 unit = 'stored index' if phase_index else 'stored intensity'
+            if record.get('ebsd_preview_of'):
+                note = f"Preview of {record['ebsd_preview_of']}. " + note
             return {**base, 'kind': 'image', 'array': values, 'shape': [height, width],
                     'dtype': 'u1', 'unit': unit, 'note': note,
                     'display_raw': kind == 5 or not phase_index}

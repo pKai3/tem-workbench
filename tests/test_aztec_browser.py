@@ -135,6 +135,28 @@ class AztecBrowserTests(unittest.TestCase):
         contrast_pixel=Image.open(BytesIO(base64.b64decode(contrast_image.split(',',1)[1]))).getpixel((0,0))
         self.assertEqual(contrast_pixel,20)
 
+    def test_native_ebsd_preview_is_paired_with_full_map(self):
+        full_id,preview_id,preview_acquisition=(str(uuid.uuid4()) for _ in range(3))
+        with closing(sqlite3.connect(self.path)) as con, con:
+            con.execute('CREATE TABLE EbsdMaps(EntityId TEXT PRIMARY KEY, Label TEXT, Version TEXT, ObjectBlob BLOB)')
+            site_node=con.execute('SELECT Id FROM DataNodes WHERE AssociatedId=?',(self.ids['Analyses'],)).fetchone()[0]
+            full_node=con.execute('SELECT Id FROM DataNodes WHERE AssociatedId=?',(self.ids['MapAcquires'],)).fetchone()[0]
+            preview_node=str(uuid.uuid4())
+            con.execute('INSERT INTO MapAcquires VALUES(?,?,?,?)',(preview_acquisition,'Preview','200.0',b'preview'))
+            con.execute('INSERT INTO DataNodes VALUES(?,?,?,?,?)',(preview_node,site_node,preview_acquisition,1,1))
+            for ident,parent in [(full_id,full_node),(preview_id,preview_node)]:
+                con.execute('INSERT INTO EbsdMaps VALUES(?,?,?,?)',(ident,'EBSD Data','200.0',b'map'))
+                con.execute('INSERT INTO DataNodes VALUES(?,?,?,?,?)',(str(uuid.uuid4()),parent,ident,1,1))
+        for ident,count in [(full_id,100),(preview_id,4)]:
+            (self.root/'data'/f'{ident}.dat').write_bytes(b'OINA.Ebsd.Data=002'+bytes(29*count))
+        catalogue=NativeProjectReader(self.path).inspect()
+        self.assertEqual(catalogue['ebsd_map_counts'],{'full':1,'previews':1})
+        records={d['path']:d for d in catalogue['datasets']}
+        self.assertEqual(records[f'/EbsdMaps/{preview_id}']['attributes']['Preview of'],'Map 1')
+        self.assertEqual(records[f'/EbsdMaps/{preview_id}']['attributes']['Record type'],'EBSD preview source')
+        self.assertIn(f'/EbsdMaps/{full_id}/phase',records)
+        self.assertNotIn(f'/EbsdMaps/{preview_id}/phase',records)
+
     def test_native_inventory_does_not_decode_payloads(self):
         with patch.object(NativeProjectReader,'record_blob',side_effect=AssertionError('eager payload')):
             result=self.browser.open(self.path)
