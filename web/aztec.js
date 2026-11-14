@@ -38,10 +38,40 @@ function siteContents(a){
 }
 function table(entries){const node=el('table',undefined,'eds-metadata-table');const body=el('tbody');for(const [key,value] of entries){const row=el('tr');row.append(el('th',key),el('td',valueText(value)));body.append(row)}node.append(body);return node}
 async function api(action,body){const response=await fetch(`/api/aztec/${action}`,body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body)}:{});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
-const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions,setLineCrop,setLineCursor,setMapCursor,remember});
+const overviewRequests=new Map();
+const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions,setLineCrop,setLineCursor,setMapCursor,remember,projectOverviewStrip});
 function openAnalysis(id,comparison=false,channelTable){clearPreview();analysis.open(id,comparison,channelTable);remember()}
 async function sharedApi(action,body){const response=await fetch(`/api/${action}`,{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
 const folderBrowser=WorkbenchProjectTools.browser(sharedApi);
+let overviewZoom;
+function closeOverviewZoom(){overviewZoom?.remove();overviewZoom=null}
+function showOverviewZoom(image,anchor,label){
+ closeOverviewZoom();
+ const zoom=el('div',undefined,'eds-project-overview-zoom'),copy=el('img');copy.src=image;copy.alt=label;
+ zoom.append(copy,el('span',label));document.body.append(zoom);overviewZoom=zoom;
+ const box=anchor.getBoundingClientRect(),width=zoom.offsetWidth,height=zoom.offsetHeight;
+ zoom.style.left=`${Math.max(8,Math.min(window.innerWidth-width-8,box.right+8))}px`;
+ zoom.style.top=`${Math.max(8,Math.min(window.innerHeight-height-8,box.top))}px`;
+}
+function projectOverviewStrip(path){
+ const strip=el('span',undefined,'eds-project-overviews');
+ if(!overviewRequests.has(path))overviewRequests.set(path,api('project-overviews',{path}).catch(()=>({previews:[]})));
+ overviewRequests.get(path).then(result=>{
+  if(!strip.isConnected)return;
+  for(const preview of result.previews){
+   const tile=el('span',undefined,'eds-project-overview'),image=el('img'),label=`${preview.sample} overview`;
+   image.src=preview.image;image.alt=label;tile.tabIndex=0;tile.setAttribute('role','button');tile.setAttribute('aria-label','Enlarge '+label);tile.append(image,el('span',preview.sample));
+   tile.addEventListener('mouseenter',()=>showOverviewZoom(preview.image,tile,label));
+   tile.addEventListener('mouseleave',()=>{if(document.activeElement!==tile)closeOverviewZoom()});
+   tile.addEventListener('focus',()=>showOverviewZoom(preview.image,tile,label));
+   tile.addEventListener('blur',closeOverviewZoom);
+   tile.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();tile.focus({preventScroll:true});showOverviewZoom(preview.image,tile,label)});
+   tile.addEventListener('keydown',event=>{if(event.key==='Escape'){closeOverviewZoom();tile.blur()}else if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();showOverviewZoom(preview.image,tile,label)}});
+   strip.append(tile);
+  }
+ });
+ return strip;
+}
 const projectSettings=WorkbenchProjectTools.sources({api:sharedApi,getConfig:()=>config,chooseFolder:target=>folderBrowser.choose(target),
  onRename:async data=>{config.sources=data.sources;await updateProjects();await scanFiles()},
  onSave:async data=>{remember();config={...config,...data};await updateProjects();projectSettings.render();await changeProject(project)}});
@@ -54,13 +84,14 @@ function renderFileChoice(){
  const path=state.file?.catalogue.source.path;$('eds-current-file').textContent=path?path.split(/[\\/]/).at(-1):'Choose file…';$('eds-current-file').title=path||'';$('eds-sites-empty').hidden=!!state.file;
 }
 function renderFiles(){
- const host=$('eds-files'),query=$('eds-filter').value.toLowerCase();host.replaceChildren();
+ const host=$('eds-files'),query=$('eds-filter').value.toLowerCase();closeOverviewZoom();host.replaceChildren();
  const matches=state.files.filter(f=>(f.relative_path+' '+f.project).toLowerCase().includes(query));
  $('eds-file-count').textContent=String(state.files.length);
  for(const file of matches){
   const button=el('button',undefined,'eds-entry'),name=el('span',file.name,'eds-file-name');button.type='button';button.append(name);
   const folder=file.relative_path.split(/[\\/]/).slice(0,-1).join(' / '),context=[project?'':file.project,folder].filter(Boolean).join(' / ');
   if(context)button.append(WorkbenchProjectTools.pathText(el('small'),context));button.title=file.path;button.setAttribute('aria-current',String(file.path===state.file?.catalogue.source.path));button.onclick=()=>openFile(file.path);host.append(button);
+  if(file.kind==='OIPX'&&file.project_id)button.append(projectOverviewStrip(file.path));
  }
  if(!matches.length)host.append(el('p',query?'No matching files.':'No supported AZtec files found. Choose another project or check its source folder in Project settings.','hint'));
 }
@@ -85,7 +116,7 @@ async function scanFiles(){
   for(const oldPath of Object.keys(moves))delete sourceIds[oldPath];
   for(const file of listing.files)if(file.kind==='OIPX'&&file.project_id)sourceIds[file.path]=file.project_id;
   WorkbenchWorkspace.writeRaw('tem-aztec-source-ids',JSON.stringify(sourceIds));
-  state.files=project?listing.files.filter(file=>file.source_id===project):listing.files;renderFiles();
+  overviewRequests.clear();state.files=project?listing.files.filter(file=>file.source_id===project):listing.files;renderFiles();
   $('eds-scan-status').textContent=listing.errors.join(' · ');$('eds-scan-status').classList.toggle('eds-warning',!!listing.errors.length);
   const oldPath=state.file?.catalogue.source.path;
   if(oldPath&&moves[oldPath]){const bookmark=WorkbenchWorkspace.bookmark(project,'aztec');state.file=null;await openFile(moves[oldPath],bookmark.dataset,bookmark.acquisition,bookmark.comparison,bookmark.comparisonTable,bookmark)}

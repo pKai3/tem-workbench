@@ -62,6 +62,15 @@ class AztecBrowserTests(unittest.TestCase):
         self.root=Path(temporary.name);self.path=self.root/'Project.oipx';self.ids=native_fixture(self.path)
         self.browser=AztecBrowser()
 
+    def test_project_file_overviews_use_saved_overview_images(self):
+        self.assertEqual(self.browser.project_overviews(self.path)['previews'], [])
+        with closing(sqlite3.connect(self.path)) as con, con:
+            con.execute("UPDATE Analyses SET Label='Overview'")
+        previews=AztecBrowser().project_overviews(self.path)['previews']
+        self.assertEqual(len(previews), 1)
+        self.assertEqual(previews[0]['sample'], 'Specimen A')
+        self.assertTrue(previews[0]['image'].startswith('data:image/png;base64,'))
+
     def test_native_inventory_does_not_decode_payloads(self):
         with patch.object(NativeProjectReader,'record_blob',side_effect=AssertionError('eager payload')):
             result=self.browser.open(self.path)

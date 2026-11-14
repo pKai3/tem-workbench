@@ -154,6 +154,34 @@ class AztecBrowser:
         LOG.info('AZtec comparison source: %s', compact(str(reader.path)))
         return catalogue
 
+    def project_overviews(self, path):
+        """Load only saved Overview electron images for a file-list preview."""
+        reader = self.comparison_reader(path)
+        previews = []
+        for acquisition in reader.inspect()['acquisitions']:
+            if acquisition['site'].casefold() != 'overview':
+                continue
+            image_path = next((signal['path'] for layer in acquisition['layers']
+                               for signal in layer['signals']
+                               if signal['path'].startswith('/ElectronImages/')), None)
+            if not image_path:
+                continue
+            values = reader.preview(image_path)['array'].astype(float)
+            finite = values[np.isfinite(values)]
+            if not finite.size:
+                continue
+            low, high = np.percentile(finite, [1, 99])
+            shade = np.uint8(np.clip((values - low) / (high - low or 1), 0, 1) * 255)
+            image = Image.fromarray(shade)
+            factor = min(240 / image.width, 180 / image.height)
+            image = image.resize((max(1, round(image.width * factor)),
+                                  max(1, round(image.height * factor))), Image.Resampling.BILINEAR)
+            output = BytesIO()
+            image.save(output, format='PNG')
+            previews.append({'sample': acquisition.get('specimen') or acquisition['label'],
+                             'image': 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode()})
+        return {'previews': previews}
+
     def comparison_thumbnail(self, path, acquisition, kind):
         """Small registered electron image with the selected map or line marked."""
         if kind not in ('map', 'line'):
@@ -176,7 +204,7 @@ class AztecBrowser:
         low, high = np.percentile(finite, [1, 99])
         shade = np.uint8(np.clip((values - low) / (high - low or 1), 0, 1) * 255)
         image = Image.fromarray(shade).convert('RGBA')
-        factor = min(128 / image.width, 112 / image.height)
+        factor = min(320 / image.width, 280 / image.height)
         image = image.resize((max(1, round(image.width * factor)),
                               max(1, round(image.height * factor))), Image.Resampling.BILINEAR)
         scale_x, scale_y = image.width / values.shape[1], image.height / values.shape[0]

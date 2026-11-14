@@ -14,6 +14,9 @@ selected project's source folder and subfolders, listing supported OIPX and
 H5OINA files together. Search filters filenames and subfolder names; Rescan files
 refreshes the list. All projects combines the configured sources. Project settings
 uses the same source/output editor and folder picker as the diffraction viewer.
+Native project entries in the Files list and comparison Project files selector
+show saved Overview electron images for each sample; hover, focus or tap a
+thumbnail to see it larger. These images load after file discovery.
 The diffraction
 image collection excludes those acquisition folders and their raster exports;
 native DM4 images in mixed folders remain available.
@@ -31,10 +34,11 @@ without replacing settings already on disk. Browser storage is a local cache,
 so clearing it does not delete the disk workspace. Include this JSON with your
 configuration backups. Research inputs are never changed. Comparisons can use
 acquisitions from different native AZtec project files.
-The comparison Acquisitions disclosure shows small registered reference-image
-previews with the selected map or line marked. Move earlier/later in its
-display-order list to change row, overlay-reference and export order; saved
-comparisons retain that order.
+The comparison Acquisitions disclosure groups choices by project file, sample
+and site. Small registered reference-image previews mark the map or line and
+enlarge on hover, focus or tap. Below the choices, each selected card combines
+its export label with Move earlier/later controls; saved comparisons retain
+the resulting row, overlay-reference and export order.
 
 `NativeProjectReader` reads supported OIPX records without deserializing .NET
 objects. Stored spectrum blobs are matched by UUID and label; verified versions

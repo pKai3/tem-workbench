@@ -99,7 +99,7 @@ class AztecGeometryTests(unittest.TestCase):
         for kind in ('map','line'):
             result=browser.comparison_thumbnail(self.path,self.ids['MapAcquires'],kind)
             image=Image.open(BytesIO(base64.b64decode(result['image'].split(',',1)[1])))
-            self.assertLessEqual(max(image.size),128)
+            self.assertLessEqual(max(image.size),320)
             pixels=np.asarray(image)
             self.assertTrue(np.any(pixels[...,0]>pixels[...,1]))
             images.append(pixels)
