@@ -109,7 +109,6 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  const itemKey=id=>current?.comparison?'compare:'+id:projectKey()+':'+id;
  const acquisitionRequest=(context,ids=context.ids)=>context.comparison?{targets:ids.map(target)}:{acquisitions:ids};
  const fileName=path=>path.split(/[\\/]/).pop();
- const lineDisplayLabel=label=>{const shared=label.match(/^([A-Z][a-z]?)\s+(\S+)\s*\/\s*([A-Z][a-z]?)\s+\2$/u);return shared?`${shared[1]} / ${shared[3]} ${shared[2]}`:label};
  const channelNamesFor=all=>[...new Set(all.flatMap(g=>g.signals))].sort((a,b)=>{const order=['Ti','V','Fe','Al'],rank=x=>{const n=order.indexOf(x.split(' ')[0]);return n<0?99:n};return rank(a)-rank(b)||a.localeCompare(b)});
  function persist(){
   if(current){preferences[current.preferenceKey]={...current.options};selections[current.preferenceKey]={ids:[...current.ids],signals:[...current.signals],files:[...(current.files||[])]}}
@@ -503,7 +502,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     rows.forEach((r,i)=>{r.compareColour=colours[i%colours.length];lineReference(refs,r,r.compareColour)});
     const byQuantity=new Map();for(const row of rows)for(const tile of row.tiles.filter(t=>!t.error)){const key=tile.quantityKey+row.distance_unit;if(!byQuantity.has(key))byQuantity.set(key,{tiles:[],row});byQuantity.get(key).tiles.push({...tile,label:row.short_label||row.label,source:row.label,colour:row.compareColour})}
     for(const {tiles,row} of byQuantity.values()){
-     const section=el('section',undefined,'eds-compare-line-section eds-overlay-scan-section');section.append(el('h3',lineDisplayLabel(row.tiles.find(t=>t.quantityKey===tiles[0].quantityKey).label)));plots.append(section);
+     const section=el('section',undefined,'eds-compare-line-section eds-overlay-scan-section');section.append(el('h3',row.tiles.find(t=>t.quantityKey===tiles[0].quantityKey).label));plots.append(section);
      linePlots(section,{...row,background:null,overlay:true,axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.scale_scope!=='off'?ranges:null,tiles},result,structureBody,section.querySelector('h3').textContent);
      const caption=section.querySelector('.eds-line-caption');if(caption)caption.prepend(el('span',section.querySelector('h3').textContent,'eds-line-quantity'));
     }
@@ -884,7 +883,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const panels=overlay?[row.tiles]:row.tiles.map(t=>[t]);
   panels.forEach((tiles,index)=>{
    const figure=el('figure',undefined,'eds-line-tile');stack.append(figure);
-   const caption=el('figcaption',undefined,'eds-line-caption');for(const tile of tiles){const sourceRow=current.comparison&&display.layout==='overlay'?result.rows.find(r=>r.acquisition===tile.acquisition):null,label=el('span',sourceRow?exportLabel(sourceRow):lineDisplayLabel(tile.label));label.style.color=tile.colour;label.title=tile.source||tile.label;if(sourceRow)label.dataset.acquisition=tile.acquisition;caption.append(label)}figure.append(caption);
+   const caption=el('figcaption',undefined,'eds-line-caption');for(const tile of tiles){const sourceRow=current.comparison&&display.layout==='overlay'?result.rows.find(r=>r.acquisition===tile.acquisition):null,label=el('span',sourceRow?exportLabel(sourceRow):tile.label);label.style.color=tile.colour;label.title=tile.source||tile.label;if(sourceRow)label.dataset.acquisition=tile.acquisition;caption.append(label)}figure.append(caption);
    const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('role','img');svg.setAttribute('aria-label',`${tiles.map(t=>t.label).join(', ')} over centred scan image`);figure.append(svg);
    const metric=normalized?`${normalLabel} = 1`:tiles[0].unit;figure.dataset.metric=current.comparison?metric:'';
    if(current.comparison){const note=el('span',metric,'eds-line-metric');note.title=normalized?`${normalLabel} = 1 on the scan path`:metric;figure.append(note)}
