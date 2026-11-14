@@ -161,15 +161,15 @@ class AztecBrowser:
         value = reader.inspect()
         return value if isinstance(value, dict) else value.to_dict()
 
-    def preview(self, key, path, row=0, unsigned=False):
+    def preview(self, key, path, row=0, unsigned=False, energy_low=None, energy_high=None):
         with self._lock:
             reader = self._readers.get(key)
             if reader is None:
                 raise AztecReadError('Reopen the file to inspect its contents.')
             self._readers.move_to_end(key)
-        LOG.info('AZtec preview: %s · %s · row=%s · unsigned=%s', compact(str(reader.path)), compact(path), row, unsigned)
+        LOG.info('AZtec preview: %s · %s · row=%s · unsigned=%s · energy=%s–%s keV', compact(str(reader.path)), compact(path), row, unsigned, energy_low, energy_high)
         if isinstance(reader, NativeProjectReader):
-            result = reader.preview(path)
+            result = reader.preview(path, energy_low=energy_low, energy_high=energy_high)
             if result['kind'] == 'image':
                 values = result.pop('array')
                 finite = values[np.isfinite(values)]
@@ -183,6 +183,15 @@ class AztecBrowser:
                 result.update(image='data:image/png;base64,'+base64.b64encode(output.getvalue()).decode(),
                               grid=values.shape, minimum=low, maximum=high, sample=numeric(values[:2, :8]))
             elif result['kind'] == 'plot':
+                spectra = result.pop('spectrum_array', None)
+                if spectra is not None:
+                    contrast = np.log1p(spectra.astype(np.float32))
+                    occupied = contrast[contrast > 0]
+                    ceiling = float(np.percentile(occupied, 99)) if occupied.size else 1.
+                    heatmap = Image.fromarray(np.uint8(np.clip(contrast.T[::-1] / max(ceiling, 1e-6), 0, 1)*255))
+                    heatmap.thumbnail((1000, 600), Image.Resampling.BOX)
+                    output = BytesIO(); heatmap.save(output, format='PNG')
+                    result['spectrum_image'] = 'data:image/png;base64,'+base64.b64encode(output.getvalue()).decode()
                 result['y'] = numeric(result['y'])
             return result
         catalogue = reader.inspect()

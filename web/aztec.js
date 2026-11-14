@@ -119,7 +119,7 @@ function renderAcquisition(index){
  const a=state.acquisition,c=state.file.catalogue;$('eds-context').textContent=[a?.project,a?.specimen,a?.site===a?.label?null:a?.site].filter(Boolean).join(' / ');$('eds-title').textContent=a?.label||'File contents';
  const notes=[...(c.notes||[]),...c.warnings];$('eds-warnings').textContent=notes.join(' ');$('eds-warnings').hidden=!notes.length;
  const root=$('eds-contents');root.replaceChildren();clearPreview();$('eds-metadata').open=false;$('eds-metadata-body').replaceChildren();
- const native=c.file_type==='OIPX',previewable=d=>!isSavedPreview(d)&&/^\/(ElectronImages|XrayMapImages|XrayLinescans|QuantLinescans|EDXSpectra)\//.test(d.path);
+ const native=c.file_type==='OIPX',previewable=d=>!isSavedPreview(d)&&/^\/(ElectronImages|XrayMapImages|XrayLinescans|QuantLinescans|SmartLines|EDXSpectra)\//.test(d.path);
  const layers=(a?.layers||[]).flatMap(l=>{const previews=l.signals.filter(isSavedPreview);return previews.length?[{...l,signals:l.signals.filter(d=>!isSavedPreview(d))},{...l,path:'Saved preview spectra',technique:'Saved preview spectra',signals:previews}]:[l]});if(native)layers.sort((x,y)=>Number(!x.signals.some(previewable))-Number(!y.signals.some(previewable)));
  const channelsByAcquisition=new Set(layers.flatMap(l=>l.signals).filter(d=>/^\/(XrayMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)).map(d=>d.attributes['Acquisition ID']));
  const sums=new Map(layers.flatMap(l=>l.signals).filter(d=>d.path.startsWith('/EDXSpectra/')&&/^(Line|Map) Sum Spectrum$/i.test(d.attributes.Label||'')&&channelsByAcquisition.has(d.attributes['Acquisition ID'])).map(d=>[d.attributes['Acquisition ID'],d]));
@@ -153,11 +153,11 @@ function renderAcquisition(index){
 }
 function clearPreview(){
  analysis.close();
- $('eds-dataset-title').textContent='Select an item to inspect';$('eds-dataset-info').textContent='';$('eds-preview').replaceChildren();$('eds-preview-note').textContent='';$('eds-preview-tools').hidden=true;$('eds-dataset-details').hidden=true;$('eds-preview-error').hidden=true;$('eds-preview-busy').hidden=true;
+ $('eds-dataset-title').textContent='Select an item to inspect';$('eds-dataset-info').textContent='';$('eds-preview').replaceChildren();$('eds-preview').classList.remove('eds-raw-line-preview');$('eds-preview-note').textContent='';$('eds-preview-tools').hidden=true;$('eds-dataset-details').hidden=true;$('eds-preview-error').hidden=true;$('eds-preview-busy').hidden=true;
 }
 function selectDataset(d){
- if(/^\/(SmartLines|SmartMaps)\//.test(d.path)&&analysis.groups().some(g=>g.id===d.attributes['Acquisition ID'])){openAnalysis(d.attributes['Acquisition ID']);return}
- state.dataset=d;clearPreview();const label=d.attributes.Label||d.path.split('/').at(-1);$('eds-dataset-title').textContent=d.path.startsWith('/EDXSpectra/')?pointLabel(label):label;$('eds-dataset-info').textContent=state.file.catalogue.file_type==='OIPX'?d.attributes['Record type'].replace(/Stored spectra/g,'Points'):`${dimensions(d.shape)} · ${d.dtype}${d.attributes.Unit?` · ${d.attributes.Unit}`:''}`;$('eds-dataset-path').textContent=d.path;$('eds-attributes').replaceChildren(table(Object.entries({Storage:d.storage,...d.attributes})));$('eds-sample').replaceChildren();$('eds-dataset-details').hidden=false;$('eds-dataset-details').open=false;$('eds-row').value=1;$('eds-unsigned').checked=false;
+ if(d.path.startsWith('/SmartMaps/')&&analysis.groups().some(g=>g.id===d.attributes['Acquisition ID'])){openAnalysis(d.attributes['Acquisition ID']);return}
+ state.dataset=d;clearPreview();const label=d.attributes.Label||d.path.split('/').at(-1);$('eds-dataset-title').textContent=d.path.startsWith('/EDXSpectra/')?pointLabel(label):label;$('eds-dataset-info').textContent=state.file.catalogue.file_type==='OIPX'?d.attributes['Record type'].replace(/Stored spectra/g,'Points'):`${dimensions(d.shape)} · ${d.dtype}${d.attributes.Unit?` · ${d.attributes.Unit}`:''}`;$('eds-dataset-path').textContent=d.path;$('eds-attributes').replaceChildren(table(Object.entries({Storage:d.storage,...d.attributes})));$('eds-sample').replaceChildren();$('eds-dataset-details').hidden=false;$('eds-dataset-details').open=false;$('eds-row').value=1;$('eds-unsigned').checked=false;$('eds-energy-low').value='';$('eds-energy-high').value='';
  highlightRegions();
  remember();preview();
 }
@@ -240,9 +240,11 @@ function drawSite(site){
 }
 async function preview(){
  if(!state.dataset)return;const version=++state.previewVersion;const d=state.dataset;$('eds-preview-busy').hidden=false;$('eds-preview-error').hidden=true;$('eds-preview').replaceChildren();$('eds-preview-note').textContent='';
- try{const result=await api('preview',{id:state.file.id,dataset:d.path,row:Number($('eds-row').value)-1,unsigned:$('eds-unsigned').checked});if(version!==state.previewVersion)return;
-  $('eds-row-label').hidden=!result.rows;$('eds-row').max=result.rows||1;$('eds-unsigned-label').hidden=!result.unsigned_available;$('eds-preview-tools').hidden=!result.rows&&!result.unsigned_available;
-  if(result.shape)$('eds-dataset-info').textContent=result.total_counts!==undefined?`${dimensions(result.shape)} channels · ${result.total_counts.toLocaleString()} counts · ${number(result.channel_width_ev)} eV/channel`:`${dimensions(result.shape)}${result.shape.length===1?' samples':''}${result.unit?' · '+result.unit:''}`;const root=$('eds-preview');if(result.kind==='image'){const img=el('img');img.src=result.image;img.alt=`Stored preview of ${d.path}`;root.append(img)}else if(result.kind==='plot'){drawPlot(root,result)}else if(result.sample!==undefined||result.value!==undefined){root.append(table([['Stored values',result.sample??result.value]]))}else root.append(el('p',result.note,'hint'));
+ try{const rawLine=d.path.startsWith('/SmartLines/'),low=$('eds-energy-low').value,high=$('eds-energy-high').value,result=await api('preview',{id:state.file.id,dataset:d.path,row:Number($('eds-row').value)-1,unsigned:$('eds-unsigned').checked,...(rawLine?{energy_low:low===''?null:Number(low),energy_high:high===''?null:Number(high)}:{})});if(version!==state.previewVersion)return;
+  $('eds-row-label').hidden=!result.rows;$('eds-row').max=result.rows||1;$('eds-unsigned-label').hidden=!result.unsigned_available;
+  for(const [id,value] of [['eds-energy-low',result.energy_window?.low],['eds-energy-high',result.energy_window?.high]])if(value!==undefined&&!$(id).value)$(id).value=String(value);
+  $('eds-energy-low-label').hidden=$('eds-energy-high-label').hidden=!result.energy_window;$('eds-preview-tools').hidden=!result.rows&&!result.unsigned_available&&!result.energy_window;
+  if(result.shape)$('eds-dataset-info').textContent=result.total_counts!==undefined?`${dimensions(result.shape)} channels · ${result.total_counts.toLocaleString()} counts · ${number(result.channel_width_ev)} eV/channel`:`${dimensions(result.shape)}${result.shape.length===1?' samples':''}${result.unit?' · '+result.unit:''}`;const root=$('eds-preview');root.classList.toggle('eds-raw-line-preview',!!result.spectrum_image);if(result.kind==='image'){const img=el('img');img.src=result.image;img.alt=`Stored preview of ${d.path}`;root.append(img)}else if(result.kind==='plot'){drawPlot(root,result);if(result.spectrum_image){const figure=el('figure',undefined,'eds-spectrum-heatmap'),img=el('img');img.src=result.spectrum_image;img.alt='Raw spectrum counts by scan position and energy';figure.append(img,el('figcaption',`Raw counts · scan 1–${result.x.length} across · energy ${number(result.energy_window.minimum)}–${number(result.energy_window.maximum)} keV upward · log brightness`,'hint'));root.append(figure)}}else if(result.sample!==undefined||result.value!==undefined){root.append(table([['Stored values',result.sample??result.value]]))}else root.append(el('p',result.note,'hint'));
   $('eds-preview-note').textContent=result.kind==='metadata'?'':result.note+(result.minimum!==undefined?` Range ${number(result.minimum)}–${number(result.maximum)}${result.unit?' '+result.unit:''}.`:'');
   $('eds-sample').replaceChildren();if(result.kind==='image'&&result.sample!==undefined){$('eds-sample').append(el('h3','First stored rows'),table([['Original values',result.sample]]))}
  }catch(error){if(version===state.previewVersion){$('eds-preview-error').textContent=error.message;$('eds-preview-error').hidden=false}}finally{if(version===state.previewVersion)$('eds-preview-busy').hidden=true}
@@ -268,6 +270,8 @@ $('eds-rescan').onclick=scanFiles;
 $('eds-filter').oninput=renderFiles;
 $('eds-row').onchange=preview;
 $('eds-unsigned').onchange=preview;
+$('eds-energy-low').onchange=preview;
+$('eds-energy-high').onchange=preview;
 $('eds-metadata').ontoggle=()=>{if($('eds-metadata').open)metadata()};
 $('eds-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('eds-project-dialog'));
 $('eds-project-close').onclick=()=>$('eds-project-dialog').close();

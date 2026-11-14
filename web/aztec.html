@@ -26,7 +26,7 @@
       <div class="panel-head"><h3 id="eds-dataset-title">Select an item to inspect</h3></div>
       <p id="eds-dataset-info" class="hint"></p>
       <div id="eds-analysis-tools" hidden></div>
-      <div id="eds-preview-tools" class="row" hidden><label id="eds-row-label" hidden>Spectrum row<input id="eds-row" type="number" min="1" value="1" step="1"></label><label id="eds-unsigned-label" class="check" hidden><input id="eds-unsigned" type="checkbox">Unsigned 16-bit display<span title="Reinterpret the signed 16-bit pixel bit patterns as unsigned for this preview. Original values remain unchanged.">ⓘ</span></label></div>
+      <div id="eds-preview-tools" class="row" hidden><label id="eds-row-label" hidden>Spectrum row<input id="eds-row" type="number" min="1" value="1" step="1"></label><label id="eds-unsigned-label" class="check" hidden><input id="eds-unsigned" type="checkbox">Unsigned 16-bit display<span title="Reinterpret the signed 16-bit pixel bit patterns as unsigned for this preview. Original values remain unchanged.">ⓘ</span></label><label id="eds-energy-low-label" hidden>Energy from, keV<input id="eds-energy-low" type="number" step="0.01" aria-label="Energy window start in keV"></label><label id="eds-energy-high-label" hidden>To, keV<input id="eds-energy-high" type="number" step="0.01" aria-label="Energy window end in keV"></label></div>
       <p id="eds-preview-error" role="alert" hidden></p>
       <div class="eds-view-stage"><div id="eds-preview" class="eds-preview"></div>
       <div id="eds-analysis-views" hidden></div><span id="eds-preview-busy" class="eds-image-loading" role="status" aria-label="Updating preview" hidden><span class="eds-loading-ring" aria-hidden="true"></span></span></div>

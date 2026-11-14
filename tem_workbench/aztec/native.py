@@ -228,7 +228,7 @@ class NativeProjectReader:
             format_version=project.get('Version'), software_version=None, manufacturer='Oxford Instruments',
             file_type='OIPX', schema_version=1, acquisitions=acquisitions, datasets=descriptors,
             inventory=tables, warnings=[], native_tree=list(nodes.values()),
-            notes=['Raw map/line spectral storage is listed. Region spectrum extraction is not decoded yet.'])
+            notes=['Native raw line spectra can be inspected. Raw map spectra and arbitrary region extraction are not decoded yet.'])
         return self._catalogue
 
     def site(self, site_id, image_path=None):
@@ -248,13 +248,87 @@ class NativeProjectReader:
                 raise AztecReadError('No native payload is available for this item.')
             return row[0]
 
-    def preview(self, path):
+    def raw_line_spectra(self, path):
+        """Read the native raw spectra and per-position acquisition times for a SmartLine."""
+        from .native_tiles import decode_spectra
+        self.inspect()
+        record = self._records.get(path)
+        if record is None or record['table'] != 'SmartLines' or not record['acquisition_id']:
+            raise AztecReadError('Choose a native raw line acquisition.')
+        groups = [r for r in self._records.values() if r['table'] == 'FileGroups'
+                  and r['acquisition_id'] == record['acquisition_id']]
+        if len(groups) != 1:
+            raise AztecReadError('The raw line has no unique companion-file group.')
+        names = set(re.findall(rb'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}(?:live|real)?\.dat',
+                               self.record_blob(groups[0]).lower()))
+        live_name = (record['id'] + 'live.dat').encode()
+        real_name = (record['id'] + 'real.dat').encode()
+        tiles = names - {live_name, real_name}
+        if live_name not in names or real_name not in names or len(tiles) != 1:
+            raise AztecReadError('The raw line has no supported spectrum tile and time files.')
+
+        def companion(name):
+            file = self.path.parent / 'data' / name.decode('ascii')
+            if file.is_symlink() or file.parent.is_symlink() or not file.is_file():
+                raise AztecReadError('The native line companion file is unavailable or linked.')
+            before = _source(file)
+            if not 0 < before.size <= MAX_READ_BYTES:
+                raise AztecReadError('The native line companion file exceeds the read limit.')
+            data = file.read_bytes()
+            if _source(file) != before:
+                raise SourceChangedError('Native line companion changed while reading; reopen the project.')
+            return data
+
+        live_bytes, real_bytes = companion(live_name), companion(real_name)
+        if len(live_bytes) != len(real_bytes) or len(live_bytes) % 4 or not live_bytes:
+            raise AztecReadError('Native line timing arrays have inconsistent lengths.')
+        live = np.frombuffer(live_bytes, dtype='<f4').copy()
+        real = np.frombuffer(real_bytes, dtype='<f4').copy()
+        if not np.isfinite(live).all() or not np.isfinite(real).all() or np.any(live <= 0) or np.any(real <= 0):
+            raise AztecReadError('Native line acquisition times are invalid.')
+        spectra = decode_spectra(companion(next(iter(tiles))), len(live))
+        self.unchanged()
+        return {'spectra': spectra, 'live_time': live, 'real_time': real}
+
+    def preview(self, path, *, energy_low=None, energy_high=None):
         self.inspect()
         record = self._records.get(path)
         if record is None:
             raise AztecReadError('Choose an item in this project.')
         base = {'path': path, 'kind': 'metadata', 'note': 'Stored record identified. Numerical preview is not decoded for this record type yet.'}
         table = record['table']
+        if table == 'SmartLines':
+            raw = self.raw_line_spectra(path)
+            sums = [r for r in self._records.values() if r['table'] == 'EDXSpectra'
+                    and r['acquisition_id'] == record['acquisition_id']
+                    and r['Label'] == 'Line Sum Spectrum']
+            if len(sums) != 1:
+                raise AztecReadError('The raw line has no unique calibrated sum spectrum.')
+            summed = self.preview(sums[0]['path'])
+            energy = np.asarray(summed['x'], dtype=float)
+            spectra = raw['spectra']
+            if (len(energy) != spectra.shape[1] or not np.all(np.diff(energy) > 0)
+                    or not np.array_equal(spectra.sum(axis=0), summed['y'])):
+                raise AztecReadError('The native line spectra do not match the calibrated sum spectrum.')
+            try:
+                low = float(energy[0]) if energy_low is None else float(energy_low)
+                high = float(energy[-1]) if energy_high is None else float(energy_high)
+            except (ValueError, TypeError) as error:
+                raise AztecReadError('Choose numeric energy-window bounds in keV.') from error
+            if (not np.isfinite([low, high]).all() or low < energy[0] or high > energy[-1]
+                    or low >= high):
+                raise AztecReadError('Choose an energy window within the calibrated spectrum.')
+            selected = (energy >= low) & (energy <= high)
+            if not selected.any():
+                raise AztecReadError('The energy window contains no recorded channels.')
+            cps = spectra[:, selected].sum(axis=1) / raw['live_time']
+            return {**base, 'kind': 'plot', 'x': list(range(1, len(cps)+1)), 'y': cps,
+                    'shape': [len(cps)], 'dtype': '<f8', 'unit': 'cps',
+                    'x_label': 'Raw scan position', 'y_label': 'Window counts/s',
+                    'energy_window': {'low': low, 'high': high, 'minimum': float(energy[0]),
+                                      'maximum': float(energy[-1])},
+                    'spectrum_array': spectra,
+                    'note': 'Native raw spectra; counts divided by each position’s live time. The energy window includes background and overlapping peaks. No element fitting, background subtraction or spatial rebinning.'}
         if table not in ('XrayLinescans', 'QuantLinescans', 'ElectronImages', 'XrayMapImages', 'EDXSpectra'):
             return base
         data = self.record_blob(record)

@@ -991,7 +991,7 @@ def make_handler(app):
                 elif self.path == '/api/aztec/comparison-catalogue':
                     self.send(app.aztec.comparison_catalogue(body['path']))
                 elif self.path == '/api/aztec/preview':
-                    self.send(app.aztec.preview(body['id'], body['dataset'], body.get('row', 0), body.get('unsigned', False)))
+                    self.send(app.aztec.preview(body['id'], body['dataset'], body.get('row', 0), body.get('unsigned', False), body.get('energy_low'), body.get('energy_high')))
                 elif self.path == '/api/aztec/site':
                     self.send(app.aztec.site(body['id'], body['site'], body.get('image')))
                 elif self.path == '/api/aztec/process':
@@ -1190,7 +1190,7 @@ def log_runtime_info():
     LOG.info('Platform: %s %s; architecture: %s; logical CPUs: %s; PID: %s',
              platform.system(), platform.release(), platform.machine(), os.cpu_count(), os.getpid())
     versions = []
-    for package in ('numpy', 'scipy', 'Pillow', 'h5py', 'ncempy'):
+    for package in ('numpy', 'scipy', 'Pillow', 'h5py', 'ncempy', 'lzokay'):
         try:
             version = metadata.version(package)
         except metadata.PackageNotFoundError:
