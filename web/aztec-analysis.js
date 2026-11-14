@@ -646,7 +646,23 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const reference=referenceRoot.querySelector('.eds-line-reference'),plot=plots.querySelector('.eds-line-tile svg');if(!reference||!plot)return;
   const stage=reference.querySelector('.eds-line-reference-stage');
   const body=referenceRoot.parentElement;
-  const align=()=>{if(!reference.isConnected)return;const crop=linePlotCropRect(plot),width=fitLineReferenceStage(stage,crop.height,Math.min(320,body.getBoundingClientRect().width*.42));body.style.gridTemplateColumns=`${width}px minmax(0,1fr)`;redrawLinePlots(plots);reference.style.marginTop=Math.max(0,linePlotCropRect(plot).top-plots.getBoundingClientRect().top)+'px'};
+  const align=()=>{
+   if(!reference.isConnected)return;
+   const plotSvgs=[...plots.querySelectorAll('.eds-line-tile svg')],count=plotSvgs.length;
+   const bodyWidth=body.getBoundingClientRect().width,view=stage.querySelector('.eds-reference-drawing').viewBox.baseVal,aspect=view.width/view.height;
+   const initialFirst=linePlotCropRect(plotSvgs[0]),initialLast=linePlotCropRect(plotSvgs.at(-1));
+   const initialHeight=initialLast.top+initialLast.height-initialFirst.top;
+   const maxWidth=Math.min(560,Math.max(220*aspect,bodyWidth*.55));
+   const desiredHeight=Math.min(maxWidth/aspect,Math.max(220,initialHeight,(bodyWidth-50)/(aspect+5.5/count)));
+   const plotHeight=Math.max(80,Math.round((desiredHeight+25)/count));
+   for(const svg of plotSvgs)svg.style.height=plotHeight+'px';
+   redrawLinePlots(plots);
+   const first=linePlotCropRect(plotSvgs[0]),last=linePlotCropRect(plotSvgs.at(-1));
+   const referenceHeight=last.top+last.height-first.top;
+   const width=fitLineReferenceStage(stage,referenceHeight,maxWidth);
+   body.style.gridTemplateColumns=`${width}px minmax(0,1fr)`;redrawLinePlots(plots);
+   reference.style.marginTop=Math.max(0,linePlotCropRect(plot).top-plots.getBoundingClientRect().top)+'px';
+  };
   const observer=new ResizeObserver(align);observer.observe(plot);plotObservers.push(observer);align();
  }
  function linePlotCropRect(plot){
@@ -654,7 +670,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   return {top:box.top+(Number(plot.dataset.cropTop)||0)*scale,height:(Number(plot.dataset.cropHeight)||view.height)*scale};
  }
  function redrawLinePlots(root){
-  for(const plot of root.querySelectorAll('.eds-line-tile svg'))if(plot.redraw&&Math.abs(plot.viewBox.baseVal.width-plot.clientWidth)>1)plot.redraw();
+  for(const plot of root.querySelectorAll('.eds-line-tile svg'))if(plot.redraw&&(Math.abs(plot.viewBox.baseVal.width-plot.clientWidth)>1||Math.abs(plot.viewBox.baseVal.height-plot.clientHeight)>1))plot.redraw();
  }
  function fitLineReferenceStage(stage,height,maxWidth){
   const svg=stage.querySelector('.eds-reference-drawing'),label=stage.querySelector('.eds-line-reference-label');if(!svg||!label)return 0;
@@ -663,10 +679,10 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   label.style.left=(box.width-imageWidth)/2+5+'px';label.style.top=(box.height-view.height*scale)/2+5+'px';label.style.maxWidth=Math.max(30,imageWidth-10)+'px';return width;
  }
  function alignOverlayReferences(references,plots){
-  const plot=plots.querySelector('.eds-line-tile svg'),stages=[...references.querySelectorAll('.eds-line-reference-stage')];if(!plot||!stages.length)return;
+  const stages=[...references.querySelectorAll('.eds-line-reference-stage')];if(!stages.length)return;
   const body=references.parentElement;
-  const align=()=>{if(!references.isConnected)return;const crop=linePlotCropRect(plot),maxWidth=Math.min(320,body.getBoundingClientRect().width*.42),width=Math.max(...stages.map(stage=>fitLineReferenceStage(stage,crop.height,maxWidth)));body.style.gridTemplateColumns=`${width}px minmax(0,1fr)`;redrawLinePlots(plots);references.style.paddingTop=Math.max(0,linePlotCropRect(plot).top-plots.getBoundingClientRect().top)+'px'};
-  const observer=new ResizeObserver(align);observer.observe(plot);plotObservers.push(observer);align();
+  const align=()=>{if(!references.isConnected||references.hidden)return;for(const stage of stages){const view=stage.querySelector('.eds-reference-drawing').viewBox.baseVal;fitLineReferenceStage(stage,220,Math.min(references.clientWidth,220*view.width/view.height))}redrawLinePlots(plots)};
+  const observer=new ResizeObserver(align);observer.observe(references);plotObservers.push(observer);align();
  }
 
  function mapLabel(cell,text,row){

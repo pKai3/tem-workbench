@@ -97,10 +97,16 @@ window.aztecExport=(()=>{
  const lineWidth=1400,linePad=8,columnGap=6,rowGap=0;
  const plotHeight=(figure,width)=>Math.max(105,Math.round(width*figure.image.height/Math.max(1,figure.image.width)));
  const plotCrop=(figure,width)=>{const height=plotHeight(figure,width);return {top:height*figure.cropTop,height:height*figure.cropHeight}};
- function lineColumns(captured,comparison){
+ function stackedCrop(figures,width){
+  let y=0,top=0,bottom=0;
+  for(const [index,figure] of figures.entries()){const crop=plotCrop(figure,width);if(!index)top=crop.top;bottom=y+crop.top+crop.height;y+=plotHeight(figure,width)+rowGap}
+  return {top,height:bottom-top};
+ }
+ function lineColumns(captured,comparison,onlyAcquisition){
   if(!comparison)return {referenceWidth:0,plotWidth:lineWidth-linePad*2,panelInset:0};
-  const figure=captured.groups[0].figures[0],aspects=[...captured.references.values()].map(ref=>ref.width/ref.height),aspect=aspects.length?Math.max(...aspects):1;
-  const ratio=figure.cropHeight*figure.image.height/Math.max(1,figure.image.width)*aspect;
+  const groups=onlyAcquisition?captured.groups.filter(group=>group.acquisition===onlyAcquisition):captured.groups;
+  const figure=groups[0].figures[0],aspects=[...captured.references.values()].map(ref=>ref.width/ref.height),aspect=aspects.length?Math.max(...aspects):1;
+  const ratio=Math.max(...groups.map(group=>stackedCrop(group.figures,group.figures[0].image.width).height/group.figures[0].image.width*aspect));
   const widths=inset=>{const usable=lineWidth-linePad*2-inset*2-columnGap,referenceWidth=Math.max(120,Math.min(usable*.6,Math.round(usable*ratio/(1+ratio))));return {referenceWidth,plotWidth:usable-referenceWidth}};
   let panelInset=4;
   for(let i=0;i<3;i++)panelInset=Math.max(4,Math.round(plotCrop(figure,widths(panelInset).plotWidth).top));
@@ -121,26 +127,37 @@ window.aztecExport=(()=>{
   return height;
  }
  async function lines({snapshot,root,names,result,options,comparison,onlyAcquisition}){
-  const captured=snapshot||captureLines({root,names,result,options,comparison}),{referenceWidth,plotWidth,panelInset}=lineColumns(captured,comparison);
+  const captured=snapshot||captureLines({root,names,result,options,comparison});
   if(onlyAcquisition&&!captured.acquisitions.includes(onlyAcquisition))throw new Error('The selected acquisition has no line plots.');
-  const references=onlyAcquisition?captured.acquisitions.filter(id=>id===onlyAcquisition):captured.acquisitions;
+  const references=options?.background===false?[]:onlyAcquisition?captured.acquisitions.filter(id=>id===onlyAcquisition):captured.acquisitions;
   if(captured.layout==='overlay'){
    const panels=captured.groups.flatMap(group=>group.figures.map(figure=>({figure,heading:group.heading})))
     .filter(panel=>!onlyAcquisition||panel.figure.legend.some(part=>part.acquisition===onlyAcquisition));
-   const referenceCrop=panels.length?plotCrop(panels[0].figure,plotWidth):{top:0,height:180};
-   const leftHeight=referenceCrop.top+references.length*(referenceCrop.height+rowGap);
-   const rightHeight=panels.reduce((sum,panel)=>sum+plotHeight(panel.figure,plotWidth)+rowGap,0);
-   const height=Math.max(leftHeight,rightHeight),[out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+height)*2));ctx.scale(2,2);ctx.fillStyle='#0c131c';ctx.fillRect(linePad,linePad,lineWidth-2*linePad,height);
-   let y=linePad+referenceCrop.top;for(const id of references){y+=await drawReference(ctx,captured.references.get(id),captured.names[id],linePad+panelInset,y,referenceWidth,referenceCrop.height)+rowGap}
-   y=linePad;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+panelInset+referenceWidth+columnGap,y,plotWidth,onlyAcquisition,panel.heading)+rowGap;
+   if(!panels.length)throw new Error('The selected acquisition has no line plots.');
+   let panelInset=4;
+   for(let i=0;i<3;i++)panelInset=Math.max(4,Math.round(plotCrop(panels[0].figure,lineWidth-linePad*2-panelInset*2).top));
+   const plotWidth=lineWidth-linePad*2-panelInset*2,referenceHeight=220,gap=6,startX=linePad+panelInset;
+   let nextX=startX,nextY=linePad+panelInset;
+   const cards=references.map(id=>{
+    const reference=captured.references.get(id),aspect=reference?reference.width/reference.height:1,width=Math.min(plotWidth,Math.max(60,Math.round(referenceHeight*aspect)));
+    if(nextX>startX&&nextX+width>startX+plotWidth){nextX=startX;nextY+=referenceHeight+gap}
+    const card={id,x:nextX,y:nextY,width};nextX+=width+gap;return card;
+   });
+   const referencesHeight=cards.length?cards.at(-1).y+referenceHeight-(linePad+panelInset):0;
+   const plotOffset=panelInset+(cards.length?referencesHeight+gap:0);
+   const height=plotOffset+panels.reduce((sum,panel)=>sum+plotHeight(panel.figure,plotWidth)+rowGap,0);
+   const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+height)*2));ctx.scale(2,2);ctx.fillStyle='#0c131c';ctx.fillRect(linePad,linePad,lineWidth-linePad*2,height);
+   for(const card of cards)await drawReference(ctx,captured.references.get(card.id),captured.names[card.id],card.x,card.y,card.width,referenceHeight);
+   let y=linePad+plotOffset;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+panelInset,y,plotWidth,onlyAcquisition,panel.heading)+rowGap;
    return out;
   }
+  const {referenceWidth,plotWidth,panelInset}=lineColumns(captured,comparison,onlyAcquisition);
   const groups=onlyAcquisition?captured.groups.filter(group=>group.acquisition===onlyAcquisition):captured.groups;
   const rows=groups.map(group=>{
    const reference=captured.references.get(group.acquisition),available=!!reference||comparison;
    const width=available?plotWidth:lineWidth-linePad*2;
    const plots=group.figures.reduce((sum,figure)=>sum+plotHeight(figure,width)+rowGap,0);
-   const crop=plotCrop(group.figures[0],width);
+   const crop=stackedCrop(group.figures,width);
    return {group,reference,showReference:available,width,referenceTop:crop.top,referenceHeight:crop.height,height:plots};
   });
   const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+rows.reduce((sum,row)=>sum+row.height+rowGap,0))*2));ctx.scale(2,2);
