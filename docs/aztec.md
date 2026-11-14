@@ -47,6 +47,19 @@ editable energy window. The window keeps background and overlapping peaks;
 it is not a fitted element-specific peak area. Raw map spectra and arbitrary
 region spectrum extraction remain undecoded. Legacy OIP is not yet supported.
 
+Stored point and sum spectra, and individual H5OINA raw spectrum rows, show
+reference X-ray transition markers for selected elements. The line energies
+and K/L/M transition names come from [xraylib](https://github.com/tschoonj/xraylib)
+(BSD licence; [notice](../web/xraylib.LICENSE)). Hover near a channel to see
+possible transitions; a marker does not establish that an element is present.
+Four measured Kα1 window totals (Al, Ti, V, Fe) use fractional contributions
+from the channels crossed by each inferred AZtec window boundary. H5OINA rows
+also show counts per second only when a live-time value exists for each raw
+spectrum row; the supplied line exports have fewer, aggregated time values.
+These are raw window integrals including background and peak overlap, not fitted
+peak areas. [eXSpy](https://github.com/hyperspy/exspy) informed the scope of
+the viewer but its GPL-3.0 code and database are not included.
+
 ## What works
 
 `tem_workbench.aztec.H5OinaReader` reads H5OINA 8.0 exports without modifying them.

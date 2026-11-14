@@ -11,6 +11,7 @@ import unittest
 import uuid
 from unittest.mock import patch
 
+import h5py
 import numpy as np
 
 from tem_workbench.aztec.browser import AztecBrowser
@@ -131,6 +132,27 @@ class AztecBrowserTests(unittest.TestCase):
         store(payload[:-1])
         with self.assertRaisesRegex(AztecReadError,'truncated'):
             NativeProjectReader(self.path).preview('/EDXSpectra/'+ident)
+
+    def test_h5_spectrum_row_does_not_use_aggregate_live_time(self):
+        path=self.root/'line.h5oina';h5fixture(path)
+        with h5py.File(path,'r+') as file:
+            data=file['2/EDS/Data'];del data['Spectrum']
+            spectrum=np.zeros((8,2048),dtype=np.int32);spectrum[:,164:174]=10
+            data.create_dataset('Spectrum',data=spectrum).attrs['Unit']='count'
+            data.create_dataset('Live Time',data=np.ones(3,dtype=np.float32))
+            file['2/EDS/Header/Number Channels'][...]=2048
+        browser=AztecBrowser();opened=browser.open(path)
+        result=browser.preview(opened['id'],'/2/EDS/Data/Spectrum',0)
+        self.assertEqual(len(result['spectral_windows']),4)
+        self.assertIsNone(result['spectral_windows'][0]['cps'])
+        self.assertGreater(result['spectral_windows'][0]['counts'],0)
+        with h5py.File(path,'r+') as file:
+            data=file['2/EDS/Data'];del data['Live Time']
+            data.create_dataset('Live Time',data=np.full(8,2,dtype=np.float32))
+        browser=AztecBrowser();opened=browser.open(path)
+        result=browser.preview(opened['id'],'/2/EDS/Data/Spectrum',0)
+        self.assertAlmostEqual(result['spectral_windows'][0]['cps'],
+                               result['spectral_windows'][0]['counts']/2)
 
     def test_changed_project_and_companion_require_reopen(self):
         reader=NativeProjectReader(self.path);reader.inspect()

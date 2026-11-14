@@ -388,7 +388,7 @@ The maintained [implementation plan](docs/implementation-plan.md) tracks HCP fit
 
 ## License
 
-[MIT](LICENSE). The macOS launcher includes code adapted from Tensile Workbench; its attribution is retained in [macos/TENSILE-LICENSE](macos/TENSILE-LICENSE). Colour-table attribution is in [web/colormaps.LICENSE](web/colormaps.LICENSE). Third-party dependencies retain their respective licences.
+[MIT](LICENSE). The macOS launcher includes code adapted from Tensile Workbench; its attribution is retained in [macos/TENSILE-LICENSE](macos/TENSILE-LICENSE). Colour-table attribution is in [web/colormaps.LICENSE](web/colormaps.LICENSE). AZtec spectrum reference energies use xraylib; its BSD notice is in [web/xraylib.LICENSE](web/xraylib.LICENSE). Third-party dependencies retain their respective licences.
 
 ## Architecture and numerical workflow
 

@@ -1190,7 +1190,7 @@ def log_runtime_info():
     LOG.info('Platform: %s %s; architecture: %s; logical CPUs: %s; PID: %s',
              platform.system(), platform.release(), platform.machine(), os.cpu_count(), os.getpid())
     versions = []
-    for package in ('numpy', 'scipy', 'Pillow', 'h5py', 'ncempy', 'lzokay'):
+    for package in ('numpy', 'scipy', 'Pillow', 'h5py', 'ncempy', 'lzokay', 'xraylib'):
         try:
             version = metadata.version(package)
         except metadata.PackageNotFoundError:

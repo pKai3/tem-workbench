@@ -17,6 +17,7 @@ from tem_workbench.storage.mode_folders import aztec_folders, scan_folders
 from tem_workbench.runtime.diagnostics import compact
 from .h5oina import H5OinaReader, AztecReadError, SourceChangedError, MAX_READ_BYTES
 from .native import NativeProjectReader
+from .spectral_windows import measured_windows, peak_catalogue
 
 LOG = logging.getLogger('tem_workbench.aztec')
 
@@ -192,6 +193,9 @@ class AztecBrowser:
                     heatmap.thumbnail((1000, 600), Image.Resampling.BOX)
                     output = BytesIO(); heatmap.save(output, format='PNG')
                     result['spectrum_image'] = 'data:image/png;base64,'+base64.b64encode(output.getvalue()).decode()
+                if path.startswith('/EDXSpectra/') and result.get('unit') == 'counts':
+                    result['spectral_windows'] = measured_windows(result['x'], result['y'])
+                    result['peak_lines'] = peak_catalogue(float(result['x'][-1]))
                 result['y'] = numeric(result['y'])
             return result
         catalogue = reader.inspect()
@@ -223,9 +227,18 @@ class AztecBrowser:
                 x, x_label = reader.energy_axis(layer.path), 'Energy, eV'
             except AztecReadError:
                 x, x_label = np.arange(values.size), 'Channel'
+            windows = []
+            if x_label == 'Energy, eV' and descriptor.unit in ('count', 'counts'):
+                time_path = layer.path + '/Data/Live Time'
+                time_descriptor = next((d for d in catalogue.datasets if d.path == time_path), None)
+                live_time = float(reader.read(time_path, row)) if (time_descriptor and
+                    time_descriptor.shape and time_descriptor.shape[0] == shape[0]) else None
+                windows = measured_windows(np.asarray(x) / 1000, values, live_time)
             return {**result, 'kind': 'plot', 'x': numeric(x), 'y': numeric(values),
                     'x_label': x_label, 'y_label': descriptor.unit or 'Stored value',
                     'row': row, 'rows': shape[0],
+                    'spectral_windows': windows,
+                    'peak_lines': peak_catalogue(float(x[-1]) / 1000) if x_label == 'Energy, eV' else (),
                     'note': f'One stored spectrum: row {row + 1:,} of {shape[0]:,}. No spatial alignment or summation.'}
         grid = layer.grid_shape if layer else None
         channels = math.prod(shape[1:]) if len(shape) > 1 else 1
