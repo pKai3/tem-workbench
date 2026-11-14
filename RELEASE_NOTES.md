@@ -1,12 +1,12 @@
-# TEM Workbench 1.0.36
+# TEM Workbench 1.0.37
 
-- Add an AZtec workspace for browsing native OIPX projects and H5OINA files, with registered electron images, acquisition outlines, saved element maps, line profiles and point spectra.
-- Compare maps and lines across sites and native project files. Use shared scales, optional per-acquisition normalization, smoothing, ratios, calibrated crops and line overlays. Save named comparisons and export PNGs or numerical data with source and processing details.
-- Make comparisons available independently of the open file, with one saved-comparison list that switches to the appropriate view automatically.
-- Share project settings between diffraction and AZtec. Remember each mode's location and save settings, selections and comparison presets to disk. AZtec scans project folders for supported files, and exports follow configured output folders.
-- Add descriptive map statistics and exploratory spatial-structure checks for maps and lines, with smoothing-response plots and linked image cursors.
-- Organize the application into packages and make installation entry points clearer while retaining the existing launchers and update path.
+- Polish AZtec line comparisons and PNG exports: matching live and saved layouts, aligned reference images, compact overlays, and a choice of one combined image or one PNG per acquisition.
+- Reorder map and line acquisitions, edit export labels alongside the selected order, and find them through sample and site groups with larger reference previews. Project files show one representative electron image per sample.
+- Keep native OIPX comparisons linked when a project file moves. Map and line comparisons now hide channels absent from every selected acquisition.
+- Inspect native AZtec raw line spectra and reconstruct approximate Kα1 window count-rate profiles where only saved composition profiles are present. The spectrum viewer adds reference X-ray transition markers and measured window totals for the verified elements.
+- Browse native EBSD phase, Euler, band, error, angular-deviation and pattern-quality fields from the G9-HT project. Each of its three full maps includes a labelled saved preview; stored IPF and Euler colour images are viewable.
+- Show the effect of map smoothing on spread more clearly and use the shared bottom-right notice for AZtec exports.
 
-AZtec source files remain read-only. Element ratios describe recorded signals, not quantified concentrations; spatial checks are exploratory. Native raw map/line spectrum extraction, legacy OIP decoding and EBSD analysis remain outside this release's supported analysis features.
+AZtec inputs remain read-only. Reconstructed Kα1 windows retain background and overlapping peaks and are not fitted peak areas. EBSD raw patterns, FSD images and the native phase-colour palette are not decoded; Workbench does not re-index or clean EBSD data.
 
 Use **Check for updates → Install update and restart**.

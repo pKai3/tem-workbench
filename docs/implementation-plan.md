@@ -2,6 +2,10 @@
 
 Last updated: 14 November 2026
 
+## AZtec follow-up release — approved 14 November 2026
+
+The user requested the next version after the line-comparison, native-spectrum, acquisition-selection and EBSD inspection work below. Prepare concise release notes and publish through the manual **Publish Workbench release** workflow, retaining its full analysis/browser and Windows/macOS verification gates. Record the published tag, run and asset checks here after completion.
+
 ## AZtec merge and release — completed 13 November 2026
 
 The user approved merging `codex/aztec` into `main` and publishing the next version after workspace-wide comparison access (`dc8b90b`). Main advanced to `5a386f7`, including package organisation, the native AZtec workspace, map/line comparisons, shared projects and disk persistence described below. The manual **Publish Workbench release** workflow passed all analysis/browser and Windows/macOS verification gates and published [v1.0.36](https://github.com/pKai3/tem-workbench/releases/tag/v1.0.36) at `376bf38`, with the ZIP and checksum verified before publication. The full suite ran 587 Python checks (28 environment/platform skips); browser regressions, 108 desktop checks on each platform, native Mac compilation and all three native Mac shutdown checks passed. [Release run](https://github.com/pKai3/tem-workbench/actions/runs/43420357613).
