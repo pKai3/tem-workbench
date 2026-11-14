@@ -654,9 +654,8 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   }).filter(tile=>tile.relative.some(Number.isFinite));
   if(!available.length){root.append(el('p',row.tiles.some(tile=>tile.spread.some(Number.isFinite))?'No measurable spread at the current smoothing width; a relative curve is unavailable.':row.sweep_reason,'hint'));return}
   const ns='http://www.w3.org/2000/svg',figure=el('figure',undefined,'eds-noise-plot'),svg=document.createElementNS(ns,'svg');root.append(figure);figure.append(svg);
-  const width=650,left=52,right=20,bottom=45,values=available.flatMap(t=>t.relative.filter(Number.isFinite)).sort((a,b)=>a-b);
-  const high=Math.max(1.1,values[Math.floor(.95*(values.length-1))]*1.08),outliers=Math.max(0,...row.factors.map((_,i)=>available.filter(tile=>tile.relative[i]>high).length));
-  const top=12+outliers*20,height=255+outliers*20,logHigh=Math.log1p(high),X=v=>left+(v-.2)/1.8*(width-left-right),Y=v=>height-bottom-Math.log1p(Math.max(0,v))/logHigh*(height-top-bottom);
+  const width=650,height=255,left=52,right=20,top=12,bottom=45,values=available.flatMap(t=>t.relative.filter(Number.isFinite));
+  const high=Math.max(1.1,...values)*1.08,logHigh=Math.log1p(high),X=v=>left+(v-.2)/1.8*(width-left-right),Y=v=>height-bottom-Math.log1p(Math.max(0,v))/logHigh*(height-top-bottom);
   svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.setAttribute('role','img');svg.setAttribute('aria-label','Spread above uniform relative to current smoothing, logarithmic one-plus vertical scale');
   const add=(tag,attrs,text)=>{const n=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;svg.append(n);return n};
   for(let i=0;i<=4;i++){const value=Math.expm1(logHigh*i/4),y=Y(value);add('line',{x1:left,x2:width-right,y1:y,y2:y,stroke:'#314454'});add('text',{x:left-8,y:y+4,fill:'#a7b8c9','text-anchor':'end','font-size':11},Number(value.toPrecision(3)).toString())}
@@ -664,24 +663,17 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   add('text',{x:width-right-4,y:Y(1)-5,fill:'#b5c5d4','text-anchor':'end','font-size':10},'1× spread');
   for(const factor of row.factors){const x=X(factor);add('text',{x,y:height-bottom+18,fill:'#a7b8c9','text-anchor':'middle','font-size':11},factor.toFixed(1)+'×')}
   add('line',{x1:X(1),x2:X(1),y1:top,y2:height-bottom,stroke:'#b5c5d4','stroke-dasharray':'4 4'});
-  const offscaleSlots=new Map();
   for(const tile of available){let path='',joined=false;const points=[];
-   tile.relative.forEach((value,i)=>{if(!Number.isFinite(value)){joined=false;return}const x=X(row.factors[i]),above=value>high;
-    if(above)joined=false;else{path+=`${joined?'L':'M'}${x},${Y(value)} `;joined=true}
-    points.push({value,i,x,above});
+   tile.relative.forEach((value,i)=>{if(!Number.isFinite(value)){joined=false;return}const x=X(row.factors[i]);
+    path+=`${joined?'L':'M'}${x},${Y(value)} `;joined=true;points.push({value,i,x});
    });
    add('path',{d:path,fill:'none',stroke:tile.colour,'stroke-width':2});
-   for(const {value,i,x,above} of points){
-    let dot;
-    if(above){const slot=offscaleSlots.get(i)||0;offscaleSlots.set(i,slot+1);const y=top-10-slot*20;
-     dot=add('path',{d:`M${x-5},${y+4} L${x+5},${y+4} L${x},${y-5}Z`,fill:tile.colour});
-     add('text',{x:x+9,y:y+3,fill:tile.colour,'font-size':10},Number(value.toPrecision(3))+'×');
-    }else dot=add('circle',{cx:x,cy:Y(value),r:3,fill:tile.colour});
-    const tip=document.createElementNS(ns,'title');tip.textContent=`${tile.label} · ${row.factors[i].toFixed(1)}×σ · relative spread ${value.toFixed(3)} · raw P90/P10 ${tile.spread[i].toFixed(3)}${above?' · above visible axis range':''}`;dot.append(tip);
+   for(const {value,i,x} of points){
+    const dot=add('circle',{cx:x,cy:Y(value),r:3,fill:tile.colour}),tip=document.createElementNS(ns,'title');tip.textContent=`${tile.label} · ${row.factors[i].toFixed(1)}×σ · relative spread ${value.toFixed(3)} · raw P90/P10 ${tile.spread[i].toFixed(3)}`;dot.append(tip);
    }
   }
   add('text',{x:(left+width-right)/2,y:height-5,fill:'#a7b8c9','text-anchor':'middle','font-size':12},`Smoothing · 1×σ = ${result.smoothing} ${current.comparison?result.smoothing_unit:'px'}`);
-  figure.append(el('p','Spread above 1 relative to 1× smoothing · 1 = current spread; 0.5 = half remains'+(values.at(-1)>high?' · ▲ above axis range; hover for value':''),'hint'));
+  figure.append(el('p','Spread above 1 relative to 1× smoothing · 1 = current spread; 0.5 = half remains','hint'));
   const legend=el('figcaption',undefined,'eds-line-caption');for(const tile of available){const label=el('span',tile.label);label.style.color=tile.colour;legend.append(label)}figure.append(legend);
  }
 
