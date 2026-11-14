@@ -18,6 +18,42 @@ window.aztecLineGeometry={
 window.aztecComparisonState={
  key:table=>'compare:'+table,
  identity:(source,id)=>JSON.stringify([source,id]),
+ relocations(known,files){
+  const current=new Map(files.filter(file=>file.kind==='OIPX'&&file.project_id).map(file=>[file.path,file.project_id]));
+  const missing=new Map(),available=new Map();
+  for(const [path,id] of current){const paths=available.get(id)||[];paths.push(path);available.set(id,paths)}
+  for(const [path,id] of Object.entries(known))if(current.get(path)!==id){const paths=missing.get(id)||[];paths.push(path);missing.set(id,paths)}
+  const moves={};
+  for(const [id,paths] of missing)if(paths.length===1&&available.get(id)?.length===1&&paths[0]!==available.get(id)[0])moves[paths[0]]=available.get(id)[0];
+  return moves;
+ },
+ relocate(saved,moves){
+  const copy=structuredClone(saved),changeSource=path=>moves[path]||path;
+  const changeId=id=>{try{const pair=JSON.parse(id);if(Array.isArray(pair)&&pair.length===2&&moves[pair[0]])return this.identity(moves[pair[0]],pair[1])}catch{}return id};
+  const changeKey=key=>{
+   if(key.startsWith('compare:'))return 'compare:'+changeId(key.slice(8));
+   for(const [oldPath,newPath] of Object.entries(moves))if(key.startsWith(oldPath+':'))return newPath+key.slice(oldPath.length);
+   return key;
+  };
+  const rekey=(entries,rename,change=value=>value)=>{
+   const result={};for(const [key,value] of Object.entries(entries||{})){const next=rename(key);result[next!==key&&Object.hasOwn(entries,next)?key:next]=change(value)}return result;
+  };
+  const options=value=>{if(value?.line_offsets)value.line_offsets=rekey(value.line_offsets,changeId);return value};
+  const selection=value=>{
+   if(Array.isArray(value?.ids))value.ids=[...new Set(value.ids.map(changeId))];
+   if(Array.isArray(value?.files))value.files=[...new Set(value.files.map(changeSource))];
+   if(value?.aliases)value.aliases=rekey(value.aliases,changeId);
+   if(value?.crops)value.crops=rekey(value.crops,changeId);
+   if(value?.options)options(value.options);
+   return value;
+  };
+  copy.preferences=rekey(copy.preferences,changeKey,options);
+  copy.selections=rekey(copy.selections,changeKey,selection);
+  copy.presets=rekey(copy.presets,changeKey,items=>items.map(selection));
+  copy.aliases=rekey(copy.aliases,changeKey);
+  copy.crops=rekey(copy.crops,changeKey);
+  return copy;
+ },
  reconcileChannels(signals,denominator,available,previous=available){
   const selected=new Set(signals),before=new Set(previous);
   return {signals:available.filter(s=>selected.has(s)||!before.has(s)),denominator:available.includes(denominator)?denominator:available.find(s=>s.startsWith('Ti '))||available[0]||''};
@@ -59,7 +95,7 @@ window.aztecComparisonState={
 };
 /* Live views of the existing EDX report operations. Native inputs stay read-only. */
 window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLineCursor,setMapCursor,remember})=>{
- let current=null,version=0,smoothingTimer=null,plotObservers=[],plotSerial=0,referenceCursors=[],layoutVersion=0;
+ let current=null,version=0,smoothingTimer=null,plotObservers=[],plotSerial=0,referenceCursors=[],linePlotCursors=new Map(),linePanDrag=null,layoutVersion=0;
  let savedViews={};try{const saved=JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-comparison-v1')||'{}');if(saved&&typeof saved==='object')savedViews=saved}catch{}
  let previousFile='';try{previousFile=JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-browser')||'{}').file||''}catch{}
  const comparisonState=window.aztecComparisonState;savedViews=comparisonState.migrate(savedViews,previousFile);
@@ -81,6 +117,18 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   try{WorkbenchWorkspace.writeRaw('tem-eds-comparison-v1',JSON.stringify({comparisonScope:2,preferences,selections,aliases,presets,crops:Object.fromEntries([...cropCentres].slice(-200))}))}
   catch(error){console.warn('AZtec comparison settings could not be saved:',error.message)}
  }
+ function relocateSources(moves){
+  if(!Object.keys(moves).length)return null;
+  const reopen=current?.comparison?{kind:current.kind,table:current.table}:null;
+  if(reopen||moves[projectKey()])current=null;
+  const changed=comparisonState.relocate({preferences,selections,presets,aliases,crops:Object.fromEntries(cropCentres)},moves);
+  for(const [name,target] of [['preferences',preferences],['selections',selections],['presets',presets],['aliases',aliases]]){
+   for(const key of Object.keys(target))delete target[key];Object.assign(target,changed[name]);
+  }
+  cropCentres.clear();for(const [key,value] of Object.entries(changed.crops))cropCentres.set(key,value);
+  for(const path of Object.keys(moves)){catalogues.delete(path);sourceErrors.delete(path)}
+  persist();return reopen;
+ }
  function imageScaleAvailability(result){
   const control=$('eds-analysis-tools').querySelector('[aria-label="Image scale"]');if(!control)return;
   const rows=result?.rows.filter(r=>r.width>0&&r.height>0)||[],first=rows[0];
@@ -96,7 +144,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   $('eds-compare-lines').setAttribute('aria-pressed',String(kind==='line'));
   for(const button of $('eds-acquisitions').querySelectorAll('.eds-site'))button.setAttribute('aria-current',String(!kind&&button.dataset.index===String(state.acquisition?.index)));
  }
- function clearPlotObservers(){for(const observer of plotObservers)observer.disconnect();plotObservers=[];referenceCursors=[];setLineCursor(null);setMapCursor(null)}
+ function clearPlotObservers(){for(const observer of plotObservers)observer.disconnect();plotObservers=[];referenceCursors=[];linePlotCursors.clear();setLineCursor(null);setMapCursor(null)}
  function groups(catalogue=state.file?.catalogue){
   const found=new Map();for(const a of catalogue?.acquisitions||[])for(const l of a.layers)for(const d of l.signals){
    const table=d.path.split('/')[1],kind=table==='XrayMapImages'?'map':['XrayLinescans','QuantLinescans'].includes(table)?'line':null,id=d.attributes['Acquisition ID'];if(!kind||!id)continue;
@@ -105,7 +153,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  }
  function comparisonGroups(paths){return paths.flatMap(source=>(catalogues.has(source)?groups(catalogues.get(source)):[]).map(g=>({...g,id:comparisonState.identity(source,g.id),source,label:fileName(source)+' / '+g.label}))) }
  async function loadCatalogue(path){if(catalogues.has(path))return;try{catalogues.set(path,await api('comparison-catalogue',{path}));sourceErrors.delete(path)}catch(error){sourceErrors.set(path,error.message)}}
- function close(){navigation();document.querySelector('.eds-content-layout').classList.remove('eds-comparing');$('eds-file').classList.remove('eds-file-comparing');clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++openVersion;++version;++layoutVersion;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-analysis-views').style.minHeight='';$('eds-preview').hidden=false}
+ function close(){linePanDrag?.stop();navigation();document.querySelector('.eds-content-layout').classList.remove('eds-comparing');$('eds-file').classList.remove('eds-file-comparing');clearTimeout(smoothingTimer);clearPlotObservers();setLineCrop(null);++openVersion;++version;++layoutVersion;current=null;state.analysisGroup=null;$('eds-analysis-tools').hidden=true;$('eds-analysis-views').hidden=true;$('eds-analysis-views').style.minHeight='';$('eds-preview').hidden=false}
  async function open(id,comparison=false,channelTable){
   const turn=++openVersion,source=projectKey();clearTimeout(smoothingTimer);++version;current=null;
   if(!comparison){show(id,false,channelTable);return}
@@ -138,19 +186,20 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   state.comparisonTable=comparison?chosen.table:null;remember();controls(channelNames);imageScaleAvailability();update();
  }
  function controls(channels){
-  const root=$('eds-analysis-tools');root.replaceChildren();if(current.comparison){presetControls(root);sourceControls(root);acquisitionControls(root)}const row=el('div',undefined,'eds-analysis-controls');if(current.comparison&&current.kind==='line')row.classList.add('eds-line-comparison-controls');root.append(row);
+  const root=$('eds-analysis-tools');root.replaceChildren();if(current.comparison){presetControls(root);sourceControls(root);acquisitionControls(root)}let row=el('div',undefined,'eds-analysis-controls');root.append(row);
   const changed=key=>{if(key==='smoothing_unit')smoothing.firstChild.textContent=`Smoothing σ, ${current.options.smoothing_unit}`;keepScroll(updateVisibility);if(['layout','spatial','reference_orientation','trim_mode'].includes(key)){persist();if(current.result)render(current.result)}else update()};
   const toggle=(label,key,choices)=>{const wrap=el('div',undefined,'eds-control');wrap.append(el('span',label));const group=el('div',undefined,'signal-toggle inspector-layout');group.setAttribute('role','group');group.setAttribute('aria-label',label);for(const [value,text] of choices){const b=el('button',text);b.type='button';b.setAttribute('aria-pressed',String(current.options[key]===value));b.onclick=()=>{current.options[key]=value;for(const n of group.children)n.setAttribute('aria-pressed',String(n===b));changed(key)};group.append(b)}wrap.append(group);row.append(wrap);return wrap};
   if(current.comparison&&current.kind==='line'&&comparisonGroups(current.files).some(g=>g.table==='QuantLinescans')){const family=el('div',undefined,'eds-control');family.append(el('span','Profiles'));const buttons=el('div',undefined,'signal-toggle inspector-layout');for(const [table,label] of [['XrayLinescans','Intensity'],['QuantLinescans','Composition']]){const button=el('button',label);button.type='button';button.setAttribute('aria-pressed',String(current.table===table));button.disabled=!comparisonGroups(current.files).some(g=>g.table===table);button.onclick=()=>{const key=viewKey(table);selections[key]={...(selections[key]||{}),files:[...current.files]};open(null,'line',table)};buttons.append(button)}family.append(buttons);row.append(family)}
   if(current.kind==='line')toggle('Plots','layout',current.comparison?[['stacked','Stacked'],['elements','Overlay elements'],['overlay','Overlay scans']]:[['stacked','Stacked'],['overlay','Overlay']]);
   if(current.comparison&&current.kind==='line'){toggle('Reference image','reference_orientation',[['native','Original'],['right','Arrow right']]);toggle('Scan length','trim_mode',[['full','Full'],['equal','Equal']])}
+  if(current.comparison&&current.kind==='map'){toggle('Image scale','spatial',[['physical','Equal distance'],['fit','Fit tiles'],['crop','Crop tiles']]);toggle('Smoothing units','smoothing_unit',[['nm','nm'],['px','px']])}
+  if(row.childElementCount){row=el('div',undefined,'eds-analysis-controls');root.append(row)}
   toggle('View','mode',current.kind==='map'?[['signal','Signals'],['ratio','Ratios'],['both','Both']]:[['signal',current.table==='QuantLinescans'?'Composition':'Signals'],['ratio','Ratios']]);
   const denominator=el('label','Divide by'),denSelect=el('select');denSelect.setAttribute('aria-label','Divide by');for(const channel of channels){const option=el('option',channel);option.value=channel;denSelect.append(option)}denSelect.value=current.options.denominator;denSelect.onchange=()=>{current.options.denominator=denSelect.value;updateVisibility();update()};denominator.append(denSelect);row.append(denominator);
-  if(current.comparison&&current.kind==='line')row.append(el('span',undefined,'eds-controls-break'));
   if(current.comparison)toggle('Shared scales','scale_scope',[['all','All'],['element','Per Element'],['off','Off']]);
   toggle(current.comparison?'Normalize each acquisition':'Normalize','normalisation',[['none','Off'],['median','Median'],['mean','Mean'],['p20','P20']]);
+  row=el('div',undefined,'eds-analysis-controls');root.append(row);
   const numeric=(label,key)=>{const wrap=el('label',label),input=el('input');input.type='number';input.step='any';input.min=key==='low'?'':0;input.value=current.options[key];input.setAttribute('aria-label',label);input.onchange=()=>{const v=Number(input.value);if(Number.isFinite(v)){current.options[key]=v;update()}};wrap.append(input);row.append(wrap);return wrap};
-  if(current.comparison&&current.kind==='map'){toggle('Image scale','spatial',[['physical','Equal distance'],['fit','Fit tiles'],['crop','Crop tiles']]);toggle('Smoothing units','smoothing_unit',[['nm','nm'],['px','px']])}
   const smoothing=el('label',current.kind==='map'?`Smoothing σ, ${current.options.smoothing_unit}`:'Smoothing FWHM, nm','eds-smoothing');
   const smoothingInputs=el('span',undefined,'eds-smoothing-inputs'),range=el('input'),amount=el('input');
   range.type='range';range.min='0';range.max=String(Math.max(current.kind==='map'?32:50,current.options.smoothing));range.step='.5';range.value=current.options.smoothing;range.setAttribute('aria-label','Smoothing');
@@ -177,7 +226,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    denominator.hidden=current.options.mode==='signal';low.hidden=high.hidden=current.kind!=='map'||current.options.normalisation==='none'||current.comparison&&current.options.scale_scope!=='all';if(brightness)brightness.hidden=current.options.normalisation!=='none';upper.hidden=current.kind!=='line'||current.options.mode!=='ratio'||current.options.normalisation!=='none'||current.comparison&&current.options.scale_scope==='off';
    for(const input of picks.querySelectorAll('input')){const denominatorPick=current.options.mode==='ratio'&&input.value===current.options.denominator;input.disabled=denominatorPick&&current.kind!=='map';input.checked=denominatorPick?(current.kind==='map'&&current.options.show_denominator):current.signals.includes(input.value);input.parentElement.classList.toggle('eds-channel-inactive',input.disabled);input.parentElement.title=input.disabled?(current.comparison&&current.kind==='map'?'Denominator; shown as the reference signal.':'Used as the denominator; not plotted against itself.'):''}
   };
-  const footer=el('div',undefined,'eds-analysis-options');if(current.comparison&&current.kind==='line')footer.classList.add('eds-line-comparison-options');root.append(footer);const picks=el('div',undefined,'eds-channel-picks');footer.append(picks);
+  const footer=el('div',undefined,'eds-analysis-options');if(current.comparison)footer.classList.add('eds-comparison-options');root.append(footer);const picks=el('div',undefined,'eds-channel-picks');footer.append(picks);
   for(const signal of channels){const label=el('label'),input=el('input');input.type='checkbox';input.checked=true;input.onchange=()=>{if(current.kind==='map'&&current.options.mode==='ratio'&&signal===current.options.denominator)current.options.show_denominator=input.checked;else current.signals=input.checked?[...current.signals,signal]:current.signals.filter(s=>s!==signal);update()};input.value=signal;label.append(input,el('span',signal));picks.append(label)}
   updateVisibility();
   if(current.kind==='line'){const options=el('div',undefined,'eds-channel-picks');const imageToggle=el('div',undefined,'signal-toggle inspector-layout'),imageButton=el('button','Image');imageButton.type='button';imageButton.setAttribute('aria-label','Show electron image');imageButton.setAttribute('aria-pressed',String(current.options.background));imageButton.onclick=()=>{current.options.background=!current.options.background;imageButton.setAttribute('aria-pressed',String(current.options.background));persist();if(current.result)render(current.result)};imageToggle.append(imageButton);options.append(imageToggle);for(const [key,text] of [['raw','Underlying data']]){const label=el('label'),input=el('input');input.type='checkbox';input.checked=current.options[key];input.onchange=()=>{current.options[key]=input.checked;persist();if(current.result)render(current.result)};label.append(input,el('span',text));options.append(label)}footer.append(options)}
@@ -615,6 +664,26 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const legend=el('figcaption',undefined,'eds-line-caption');for(const tile of available){const label=el('span',tile.label);label.style.color=tile.colour;legend.append(label)}figure.append(legend);
  }
 
+ function beginLinePan(event,row,distanceForDrag){
+  const available=row.length-(row.viewLength||row.length);
+  if(event.button!==0||!current?.comparison||current.options.trim_mode!=='equal'||available<=1e-6)return;
+  linePanDrag?.stop();event.preventDefault();
+  const controller=new AbortController(),pointerId=event.pointerId,startX=event.clientX,startY=event.clientY;
+  const start=Number(current.options.line_offsets?.[row.acquisition])||0;
+  let pending=start,applied=start,frame=null;
+  const apply=()=>{
+   frame=null;if(!current?.result||Math.abs(pending-applied)<.02)return;
+   applied=pending;current.options.line_offsets={...current.options.line_offsets,[row.acquisition]:applied};render(current.result);
+  };
+  const move=e=>{if(e.pointerId!==pointerId)return;e.preventDefault();pending=Math.max(0,Math.min(available,start-distanceForDrag(e.clientX-startX,e.clientY-startY)));if(frame===null)frame=requestAnimationFrame(apply)};
+  const stop=()=>{if(frame!==null)cancelAnimationFrame(frame);apply();persist();controller.abort();document.documentElement.classList.remove('eds-line-dragging');linePanDrag=null};
+  const finish=e=>{if(e.pointerId!==undefined&&e.pointerId!==pointerId)return;move(e.pointerId===undefined?{pointerId,clientX:startX,clientY:startY,preventDefault(){}}:e);stop()};
+  document.addEventListener('pointermove',move,{signal:controller.signal,passive:false});
+  document.addEventListener('pointerup',finish,{signal:controller.signal});
+  document.addEventListener('pointercancel',finish,{signal:controller.signal});
+  window.addEventListener('blur',()=>stop(),{signal:controller.signal});
+  document.documentElement.classList.add('eds-line-dragging');linePanDrag={stop};
+ }
  function lineReference(root,row,colour='#d88aff'){
   if(!row.electron||!row.line_points)return;
   const geometry=window.aztecLineGeometry.reference(row,current.options.reference_orientation),{width,height,a,b,length}=geometry;
@@ -624,6 +693,10 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const stage=el('div',undefined,'eds-line-reference-stage'),ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
   svg.classList.add('eds-reference-drawing');svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.setAttribute('role','img');svg.setAttribute('aria-label',row.label+' · scan location and crop');stage.append(svg);figure.append(stage);
   const caption=el('span',exportLabel(row),'eds-line-reference-label');caption.dataset.acquisition=row.acquisition;caption.title=row.label;stage.append(caption);
+  if(current.comparison&&row.trimmed&&row.length>row.viewLength){
+   stage.classList.add('eds-line-pannable');stage.title='Drag along the scan to move the selected crop';
+   stage.onpointerdown=event=>{const box=stage.getBoundingClientRect(),scale=Math.min(box.width/width,box.height/height),vx=(b[0]-a[0])*scale,vy=(b[1]-a[1])*scale,size=vx*vx+vy*vy;if(size>0)beginLinePan(event,row,(dx,dy)=>(dx*vx+dy*vy)/size*row.length)};
+  }
   const add=(tag,attrs,text)=>{const n=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;svg.append(n);return n};
   add('image',{href:row.electron,width:geometry.nativeWidth,height:geometry.nativeHeight,transform:geometry.transform});
   const crop=add('polygon',{class:'eds-reference-crop',fill:'none',stroke:'#fff','stroke-width':1,'stroke-dasharray':'4 4',opacity:.65,'vector-effect':'non-scaling-stroke'});
@@ -830,11 +903,19 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     if(showX){for(let i=0;i<=4;i++){const x=axisLength*i/4;add('text',{x:i===4?Math.min(X(x),w-10):X(x),y:h-5,fill:'#becbda','text-anchor':i===4?'end':i===0?'start':'middle','font-size':10},`${x.toFixed(0)}${i===4?' '+row.distance_unit:''}`)}}
     if(!current.comparison)add('text',{x:left+5,y:top+11,fill:'#fff',stroke:'#000','stroke-width':2,'paint-order':'stroke','font-size':10},normalized?`${normalLabel} = 1 on scan`:metric);
     const cursor=add('line',{x1:X(0),x2:X(0),y1:top,y2:top+ph,stroke:'#fff','stroke-dasharray':'3 3',visibility:'hidden'});
-    svg.onpointermove=e=>{const box=svg.getBoundingClientRect(),sx=(e.clientX-box.left)*w/box.width,distance=((sx-left)/pw*span+extent[0])*axisLength;cursor.setAttribute('x1',X(distance));cursor.setAttribute('x2',X(distance));cursor.setAttribute('visibility','visible');
+    if(current.comparison&&display.background&&row.background&&row.trimmed&&row.length>row.viewLength){
+     svg.classList.add('eds-line-pannable');svg.setAttribute('aria-description','Drag the crop to move the selected scan segment');
+     svg.onpointerdown=event=>{const box=svg.getBoundingClientRect(),sx=(event.clientX-box.left)*w/box.width,sy=(event.clientY-box.top)*h/box.height;if(sx>=left&&sx<=left+pw&&sy>=top&&sy<=top+ph)beginLinePan(event,row,(dx)=>dx*w/box.width/pw*span*axisLength)};
+    }
+    const sources=new Set(tiles.map(tile=>tile.acquisition||row.acquisition).filter(Boolean));
+    linePlotCursors.set(svg,{unit:row.distance_unit,sources,update:distance=>{if(distance===null){cursor.setAttribute('visibility','hidden');return}cursor.setAttribute('x1',X(distance));cursor.setAttribute('x2',X(distance));cursor.setAttribute('visibility','visible')}});
+    const linked=entry=>entry.unit===row.distance_unit&&[...sources].some(id=>entry.sources.has(id));
+    svg.onpointermove=e=>{const box=svg.getBoundingClientRect(),sx=(e.clientX-box.left)*w/box.width,distance=((sx-left)/pw*span+extent[0])*axisLength;
+     for(const entry of linePlotCursors.values())if(linked(entry))entry.update(distance);
      const readings=tiles.map(t=>{const length=t.x.at(-1),i=Math.round((distance+(t.viewStart||0))/length*(t.x.length-1));return `${t.label}: ${i>=0&&i<t.y.length&&Number.isFinite(t.y[i])?fmt(t.y[i]):'—'}`});
      if(!current.comparison)setLineCursor(tiles[0].path,Math.max(0,Math.min(1,distance/row.length)));
-     for(const ref of referenceCursors)ref.update(ref.unit===row.distance_unit?distance:null);
-     readout.textContent=`${distance.toFixed(1)} ${row.distance_unit} · `+readings.join(' · ')};svg.onpointerleave=()=>{cursor.setAttribute('visibility','hidden');setLineCursor(null);for(const ref of referenceCursors)ref.update(null)};
+     for(const ref of referenceCursors)ref.update(ref.unit===row.distance_unit&&sources.has(ref.acquisition)?distance:null);
+     readout.textContent=`${distance.toFixed(1)} ${row.distance_unit} · `+readings.join(' · ')};svg.onpointerleave=()=>{for(const entry of linePlotCursors.values())if(linked(entry))entry.update(null);setLineCursor(null);for(const ref of referenceCursors)ref.update(null)};
 
    }
    svg.redraw=draw;draw();
@@ -842,5 +923,5 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   (structureBody||root).append(noise);
  }
 
- return {open,close,groups};
+ return {open,close,groups,relocateSources};
 };

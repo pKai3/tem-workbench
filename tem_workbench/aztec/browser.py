@@ -5,6 +5,7 @@ from pathlib import Path
 import base64
 import math
 import logging
+import sqlite3
 import threading
 import uuid
 
@@ -50,9 +51,15 @@ class AztecBrowser:
                         failed(error)
                         continue
                     seen.add(path)
+                    project_id = None
+                    if path.suffix.lower() == '.oipx':
+                        try:
+                            project_id = NativeProjectReader(path).project_id()
+                        except (OSError, AztecReadError, sqlite3.DatabaseError):
+                            pass  # Keep unreadable files visible so opening reports the real error.
                     files.append(dict(name=name, path=str(path), relative_path=str(path.relative_to(root)),
                                       source_id=source['id'], project=source['name'], size=info.st_size,
-                                      kind=path.suffix[1:].upper(), supported=True))
+                                      kind=path.suffix[1:].upper(), supported=True, project_id=project_id))
         files.sort(key=lambda f: (f['project'].casefold(), f['kind'] == 'H5OINA', f['relative_path'].casefold()))
         LOG.info('AZtec project scan: %s · %s files · %s folder errors', project or 'all', len(files), len(errors))
         return dict(files=files, errors=errors)

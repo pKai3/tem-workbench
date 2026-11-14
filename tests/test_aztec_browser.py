@@ -3,6 +3,7 @@ import hashlib
 from contextlib import closing
 import json
 from pathlib import Path
+import shutil
 import sqlite3
 import struct
 import tempfile
@@ -70,6 +71,29 @@ class AztecBrowserTests(unittest.TestCase):
         self.assertEqual(record['attributes']['Acquisition'],'Map 1')
         self.assertEqual(site['layers'][0]['technique'],'Electron images')
         self.assertEqual(result['folder'],str(self.root.resolve()))
+
+    def test_native_project_identity_survives_rename_and_folder_move(self):
+        sources=[dict(id='source', name='Source', path=str(self.root), output_path=str(self.root/'output'))]
+        original=self.browser.files(sources)['files'][0]
+        self.assertEqual(original['project_id'],self.ids['Project'])
+        self.assertEqual(self.browser.open(self.path)['catalogue']['project_id'],original['project_id'])
+        folder=self.root/'Moved';folder.mkdir()
+        moved=folder/'Renamed.oipx'
+        shutil.move(self.path,moved);shutil.move(self.root/'data',folder/'data')
+        discovered=self.browser.files(sources)['files'][0]
+        self.assertEqual(discovered['path'],str(moved.resolve()))
+        self.assertEqual(discovered['project_id'],original['project_id'])
+        opened=self.browser.open(moved)
+        self.assertEqual(opened['catalogue']['project_id'],original['project_id'])
+        record='/XrayMapImages/'+self.ids['XrayMapImages']
+        self.assertTrue(self.browser.preview(opened['id'],record)['image'].startswith('data:image/png;base64,'))
+
+    def test_unreadable_native_file_remains_in_file_list_without_identity(self):
+        broken=self.root/'Broken.oipx';broken.write_bytes(b'not a SQLite database')
+        sources=[dict(id='source',name='Source',path=str(self.root),output_path=str(self.root/'output'))]
+        found={file['name']:file for file in self.browser.files(sources)['files']}
+        self.assertIsNone(found['Broken.oipx']['project_id'])
+        self.assertEqual(found['Project.oipx']['project_id'],self.ids['Project'])
 
     def test_native_arrays_and_profiles_are_exact_and_read_only(self):
         paths=[self.path,*sorted((self.root/'data').iterdir())]

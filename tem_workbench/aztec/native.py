@@ -108,6 +108,21 @@ class NativeProjectReader:
             con.close()
         self.unchanged()
 
+    def project_id(self):
+        """Read the native project UUID without decoding its dataset inventory."""
+        with self.connection() as con:
+            schema = list(con.execute('PRAGMA table_info("Project")'))
+            if not schema:
+                return None
+            primary = next((row['name'] for row in schema if row['pk']), schema[0]['name'])
+            rows = list(con.execute('SELECT ' + quoted(primary) + ' FROM "Project" LIMIT 2'))
+        if len(rows) != 1:
+            return None
+        try:
+            return str(uuid.UUID(str(rows[0][0])))
+        except ValueError:
+            return None
+
     def inspect(self):
         self.unchanged()
         if self._catalogue is not None:
@@ -209,7 +224,7 @@ class NativeProjectReader:
         for record in records.values():
             record.pop('chain', None)
         self._records = records
-        self._catalogue = dict(source={**asdict(self.source), 'reader': 'native-oipx-1'},
+        self._catalogue = dict(source={**asdict(self.source), 'reader': 'native-oipx-1'}, project_id=self.project_id(),
             format_version=project.get('Version'), software_version=None, manufacturer='Oxford Instruments',
             file_type='OIPX', schema_version=1, acquisitions=acquisitions, datasets=descriptors,
             inventory=tables, warnings=[], native_tree=list(nodes.values()),
