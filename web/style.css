@@ -149,6 +149,8 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .image-browser-tile[aria-current]{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan)}
 .image-browser-preview{display:grid;place-items:center;position:relative;width:100%;aspect-ratio:1;background:#080d13;border-radius:3px;overflow:hidden;font-size:12px}
 .image-browser-preview img{position:absolute;width:100%;height:100%;object-fit:contain}
+.image-browser-type{position:absolute;z-index:1;top:6px;left:6px;display:grid;place-items:center;width:27px;height:27px;border:1px solid #d8e5f066;border-radius:5px;background:#07111bcb;color:#f1f7fc;box-shadow:0 1px 4px #0008}
+.image-browser-type svg{width:19px;height:19px}
 .image-browser-tile strong{font-size:12px;overflow-wrap:anywhere;font-weight:500}.image-browser-tile small{color:var(--muted);font-size:11px}
 
 .fft-processing-heading{display:flex;align-items:center;gap:8px;align-self:center}

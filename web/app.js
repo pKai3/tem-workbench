@@ -226,9 +226,13 @@ function sortedFiles(files){
  });
 }
 function imageTypeLabel(file){return ({real_space:'Real space',diffraction:'Diffraction',uncalibrated:'Uncalibrated',other:'Other'})[file.image_kind]||'Other'}
+function fileBaseName(file){
+ const extension=file.extension||file.id.match(/\.[^/.]+$/)?.[0]||'';
+ return file.name.endsWith(' · demo')?file.name.slice(0,-7)+extension+' · demo':file.name+extension;
+}
 function fileDisplayName(file){
  const extension=file.extension||file.id.match(/\.[^/.]+$/)?.[0]||'';
- const name=file.name.endsWith(' · demo')?file.name.slice(0,-7)+extension+' · demo':file.name+extension;
+ const name=fileBaseName(file);
  return imageTypeLabel(file)+' · '+name+((file.raster||extension.toLowerCase()==='.npz')?` (${file.relative_diffraction?'Relative only':file.calibrated?'Calibrated':'Uncalibrated'})`:'');
 }
 function updateRasterStatus(id,calibrated){
@@ -2838,6 +2842,20 @@ function syncImageBrowserFolders(){
  select.replaceChildren(option('',`All folders (${projectFiles().length})`),...[...counts].sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true,sensitivity:'base'})).map(([folder,count])=>option(folder,`${folder==='.'?'Data folder (top level)':folder} (${count})`)));
  select.value=counts.has(previous)?previous:'';
 }
+function imageBrowserTypeIcon(file){
+ const badge=document.createElement('span'),svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+ badge.className='image-browser-type';badge.title=imageTypeLabel(file);badge.setAttribute('aria-hidden','true');
+ svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.8');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');
+ const add=(tag,attrs)=>{const node=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attrs))node.setAttribute(key,value);svg.append(node)};
+ if(file.image_kind==='diffraction'){
+  add('circle',{cx:12,cy:12,r:2.2});for(const [cx,cy] of [[5,5],[19,5],[5,19],[19,19],[12,3],[12,21],[3,12],[21,12]])add('circle',{cx,cy,r:1.1,fill:'currentColor',stroke:'none'});
+ }else if(file.image_kind==='real_space'){
+  add('rect',{x:2.5,y:3.5,width:19,height:17,rx:2});add('circle',{cx:8,cy:9,r:1.4,fill:'currentColor',stroke:'none'});add('path',{d:'M4 17l5-5 3 3 4-5 4 5'});
+ }else{
+  add('rect',{x:4,y:3,width:16,height:18,rx:2});add('path',{d:'M8 8h8M8 12h8M8 16h5'});
+ }
+ badge.append(svg);return badge;
+}
 function renderImageBrowser(){
  syncImageBrowserFolders();
  const terms=$('image-browser-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -2854,7 +2872,8 @@ function renderImageBrowser(){
    const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';
    img.src='/api/file-preview?id='+encodeURIComponent(file.id);img.onload=()=>placeholder.hidden=true;img.onerror=()=>img.remove();preview.append(img);
   }
-  const name=document.createElement('strong');name.textContent=fileDisplayName(file);
+  preview.append(imageBrowserTypeIcon(file));
+  const name=document.createElement('strong');name.textContent=fileBaseName(file);
   if(favorites.has(file.id)){const star=document.createElement('span');star.className='favorite-star';star.textContent='★ ';star.title='Favourite';star.setAttribute('aria-hidden','true');name.prepend(star)}
   const group=document.createElement('small');group.textContent=file.sample;
   tile.append(preview,name,group);tile.onclick=()=>{
