@@ -978,7 +978,7 @@ Parallel grid execution is reused by single-image and batch overlapping maps. Ba
 
 ## Display updates
 
-16 November 2026: The visual image browser shows the bare filename and extension on each card, so acquisition numbers are visible without the repeated Real space / Diffraction prefix. A small type icon overlays the thumbnail; the full type, calibration status and path remain available through the button's accessible name and existing tooltip. File dropdowns and favourites retain their existing labels. This changes presentation only.
+16 November 2026 (`3c726f1`): The visual image browser shows the bare filename and extension on each card, so acquisition numbers are visible without the repeated Real space / Diffraction prefix. A small type icon overlays the thumbnail; the full type, calibration status and path remain available through the button's accessible name and existing tooltip. File dropdowns and favourites retain their existing labels. This changes presentation only.
 
 3 November 2026: Visual image browser has a folder selector with All folders, parent/subfolder paths and image counts. Parent selections include descendants, combine with keyword search and sorting, and are remembered per data source. Top-level files have their own option; stale selections fall back to All folders when a folder disappears. Preview generation scope remains the full linked collection.
 
