@@ -128,10 +128,12 @@
 <div id="batch-review-results" hidden>
 <div class="batch-review-toolbar">
 <label class="batch-search-label">Search images<input id="batch-search" type="search" placeholder="Name, sample or acquisition number"></label>
-<button id="batch-show-selected" type="button" aria-pressed="false">Show selected only</button>
-<button id="batch-select-only" type="button">Select matches only</button>
-<button id="batch-select-all" type="button">Select all matches</button>
-<button id="batch-deselect-all" type="button">Deselect matches</button>
+<div class="signal-toggle" role="group" aria-label="Batch review display"><button id="batch-view-names" type="button" aria-pressed="false">Names</button><button id="batch-view-previews" type="button" aria-pressed="true">Previews</button></div>
+<div class="batch-view-switch"><span>Show all</span><label class="batch-switch"><input id="batch-show-selected" type="checkbox" role="switch" aria-label="Show selected images only"><span class="batch-switch-track" aria-hidden="true"></span></label><span>Selected</span></div>
+<button id="batch-select-only" type="button" title="Replace the selection with eligible images matching the current project, folders and search.">Replace selection</button>
+<button id="batch-select-all" type="button" title="Add eligible matching images without changing other selections.">Add matches</button>
+<button id="batch-deselect-all" type="button" title="Deselect matching images without changing other selections.">Remove matches</button>
+<span class="settings-help batch-selection-help"><button class="settings-help-button" type="button" aria-label="About image selection actions">ⓘ</button><span class="settings-help-popup" role="tooltip">Matches are images in the current project, folders and search. Add keeps selections outside this filter; Replace clears them. Remove deselects only matches. The Show all / Selected switch changes what is visible, not what is selected.</span></span>
 <span id="batch-selection-count" class="hint" role="status"></span>
 </div>
 <div id="batch-files" class="batch-files batch-preview-grid"></div>

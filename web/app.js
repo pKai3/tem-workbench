@@ -1541,7 +1541,11 @@ let batchPngSelections=readPreference('tem-batch-png-views',{});
 if(!batchPngSelections||typeof batchPngSelections!=='object'||Array.isArray(batchPngSelections))batchPngSelections={};
 let batchPngRowsByMode=readPreference('tem-batch-png-rows',{});
 if(!batchPngRowsByMode||typeof batchPngRowsByMode!=='object'||Array.isArray(batchPngRowsByMode))batchPngRowsByMode={};
+let batchPngEnabledByMode=readPreference('tem-batch-png-enabled',{});
+if(typeof batchPngEnabledByMode==='boolean')batchPngEnabledByMode={standard:batchPngEnabledByMode,overlap:batchPngEnabledByMode};
+if(!batchPngEnabledByMode||typeof batchPngEnabledByMode!=='object'||Array.isArray(batchPngEnabledByMode))batchPngEnabledByMode={};
 const batchPngMode=()=>$('grid-mode').value==='standard'?'standard':'overlap';
+function syncBatchPngEnabled(){$('batch-png').value=batchPngEnabledByMode[batchPngMode()]===false?'off':'on'}
 function legacyBatchPngRow(id){
  const rows={classification:['classification','continuous','all'],support_all:['support','continuous','all'],support_phases:['support','continuous','each'],strength_all:['strength','continuous','all'],strength_phases:['strength','continuous','each'],hex:['top','hex','all'],hex_support:['support','hex','all'],hex_strength:['strength','hex','all'],spread_phases:['spread','continuous','each'],samples:['samples','continuous','all'],separate:['separate','continuous','all'],raw:['raw','centres','all']};
  const row=rows[id];return row?{mode:row[0],display:row[1],phase:row[2]}:null;
@@ -1557,14 +1561,19 @@ function batchPngRows(){
    if(!allowed.includes(row.mode)){row.mode=allowed[0];changed=true}
    const displays=batchPngDisplays(row.mode).map(([key])=>key),phases=batchPngPhases(row.mode).map(([key])=>key);
    if(!displays.includes(row.display)){row.display=displays[0];changed=true}
-   if(!phases.includes(row.phase)){row.phase=phases[0];changed=true}
+   if(![...phases,...(row.mode==='spread'?PHASES:['support','strength'].includes(row.mode)?PHASES:[])].includes(row.phase)){row.phase=phases[0];changed=true}
   }
   if(changed)writePreference('tem-batch-png-rows',batchPngRowsByMode);
   return rows;
 }
 function batchPngViews(){return batchPngRows().map(row=>({...row}))}
 function batchPngDisplays(mode){return mode==='raw'?[['centres','Window centres']]:['top','support','strength'].includes(mode)?[['continuous','Continuous map'],['hex','Hex grid']]:[['continuous','Continuous map']]}
-function batchPngPhases(mode){return ['support','strength','spread'].includes(mode)?[...(mode==='spread'?[]:[['all','All phases']]),['each','Each phase'],...enabledPhases.map(phase=>[phase,phaseLabel(phase)])]:[['all','All phases']]}
+function batchPngPhases(mode,selected=null){
+ if(!['support','strength','spread'].includes(mode))return [['all','All phases']];
+ const choices=[...(mode==='spread'?[]:[['all','All phases']]),['each','Each phase'],...enabledPhases.map(phase=>[phase,phaseLabel(phase)])];
+ if(selected&&PHASES.includes(selected)&&!enabledPhases.includes(selected))choices.push([selected,phaseLabel(selected)+' · not enabled']);
+ return choices;
+}
 function batchPngOutputKeys(row){
  const view=row.mode==='classification'?'classification':row.display==='hex'?(row.mode==='top'?'hex':'hex_'+row.mode):row.mode;
  return (row.phase==='each'?enabledPhases:[row.phase==='all'?null:row.phase]).map(phase=>view+':'+(phase||'all'));
@@ -1574,20 +1583,20 @@ function duplicateBatchPngRows(rows=batchPngRows()){
  rows.forEach((row,index)=>{for(const key of batchPngOutputKeys(row)){if(seen.has(key)){duplicates.add(seen.get(key));duplicates.add(index)}else seen.set(key,index)}});
  return duplicates;
 }
-function invalidBatchPngRows(rows=batchPngRows()){return rows.some(row=>row.mode==='spread'&&Number($('map-passes').value)<2)}
+function invalidBatchPngRows(rows=batchPngRows()){return rows.some(row=>row.mode==='spread'&&Number($('map-passes').value)<2||PHASES.includes(row.phase)&&!enabledPhases.includes(row.phase))}
 function saveBatchPngRows(){writePreference('tem-batch-png-rows',batchPngRowsByMode);updateBatchPngControls();syncBatchSelection()}
 function updateBatchPngControls(){
  const mode=batchPngMode(),rows=batchPngRows(),box=$('batch-png-options');box.hidden=$('batch-png').value!=='on';box.replaceChildren();
  const duplicates=duplicateBatchPngRows(rows),modes=mode==='standard'?[['classification','Classification + zone labels']]:[['raw','Individual windows'],['top','Best match'],['strength','Match score'],['support','Match frequency'],['separate','Multiple-structure support'],['spread','Placement sensitivity'],['samples','Sampling density']];
  rows.forEach((row,index)=>{
-  const line=document.createElement('div');line.className='batch-png-row';line.classList.toggle('duplicate',duplicates.has(index));
+  const line=document.createElement('div');line.className='batch-png-row';line.classList.toggle('duplicate',duplicates.has(index));line.classList.toggle('invalid',row.mode==='spread'&&Number($('map-passes').value)<2||PHASES.includes(row.phase)&&!enabledPhases.includes(row.phase));
   const number=document.createElement('strong');number.textContent='PNG '+(index+1);line.append(number);
   const field=(label,choices,value,change)=>{const wrap=document.createElement('label'),select=document.createElement('select');wrap.textContent=label;for(const [key,text] of choices)select.append(new Option(text,key));select.value=value;select.onchange=()=>change(select.value);wrap.append(select);line.append(wrap);return select};
   field('Mode',modes,row.mode,value=>{row.mode=value;const displays=batchPngDisplays(value).map(([key])=>key),phases=batchPngPhases(value).map(([key])=>key);if(!displays.includes(row.display))row.display=displays[0];if(!phases.includes(row.phase))row.phase=phases[0];saveBatchPngRows()});
   const display=field('Display',batchPngDisplays(row.mode),row.display,value=>{row.display=value;saveBatchPngRows()});display.disabled=batchPngDisplays(row.mode).length===1;
-  const phase=field('Phase',batchPngPhases(row.mode),row.phase,value=>{row.phase=value;saveBatchPngRows()});phase.disabled=batchPngPhases(row.mode).length===1;
+  const phase=field('Phase',batchPngPhases(row.mode,row.phase),row.phase,value=>{row.phase=value;saveBatchPngRows()});phase.disabled=batchPngPhases(row.mode,row.phase).length===1;
   const remove=document.createElement('button');remove.type='button';remove.className='batch-png-remove';remove.textContent='Remove';remove.setAttribute('aria-label','Remove PNG view '+(index+1));remove.onclick=()=>{rows.splice(index,1);saveBatchPngRows()};line.append(remove);
-  if(duplicates.has(index)||row.mode==='spread'&&Number($('map-passes').value)<2){const warning=document.createElement('span');warning.className='batch-png-duplicate';warning.textContent=duplicates.has(index)?'Duplicate PNG view':'Placement sensitivity needs at least two passes';line.append(warning)}
+  if(duplicates.has(index)||row.mode==='spread'&&Number($('map-passes').value)<2||PHASES.includes(row.phase)&&!enabledPhases.includes(row.phase)){const warning=document.createElement('span');warning.className='batch-png-duplicate';warning.textContent=duplicates.has(index)?'Duplicate PNG view':PHASES.includes(row.phase)&&!enabledPhases.includes(row.phase)?'Enable this phase or choose another':'Placement sensitivity needs at least two passes';line.append(warning)}
   box.append(line);
  });
  const add=document.createElement('button');add.type='button';add.className='batch-png-add';add.textContent='+ Add PNG view';add.disabled=mode==='standard'&&rows.length>0;if(add.disabled)add.title='Standard grids have one PNG view.';add.onclick=()=>{
@@ -1596,7 +1605,7 @@ function updateBatchPngControls(){
  };box.append(add);
  if(!rows.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='Add a PNG view or choose No PNG maps.';box.insertBefore(empty,add)}
 }
-$('batch-png').onchange=()=>{updateBatchPngControls();syncBatchSelection()};
+$('batch-png').onchange=()=>{batchPngEnabledByMode[batchPngMode()]=$('batch-png').value==='on';writePreference('tem-batch-png-enabled',batchPngEnabledByMode);updateBatchPngControls();syncBatchSelection()};
 document.addEventListener('tem-phases-changed',()=>{updateBatchPngControls();syncBatchSelection()});
 function overlapRequest(){
  if($('grid-mode').value==='standard')return null;
@@ -1728,6 +1737,7 @@ function updateGridSizeNote(){
  $('map-window').closest('label').hidden=relative;$('map-percent-label').hidden=!relative;
  $('map-spacing').closest('label').hidden=relativeSpacing;$('map-spacing-percent-label').hidden=!relativeSpacing;
  updateOverlapSizePreview();
+ syncBatchPngEnabled();
  updateBatchPngControls();
  syncBatchSelection();
  for(const id of ['grid-count','grid-min','adaptive','check-passing'])$(id).closest('label').hidden=overlap;
@@ -4150,6 +4160,8 @@ let batchFolderSelection=null;
 let batchFiles=[],batchPollTimer=null,batchRunning=false,batchReviewReady=false;
 const batchSelected=new Set();
 let batchShowSelected=false;
+let batchListView=readPreference('tem-batch-list-view','previews');
+if(!['names','previews'].includes(batchListView))batchListView='previews';
 let batchHoverTimer=null,batchHoverRow=null;
 function hideBatchHover(){clearTimeout(batchHoverTimer);batchHoverRow=null;$('batch-hover').hidden=true}
 function positionBatchHover(x,y){
@@ -4223,30 +4235,34 @@ function syncBatchSelection(){
  $('batch-start').disabled=batchRunning||!batchReviewReady||selected===0||$('batch-png').value==='on'&&(!batchPngRows().length||duplicateBatchPngRows().size>0||invalidBatchPngRows());
  const shown=matchingBatchFiles().filter(row=>row.eligible),shownSelected=shown.filter(row=>batchSelected.has(row.id)).length;
  if(batchReviewReady&&($('batch-project').value||$('batch-search').value.trim()||batchFolderSelection!==null))$('batch-selection-count').textContent+=` · ${shownSelected} / ${shown.length} matching images selected`;
- $('batch-show-selected').setAttribute('aria-pressed',String(batchShowSelected));
+ $('batch-show-selected').checked=batchShowSelected;
  $('batch-select-only').disabled=!batchReviewReady||!shown.length;
  $('batch-select-all').disabled=!batchReviewReady||!shown.length||shownSelected===shown.length;
  $('batch-deselect-all').disabled=!batchReviewReady||shownSelected===0;
 }
 function renderBatchFiles(){
  hideBatchHover();const host=$('batch-files');host.replaceChildren();
+ host.classList.toggle('batch-preview-grid',batchListView==='previews');
+ for(const view of ['names','previews'])$('batch-view-'+view).setAttribute('aria-pressed',String(batchListView===view));
  const shown=displayedBatchFiles();
  if(batchReviewReady&&!shown.length){const empty=elHTML('p',batchShowSelected?'No selected images match these filters.':'No matching images.');empty.className='hint';host.append(empty)}
  for(const row of shown){
-  const card=document.createElement('label');card.className='batch-preview-card';card.title=row.id;
+  const card=document.createElement('label');card.className=batchListView==='previews'?'batch-preview-card':'batch-name-row';card.title=row.id;
   card.classList.toggle('unavailable',!row.eligible);card.classList.toggle('selected',batchSelected.has(row.id));
   const check=document.createElement('input');check.type='checkbox';check.checked=batchSelected.has(row.id);check.disabled=!row.eligible;check.dataset.fileId=row.id;
   check.setAttribute('aria-label',`${row.eligible?'Select':'Unavailable'} ${row.sample} · ${row.name}${row.reason?' · '+row.reason:''}`);
   check.onchange=()=>{if(check.checked)batchSelected.add(row.id);else batchSelected.delete(row.id);if(batchShowSelected)renderBatchFiles();else{card.classList.toggle('selected',check.checked);syncBatchSelection()}};
   card.append(check);
-  const preview=document.createElement('span');preview.className='image-browser-preview';
-  const placeholder=elHTML('span','No PNG preview');preview.append(placeholder);
-  if(row.has_preview){
-   placeholder.textContent='Loading preview…';const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';
-   img.onload=()=>placeholder.hidden=true;img.onerror=()=>{img.remove();placeholder.textContent='Preview unavailable'};
-   img.src='/api/file-preview?id='+encodeURIComponent(row.id);preview.append(img);
+  if(batchListView==='previews'){
+   const preview=document.createElement('span');preview.className='image-browser-preview';
+   const placeholder=elHTML('span','No PNG preview');preview.append(placeholder);
+   if(row.has_preview){
+    placeholder.textContent='Loading preview…';const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';
+    img.onload=()=>placeholder.hidden=true;img.onerror=()=>{img.remove();placeholder.textContent='Preview unavailable'};
+    img.src='/api/file-preview?id='+encodeURIComponent(row.id);preview.append(img);
+   }
+   preview.append(imageBrowserTypeIcon(row));const format=imageBrowserFormatIcon(row);if(format)preview.append(format);card.append(preview);
   }
-  preview.append(imageBrowserTypeIcon(row));const format=imageBrowserFormatIcon(row);if(format)preview.append(format);card.append(preview);
   const caption=document.createElement('span');caption.className='batch-file-caption';
   const name=document.createElement('strong'),parts=imageBrowserNameParts(row),description=document.createElement('span');name.className='image-browser-name';description.className='image-browser-name-text';description.textContent=(favorites.has(row.id)?'★ ':'')+parts.description;name.append(description);
   if(parts.number){const number=document.createElement('span');number.className='image-browser-number';number.textContent='#'+parts.number;name.append(number)}
@@ -4261,7 +4277,8 @@ function renderBatchFiles(){
  syncBatchSelection();
 }
 $('batch-search').oninput=renderBatchFiles;
-$('batch-show-selected').onclick=()=>{batchShowSelected=!batchShowSelected;renderBatchFiles()};
+for(const view of ['names','previews'])$('batch-view-'+view).onclick=()=>{batchListView=view;writePreference('tem-batch-list-view',view);renderBatchFiles()};
+$('batch-show-selected').onchange=()=>{batchShowSelected=$('batch-show-selected').checked;renderBatchFiles()};
 $('batch-select-only').onclick=()=>{batchSelected.clear();for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);renderBatchFiles()};
 $('batch-select-all').onclick=()=>{for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);renderBatchFiles()};
 $('batch-deselect-all').onclick=()=>{for(const row of matchingBatchFiles())batchSelected.delete(row.id);renderBatchFiles()};
@@ -4384,7 +4401,7 @@ $('batch-start').onclick=async()=>{
   const exportPng=$('batch-png').value==='on',png_views=exportPng?batchPngViews():[];
   if(exportPng&&!png_views.length)throw new Error('Add a PNG view, or choose No PNG maps.');
   if(exportPng&&duplicateBatchPngRows().size)throw new Error('Change or remove the duplicate PNG views.');
-  if(exportPng&&invalidBatchPngRows())throw new Error('Placement sensitivity PNGs need at least two passes.');
+  if(exportPng&&invalidBatchPngRows())throw new Error('Resolve the PNG view warnings before running.');
   if(exportPng&&!config.batch_png_views)throw new Error('Restart TEM Workbench and reload to enable batch PNG choices.');
   if(overlapRequest()&&!config.batch_overlap_maps)throw new Error('Restart TEM Workbench, then reload to enable batch stability maps.');
   if(isDiffraction())throw new Error('Open a real-space image to choose the FFT processing settings for this batch.');
