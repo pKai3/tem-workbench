@@ -4,8 +4,8 @@ const store=window.aztecComparisonState,a='/a/Project.oipx',b='/b/Project.oipx',
 const qa=store.identity(a,'same'),qb=store.identity(b,'same');
 const old={preferences:{['compare-'+a+':'+table]:{scale_scope:'all',line_offsets:{same:12}},[a+':'+table]:{brightness:2}},
  selections:{['compare-'+a+':'+table]:{ids:['same'],signals:['V']}},
- aliases:{[a+':same']:'Sample A'},crops:{[a+':same']:[.2,.4]},presets:{
-  ['compare-'+a+':'+table]:[{name:'Boundary',ids:['same'],signals:['V'],options:{normalisation:'median',line_offsets:{same:12}},aliases:{same:'A'},crops:{same:[.2,.4]}}],
+ aliases:{[a+':same']:'Sample A'},labelColours:{[a+':same']:'#34aabb'},crops:{[a+':same']:[.2,.4]},presets:{
+  ['compare-'+a+':'+table]:[{name:'Boundary',ids:['same'],signals:['V'],options:{normalisation:'median',line_offsets:{same:12}},aliases:{same:'A'},labelColours:{same:'#34aabb'},crops:{same:[.2,.4]}}],
   ['compare-'+b+':'+table]:[{name:'Boundary',ids:[qb,qa],files:[a,b],signals:['V'],options:{scale_scope:'element',line_offsets:{[qb]:3}},aliases:{[qb]:'B'},crops:{}}],
   ['compare-'+b+':XrayLinescans']:[{name:'Line scan',ids:['line'],signals:['Ti'],options:{}}]
  }};
@@ -14,6 +14,7 @@ assert.equal(result.comparisonScope,2);
 assert.equal(presets.length,2);assert.notEqual(presets[0].name,presets[1].name);
 assert.equal(presets[0].ids[0],qa);assert.equal(presets[0].options.line_offsets[qa],12);
 assert.equal(presets[0].aliases[qa],'A');assert.deepEqual(presets[0].crops[qa],[.2,.4]);
+assert.equal(presets[0].labelColours[qa],'#34aabb');
 assert.equal(presets[1].ids[0],qb);assert.equal(presets[1].options.line_offsets[qb],3);
 assert.equal(presets[1].ids[1],qa);
 assert.equal(store.compatibleUnit('Window-count ratio'),'Signal ratio');
@@ -21,6 +22,7 @@ assert.equal(store.compatibleUnit('Relative window count'),'Relative signal');
 assert.equal(JSON.stringify(['V Kα1',store.compatibleUnit('Window-count ratio'),'ratio']),
  JSON.stringify(['V Kα1',store.compatibleUnit('Signal ratio'),'ratio']));
 assert.equal(result.aliases['compare:'+qa],'Sample A');assert.deepEqual(result.crops['compare:'+qa],[.2,.4]);
+assert.equal(result.labelColours['compare:'+qa],'#34aabb');
 assert.equal(result.selections[key].ids[0],qa);assert.equal(result.preferences[key].scale_scope,'all');
 assert.equal(result.preferences[a+':'+table].brightness,2);assert.equal(result.aliases[a+':same'],'Sample A');
 assert.equal(result.presets[store.key('XrayLinescans')][0].ids[0],store.identity(b,'line'));
@@ -49,8 +51,8 @@ assert.equal(Object.keys(store.relocations({[a]:nativeId},[
 const sourceId=store.identity(a,'native-line'),newId=store.identity(moved,'native-line');
 const savedState={preferences:{[a+':XrayLinescans']:{raw:true},[store.key('XrayLinescans')]:{line_offsets:{[sourceId]:14}}},
  selections:{[store.key('XrayLinescans')]:{ids:[sourceId],files:[a],signals:['V']}},
- presets:{[store.key('XrayLinescans')]:[{name:'Saved line',ids:[sourceId],files:[a],options:{line_offsets:{[sourceId]:14}},aliases:{[sourceId]:'Sample'},crops:{[sourceId]:[.2,.3]}}]},
- aliases:{['compare:'+sourceId]:'Sample',[a+':native-line']:'Direct'},crops:{['compare:'+sourceId]:[.2,.3]}};
+ presets:{[store.key('XrayLinescans')]:[{name:'Saved line',ids:[sourceId],files:[a],options:{line_offsets:{[sourceId]:14}},aliases:{[sourceId]:'Sample'},labelColours:{[sourceId]:'#aa43cc'},crops:{[sourceId]:[.2,.3]}}]},
+ aliases:{['compare:'+sourceId]:'Sample',[a+':native-line']:'Direct'},labelColours:{['compare:'+sourceId]:'#aa43cc',[a+':native-line']:'#123456'},crops:{['compare:'+sourceId]:[.2,.3]}};
 const relocated=store.relocate(savedState,{[a]:moved});
 assert.equal(relocated.preferences[moved+':XrayLinescans'].raw,true);
 assert.equal(relocated.preferences[store.key('XrayLinescans')].line_offsets[newId],14);
@@ -58,7 +60,10 @@ assert.equal(relocated.selections[store.key('XrayLinescans')].ids[0],newId);
 assert.equal(relocated.selections[store.key('XrayLinescans')].files[0],moved);
 assert.equal(relocated.presets[store.key('XrayLinescans')][0].options.line_offsets[newId],14);
 assert.equal(relocated.presets[store.key('XrayLinescans')][0].aliases[newId],'Sample');
+assert.equal(relocated.presets[store.key('XrayLinescans')][0].labelColours[newId],'#aa43cc');
 assert.equal(relocated.aliases['compare:'+newId],'Sample');
+assert.equal(relocated.labelColours['compare:'+newId],'#aa43cc');
+assert.equal(relocated.labelColours[moved+':native-line'],'#123456');
 assert.equal(relocated.aliases[moved+':native-line'],'Direct');
 assert.equal(savedState.selections[store.key('XrayLinescans')].ids[0],sourceId);
 console.log('Comparison migration retains cross-file presets, duplicate names, aliases, crops and trims; direct views stay separate');

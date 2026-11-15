@@ -44,6 +44,7 @@ window.aztecComparisonState={
    if(Array.isArray(value?.ids))value.ids=[...new Set(value.ids.map(changeId))];
    if(Array.isArray(value?.files))value.files=[...new Set(value.files.map(changeSource))];
    if(value?.aliases)value.aliases=rekey(value.aliases,changeId);
+   if(value?.labelColours)value.labelColours=rekey(value.labelColours,changeId);
    if(value?.crops)value.crops=rekey(value.crops,changeId);
    if(value?.options)options(value.options);
    return value;
@@ -52,6 +53,7 @@ window.aztecComparisonState={
   copy.selections=rekey(copy.selections,changeKey,selection);
   copy.presets=rekey(copy.presets,changeKey,items=>items.map(selection));
   copy.aliases=rekey(copy.aliases,changeKey);
+  copy.labelColours=rekey(copy.labelColours,changeKey);
   copy.crops=rekey(copy.crops,changeKey);
   return copy;
  },
@@ -63,7 +65,7 @@ window.aztecComparisonState={
  migrate(saved,preferredSource=''){
   if(saved.comparisonScope===2)return saved;
   const result=structuredClone(saved),object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
-  for(const key of ['preferences','selections','presets','aliases','crops'])result[key]=object(result[key]);
+  for(const key of ['preferences','selections','presets','aliases','labelColours','crops'])result[key]=object(result[key]);
   const keys=[...new Set([...Object.keys(result.selections),...Object.keys(result.presets),...Object.keys(result.preferences)])]
    .map(key=>({key,match:key.match(/^compare-(.*):(XrayMapImages|XrayLinescans|QuantLinescans)$/)})).filter(x=>x.match)
    .sort((a,b)=>(b.match[1]===preferredSource)-(a.match[1]===preferredSource));
@@ -72,14 +74,14 @@ window.aztecComparisonState={
    const convert=item=>{
     const copy=structuredClone(item),ids=item.ids||[];copy.ids=ids.map(qualify);
     copy.files=[...new Set([...(item.files||[]),...ids.map(id=>this.target(id,source).source)])];
-    for(const field of ['aliases','crops'])copy[field]=Object.fromEntries(Object.entries(item[field]||{}).map(([id,value])=>[qualify(id),value]));
+    for(const field of ['aliases','labelColours','crops'])copy[field]=Object.fromEntries(Object.entries(item[field]||{}).map(([id,value])=>[qualify(id),value]));
     if(copy.options?.line_offsets)copy.options.line_offsets=Object.fromEntries(Object.entries(copy.options.line_offsets).map(([id,value])=>[qualify(id),value]));
     return copy;
    };
    if(!result.selections[destination]&&result.selections[key]){
     const item=convert({...result.selections[key],options:result.preferences[key]||{}});
     result.selections[destination]={ids:item.ids,files:item.files,signals:item.signals};result.preferences[destination]=item.options;
-    for(const id of result.selections[key].ids||[])for(const field of ['aliases','crops']){
+    for(const id of result.selections[key].ids||[])for(const field of ['aliases','labelColours','crops']){
      const value=result[field][source+':'+id];if(value!==undefined)result[field]['compare:'+qualify(id)]=value;
     }
    }
@@ -101,7 +103,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  let previousFile='';try{previousFile=JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-browser')||'{}').file||''}catch{}
  const comparisonState=window.aztecComparisonState;savedViews=comparisonState.migrate(savedViews,previousFile);
  const object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
- const preferences=object(savedViews.preferences),selections=object(savedViews.selections),cropCentres=new Map(Object.entries(object(savedViews.crops))),aliases=object(savedViews.aliases),presets=object(savedViews.presets),structureCache=new Map();
+ const preferences=object(savedViews.preferences),selections=object(savedViews.selections),cropCentres=new Map(Object.entries(object(savedViews.crops))),aliases=object(savedViews.aliases),labelColours=object(savedViews.labelColours),presets=object(savedViews.presets),structureCache=new Map();
  let persistTimer=null,openVersion=0;
  const catalogues=new Map(),sourceErrors=new Map(),thumbnailRequests=new Map();let thumbnailObserver=null;
  const projectKey=()=>state.file?.catalogue.source.path||'';
@@ -119,15 +121,15 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  function persist(){
   if(current){preferences[current.preferenceKey]={...current.options};selections[current.preferenceKey]={ids:[...current.ids],signals:[...current.signals],files:[...(current.files||[])]}}
   clearTimeout(persistTimer);
-  try{WorkbenchWorkspace.writeRaw('tem-eds-comparison-v1',JSON.stringify({comparisonScope:2,preferences,selections,aliases,presets,crops:Object.fromEntries([...cropCentres].slice(-200))}))}
+  try{WorkbenchWorkspace.writeRaw('tem-eds-comparison-v1',JSON.stringify({comparisonScope:2,preferences,selections,aliases,labelColours,presets,crops:Object.fromEntries([...cropCentres].slice(-200))}))}
   catch(error){console.warn('AZtec comparison settings could not be saved:',error.message)}
  }
  function relocateSources(moves){
   if(!Object.keys(moves).length)return null;
   const reopen=current?.comparison?{kind:current.kind,table:current.table}:null;
   if(reopen||moves[projectKey()])current=null;
-  const changed=comparisonState.relocate({preferences,selections,presets,aliases,crops:Object.fromEntries(cropCentres)},moves);
-  for(const [name,target] of [['preferences',preferences],['selections',selections],['presets',presets],['aliases',aliases]]){
+  const changed=comparisonState.relocate({preferences,selections,presets,aliases,labelColours,crops:Object.fromEntries(cropCentres)},moves);
+  for(const [name,target] of [['preferences',preferences],['selections',selections],['presets',presets],['aliases',aliases],['labelColours',labelColours]]){
    for(const key of Object.keys(target))delete target[key];Object.assign(target,changed[name]);
   }
   cropCentres.clear();for(const [key,value] of Object.entries(changed.crops))cropCentres.set(key,value);
@@ -305,7 +307,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    ordered.forEach((group,index)=>{
     const card=el('div',undefined,'eds-selected-acquisition'),number=el('span',String(index+1),'eds-order-number'),name=el('div',undefined,'eds-selected-acquisition-name'),title=el('strong',group.name),details=el('small',group.site+' · '+fileName(group.source));
     title.title=group.label;details.title=group.source;name.append(title,details);
-    const alias=el('label','Export label','eds-order-alias'),input=el('input');input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[itemKey(group.id)]||'';input.setAttribute('aria-label','Export label for '+group.label);input.oninput=input.onchange=()=>{const key=itemKey(group.id),value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist();updateMapLabels();updateLineLabels()};alias.append(input);name.append(alias);
+    const alias=el('label','Export label','eds-order-alias'),input=el('input');input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[itemKey(group.id)]||'';input.setAttribute('aria-label','Export label for '+group.label);input.oninput=input.onchange=()=>{const key=itemKey(group.id),value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist();updateMapLabels();updateLineLabels()};alias.append(input);name.append(alias,labelColourControl(group));
     const actions=el('div',undefined,'eds-order-actions');for(const [direction,mark] of [[-1,'↑'],[1,'↓']]){
      const button=el('button',mark);button.type='button';button.disabled=index+direction<0||index+direction>=ordered.length;button.setAttribute('aria-label',`Move ${group.label} ${direction<0?'up':'down'}`);button.title=direction<0?'Move earlier':'Move later';
      button.onclick=()=>{const i=context.ids.indexOf(group.id),j=i+direction;[context.ids[i],context.ids[j]]=[context.ids[j],context.ids[i]];drawSelected();update()};actions.append(button)
@@ -373,29 +375,45 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   const populate=selected=>{select.replaceChildren();entries=[];const placeholder=el('option','Saved comparisons…');placeholder.value='';select.append(placeholder);for(const [table,label] of families){const group=el('optgroup');group.label=label;for(const item of presets[viewKey(table)]||[]){const entry={item,table,key:viewKey(table),value:table+':'+item.name};entries.push(entry);const option=el('option',item.name);option.value=entry.value;group.append(option)}if(group.childElementCount)select.append(group)}select.value=selected?context.table+':'+selected:'';remove.disabled=!select.value};populate();
   select.onchange=async()=>{const entry=entries.find(p=>p.value===select.value);if(!entry)return;const {item,table,key:destination}=entry;
    preferences[destination]=structuredClone(item.options);selections[destination]={ids:[...item.ids],signals:[...item.signals],files:item.files};
-   for(const id of item.ids){const cropKey='compare:'+id;if(item.crops?.[id])cropCentres.set(cropKey,[...item.crops[id]]);else cropCentres.delete(cropKey);if(item.aliases?.[id])aliases[cropKey]=item.aliases[id];else delete aliases[cropKey]}
+   for(const id of item.ids){const cropKey='compare:'+id;if(item.crops?.[id])cropCentres.set(cropKey,[...item.crops[id]]);else cropCentres.delete(cropKey);if(item.aliases?.[id])aliases[cropKey]=item.aliases[id];else delete aliases[cropKey];if(item.labelColours?.[id])labelColours[cropKey]=item.labelColours[id];else delete labelColours[cropKey]}
    // open() reads the saved selection; do not overwrite it with the old view.
    const kind=table==='XrayMapImages'?'map':'line';current=null;persist();const views=$('eds-analysis-views');views.style.minHeight=views.getBoundingClientRect().height+'px';const top=window.scrollY,left=window.scrollX,pending=open(null,kind,table),turn=openVersion;await pending;if(turn!==openVersion||current?.preferenceKey!==destination)return;window.scrollTo({top,left,behavior:'instant'});
    const chosen=$('eds-analysis-tools').querySelector('[aria-label="Saved comparisons"]'),input=$('eds-analysis-tools').querySelector('[aria-label="Comparison name"]');chosen.value=entry.value;input.value=item.name;$('eds-analysis-tools').querySelector('.eds-preset-delete').disabled=false;
   };
   save.onclick=()=>{const label=name.value.trim();if(!label){status.textContent='Enter a name.';name.focus({preventScroll:true});return}
-   const item={name:label,options:structuredClone(context.options),files:[...context.files],ids:[...context.ids],signals:[...context.signals],aliases:{},crops:{}};
-   for(const id of item.ids){const p=itemKey(id);if(aliases[p])item.aliases[id]=aliases[p];if(cropCentres.has(p))item.crops[id]=[...cropCentres.get(p)]}
+   const item={name:label,options:structuredClone(context.options),files:[...context.files],ids:[...context.ids],signals:[...context.signals],aliases:{},labelColours:{},crops:{}};
+   for(const id of item.ids){const p=itemKey(id);if(aliases[p])item.aliases[id]=aliases[p];if(labelColours[p])item.labelColours[id]=labelColours[p];if(cropCentres.has(p))item.crops[id]=[...cropCentres.get(p)]}
    const index=items.findIndex(p=>p.name===label);if(index<0)items.push(item);else items[index]=item;persist();populate(label);status.textContent='Saved';
   };
   remove.className='eds-preset-delete';remove.onclick=()=>{const entry=entries.find(p=>p.value===select.value);if(!entry)return;const index=items.indexOf(entry.item);if(index<0)return;const [removed]=items.splice(index,1);persist();populate();name.value='';status.replaceChildren(el('span','Deleted '));const undo=el('button','Undo');undo.type='button';undo.onclick=()=>{items.splice(index,0,removed);persist();populate(removed.name);name.value=removed.name;status.textContent='Restored'};status.append(undo)};
   row.append(select,name,save,remove,status);root.append(row);
  }
+ function normaliseLabelColour(value){const hex=String(value||'').trim().replace(/^#/,'');if(!/^(?:[\da-fA-F]{3}|[\da-fA-F]{6})$/.test(hex))return null;return '#'+(hex.length===3?[...hex].map(c=>c+c).join(''):hex).toLowerCase()}
+ function labelInk(hex){const rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722>.179?'#0b1520':'#fff'}
+ function labelColour(row){return normaliseLabelColour(labelColours[itemKey(row.acquisition)])}
+ function applyLabelColour(node,row){const colour=labelColour(row);node.style.backgroundColor=colour||'';node.style.color=colour?labelInk(colour):''}
  function exportLabel(row){const name=aliases[itemKey(row.acquisition)]||row.sample_name||current.all.find(g=>g.id===row.acquisition)?.sample||row.short_label||row.label;return row.data_kind==='reconstructed'?name+' · window cps':name}
  function updateMapLabels(){
-  for(const caption of $('eds-analysis-views').querySelectorAll('.eds-map-label[data-acquisition]')){const row=current.result?.rows.find(r=>r.acquisition===caption.dataset.acquisition);if(row)caption.textContent=exportLabel(row)}
+  for(const caption of $('eds-analysis-views').querySelectorAll('.eds-map-label[data-acquisition]')){const row=current.result?.rows.find(r=>r.acquisition===caption.dataset.acquisition);if(row){caption.textContent=exportLabel(row);applyLabelColour(caption,row)}}
  }
  function updateLineLabels(){
-  for(const caption of $('eds-analysis-views').querySelectorAll('.eds-line-reference-label[data-acquisition],.eds-line-caption span[data-acquisition]')){const row=current.result?.rows.find(r=>r.acquisition===caption.dataset.acquisition);if(row)caption.textContent=exportLabel(row)}
+  for(const caption of $('eds-analysis-views').querySelectorAll('.eds-line-reference-label[data-acquisition],.eds-line-caption span[data-acquisition]')){const row=current.result?.rows.find(r=>r.acquisition===caption.dataset.acquisition);if(row){caption.textContent=exportLabel(row);if(caption.classList.contains('eds-line-reference-label'))applyLabelColour(caption,row)}}
+ }
+ function labelColourControl(group){
+  const key=itemKey(group.id),row=el('div',undefined,'eds-label-colour-controls'),picker=el('input'),hex=el('input'),reset=el('button','↺'),error=el('span',undefined,'eds-label-colour-error');
+  picker.type='color';picker.value=normaliseLabelColour(labelColours[key])||'#0c131c';picker.setAttribute('aria-label','Pick export label colour for '+group.label);
+  hex.type='text';hex.inputMode='text';hex.maxLength=7;hex.placeholder='#RRGGBB';hex.value=normaliseLabelColour(labelColours[key])||'';hex.setAttribute('aria-label','Hex export label colour for '+group.label);hex.spellcheck=false;
+  reset.type='button';reset.title='Reset label colour';reset.setAttribute('aria-label','Reset export label colour for '+group.label);
+  const apply=(value,redraw=false)=>{const colour=normaliseLabelColour(value);if(colour)labelColours[key]=colour;else delete labelColours[key];picker.value=colour||'#0c131c';persist();updateMapLabels();updateLineLabels();if(redraw&&current?.kind==='line'&&current.result)render(current.result)};
+  const validate=()=>{const raw=hex.value.trim(),valid=!raw||!!normaliseLabelColour(raw);hex.setAttribute('aria-invalid',String(!valid));error.textContent=valid?'':'Use #RGB or #RRGGBB';return valid};
+  picker.oninput=()=>{hex.value=picker.value;validate();apply(picker.value)};picker.onchange=()=>apply(picker.value,true);
+  hex.oninput=()=>{if(validate())apply(hex.value)};hex.onchange=()=>{if(validate()){hex.value=normaliseLabelColour(hex.value)||'';apply(hex.value,true)}};
+  reset.onclick=()=>{hex.value='';validate();apply('',true)};
+  row.append(picker,hex,reset,error);return row;
  }
  function renderExportLabels(){
   const list=$('eds-analysis-tools').querySelector('.eds-export-aliases');if(!list)return;list.replaceChildren();
-  for(const group of current.ids.map(id=>current.all.find(g=>g.id===id)).filter(Boolean)){const label=el('label'),caption=el('span',group.label),input=el('input');caption.title=(group.source?group.source+' / ':'')+group.label;label.append(caption);input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[itemKey(group.id)]||'';input.setAttribute('aria-label','Export label for '+group.label);input.onchange=()=>{const key=itemKey(group.id),value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist();updateMapLabels();updateLineLabels()};label.append(input);list.append(label)}
+  for(const group of current.ids.map(id=>current.all.find(g=>g.id===id)).filter(Boolean)){const entry=el('div',undefined,'eds-export-entry'),label=el('label'),caption=el('span',group.label),input=el('input');caption.title=(group.source?group.source+' / ':'')+group.label;label.append(caption);input.type='text';input.maxLength=120;input.placeholder=group.sample;input.value=aliases[itemKey(group.id)]||'';input.setAttribute('aria-label','Export label for '+group.label);input.onchange=()=>{const key=itemKey(group.id),value=input.value.trim();if(value)aliases[key]=value;else delete aliases[key];persist();updateMapLabels();updateLineLabels()};label.append(input);entry.append(label,labelColourControl(group));list.append(entry)}
   list.parentElement.hidden=!list.childElementCount;
  }
  function exportControls(root,footer){
@@ -430,7 +448,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   async function run(kind){
    if(!current?.result||current.resultVersion!==version){notice('Export unavailable','Wait for the current view to finish updating.','error');return}
    const context=current,result=context.result,options={...context.options},fileId=state.file?.id,source=context.comparison?result.rows[0].source:projectKey();
-   const names=Object.fromEntries(result.rows.map(r=>[r.acquisition,exportLabel(r)]));
+   const names=Object.fromEntries(result.rows.map(r=>[r.acquisition,exportLabel(r)])),colours=Object.fromEntries(result.rows.map(r=>[r.acquisition,labelColour(r)]).filter(([,colour])=>colour));
    const lineRanges=context.kind==='line'&&context.comparison?window.aztecLineGeometry.ranges(result.rows,options):{};
    const active=kind==='png'?png:data;
    png.disabled=data.disabled=true;backgroundSelect.disabled=true;if(pngMode)pngMode.disabled=true;buttonState(active,'busy');notice(kind==='png'?'Exporting PNG…':'Exporting data…','Preparing the file…');
@@ -438,7 +456,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     if(!window.aztecExport)throw new Error('Restart TEM Workbench and reload to load the export tools.');
     let saved;
     if(kind==='png'){
-     const settings={result,options,kind:context.kind,comparison:context.comparison,signals:selectedSignals(),names,source,crops:Object.fromEntries(result.rows.map(r=>[r.acquisition,cropCentres.get(itemKey(r.acquisition))])),root:$('eds-analysis-views')};
+     const settings={result,options,kind:context.kind,comparison:context.comparison,signals:selectedSignals(),names,colours,source,crops:Object.fromEntries(result.rows.map(r=>[r.acquisition,cropCentres.get(itemKey(r.acquisition))])),root:$('eds-analysis-views')};
      if(pngMode?.value==='individual'){
       const snapshot=window.aztecExport.captureLines(settings),ids=snapshot.acquisitions,paths=[];
       if(!ids.length)throw new Error('There are no line plots to export.');
@@ -551,7 +569,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    if(current.options.layout==='overlay'){
     const body=el('div',undefined,'eds-overlay-line-body'),refs=el('div',undefined,'eds-line-references'),plots=el('div',undefined,'eds-overlay-line-plots');refs.hidden=!current.options.background;body.classList.toggle('eds-no-reference',refs.hidden);body.append(refs,plots);root.append(body);
     const colours=['#da85ef','#55d4e9','#ffb658','#67e6a1','#f78595','#adb4ff','#e1db66','#f7faff','#e09868','#5fa8fb','#c5eea1','#f793c3'];
-    rows.forEach((r,i)=>{r.compareColour=colours[i%colours.length];lineReference(refs,r,r.compareColour)});
+    rows.forEach((r,i)=>{r.compareColour=labelColour(r)||colours[i%colours.length];lineReference(refs,r,r.compareColour)});
     const byQuantity=new Map();for(const row of rows)for(const tile of row.tiles.filter(t=>!t.error)){const key=tile.quantityKey+row.distance_unit;if(!byQuantity.has(key))byQuantity.set(key,{tiles:[],row});byQuantity.get(key).tiles.push({...tile,label:row.short_label||row.label,source:row.label,colour:row.compareColour})}
     for(const {tiles,row} of byQuantity.values()){
      const section=el('section',undefined,'eds-compare-line-section eds-overlay-scan-section');section.append(el('h3',row.tiles.find(t=>t.quantityKey===tiles[0].quantityKey).label));plots.append(section);
@@ -561,7 +579,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     alignOverlayReferences(refs,plots);
    }else for(const row of rows){
     const section=el('section',undefined,'eds-compare-line-section');section.dataset.acquisition=row.acquisition;section.append(el('h3',row.label));root.append(section);
-    const body=el('div',undefined,'eds-compare-line-body'),ref=el('div'),plots=el('div');section.append(body);body.append(ref,plots);lineReference(ref,row);
+    const body=el('div',undefined,'eds-compare-line-body'),ref=el('div'),plots=el('div');section.append(body);body.append(ref,plots);lineReference(ref,row,labelColour(row)||undefined);
     section.classList.toggle('eds-has-line-reference',!!ref.querySelector('.eds-line-reference'));
     linePlots(plots,{...row,overlay:current.options.layout==='elements',axisLength:lengths.get(row.distance_unit),sharedRanges:current.options.scale_scope!=='off'?ranges:null},result,structureBody,row.label);
     alignLineReference(ref,plots);
@@ -756,7 +774,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   root.append(figure);
   const stage=el('div',undefined,'eds-line-reference-stage'),ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
   svg.classList.add('eds-reference-drawing');svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.setAttribute('role','img');svg.setAttribute('aria-label',row.label+' · scan location and crop');stage.append(svg);figure.append(stage);
-  const caption=el('span',exportLabel(row),'eds-line-reference-label');caption.dataset.acquisition=row.acquisition;caption.title=row.label;stage.append(caption);
+  const caption=el('span',exportLabel(row),'eds-line-reference-label');caption.dataset.acquisition=row.acquisition;caption.title=row.label;applyLabelColour(caption,row);stage.append(caption);
   if(current.comparison&&row.trimmed&&row.length>row.viewLength){
    stage.classList.add('eds-line-pannable');stage.title='Drag along the scan to move the selected crop';
    stage.onpointerdown=event=>{const box=stage.getBoundingClientRect(),scale=Math.min(box.width/width,box.height/height),vx=(b[0]-a[0])*scale,vy=(b[1]-a[1])*scale,size=vx*vx+vy*vy;if(size>0)beginLinePan(event,row,(dx,dy)=>(dx*vx+dy*vy)/size*row.length)};
@@ -823,7 +841,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  }
 
  function mapLabel(cell,text,row){
-  const caption=el('span',text,'eds-map-label');if(row)caption.dataset.acquisition=row.acquisition;cell.append(caption);return caption;
+  const caption=el('span',text,'eds-map-label');if(row){caption.dataset.acquisition=row.acquisition;applyLabelColour(caption,row)}cell.append(caption);return caption;
  }
  function mapScaleBar(cell,img,row){
   const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.classList.add('eds-image-scale');svg.setAttribute('role','img');cell.append(svg);

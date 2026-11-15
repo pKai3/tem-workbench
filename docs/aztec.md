@@ -29,6 +29,10 @@ Each export gets a unique filename and shows its saved path in the interface.
 Map and line PNG exports offer Dark, White and Transparent backgrounds. Transparent
 leaves empty canvas and plot areas clear while retaining the images and labels.
 The background choice does not change numerical ZIP data or the live display.
+Each acquisition's export label has a colour picker and editable hex value beside
+its name. The chosen colour appears on the reference-image label in the live view
+and PNG, and identifies the corresponding trace in Overlay scans. Reset restores
+the original dark label.
 
 Viewer preferences, comparison selections, aliases and named map/line presets
 autosave to `tem-workbench.workspace.json` beside the folder configuration.

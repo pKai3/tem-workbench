@@ -4,12 +4,13 @@ window.aztecExport=(()=>{
  const themeFor=options=>themes[options?.png_background]||themes.dark;
  const load=async source=>{const img=new Image();img.src=source;await img.decode();return img};
  const canvas=(w,h,theme)=>{if(w*h>64000000)throw new Error('Select fewer acquisitions for one PNG.');const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');if(theme.canvas){ctx.fillStyle=theme.canvas;ctx.fillRect(0,0,w,h)}return [c,ctx]};
- function badge(ctx,label,x,y,maxWidth,colour='#fff',initialSize=18){
+ const labelInk=hex=>{const rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722>.179?'#0b1520':'#fff'};
+ function badge(ctx,label,x,y,maxWidth,colour='#fff',initialSize=18,backdrop=null){
   let size=initialSize;ctx.font=`600 ${size}px system-ui`;
   while(size>11&&ctx.measureText(label).width>maxWidth-16){size--;ctx.font=`600 ${size}px system-ui`}
   if(ctx.measureText(label).width>maxWidth-16){while(label.length&&ctx.measureText(label+'…').width>maxWidth-16)label=label.slice(0,-1);label+='…'}
   const width=ctx.measureText(label).width+14;
-  ctx.fillStyle='rgba(5,10,16,.78)';ctx.fillRect(x,y,width,size+12);ctx.fillStyle=colour;ctx.textBaseline='top';ctx.fillText(label,x+7,y+5);ctx.textBaseline='alphabetic';return width;
+  ctx.fillStyle=backdrop||'rgba(5,10,16,.78)';ctx.fillRect(x,y,width,size+12);ctx.fillStyle=colour;ctx.textBaseline='top';ctx.fillText(label,x+7,y+5);ctx.textBaseline='alphabetic';return width;
  }
  function scaleBar(ctx,x,y,visibleWidth,fieldWidth,unit){
   if(!(fieldWidth>0&&visibleWidth>0))return;
@@ -25,7 +26,7 @@ window.aztecExport=(()=>{
   for(let i=0;i<=6;i++){const y=top+height*i/6,value=high-(high-low)*i/6;ctx.fillText(Number(value.toPrecision(3)).toString(),x+26,Math.max(top+12,Math.min(top+height,y+4)))}
   ctx.save();ctx.translate(x+86,top+height/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.font='14px system-ui';ctx.fillText(`Relative to each map’s ${normalisation==='p20'?'P20':normalisation} (shared limits)`,0,0);ctx.restore();
  }
- async function maps({result,options,comparison,signals,names,crops}){
+ async function maps({result,options,comparison,signals,names,colours={},crops}){
   const theme=themeFor(options);
   const columns=[{electron:true}];
   for(const channel of signals)columns.push({channel});
@@ -50,8 +51,9 @@ window.aztecExport=(()=>{
     const start=Math.max(x,left),end=Math.min(x+tileSize,left+w),bottom=Math.min(y+tileSize,top+h);
     scaleBar(ctx,start+9,bottom-12,end-start,row.width*(end-start)/w,row.distance_unit);
     if(!column.electron&&(result.scale_scope!=='all'||result.normalisation==='none')){const limits=tile[column.ratio?'ratio_image_limits':'image_limits'];if(limits){ctx.font='12px system-ui';ctx.fillStyle='#fff';ctx.textAlign='right';ctx.strokeStyle='#000';ctx.lineWidth=3;const text=limits.map(v=>Number(v.toPrecision(3))).join(' – ');ctx.strokeText(text,x+tileSize-8,bottom-12);ctx.fillText(text,x+tileSize-8,bottom-12);ctx.textAlign='left'}}
-    badge(ctx,label,Math.max(x,left)+5,Math.max(y,top)+5,Math.min(tileSize,w)-10);ctx.restore();
-   }else{badge(ctx,label,x+5,y+5,tileSize-10);ctx.fillStyle=theme.ink;ctx.font='14px system-ui';ctx.fillText('Unavailable',x+12,y+tileSize/2)}
+    const labelColour=column.electron?colours[row.acquisition]:null;
+    badge(ctx,label,Math.max(x,left)+5,Math.max(y,top)+5,Math.min(tileSize,w)-10,labelColour?labelInk(labelColour):'#fff',18,labelColour);ctx.restore();
+   }else{const labelColour=column.electron?colours[row.acquisition]:null;badge(ctx,label,x+5,y+5,tileSize-10,labelColour?labelInk(labelColour):'#fff',18,labelColour);ctx.fillStyle=theme.ink;ctx.font='14px system-ui';ctx.fillText('Unavailable',x+12,y+tileSize/2)}
   }
   if(legend)colourScale(ctx,width-92,margin,height-2*margin,result.low,result.high,result.normalisation,theme);
   return out;
@@ -73,7 +75,7 @@ window.aztecExport=(()=>{
   if(acquisition)for(const node of copy.querySelectorAll('[data-acquisition]'))if(node.getAttribute('data-acquisition')!==acquisition)node.remove();
   return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(copy));
  }
- function captureLines({root,names,result,options,comparison}){
+ function captureLines({root,names,colours={},result,options,comparison}){
   // Capture the current plots before any asynchronous image decoding or saving.
   const theme=themeFor(options);
   const references=new Map();
@@ -91,14 +93,14 @@ window.aztecExport=(()=>{
    if(figures.length)groups.push({acquisition,heading,figures});
   }
   if(!groups.length)throw new Error('There are no line plots to export.');
-  return {groups,references,layout:comparison&&options.layout==='overlay'?'overlay':'rows',names,acquisitions:result.rows.filter(row=>!row.error&&row.tiles?.some(tile=>!tile.error)).map(row=>row.acquisition)};
+  return {groups,references,layout:comparison&&options.layout==='overlay'?'overlay':'rows',names,colours,acquisitions:result.rows.filter(row=>!row.error&&row.tiles?.some(tile=>!tile.error)).map(row=>row.acquisition)};
  }
  function plotBadges(ctx,parts,x,y,width){
   let left=x,top=y;
   for(const part of parts){
    ctx.font='600 14px system-ui';const wanted=Math.min(width,ctx.measureText(part.label).width+14);
    if(left>x&&left+wanted>x+width){left=x;top+=28}
-   left+=badge(ctx,part.label,left,top,Math.min(300,x+width-left),part.colour,14)+6;
+   left+=badge(ctx,part.label,left,top,Math.min(300,x+width-left),part.background?labelInk(part.background):part.colour,14,part.background)+6;
   }
  }
  const lineWidth=1400,linePad=8,columnGap=6,rowGap=0;
@@ -119,17 +121,17 @@ window.aztecExport=(()=>{
   for(let i=0;i<3;i++)panelInset=Math.max(4,Math.round(plotCrop(figure,widths(panelInset).plotWidth).top));
   return {...widths(panelInset),panelInset};
  }
- async function drawReference(ctx,reference,label,x,y,width,height,theme){
+ async function drawReference(ctx,reference,label,x,y,width,height,theme,labelColour){
   if(theme.panel){ctx.fillStyle=theme.panel;ctx.fillRect(x,y,width,height)}
-  if(reference){const image=await load(svgSource(reference)),scale=Math.min(width/reference.width,height/reference.height),w=reference.width*scale,h=reference.height*scale,left=x+(width-w)/2,top=y+(height-h)/2;ctx.drawImage(image,left,top,w,h);badge(ctx,label||'Acquisition',left+6,top+6,Math.max(30,w-12))}
-  else{ctx.fillStyle=theme.ink;ctx.font='15px system-ui';ctx.fillText('Reference image unavailable',x+12,y+height/2);badge(ctx,label||'Acquisition',x+6,y+6,width-12)}
+  if(reference){const image=await load(svgSource(reference)),scale=Math.min(width/reference.width,height/reference.height),w=reference.width*scale,h=reference.height*scale,left=x+(width-w)/2,top=y+(height-h)/2;ctx.drawImage(image,left,top,w,h);badge(ctx,label||'Acquisition',left+6,top+6,Math.max(30,w-12),labelColour?labelInk(labelColour):'#fff',18,labelColour)}
+  else{ctx.fillStyle=theme.ink;ctx.font='15px system-ui';ctx.fillText('Reference image unavailable',x+12,y+height/2);badge(ctx,label||'Acquisition',x+6,y+6,width-12,labelColour?labelInk(labelColour):'#fff',18,labelColour)}
   return height;
  }
- async function drawPlot(ctx,figure,x,y,width,acquisition,heading=''){
+ async function drawPlot(ctx,figure,x,y,width,acquisition,heading='',headingColour=null){
   const height=plotHeight(figure,width),image=await load(svgSource(figure.image,acquisition));ctx.drawImage(image,x,y,width,height);
   const legend=figure.legend.filter(part=>!acquisition||!part.acquisition||part.acquisition===acquisition);
   const labelX=x+width*(Number.isFinite(figure.labelX)?figure.labelX:.05),labelY=y+height*(Number.isFinite(figure.labelY)?figure.labelY:.04),labelWidth=width*(Number.isFinite(figure.labelWidth)?figure.labelWidth:.68);
-  plotBadges(ctx,[...(heading?[{label:heading,colour:'#fff'}]:[]),...legend],labelX,labelY,labelWidth);
+  plotBadges(ctx,[...(heading?[{label:heading,colour:'#fff',background:headingColour}]:[]),...legend],labelX,labelY,labelWidth);
   if(figure.metric){ctx.font='600 14px system-ui';const maxWidth=width*.28,wanted=Math.min(maxWidth,ctx.measureText(figure.metric).width+14),right=width*(Number.isFinite(figure.metricRight)?figure.metricRight:.02);badge(ctx,figure.metric,x+width-right-wanted,labelY,maxWidth,'#fff',14)}
   return height;
  }
@@ -155,7 +157,7 @@ window.aztecExport=(()=>{
    const plotOffset=panelInset+(cards.length?referencesHeight+gap:0);
    const height=plotOffset+panels.reduce((sum,panel)=>sum+plotHeight(panel.figure,plotWidth)+rowGap,0);
    const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+height)*2),theme);ctx.scale(2,2);if(theme.panel){ctx.fillStyle=theme.panel;ctx.fillRect(linePad,linePad,lineWidth-linePad*2,height)}
-   for(const card of cards)await drawReference(ctx,captured.references.get(card.id),captured.names[card.id],card.x,card.y,card.width,referenceHeight,theme);
+   for(const card of cards)await drawReference(ctx,captured.references.get(card.id),captured.names[card.id],card.x,card.y,card.width,referenceHeight,theme,captured.colours?.[card.id]);
    let y=linePad+plotOffset;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+panelInset,y,plotWidth,onlyAcquisition,panel.heading)+rowGap;
    return out;
   }
@@ -172,8 +174,8 @@ window.aztecExport=(()=>{
   let y=linePad;for(const row of rows){
    if(theme.panel){ctx.fillStyle=theme.panel;ctx.fillRect(linePad,y,lineWidth-linePad*2,row.height)}
    const {group,reference,width}=row,x=row.showReference?linePad+panelInset+referenceWidth+columnGap:linePad;
-   if(row.showReference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad+panelInset,y+row.referenceTop,referenceWidth,row.referenceHeight,theme);
-   let plotY=y;for(const figure of group.figures)plotY+=await drawPlot(ctx,figure,x,plotY,width,null,row.showReference?'':group.heading)+rowGap;
+   if(row.showReference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad+panelInset,y+row.referenceTop,referenceWidth,row.referenceHeight,theme,captured.colours?.[group.acquisition]);
+   let plotY=y;for(const figure of group.figures)plotY+=await drawPlot(ctx,figure,x,plotY,width,null,row.showReference?'':group.heading,row.showReference?null:captured.colours?.[group.acquisition])+rowGap;
    y+=row.height+rowGap;
   }
   return out;
