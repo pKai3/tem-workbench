@@ -85,6 +85,34 @@ class StabilityBatch(unittest.TestCase):
                     hashes.append(path.read_bytes())
             self.assertEqual(len(set(hashes)),len(products))
 
+    def test_png_view_rows_expand_phases_and_reject_duplicates(self):
+        rows=[dict(mode='support',display='continuous',phase='all'),
+              dict(mode='support',display='hex',phase='HCP'),
+              dict(mode='strength',display='hex',phase='each'),
+              dict(mode='top',display='continuous',phase='all')]
+        options=dict(export_png=True,png_views=rows,overlap=dict(passes=3))
+        self.assertEqual(png_exports(options,['HCP','BCC']),[
+            ('support_all','support',None),('hex_support_hcp','hex_support','HCP'),
+            ('hex_strength_hcp','hex_strength','HCP'),('hex_strength_bcc','hex_strength','BCC'),
+            ('top','top',None)])
+        duplicate=[dict(mode='support',display='continuous',phase='each'),
+                   dict(mode='support',display='continuous',phase='HCP')]
+        with self.assertRaisesRegex(ValueError,'Duplicate PNG views'):
+            png_exports({**options,'png_views':duplicate},['HCP','BCC'])
+        for row in [dict(mode='raw',display='hex',phase='all'),dict(mode='spread',display='continuous',phase='all')]:
+            with self.assertRaises(ValueError):png_exports({**options,'png_views':[row]},['HCP','BCC'])
+        preview=BytesIO();Image.new('L',(100,100),120).save(preview,format='PNG')
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'top.png'
+            job=self.job()
+            for region in job['regions']:
+                region['models'][0]['score']=.8;region['models'][1]['score']=.2
+            map_png(dict(preview=preview.getvalue()),job,path,colors=dict(hcp_compatible='#ff0000',bcc_compatible='#00ff00'),opacity=1,view='top')
+            with Image.open(path) as result:
+                self.assertEqual(result.size,(1880,2033))
+                self.assertGreater(result.getpixel((200,300))[0],result.getpixel((200,300))[1])
+                self.assertEqual(result.getpixel((1700,900)),(120,120,120))
+
     def test_strength_png_uses_scores_and_reconstructs_legacy_fields(self):
         from tem_workbench.mapping import overlap_maps
         from tem_workbench.mapping.phase_blend import blend_support

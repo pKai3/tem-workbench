@@ -232,28 +232,25 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 #batch-live-map{display:block;width:100%;max-height:340px;background:#0c121a;aspect-ratio:1}
 #batch-live-legend{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:10px}
 
-.batch-review-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:12px}
-.batch-files.batch-preview-grid{grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:10px;max-height:480px;padding:3px}
-.batch-files .batch-preview-card{display:flex;flex-direction:column;position:relative;gap:6px;min-width:0;padding:7px;border:1px solid var(--line);border-radius:7px;cursor:pointer;background:#101923;align-items:stretch}
+.batch-step{border-top:1px solid var(--line);padding:14px 0;margin-top:12px}.batch-step[hidden],#batch-review-results[hidden]{display:none}.batch-step h4{margin:0 0 10px;font-size:14px}.batch-step>.hint{margin:0 0 10px}
+.batch-source-controls,.batch-export-settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;align-items:end;margin-bottom:10px}.batch-source-controls>label,.batch-export-settings>label{min-width:0}.batch-source-controls select,.batch-source-controls input,.batch-export-settings select{box-sizing:border-box;width:100%;min-width:0}
+.batch-review-toolbar{display:flex;align-items:end;flex-wrap:wrap;gap:8px;margin-top:12px}.batch-review-toolbar button[aria-pressed=true]{background:#234458;border-color:var(--cyan);color:#e7f8fa}
+.batch-files.batch-preview-grid{grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px;max-height:480px;padding:3px}
+.batch-files .batch-preview-card{display:flex;flex-direction:column;position:relative;gap:6px;min-width:0;padding:8px;border:1px solid var(--line);border-radius:7px;cursor:pointer;background:#101923;align-items:stretch}
 .batch-preview-card.selected{border-color:var(--cyan);box-shadow:inset 0 0 0 1px var(--cyan)}
-.batch-preview-card input{min-height:0;padding:0;position:absolute;z-index:1;top:10px;left:10px;margin:0;width:18px;height:18px;accent-color:var(--cyan)}
-.batch-files .batch-name-row{display:flex;flex-direction:row;align-items:center;gap:8px;cursor:pointer;padding:4px}
-.batch-file-caption{min-width:0;display:flex;flex-direction:column;gap:3px}.batch-file-caption strong{font-size:12px;font-weight:500;overflow-wrap:anywhere}.batch-file-caption small{font-size:11px;color:var(--muted)}
+.batch-preview-card input{min-height:0;padding:0;position:absolute;z-index:2;top:11px;right:11px;margin:0;width:18px;height:18px;accent-color:var(--cyan)}
+.batch-file-caption{min-width:0;display:flex;flex-direction:column;gap:3px}.batch-file-caption strong{font-size:12px;font-weight:500}.batch-file-caption small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
 .batch-files .unavailable{opacity:.5;cursor:default}.batch-preview-card:focus-within{outline:2px solid var(--cyan);outline-offset:2px}
 #batch-hover{position:fixed;z-index:1100;pointer-events:none;width:min(380px,calc(100vw - 24px),calc(100dvh - 90px));padding:8px;background:#0c141d;border:1px solid var(--cyan);border-radius:8px;box-shadow:0 8px 28px #0009}
 #batch-hover[hidden]{display:none}#batch-hover-name{display:block;font-size:12px;font-weight:500;overflow-wrap:anywhere;margin-bottom:6px}.batch-hover-picture{position:relative;display:grid;place-items:center;aspect-ratio:1;background:#080d13;font-size:12px;color:var(--muted)}#batch-hover-image{position:absolute;width:100%;height:100%;object-fit:contain}
 
-.batch-name-row input{min-height:0;padding:0;margin:0}
-.batch-review-toolbar .signal-toggle{margin-left:0}
-
-.batch-files:not(.batch-preview-grid){grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr));align-items:start;gap:6px}
-.batch-files .batch-name-row{min-width:0;justify-content:flex-start;text-align:left;border:1px solid var(--line);border-radius:5px;padding:7px;align-self:stretch}
-.batch-name-row.selected{background:#172b37}.batch-name-row input{flex:0 0 auto}.batch-file-caption{text-align:left;align-items:flex-start}
+.batch-file-caption{text-align:left;align-items:flex-start}
 .batch-review-toolbar>button{min-height:28px;padding:4px 8px;font-size:12px}
 
 .batch-review-toolbar .batch-search-label{flex:1 1 230px;min-width:0;text-align:left}.batch-search-label input{width:100%;min-width:0;text-align:left}
 
 #batch-selection-count{flex-basis:100%}
+.batch-png-options{display:flex;flex-direction:column;gap:8px;margin:10px 0}.batch-png-options[hidden]{display:none}.batch-png-row{display:flex;align-items:end;flex-wrap:wrap;gap:8px;padding:9px;border:1px solid var(--line);border-radius:6px;background:#101a25}.batch-png-row>strong{flex:0 0 48px;align-self:center;font-size:11px}.batch-png-row>label{flex:1 1 145px;min-width:0;font-size:11px}.batch-png-row select{box-sizing:border-box;width:100%;min-width:0;margin-top:3px}.batch-png-row .batch-png-remove{align-self:end;min-height:29px;padding:4px 8px}.batch-png-row.duplicate{border-color:#d8787e}.batch-png-duplicate{flex-basis:100%;color:#f4a0a5;font-size:11px}.batch-png-add{align-self:flex-start}.batch-run-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 
 /* The overlay key follows the actual drawn shapes and colours in both views. */
 .spectrum-legend{margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:10px;color:#b9c7d7;line-height:1.3}

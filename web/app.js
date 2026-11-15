@@ -79,6 +79,7 @@ function setPhaseSelection(phases){
  syncPhaseMarkerControls();
  applyPhaseColors(false);
  $('phase-search-note').textContent=phaseSearchDescription();
+ document.dispatchEvent(new Event('tem-phases-changed'));
 }
 function fittedVectorMode(value){
  // Old measured-plane preferences now select the same fitted candidate.
@@ -1538,25 +1539,65 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 let batchPngSelections=readPreference('tem-batch-png-views',{});
 if(!batchPngSelections||typeof batchPngSelections!=='object'||Array.isArray(batchPngSelections))batchPngSelections={};
-function batchPngViews(){
- const mode=$('grid-mode').value!=='standard'?'overlap':'standard',choices=BATCH_PNG_VIEWS[mode];
- const saved=batchPngSelections[mode];
- return Array.isArray(saved)?choices.map(([id])=>id).filter(id=>saved.includes(id)):[choices[0][0]];
+let batchPngRowsByMode=readPreference('tem-batch-png-rows',{});
+if(!batchPngRowsByMode||typeof batchPngRowsByMode!=='object'||Array.isArray(batchPngRowsByMode))batchPngRowsByMode={};
+const batchPngMode=()=>$('grid-mode').value==='standard'?'standard':'overlap';
+function legacyBatchPngRow(id){
+ const rows={classification:['classification','continuous','all'],support_all:['support','continuous','all'],support_phases:['support','continuous','each'],strength_all:['strength','continuous','all'],strength_phases:['strength','continuous','each'],hex:['top','hex','all'],hex_support:['support','hex','all'],hex_strength:['strength','hex','all'],spread_phases:['spread','continuous','each'],samples:['samples','continuous','all'],separate:['separate','continuous','all'],raw:['raw','centres','all']};
+ const row=rows[id];return row?{mode:row[0],display:row[1],phase:row[2]}:null;
 }
-function updateBatchPngControls(){
- const mode=$('grid-mode').value!=='standard'?'overlap':'standard',selected=batchPngViews(),box=$('batch-png-options');
- box.hidden=!$('batch-png').checked;box.replaceChildren();
- for(const [id,text]of BATCH_PNG_VIEWS[mode]){
-  const label=document.createElement('label');label.className='check';
-  const input=document.createElement('input');input.type='checkbox';input.value=id;input.checked=selected.includes(id);
-    const needsStrength=id.includes('strength')&&!config?.overlap_passing_strength;
-    input.disabled=needsStrength||id==='spread_phases'&&Number($('map-passes').value)<2;
-    if(input.disabled)label.title=needsStrength?'Restart Workbench to enable passing-strength batch PNGs.':'Placement sensitivity needs at least two passes.';
-  input.onchange=()=>{batchPngSelections[mode]=[...box.querySelectorAll('input:checked')].map(n=>n.value);writePreference('tem-batch-png-views',batchPngSelections)};
-  label.append(input,document.createTextNode(text));box.append(label);
+function batchPngRows(){
+ const mode=batchPngMode();
+ if(!Array.isArray(batchPngRowsByMode[mode])){
+  const legacy=batchPngSelections[mode];batchPngRowsByMode[mode]=(Array.isArray(legacy)?legacy:[mode==='standard'?'classification':'support_all']).map(legacyBatchPngRow).filter(Boolean);
  }
+  const rows=batchPngRowsByMode[mode],allowed=mode==='standard'?['classification']:['raw','top','support','strength','separate','spread','samples'];
+  let changed=false;for(let i=rows.length-1;i>=0;i--)if(!rows[i]||typeof rows[i]!=='object'||Array.isArray(rows[i])){rows.splice(i,1);changed=true}
+  for(const row of rows){
+   if(!allowed.includes(row.mode)){row.mode=allowed[0];changed=true}
+   const displays=batchPngDisplays(row.mode).map(([key])=>key),phases=batchPngPhases(row.mode).map(([key])=>key);
+   if(!displays.includes(row.display)){row.display=displays[0];changed=true}
+   if(!phases.includes(row.phase)){row.phase=phases[0];changed=true}
+  }
+  if(changed)writePreference('tem-batch-png-rows',batchPngRowsByMode);
+  return rows;
 }
-$('batch-png').onchange=updateBatchPngControls;
+function batchPngViews(){return batchPngRows().map(row=>({...row}))}
+function batchPngDisplays(mode){return mode==='raw'?[['centres','Window centres']]:['top','support','strength'].includes(mode)?[['continuous','Continuous map'],['hex','Hex grid']]:[['continuous','Continuous map']]}
+function batchPngPhases(mode){return ['support','strength','spread'].includes(mode)?[...(mode==='spread'?[]:[['all','All phases']]),['each','Each phase'],...enabledPhases.map(phase=>[phase,phaseLabel(phase)])]:[['all','All phases']]}
+function batchPngOutputKeys(row){
+ const view=row.mode==='classification'?'classification':row.display==='hex'?(row.mode==='top'?'hex':'hex_'+row.mode):row.mode;
+ return (row.phase==='each'?enabledPhases:[row.phase==='all'?null:row.phase]).map(phase=>view+':'+(phase||'all'));
+}
+function duplicateBatchPngRows(rows=batchPngRows()){
+ const seen=new Map(),duplicates=new Set();
+ rows.forEach((row,index)=>{for(const key of batchPngOutputKeys(row)){if(seen.has(key)){duplicates.add(seen.get(key));duplicates.add(index)}else seen.set(key,index)}});
+ return duplicates;
+}
+function invalidBatchPngRows(rows=batchPngRows()){return rows.some(row=>row.mode==='spread'&&Number($('map-passes').value)<2)}
+function saveBatchPngRows(){writePreference('tem-batch-png-rows',batchPngRowsByMode);updateBatchPngControls();syncBatchSelection()}
+function updateBatchPngControls(){
+ const mode=batchPngMode(),rows=batchPngRows(),box=$('batch-png-options');box.hidden=$('batch-png').value!=='on';box.replaceChildren();
+ const duplicates=duplicateBatchPngRows(rows),modes=mode==='standard'?[['classification','Classification + zone labels']]:[['raw','Individual windows'],['top','Best match'],['strength','Match score'],['support','Match frequency'],['separate','Multiple-structure support'],['spread','Placement sensitivity'],['samples','Sampling density']];
+ rows.forEach((row,index)=>{
+  const line=document.createElement('div');line.className='batch-png-row';line.classList.toggle('duplicate',duplicates.has(index));
+  const number=document.createElement('strong');number.textContent='PNG '+(index+1);line.append(number);
+  const field=(label,choices,value,change)=>{const wrap=document.createElement('label'),select=document.createElement('select');wrap.textContent=label;for(const [key,text] of choices)select.append(new Option(text,key));select.value=value;select.onchange=()=>change(select.value);wrap.append(select);line.append(wrap);return select};
+  field('Mode',modes,row.mode,value=>{row.mode=value;const displays=batchPngDisplays(value).map(([key])=>key),phases=batchPngPhases(value).map(([key])=>key);if(!displays.includes(row.display))row.display=displays[0];if(!phases.includes(row.phase))row.phase=phases[0];saveBatchPngRows()});
+  const display=field('Display',batchPngDisplays(row.mode),row.display,value=>{row.display=value;saveBatchPngRows()});display.disabled=batchPngDisplays(row.mode).length===1;
+  const phase=field('Phase',batchPngPhases(row.mode),row.phase,value=>{row.phase=value;saveBatchPngRows()});phase.disabled=batchPngPhases(row.mode).length===1;
+  const remove=document.createElement('button');remove.type='button';remove.className='batch-png-remove';remove.textContent='Remove';remove.setAttribute('aria-label','Remove PNG view '+(index+1));remove.onclick=()=>{rows.splice(index,1);saveBatchPngRows()};line.append(remove);
+  if(duplicates.has(index)||row.mode==='spread'&&Number($('map-passes').value)<2){const warning=document.createElement('span');warning.className='batch-png-duplicate';warning.textContent=duplicates.has(index)?'Duplicate PNG view':'Placement sensitivity needs at least two passes';line.append(warning)}
+  box.append(line);
+ });
+ const add=document.createElement('button');add.type='button';add.className='batch-png-add';add.textContent='+ Add PNG view';add.disabled=mode==='standard'&&rows.length>0;if(add.disabled)add.title='Standard grids have one PNG view.';add.onclick=()=>{
+  const candidates=mode==='standard'?[{mode:'classification',display:'continuous',phase:'all'}]:[{mode:'support',display:'continuous',phase:'all'},{mode:'strength',display:'continuous',phase:'all'},{mode:'top',display:'hex',phase:'all'},{mode:'support',display:'hex',phase:'all'},{mode:'strength',display:'hex',phase:'all'},{mode:'samples',display:'continuous',phase:'all'},{mode:'separate',display:'continuous',phase:'all'},{mode:'raw',display:'centres',phase:'all'}];
+  const used=new Set(rows.flatMap(batchPngOutputKeys));rows.push(candidates.find(candidate=>batchPngOutputKeys(candidate).every(key=>!used.has(key)))||candidates[0]);saveBatchPngRows();
+ };box.append(add);
+ if(!rows.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='Add a PNG view or choose No PNG maps.';box.insertBefore(empty,add)}
+}
+$('batch-png').onchange=()=>{updateBatchPngControls();syncBatchSelection()};
+document.addEventListener('tem-phases-changed',()=>{updateBatchPngControls();syncBatchSelection()});
 function overlapRequest(){
  if($('grid-mode').value==='standard')return null;
  const size_mode=$('map-size-mode').value,spacing_mode=$('map-spacing-mode').value;
@@ -1688,6 +1729,7 @@ function updateGridSizeNote(){
  $('map-spacing').closest('label').hidden=relativeSpacing;$('map-spacing-percent-label').hidden=!relativeSpacing;
  updateOverlapSizePreview();
  updateBatchPngControls();
+ syncBatchSelection();
  for(const id of ['grid-count','grid-min','adaptive','check-passing'])$(id).closest('label').hidden=overlap;
  $('batch-panel').hidden=false;
 
@@ -2629,7 +2671,7 @@ $('model-scale').oninput=()=>{
  if(!field.readOnly&&field.value&&Number.isFinite(value)&&value>=.85&&value<=1.15)field.onchange();
 };
 $('file').onchange=openFile;
-async function start(){try{config=await api('config');await WorkbenchWorkspace.configure(config);const legacyImage=config.files.find(f=>f.id===readPreference(lastImageKey(),null));if(legacyImage&&!WorkbenchWorkspace.bookmark(legacyImage.source_id||'demo','diffraction').file)WorkbenchWorkspace.remember(legacyImage.source_id||'demo','diffraction',{file:legacyImage.id});if(WorkbenchWorkspace.get('active_project',null)===null)WorkbenchWorkspace.set('active_project',readPreference('tem-source-filter:'+config.state_namespace,''));$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchFolders(config.files);configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;for(const mode of ['pca','nmf'])$('grid-mode').querySelector('option[value='+mode+']').disabled=!config.component_grid;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.fft_tukey&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('OMEGA')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}$('fft-mean').disabled=!config.fft_processing;if(!config.fft_processing)$('fft-mean').checked=true;updateFFTWindowControls();$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();renderFavorites();await loadSavedRegions();renderFileList();await openInitialImage();}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
+async function start(){try{config=await api('config');await WorkbenchWorkspace.configure(config);const legacyImage=config.files.find(f=>f.id===readPreference(lastImageKey(),null));if(legacyImage&&!WorkbenchWorkspace.bookmark(legacyImage.source_id||'demo','diffraction').file)WorkbenchWorkspace.remember(legacyImage.source_id||'demo','diffraction',{file:legacyImage.id});if(WorkbenchWorkspace.get('active_project',null)===null)WorkbenchWorkspace.set('active_project',readPreference('tem-source-filter:'+config.state_namespace,''));$('app-version').textContent=config.app_version?(config.app_version==='development'?'Development':'v'+config.app_version):'Version unavailable';$('app-version').title=config.app_version?'Running analysis engine version; restart Workbench after updating.':'This backend predates version reporting. Restart Workbench, then reload this page.';populateBatchProjects();populateBatchFolders();configureDiffractionWorkers();$('grid-mode').querySelector('option[value=overlap]').disabled=!config.overlap_maps;for(const mode of ['pca','nmf'])$('grid-mode').querySelector('option[value='+mode+']').disabled=!config.component_grid;$('file-search').value='';$('engine-note').hidden=Boolean(config.batch_folder_summaries&&config.batch_overlap_maps&&config.overlap_maps&&config.reciprocal_peak_edit_radii&&config.manual_diffraction_peaks&&config.batch_grids&&config.fft_auto_geometry&&config.diffraction_workers&&config.parallel_grid&&config.grid_rescore&&config.grid_zones&&config.peak_evidence&&config.peak_evidence_falloff&&config.check_passing&&config.fft_processing&&config.fft_tukey&&config.refinement_policy==='passing-children-v2'&&config.folder_picker&&config.saved_regions&&config.direct_diffraction==='direct-spots-v2'&&config.diffraction_translation==='shared-center-v1'&&config.region_previews&&config.spectrum_exports&&config.map_exports&&config.phases?.includes('OMEGA')&&config.adjustable_fitting_band&&config.adjustable_inner_limit&&config.material_presets&&config.phase_selection&&config.fft_detection_controls&&config.fft_auto_strength&&config.fft_detector_view&&config.sidecar_previews&&config.delete_regions&&config.scale_modes?.includes('auto_hcp_ratio'));$('grid-workers').disabled=!config.parallel_grid;$('grid-workers').options[0].textContent=`Auto (${config.grid_workers_default||1})`;for(const option of $('grid-workers').options)option.disabled=Number(option.value)>(config.grid_workers_max||8);if($('grid-workers').selectedOptions[0]?.disabled)$('grid-workers').value='0';$('reset-fft').disabled=!(config.fft_detection_controls&&config.fft_processing);for(const id of Object.keys(FFT_DETECTOR_CONTROLS))$(id).disabled=!config.fft_detection_controls;updateStrengthMode();if(!config.phase_selection)setPhaseSelection(PHASES);for(const phase of PHASES){const field=$(phase.toLowerCase()+'-color');field.querySelector('option[value=disabled]').disabled=!config.phase_selection;field.disabled=!config.phases?.includes(phase)}$('fft-mean').disabled=!config.fft_processing;if(!config.fft_processing)$('fft-mean').checked=true;updateFFTWindowControls();$('fft-processing-note').textContent=config.fft_detection_controls?'Changes recalculate the region; run a new grid afterwards. Separation also respects the crop-window peak width.':'Restart TEM Workbench to enable all FFT detection controls.';$('g-max').disabled=!config.adjustable_fitting_band;for(const id of ['material',...Object.keys(REFERENCE_CONTROLS)])$(id).disabled=!config.material_presets;$('fft-g-min').disabled=!config.adjustable_inner_limit;$('material').querySelector('option[value=unknown]').disabled=!config.material_presets?.unknown;materialView();$('show-zones').disabled=!config.grid_zones;updatePenaltyControls();updateGridSizeNote();for(const mode of ['auto_uniform','auto_hcp_ac','auto_hcp_ratio'])$('scenario').querySelector('option[value="'+mode+'"]').disabled=!config.scale_modes?.includes(mode);if(!config.fft_log16){$('fft-curve').value='log';$('fft-curve').disabled=true}const savedFavorites=readPreference(favoriteKey(),[]);favorites=new Set(Array.isArray(savedFavorites)?savedFavorites.filter(id=>typeof id==='string'):[]);renderFavorites();$('connection').textContent='Local Python · connected';$('data-path').textContent='Data: '+config.data_root;$('output-path').textContent='Results: '+config.output_root;setupFolderControls();renderFavorites();await loadSavedRegions();renderFileList();await openInitialImage();}catch(e){$('connection').textContent='Disconnected';message(e.message,true)}}
 
 
 // Reuse the displayed spectrum and overlays; hovering never requests analysis.
@@ -2746,7 +2788,7 @@ const seenFileEvents=new Set();
 const folderBrowser=WorkbenchProjectTools.browser(api);
 const chooseFolder=target=>{if(config?.folder_picker)folderBrowser.choose(target)};
 const projectSettings=WorkbenchProjectTools.sources({api,getConfig:()=>config,chooseFolder,
- onRename:async data=>{config.sources=data.sources;await WorkbenchWorkspace.configure(config);renderProjectFilter();applyCatalogue(data)},
+ onRename:async data=>{config.sources=data.sources;await WorkbenchWorkspace.configure(config);renderProjectFilter();populateBatchProjects();populateBatchFolders();applyCatalogue(data)},
  onSave:async()=>{await start();message('Project sources and outputs saved.')}});
 const openProjectSettings=()=>WorkbenchProjectTools.showSources($('folders-panel'));
 $('open-project-settings').onclick=openProjectSettings;
@@ -2765,7 +2807,7 @@ function applyCatalogue(data){
  if(catalogueRevision===data.revision&&JSON.stringify(config.files)===JSON.stringify(data.files))return;
  const selected=$('file').value;
  config.files=data.files;catalogueRevision=data.revision;
- populateBatchFolders(config.files);renderFileList();renderFavorites();
+ populateBatchProjects();populateBatchFolders();renderFileList();renderFavorites();
  if(matchingFiles().some(f=>f.id===selected))$('file').value=selected;
  else if(selected){$('file').value='';exportNotice('Image unavailable','The open result is retained. Reconnect its source folder or choose another image.','saved')}
  if($('image-browser').open)renderImageBrowser();
@@ -4107,8 +4149,7 @@ $('reset-diffraction').onclick=()=>{
 let batchFolderSelection=null;
 let batchFiles=[],batchPollTimer=null,batchRunning=false,batchReviewReady=false;
 const batchSelected=new Set();
-let batchListView=readPreference('tem-batch-list-view','names');
-if(!['names','previews'].includes(batchListView))batchListView='names';
+let batchShowSelected=false;
 let batchHoverTimer=null,batchHoverRow=null;
 function hideBatchHover(){clearTimeout(batchHoverTimer);batchHoverRow=null;$('batch-hover').hidden=true}
 function positionBatchHover(x,y){
@@ -4132,8 +4173,15 @@ function showBatchHover(row,x,y){
  },180);
 }
 function batchFolder(row){if(row.folder!==undefined)return row.folder;return row.id.includes('/')?row.id.slice(0,row.id.lastIndexOf('/')):'.'}
+function populateBatchProjects(){
+ const select=$('batch-project'),available=new Set((config?.files||[]).map(row=>row.source_id||'demo'));
+ const previous=select.dataset.populated==='true'?select.value:WorkbenchWorkspace.get('active_project','');
+ select.replaceChildren(new Option('All projects',''),...(config?.sources||[]).filter(source=>available.has(source.id)).map(source=>new Option(source.name,source.id)));
+ if(available.has('demo'))select.append(new Option('Demo','demo'));
+ select.value=available.has(previous)?previous:'';select.dataset.populated='true';
+}
 function batchProjectFiles(){const id=$('batch-project').value;return batchFiles.filter(row=>!id||(row.source_id||'demo')===id)}
-function populateBatchFolders(rows=batchProjectFiles()){
+function populateBatchFolders(rows=(config?.files||[]).filter(row=>!$('batch-project').value||(row.source_id||'demo')===$('batch-project').value)){
  const folders=new Set();
  for(const row of rows){const path=batchFolder(row);folders.add(path);if(path!=='.'){const parts=path.split('/');for(let i=1;i<parts.length;i++)folders.add(parts.slice(0,i).join('/'))}}
  const host=$('batch-folder-list');host.replaceChildren();
@@ -4161,41 +4209,43 @@ function matchingBatchFiles(){
  const terms=$('batch-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
  return batchProjectFiles().filter(row=>matchesBatchFolders(row)&&terms.every(term=>`${row.sample} ${row.name} ${batchFolder(row)}`.toLocaleLowerCase().includes(term)));
 }
+function displayedBatchFiles(){const matches=matchingBatchFiles();return batchShowSelected?matches.filter(row=>batchSelected.has(row.id)):matches}
 function syncBatchSelection(){
  const eligible=batchFiles.filter(row=>row.eligible),selected=eligible.filter(row=>batchSelected.has(row.id)).length;
- $('batch-selection-count').textContent=batchFiles.length?`${selected} / ${eligible.length} eligible images selected${batchReviewReady?'':' · Review again after changing the cutoff'}`:'';
- $('batch-start').disabled=batchRunning||!batchReviewReady||selected===0;
+ const scoped=batchProjectFiles().filter(row=>row.eligible&&matchesBatchFolders(row)),scopedSelected=scoped.filter(row=>batchSelected.has(row.id)).length;
+ $('batch-review-results').hidden=!batchReviewReady;$('batch-review-prompt').hidden=batchReviewReady;$('batch-export-step').hidden=!batchReviewReady&&!batchRunning;
+ $('batch-selection-count').textContent=batchReviewReady?`${scopedSelected} / ${scoped.length} eligible images selected`:'';
+ $('batch-start').disabled=batchRunning||!batchReviewReady||selected===0||$('batch-png').value==='on'&&(!batchPngRows().length||duplicateBatchPngRows().size>0||invalidBatchPngRows());
  const shown=matchingBatchFiles().filter(row=>row.eligible),shownSelected=shown.filter(row=>batchSelected.has(row.id)).length;
- if(($('batch-project').value||$('batch-search').value.trim()||batchFolderSelection!==null)&&batchFiles.length)$('batch-selection-count').textContent+=` · ${shownSelected} / ${shown.length} eligible matches selected · Selection buttons apply to matches`;
- $('batch-select-only').disabled=!shown.length;
- $('batch-select-all').disabled=!shown.length||shownSelected===shown.length;
- $('batch-deselect-all').disabled=shownSelected===0;
+ if(batchReviewReady&&($('batch-project').value||$('batch-search').value.trim()||batchFolderSelection!==null))$('batch-selection-count').textContent+=` · ${shownSelected} / ${shown.length} matching images selected`;
+ $('batch-show-selected').setAttribute('aria-pressed',String(batchShowSelected));
+ $('batch-select-only').disabled=!batchReviewReady||!shown.length;
+ $('batch-select-all').disabled=!batchReviewReady||!shown.length||shownSelected===shown.length;
+ $('batch-deselect-all').disabled=!batchReviewReady||shownSelected===0;
 }
 function renderBatchFiles(){
  hideBatchHover();const host=$('batch-files');host.replaceChildren();
- host.classList.toggle('batch-preview-grid',batchListView==='previews');
- for(const view of ['names','previews'])$('batch-view-'+view).setAttribute('aria-pressed',String(batchListView===view));
- const shown=matchingBatchFiles();
- if(batchFiles.length&&!shown.length){const empty=elHTML('p','No matching images.');empty.className='hint';host.append(empty)}
+ const shown=displayedBatchFiles();
+ if(batchReviewReady&&!shown.length){const empty=elHTML('p',batchShowSelected?'No selected images match these filters.':'No matching images.');empty.className='hint';host.append(empty)}
  for(const row of shown){
-  const card=document.createElement('label');card.className=batchListView==='previews'?'batch-preview-card':'batch-name-row';
+  const card=document.createElement('label');card.className='batch-preview-card';card.title=row.id;
   card.classList.toggle('unavailable',!row.eligible);card.classList.toggle('selected',batchSelected.has(row.id));
   const check=document.createElement('input');check.type='checkbox';check.checked=batchSelected.has(row.id);check.disabled=!row.eligible;check.dataset.fileId=row.id;
   check.setAttribute('aria-label',`${row.eligible?'Select':'Unavailable'} ${row.sample} · ${row.name}${row.reason?' · '+row.reason:''}`);
-  check.onchange=()=>{if(check.checked)batchSelected.add(row.id);else batchSelected.delete(row.id);card.classList.toggle('selected',check.checked);syncBatchSelection()};
+  check.onchange=()=>{if(check.checked)batchSelected.add(row.id);else batchSelected.delete(row.id);if(batchShowSelected)renderBatchFiles();else{card.classList.toggle('selected',check.checked);syncBatchSelection()}};
   card.append(check);
-  if(batchListView==='previews'){
-   const preview=document.createElement('span');preview.className='image-browser-preview';
-   const placeholder=elHTML('span','No PNG preview');preview.append(placeholder);
-   if(row.has_preview){
-    placeholder.textContent='Loading preview…';const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';
-    img.onload=()=>placeholder.hidden=true;img.onerror=()=>{img.remove();placeholder.textContent='Preview unavailable'};
-    img.src='/api/file-preview?id='+encodeURIComponent(row.id);preview.append(img);
-   }
-   card.append(preview);
+  const preview=document.createElement('span');preview.className='image-browser-preview';
+  const placeholder=elHTML('span','No PNG preview');preview.append(placeholder);
+  if(row.has_preview){
+   placeholder.textContent='Loading preview…';const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';
+   img.onload=()=>placeholder.hidden=true;img.onerror=()=>{img.remove();placeholder.textContent='Preview unavailable'};
+   img.src='/api/file-preview?id='+encodeURIComponent(row.id);preview.append(img);
   }
+  preview.append(imageBrowserTypeIcon(row));const format=imageBrowserFormatIcon(row);if(format)preview.append(format);card.append(preview);
   const caption=document.createElement('span');caption.className='batch-file-caption';
-  caption.append(elHTML('strong',`${favorites.has(row.id)?'★ ':''}${row.sample} · ${row.name}`));
+  const name=document.createElement('strong'),parts=imageBrowserNameParts(row),description=document.createElement('span');name.className='image-browser-name';description.className='image-browser-name-text';description.textContent=(favorites.has(row.id)?'★ ':'')+parts.description;name.append(description);
+  if(parts.number){const number=document.createElement('span');number.className='image-browser-number';number.textContent='#'+parts.number;name.append(number)}
+  caption.append(name,elHTML('small',row.sample));
   if(row.reason)caption.append(elHTML('small',row.reason));card.append(caption);
   card.onmouseenter=e=>showBatchHover(row,e.clientX,e.clientY);
   card.onmousemove=e=>{if(!$('batch-hover').hidden)positionBatchHover(e.clientX,e.clientY)};
@@ -4205,8 +4255,8 @@ function renderBatchFiles(){
  }
  syncBatchSelection();
 }
-for(const view of ['names','previews'])$('batch-view-'+view).onclick=()=>{batchListView=view;writePreference('tem-batch-list-view',view);renderBatchFiles()};
 $('batch-search').oninput=renderBatchFiles;
+$('batch-show-selected').onclick=()=>{batchShowSelected=!batchShowSelected;renderBatchFiles()};
 $('batch-select-only').onclick=()=>{batchSelected.clear();for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);renderBatchFiles()};
 $('batch-select-all').onclick=()=>{for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);renderBatchFiles()};
 $('batch-deselect-all').onclick=()=>{for(const row of matchingBatchFiles())batchSelected.delete(row.id);renderBatchFiles()};
@@ -4214,23 +4264,19 @@ $('batch-files').addEventListener('scroll',hideBatchHover);
 $('batch-panel').addEventListener('toggle',()=>{if(!$('batch-panel').open)hideBatchHover()});
 window.addEventListener('scroll',hideBatchHover,true);window.addEventListener('resize',hideBatchHover);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')hideBatchHover()});
-function batchOptions(){return {cutoff:Number($('batch-cutoff').value)*1000,inclusive:true}}
+function batchOptions(){const input=$('batch-cutoff'),cutoff=Number(input.value)*1000;if(input.value===''||!Number.isFinite(cutoff)||cutoff<0||cutoff>100000000)throw new Error('Enter a minimum magnification from 0 to 100,000 k×.');return {cutoff,inclusive:true}}
 $('batch-preview').onclick=async()=>{
  try{
   if(!config.batch_grids)throw new Error('Restart TEM Workbench to enable batch grids.');
   const data=await api('batch/preview',batchOptions());batchFiles=data.files;
-  const project=$('batch-project'),selected=project.options.length>1?project.value:$('source-filter').value;
-  const projects=new Map(batchFiles.map(row=>[row.source_id||'demo',row.source_name||'Demo']));
-  project.replaceChildren(new Option('All projects',''),...[...projects].map(([id,name])=>new Option(name,id)));
-  project.value=projects.has(selected)?selected:'';
   populateBatchFolders();batchSelected.clear();
   for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);
   batchReviewReady=true;renderBatchFiles();
-  $('batch-status').textContent=`${batchFiles.filter(r=>r.eligible).length} eligible images. Tick one or more parent folders to select their eligible images, including subfolders. Flatten subfolders combines them in the folder summaries. Click a name or preview to select/deselect; hover to enlarge. Missing previews can be generated under Data Sources and Outputs. Calibration and sampling are checked when each image loads.`;
+  $('batch-status').textContent=`${matchingBatchFiles().filter(row=>row.eligible).length} eligible images in the chosen project and folders. Select the images to process, then choose exports below.`;
  }catch(e){message(e.message,true)}
 };
 $('batch-project').onchange=()=>{batchFolderSelection=null;populateBatchFolders();batchSelected.clear();for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);renderBatchFiles()};
-$('batch-cutoff').onchange=()=>{batchReviewReady=false;syncBatchSelection();$('batch-status').textContent='Review images again after changing the cutoff.'};
+$('batch-cutoff').onchange=()=>{batchReviewReady=false;syncBatchSelection();$('batch-status').textContent='Review images again after changing the minimum magnification.'};
 function batchTimeEstimate(data,now=Date.now()){
  if(data.state!=='running')return null;
  const started=Date.parse(data.started_at),total=Number(data.total),finished=Number(data.finished)||0;
@@ -4330,9 +4376,11 @@ async function pollBatch(){
 $('batch-start').onclick=async()=>{
  try{
   checkOverlapCapability();
-  const png_views=$('batch-png').checked?batchPngViews().filter(id=>id!=='spread_phases'||Number($('map-passes').value)>1):[];
-  if($('batch-png').checked&&!png_views.length)throw new Error('Select at least one PNG map, or turn off PNG export.');
-  if($('batch-png').checked&&!config.batch_png_views)throw new Error('Restart TEM Workbench and reload to enable batch PNG choices.');
+  const exportPng=$('batch-png').value==='on',png_views=exportPng?batchPngViews():[];
+  if(exportPng&&!png_views.length)throw new Error('Add a PNG view, or choose No PNG maps.');
+  if(exportPng&&duplicateBatchPngRows().size)throw new Error('Change or remove the duplicate PNG views.');
+  if(exportPng&&invalidBatchPngRows())throw new Error('Placement sensitivity PNGs need at least two passes.');
+  if(exportPng&&!config.batch_png_views)throw new Error('Restart TEM Workbench and reload to enable batch PNG choices.');
   if(overlapRequest()&&!config.batch_overlap_maps)throw new Error('Restart TEM Workbench, then reload to enable batch stability maps.');
   if(isDiffraction())throw new Error('Open a real-space image to choose the FFT processing settings for this batch.');
   if(!batchReviewReady)throw new Error('Review images after changing the cutoff.');
@@ -4340,7 +4388,7 @@ $('batch-start').onclick=async()=>{
   const file_ids=batchFiles.filter(row=>row.eligible&&batchSelected.has(row.id)).map(row=>row.id);
   if(!file_ids.length)throw new Error('Select at least one image.');
   $('batch-start').disabled=true;
-  renderBatch(await api('batch/start',{...batchOptions(),file_ids,summary_folders:batchFolderSelection===null?[]:[...batchFolderSelection],flatten_folders:$('batch-flatten-folders').checked,settings:settings(),overlap:overlapRequest(),component:componentRequest(),count:Number($('grid-count').value),minimum_nm:Number($('grid-min').value),adaptive:$('adaptive').checked,check_passing:$('check-passing').checked,workers:Number($('grid-workers').value),export_png:$('batch-png').checked,png_views,colors:{...colors},opacity:Number($('grid-opacity').value)/100}));
+  renderBatch(await api('batch/start',{...batchOptions(),file_ids,summary_folders:batchFolderSelection===null?[]:[...batchFolderSelection],flatten_folders:$('batch-flatten-folders').value==='combined',settings:settings(),overlap:overlapRequest(),component:componentRequest(),count:Number($('grid-count').value),minimum_nm:Number($('grid-min').value),adaptive:$('adaptive').checked,check_passing:$('check-passing').checked,workers:Number($('grid-workers').value),export_png:exportPng,png_views,colors:{...colors},opacity:Number($('grid-opacity').value)/100}));
  }catch(e){syncBatchSelection();message(e.message,true)}
 };
 $('batch-cancel').onclick=async()=>{try{renderBatch(await api('batch/cancel',{}))}catch(e){message(e.message,true)}};

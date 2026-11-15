@@ -95,7 +95,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     from PIL import ImageChops
     source = job['source']; a = job.get('aggregation') or overlap_maps.aggregate(job)
     phases = job['settings'].get('enabled_phases', ['HCP','BCC','FCC'])
-    if view not in ('support','strength','hex','hex_support','hex_strength','spread','samples','separate','raw'):
+    if view not in ('support','strength','top','hex','hex_support','hex_strength','spread','samples','separate','raw'):
         raise ValueError('Unknown stability PNG view.')
     if phase is not None and phase not in phases:
         raise ValueError('PNG phase is not enabled for this analysis.')
@@ -105,7 +105,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     h = round(1800*source['height']/max(source['width'],source['height']))
     strength_view=view in ('strength','hex_strength')
     metric='passing_strength' if strength_view else 'support'
-    if (strength_view or view=='hex') and a['cells'] and 'passing_strength' not in next(iter(a['cells'][0]['phases'].values())):
+    if (strength_view or view in ('top','hex')) and a['cells'] and 'passing_strength' not in next(iter(a['cells'][0]['phases'].values())):
         a=overlap_maps.aggregate(job)  # Old exports retain the raw fits; no new fitting is needed.
     blend_key=view in ('support','strength','hex_support','hex_strength') and phase is None and len(phases)==2
     triangle_key=view in ('support','strength','hex_support','hex_strength') and phase is None and len(phases)==3
@@ -145,7 +145,10 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     else:
         for cell in a['cells']:
             if view == 'spread' and cell['passes'] < 2: continue
-            if view in ('support','strength') and phase is None:
+            if view=='top':
+                p=max((p for p,f in cell['phases'].items() if f['support']>0),key=lambda p:cell['phases'][p]['passing_strength'],default=None)
+                entries=[(color(p),cell['phases'][p]['passing_strength'] if p else 0)]
+            elif view in ('support','strength') and phase is None:
                 entries=[blend_support([(color(p),cell['phases'][p][metric]) for p in phases])]
             else:
                 value=cell['samples']/max_samples if view=='samples' else cell['separate_support'] if view=='separate' else cell['phases'][phase]['spread' if view=='spread' else metric]
@@ -160,7 +163,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
     try: font=ImageFont.truetype('DejaVuSans.ttf',18); title=ImageFont.truetype('DejaVuSans.ttf',26)
     except OSError: font=ImageFont.load_default(size=18); title=ImageFont.load_default(size=26)
     draw.text((40,20),source['name'],font=title,fill='white')
-    titles=dict(support='Match frequency'+(' · '+phase if phase else ' · all phases'),hex='Best match · averaged hex grid',hex_support='Match frequency · hex grid',
+    titles=dict(support='Match frequency'+(' · '+phase if phase else ' · all phases'),top='Best match · continuous map',hex='Best match · averaged hex grid',hex_support='Match frequency · hex grid',
         strength='Match score'+(' · '+phase if phase else ' · all phases'),hex_strength='Match score · hex grid'+(' · '+phase if phase else ''),
         spread='Placement sensitivity · '+str(phase),samples='Sampling density',separate='Multiple-structure support',raw='Individual windows · classification circles')
     method=job['grid'].get('component_method')

@@ -113,22 +113,40 @@ def sample_summaries(images):
     return output
 
 def png_exports(options, phases):
-    """Validate selected products and expand per-phase views, preserving old callers."""
+    """Validate PNG view rows and expand per-phase views, preserving old callers."""
     overlap = options.get('overlap') is not None
     choices = options.get('png_views', ['support_all'] if overlap else ['classification'])
     allowed = {'support_all','support_phases','strength_all','strength_phases','hex','hex_support','hex_strength','spread_phases','samples','separate','raw'} if overlap else {'classification'}
-    if not isinstance(choices,list) or any(not isinstance(v,str) or v not in allowed for v in choices):
+    if not isinstance(choices,list):
         raise ValueError('Choose PNG map views supported by the selected grid mode.')
     if not options.get('export_png'):return []
     if not choices:raise ValueError('Select at least one PNG map or turn off PNG export.')
-    if 'spread_phases' in choices and options['overlap'].get('passes',1)<2:
-        raise ValueError('Placement sensitivity PNGs require multiple passes.')
     products=[]
-    for choice in dict.fromkeys(choices):
-        if choice in ('support_phases','strength_phases','spread_phases'):
-            view=choice.split('_')[0]
-            products.extend((view+'_'+p.lower(),view,p) for p in phases)
-        else:products.append((choice,choice.removesuffix('_all'),None))
+    if all(isinstance(choice,dict) for choice in choices):
+        seen=set()
+        for row in choices:
+            mode,display,phase=row.get('mode'),row.get('display'),row.get('phase')
+            displays={'classification':('continuous',)} if not overlap else {'raw':('centres',),'top':('continuous','hex'),'support':('continuous','hex'),'strength':('continuous','hex'),'separate':('continuous',),'spread':('continuous',),'samples':('continuous',)}
+            if mode not in displays or display not in displays[mode]:raise ValueError('Choose a supported PNG mode and display for this grid.')
+            phased=mode in ('support','strength','spread')
+            if phase not in ((['each',*phases] if mode=='spread' else ['all','each',*phases]) if phased else ['all']):
+                raise ValueError('Choose a phase enabled for this PNG view.')
+            if mode=='spread' and options['overlap'].get('passes',1)<2:raise ValueError('Placement sensitivity PNGs require multiple passes.')
+            view='hex' if mode=='top' and display=='hex' else 'hex_'+mode if display=='hex' else mode
+            for selected_phase in (phases if phase=='each' else [None if phase=='all' else phase]):
+                suffix=(view+'_'+selected_phase.lower() if selected_phase else view+'_all' if view in ('support','strength') else view)
+                if suffix in seen:raise ValueError('Duplicate PNG views: '+suffix+'. Remove or change one row.')
+                seen.add(suffix);products.append((suffix,view,selected_phase))
+    else:
+        if any(not isinstance(v,str) or v not in allowed for v in choices):
+            raise ValueError('Choose PNG map views supported by the selected grid mode.')
+        if 'spread_phases' in choices and options['overlap'].get('passes',1)<2:
+            raise ValueError('Placement sensitivity PNGs require multiple passes.')
+        for choice in dict.fromkeys(choices):
+            if choice in ('support_phases','strength_phases','spread_phases'):
+                view=choice.split('_')[0]
+                products.extend((view+'_'+p.lower(),view,p) for p in phases)
+            else:products.append((choice,choice.removesuffix('_all'),None))
     return products
 
 
