@@ -208,14 +208,15 @@ function lastImageKey(){return 'tem-last-image:'+(config.state_namespace||config
 function favoriteKey(){return 'tem-favorites:'+(config.state_namespace||config.data_root)}
 let fileSort=readPreference('tem-file-sort','name');
 if(!['name','acquisition'].includes(fileSort))fileSort='name';
-function acquisitionNumber(file){
+function acquisitionToken(file){
  const name=file.name.replace(/\.(?:dm[34]|tiff?|jpe?g|png)$/i,'');
  // Prefer the acquisition after ST/STA, ignoring magnification and suffix references.
  const tagged=name.match(/(?:^|[_\s-])(?:STA|ST)[_\s-]*(\d+)(?=$|[_\s·-])/i);
  const numbers=[...name.matchAll(/(?:^|[_\s-])(\d+)(?=$|[_\s-])/g)];
- const value=tagged?.[1]??numbers.at(-1)?.[1],number=value===undefined?null:Number(value);
- return Number.isSafeInteger(number)?number:null;
+ const match=tagged||numbers.at(-1),raw=match?.[1],number=raw===undefined?null:Number(raw);
+ return Number.isSafeInteger(number)?{number,raw,index:match.index+match[0].lastIndexOf(raw)}:null;
 }
+function acquisitionNumber(file){return acquisitionToken(file)?.number??null}
 function sortedFiles(files){
  return [...files].sort((a,b)=>{
   if(fileSort==='acquisition'){
@@ -2856,6 +2857,19 @@ function imageBrowserTypeIcon(file){
  }
  badge.append(svg);return badge;
 }
+function imageBrowserFormatIcon(file){
+ const extension=(file.extension||file.id.match(/\.[^/.]+$/)?.[0]||'').replace(/^\./,'').toUpperCase();if(!extension)return null;
+ const badge=document.createElement('span'),svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),path=document.createElementNS('http://www.w3.org/2000/svg','path'),text=document.createElement('span');
+ badge.className='image-browser-format';badge.title=extension+' file';badge.setAttribute('aria-hidden','true');
+ svg.setAttribute('viewBox','0 0 16 18');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.5');path.setAttribute('d','M3 1h7l3 3v13H3z M10 1v4h3');svg.append(path);
+ text.textContent=extension;badge.append(svg,text);return badge;
+}
+function imageBrowserNameParts(file){
+ const stem=file.name.replace(/\.(?:dm[34]|tiff?|jpe?g|png|npz)$/i,''),token=acquisitionToken(file);
+ if(!token)return {description:stem,number:null};
+ const before=stem.slice(0,token.index).replace(/[_\s·-]+$/,''),after=stem.slice(token.index+token.raw.length).replace(/^[_\s·-]+/,'');
+ return {description:[before,after].filter(Boolean).join(' · ')||'Image',number:token.raw};
+}
 function renderImageBrowser(){
  syncImageBrowserFolders();
  const terms=$('image-browser-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -2872,8 +2886,9 @@ function renderImageBrowser(){
    const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';
    img.src='/api/file-preview?id='+encodeURIComponent(file.id);img.onload=()=>placeholder.hidden=true;img.onerror=()=>img.remove();preview.append(img);
   }
-  preview.append(imageBrowserTypeIcon(file));
-  const name=document.createElement('strong');name.textContent=fileBaseName(file);
+  preview.append(imageBrowserTypeIcon(file));const format=imageBrowserFormatIcon(file);if(format)preview.append(format);
+  const name=document.createElement('strong'),parts=imageBrowserNameParts(file),description=document.createElement('span');name.className='image-browser-name';description.className='image-browser-name-text';description.textContent=parts.description;name.append(description);
+  if(parts.number){const number=document.createElement('span');number.className='image-browser-number';number.textContent='#'+parts.number;name.append(number)}
   if(favorites.has(file.id)){const star=document.createElement('span');star.className='favorite-star';star.textContent='★ ';star.title='Favourite';star.setAttribute('aria-hidden','true');name.prepend(star)}
   const group=document.createElement('small');group.textContent=file.sample;
   tile.append(preview,name,group);tile.onclick=()=>{
