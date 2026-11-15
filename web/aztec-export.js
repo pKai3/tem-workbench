@@ -10,7 +10,7 @@ window.aztecExport=(()=>{
   while(size>11&&ctx.measureText(label).width>maxWidth-16){size--;ctx.font=`600 ${size}px system-ui`}
   if(ctx.measureText(label).width>maxWidth-16){while(label.length&&ctx.measureText(label+'…').width>maxWidth-16)label=label.slice(0,-1);label+='…'}
   const width=ctx.measureText(label).width+14;
-  ctx.fillStyle=backdrop||'rgba(5,10,16,.78)';ctx.fillRect(x,y,width,size+12);ctx.fillStyle=colour;ctx.textBaseline='top';ctx.fillText(label,x+7,y+5);ctx.textBaseline='alphabetic';return width;
+  ctx.fillStyle=backdrop||'rgba(5,10,16,.78)';ctx.beginPath();ctx.roundRect(x,y,width,size+12,4);ctx.fill();ctx.fillStyle=colour;ctx.textBaseline='top';ctx.fillText(label,x+7,y+5);ctx.textBaseline='alphabetic';return width;
  }
  function scaleBar(ctx,x,y,visibleWidth,fieldWidth,unit){
   if(!(fieldWidth>0&&visibleWidth>0))return;

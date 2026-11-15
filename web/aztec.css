@@ -98,7 +98,7 @@
 .eds-line-pannable{cursor:grab;touch-action:none}.eds-line-dragging .eds-line-pannable{cursor:grabbing}
 #eds-preview.eds-raw-line-preview{display:block;width:100%}.eds-spectrum-heatmap{margin:12px 0 0}.eds-spectrum-heatmap img{display:block;width:100%;height:320px;max-height:none;object-fit:fill;image-rendering:auto;background:#000}.eds-spectrum-heatmap figcaption{margin-top:5px;font-size:11px}#eds-energy-low-label input,#eds-energy-high-label input{width:92px}
 .eds-line-reference-stage>.eds-reference-drawing{width:100%;height:100%}
-.eds-line-reference-label{position:absolute;z-index:2;top:5px;left:5px;max-width:calc(100% - 10px);padding:4px 7px;background:rgba(5,10,16,.78);color:#fff;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
+.eds-line-reference-label{position:absolute;z-index:2;top:5px;left:5px;max-width:calc(100% - 10px);padding:4px 7px;background:rgba(5,10,16,.78);border-radius:4px;color:#fff;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}
 .eds-comparing .eds-line-tile .eds-line-caption{position:absolute;z-index:2;top:5px;left:5px;max-width:70%;margin:0;min-height:0;gap:4px}
 .eds-comparing .eds-line-caption>span{max-width:100%;padding:3px 6px;background:rgba(5,10,16,.78);font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .eds-comparing .eds-line-caption>.eds-line-quantity{color:#fff}
@@ -142,7 +142,7 @@
 .eds-acquisition-file>small{color:var(--muted);font-size:10px;margin-top:3px}
 .eds-acquisition-picks>div{min-width:0}
 .eds-acquisition-selection+.eds-analysis-controls{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
-.eds-map-label{position:absolute;left:5px;top:5px;z-index:2;max-width:calc(100% - 10px);padding:4px 7px;background:rgba(5,10,16,.65);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-sizing:border-box}
+.eds-map-label{position:absolute;left:5px;top:5px;z-index:2;max-width:calc(100% - 10px);padding:4px 7px;background:rgba(5,10,16,.65);border-radius:4px;color:#fff;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-sizing:border-box}
 .eds-comparison-cell .eds-tile-value-limits{top:auto;left:auto;right:5px;bottom:5px;z-index:2;pointer-events:none}
 .eds-comparison-cell .eds-crop-reset{position:absolute;right:5px;bottom:29px;z-index:2;margin:0;background:rgba(5,10,16,.75)}
 .eds-peak-guide{display:flex;align-items:end;flex-wrap:wrap;gap:6px 10px;margin:0 0 8px}.eds-peak-elements{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}.eds-peak-elements input{width:180px}.eds-peak-help{padding:5px 9px}.eds-peak-guide p{flex-basis:100%;margin:0}.eds-preview svg .eds-peak-marker{stroke:#b78bd9;stroke-width:1;stroke-dasharray:3 3;opacity:.8}.eds-preview svg .eds-peak-label{font-size:10px;fill:#e3b8fa}.eds-window-results{display:flex;flex-wrap:wrap;gap:5px 8px;margin:7px 0 0}.eds-window-result{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:4px 6px}
