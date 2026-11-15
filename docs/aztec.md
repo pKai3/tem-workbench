@@ -26,6 +26,9 @@ PNG, numerical ZIP and catalogue exports save to the source project's configured
 output folder, or the main output folder when that project's output is blank.
 The most specific source folder determines ownership when sources overlap.
 Each export gets a unique filename and shows its saved path in the interface.
+Map and line PNG exports offer Dark, White and Transparent backgrounds. Transparent
+leaves empty canvas and plot areas clear while retaining the images and labels.
+The background choice does not change numerical ZIP data or the live display.
 
 Viewer preferences, comparison selections, aliases and named map/line presets
 autosave to `tem-workbench.workspace.json` beside the folder configuration.

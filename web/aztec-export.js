@@ -1,8 +1,9 @@
 /* Export the same displayed images/plots, keeping numerical data separate. */
 window.aztecExport=(()=>{
- const background='#101c27',ink='#e5edf7';
+ const themes={dark:{canvas:'#101c27',panel:'#0c131c',ink:'#e5edf7'},white:{canvas:'#fff',panel:'#fff',ink:'#263445'},transparent:{canvas:null,panel:null,ink:'#263445'}};
+ const themeFor=options=>themes[options?.png_background]||themes.dark;
  const load=async source=>{const img=new Image();img.src=source;await img.decode();return img};
- const canvas=(w,h)=>{if(w*h>64000000)throw new Error('Select fewer acquisitions for one PNG.');const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');ctx.fillStyle=background;ctx.fillRect(0,0,w,h);return [c,ctx]};
+ const canvas=(w,h,theme)=>{if(w*h>64000000)throw new Error('Select fewer acquisitions for one PNG.');const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d');if(theme.canvas){ctx.fillStyle=theme.canvas;ctx.fillRect(0,0,w,h)}return [c,ctx]};
  function badge(ctx,label,x,y,maxWidth,colour='#fff',initialSize=18){
   let size=initialSize;ctx.font=`600 ${size}px system-ui`;
   while(size>11&&ctx.measureText(label).width>maxWidth-16){size--;ctx.font=`600 ${size}px system-ui`}
@@ -17,20 +18,21 @@ window.aztecExport=(()=>{
   ctx.lineCap='butt';for(const [colour,width] of [['#000',6],['#fff',3]]){ctx.strokeStyle=colour;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+pixels,y);ctx.stroke()}
   ctx.font='14px system-ui';ctx.lineWidth=3;ctx.strokeStyle='#000';ctx.fillStyle='#fff';ctx.strokeText(label,x,y-9);ctx.fillText(label,x,y-9);
  }
- function colourScale(ctx,x,top,height,low,high,normalisation){
+ function colourScale(ctx,x,top,height,low,high,normalisation,theme){
   const gradient=ctx.createLinearGradient(0,top+height,0,top);
   ['#053061','#2166ac','#4393c3','#92c5de','#d1e5f0','#f7f7f7','#fddbc7','#f4a582','#d6604d','#b2182b','#67001f'].forEach((c,i)=>gradient.addColorStop(i/10,c));
-  ctx.fillStyle=gradient;ctx.fillRect(x,top,20,height);ctx.font='13px system-ui';ctx.fillStyle=ink;
+  ctx.fillStyle=gradient;ctx.fillRect(x,top,20,height);ctx.font='13px system-ui';ctx.fillStyle=theme.ink;
   for(let i=0;i<=6;i++){const y=top+height*i/6,value=high-(high-low)*i/6;ctx.fillText(Number(value.toPrecision(3)).toString(),x+26,Math.max(top+12,Math.min(top+height,y+4)))}
   ctx.save();ctx.translate(x+86,top+height/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.font='14px system-ui';ctx.fillText(`Relative to each map’s ${normalisation==='p20'?'P20':normalisation} (shared limits)`,0,0);ctx.restore();
  }
  async function maps({result,options,comparison,signals,names,crops}){
+  const theme=themeFor(options);
   const columns=[{electron:true}];
   for(const channel of signals)columns.push({channel});
   if(result.mode==='both')for(const channel of signals)if(channel!==options.denominator)columns.push({channel,ratio:true});
   const tileSize=320,gap=5,margin=8,legend=result.normalisation!=='none'&&(!comparison||result.scale_scope==='all');
   const width=margin*2+columns.length*tileSize+(columns.length-1)*gap+(legend?100:0),height=margin*2+result.rows.length*tileSize+(result.rows.length-1)*gap;
-  const [out,ctx]=canvas(width*2,height*2);ctx.scale(2,2);const sizes=new Map(),minimum=new Map();
+  const [out,ctx]=canvas(width*2,height*2,theme);ctx.scale(2,2);const sizes=new Map(),minimum=new Map();
   for(const r of result.rows)if(r.width&&r.height){sizes.set(r.distance_unit,Math.max(sizes.get(r.distance_unit)||0,r.width,r.height));minimum.set(r.distance_unit,Math.min(minimum.get(r.distance_unit)||Infinity,r.width,r.height))}
   for(const [j,row] of result.rows.entries())for(const [i,column] of columns.entries()){
    const x=margin+i*(tileSize+gap),y=margin+j*(tileSize+gap),tile=row.tiles.find(t=>t.channel===column.channel);
@@ -49,15 +51,19 @@ window.aztecExport=(()=>{
     scaleBar(ctx,start+9,bottom-12,end-start,row.width*(end-start)/w,row.distance_unit);
     if(!column.electron&&(result.scale_scope!=='all'||result.normalisation==='none')){const limits=tile[column.ratio?'ratio_image_limits':'image_limits'];if(limits){ctx.font='12px system-ui';ctx.fillStyle='#fff';ctx.textAlign='right';ctx.strokeStyle='#000';ctx.lineWidth=3;const text=limits.map(v=>Number(v.toPrecision(3))).join(' – ');ctx.strokeText(text,x+tileSize-8,bottom-12);ctx.fillText(text,x+tileSize-8,bottom-12);ctx.textAlign='left'}}
     badge(ctx,label,Math.max(x,left)+5,Math.max(y,top)+5,Math.min(tileSize,w)-10);ctx.restore();
-   }else{badge(ctx,label,x+5,y+5,tileSize-10);ctx.fillStyle=ink;ctx.font='14px system-ui';ctx.fillText('Unavailable',x+12,y+tileSize/2)}
+   }else{badge(ctx,label,x+5,y+5,tileSize-10);ctx.fillStyle=theme.ink;ctx.font='14px system-ui';ctx.fillText('Unavailable',x+12,y+tileSize/2)}
   }
-  if(legend)colourScale(ctx,width-92,margin,height-2*margin,result.low,result.high,result.normalisation);
+  if(legend)colourScale(ctx,width-92,margin,height-2*margin,result.low,result.high,result.normalisation,theme);
   return out;
  }
- function svgSnapshot(svg){
+ function svgSnapshot(svg,theme){
   const copy=svg.cloneNode(true),box=svg.getBoundingClientRect(),view=svg.viewBox.baseVal;
   copy.setAttribute('xmlns','http://www.w3.org/2000/svg');copy.setAttribute('width',view.width||box.width);copy.setAttribute('height',view.height||box.height);
-  copy.style.background=getComputedStyle(svg).backgroundColor;copy.style.fontFamily='system-ui';copy.style.color=ink;
+  copy.style.background=theme===themes.dark?getComputedStyle(svg).backgroundColor:theme.panel||'transparent';copy.style.fontFamily='system-ui';copy.style.color=theme.ink;
+  if(theme!==themes.dark&&svg.closest('.eds-line-tile')){
+   for(const node of copy.querySelectorAll('text[fill="#becbda"]'))node.setAttribute('fill',theme.ink);
+   for(const node of copy.querySelectorAll('path[stroke="#fff"][stroke-width="3.5"]'))node.setAttribute('stroke','#263445');
+  }
   // Hover cursors are temporary UI, not part of the selected data.
   for(const n of copy.querySelectorAll('[visibility]'))n.setAttribute('visibility','hidden');
   return {node:copy,width:box.width||view.width,height:box.height||view.height};
@@ -69,9 +75,10 @@ window.aztecExport=(()=>{
  }
  function captureLines({root,names,result,options,comparison}){
   // Capture the current plots before any asynchronous image decoding or saving.
+  const theme=themeFor(options);
   const references=new Map();
   for(const figure of root.querySelectorAll('.eds-line-reference')){
-   const svg=figure.querySelector('.eds-reference-drawing');if(svg)references.set(figure.dataset.acquisition,svgSnapshot(svg));
+   const svg=figure.querySelector('.eds-reference-drawing');if(svg)references.set(figure.dataset.acquisition,svgSnapshot(svg,theme));
   }
   const groups=[];
   for(const section of root.querySelectorAll('.eds-compare-line-section,.eds-map-row')){
@@ -79,7 +86,7 @@ window.aztecExport=(()=>{
    const figures=[...section.querySelectorAll('.eds-line-tile')].map(figure=>{
     const svg=figure.querySelector('svg');if(!svg)return null;
     const viewHeight=svg.viewBox.baseVal.height||svg.getBoundingClientRect().height||1;
-    return {image:svgSnapshot(svg),cropTop:(Number(svg.dataset.cropTop)||0)/viewHeight,cropHeight:(Number(svg.dataset.cropHeight)||viewHeight)/viewHeight,metric:figure.dataset.metric||'',labelX:Number(figure.dataset.labelX),labelY:Number(figure.dataset.labelY),labelWidth:Number(figure.dataset.labelWidth),metricRight:Number(figure.dataset.metricRight),legend:[...figure.querySelectorAll('figcaption > span:not(.eds-line-quantity)')].map(node=>({label:node.dataset.acquisition?names[node.dataset.acquisition]||node.textContent:node.textContent,acquisition:node.dataset.acquisition||null,colour:node.style.color||ink}))};
+    return {image:svgSnapshot(svg,theme),cropTop:(Number(svg.dataset.cropTop)||0)/viewHeight,cropHeight:(Number(svg.dataset.cropHeight)||viewHeight)/viewHeight,metric:figure.dataset.metric||'',labelX:Number(figure.dataset.labelX),labelY:Number(figure.dataset.labelY),labelWidth:Number(figure.dataset.labelWidth),metricRight:Number(figure.dataset.metricRight),legend:[...figure.querySelectorAll('figcaption > span:not(.eds-line-quantity)')].map(node=>({label:node.dataset.acquisition?names[node.dataset.acquisition]||node.textContent:node.textContent,acquisition:node.dataset.acquisition||null,colour:node.style.color||theme.ink}))};
    }).filter(Boolean);
    if(figures.length)groups.push({acquisition,heading,figures});
   }
@@ -112,10 +119,10 @@ window.aztecExport=(()=>{
   for(let i=0;i<3;i++)panelInset=Math.max(4,Math.round(plotCrop(figure,widths(panelInset).plotWidth).top));
   return {...widths(panelInset),panelInset};
  }
- async function drawReference(ctx,reference,label,x,y,width,height){
-  ctx.fillStyle='#0c131c';ctx.fillRect(x,y,width,height);
+ async function drawReference(ctx,reference,label,x,y,width,height,theme){
+  if(theme.panel){ctx.fillStyle=theme.panel;ctx.fillRect(x,y,width,height)}
   if(reference){const image=await load(svgSource(reference)),scale=Math.min(width/reference.width,height/reference.height),w=reference.width*scale,h=reference.height*scale,left=x+(width-w)/2,top=y+(height-h)/2;ctx.drawImage(image,left,top,w,h);badge(ctx,label||'Acquisition',left+6,top+6,Math.max(30,w-12))}
-  else{ctx.fillStyle=ink;ctx.font='15px system-ui';ctx.fillText('Reference image unavailable',x+12,y+height/2);badge(ctx,label||'Acquisition',x+6,y+6,width-12)}
+  else{ctx.fillStyle=theme.ink;ctx.font='15px system-ui';ctx.fillText('Reference image unavailable',x+12,y+height/2);badge(ctx,label||'Acquisition',x+6,y+6,width-12)}
   return height;
  }
  async function drawPlot(ctx,figure,x,y,width,acquisition,heading=''){
@@ -127,6 +134,7 @@ window.aztecExport=(()=>{
   return height;
  }
  async function lines({snapshot,root,names,result,options,comparison,onlyAcquisition}){
+  const theme=themeFor(options);
   const captured=snapshot||captureLines({root,names,result,options,comparison});
   if(onlyAcquisition&&!captured.acquisitions.includes(onlyAcquisition))throw new Error('The selected acquisition has no line plots.');
   const references=options?.background===false?[]:onlyAcquisition?captured.acquisitions.filter(id=>id===onlyAcquisition):captured.acquisitions;
@@ -146,8 +154,8 @@ window.aztecExport=(()=>{
    const referencesHeight=cards.length?cards.at(-1).y+referenceHeight-(linePad+panelInset):0;
    const plotOffset=panelInset+(cards.length?referencesHeight+gap:0);
    const height=plotOffset+panels.reduce((sum,panel)=>sum+plotHeight(panel.figure,plotWidth)+rowGap,0);
-   const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+height)*2));ctx.scale(2,2);ctx.fillStyle='#0c131c';ctx.fillRect(linePad,linePad,lineWidth-linePad*2,height);
-   for(const card of cards)await drawReference(ctx,captured.references.get(card.id),captured.names[card.id],card.x,card.y,card.width,referenceHeight);
+   const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+height)*2),theme);ctx.scale(2,2);if(theme.panel){ctx.fillStyle=theme.panel;ctx.fillRect(linePad,linePad,lineWidth-linePad*2,height)}
+   for(const card of cards)await drawReference(ctx,captured.references.get(card.id),captured.names[card.id],card.x,card.y,card.width,referenceHeight,theme);
    let y=linePad+plotOffset;for(const panel of panels)y+=await drawPlot(ctx,panel.figure,linePad+panelInset,y,plotWidth,onlyAcquisition,panel.heading)+rowGap;
    return out;
   }
@@ -160,11 +168,11 @@ window.aztecExport=(()=>{
    const crop=stackedCrop(group.figures,width);
    return {group,reference,showReference:available,width,referenceTop:crop.top,referenceHeight:crop.height,height:plots};
   });
-  const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+rows.reduce((sum,row)=>sum+row.height+rowGap,0))*2));ctx.scale(2,2);
+  const [out,ctx]=canvas(lineWidth*2,Math.ceil((linePad*2+rows.reduce((sum,row)=>sum+row.height+rowGap,0))*2),theme);ctx.scale(2,2);
   let y=linePad;for(const row of rows){
-   ctx.fillStyle='#0c131c';ctx.fillRect(linePad,y,lineWidth-linePad*2,row.height);
+   if(theme.panel){ctx.fillStyle=theme.panel;ctx.fillRect(linePad,y,lineWidth-linePad*2,row.height)}
    const {group,reference,width}=row,x=row.showReference?linePad+panelInset+referenceWidth+columnGap:linePad;
-   if(row.showReference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad+panelInset,y+row.referenceTop,referenceWidth,row.referenceHeight);
+   if(row.showReference)await drawReference(ctx,reference,captured.names[group.acquisition]||group.heading,linePad+panelInset,y+row.referenceTop,referenceWidth,row.referenceHeight,theme);
    let plotY=y;for(const figure of group.figures)plotY+=await drawPlot(ctx,figure,x,plotY,width,null,row.showReference?'':group.heading)+rowGap;
    y+=row.height+rowGap;
   }

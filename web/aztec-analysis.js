@@ -414,6 +414,12 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    for(const [value,name] of [['all','All in one image'],['individual','One per acquisition']]){const option=el('option',name);option.value=value;pngMode.append(option)}
    label.append(pngMode);buttons.append(label);
   }
+  const backgroundLabel=el('label','PNG background','eds-export-mode'),backgroundSelect=el('select');
+  backgroundSelect.setAttribute('aria-label','PNG background');
+  for(const [value,name] of [['dark','Dark'],['white','White'],['transparent','Transparent']]){const option=el('option',name);option.value=value;backgroundSelect.append(option)}
+  backgroundSelect.value=current.options.png_background||'dark';
+  backgroundSelect.onchange=()=>{current.options.png_background=backgroundSelect.value;persist()};
+  backgroundLabel.append(backgroundSelect);buttons.append(backgroundLabel);
   buttons.append(png,data);footer.append(buttons);
   if(current.comparison){
    data.title='Save to the configured output folder for the first selected acquisition’s project.';
@@ -427,7 +433,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const names=Object.fromEntries(result.rows.map(r=>[r.acquisition,exportLabel(r)]));
    const lineRanges=context.kind==='line'&&context.comparison?window.aztecLineGeometry.ranges(result.rows,options):{};
    const active=kind==='png'?png:data;
-   png.disabled=data.disabled=true;if(pngMode)pngMode.disabled=true;buttonState(active,'busy');notice(kind==='png'?'Exporting PNG…':'Exporting data…','Preparing the file…');
+   png.disabled=data.disabled=true;backgroundSelect.disabled=true;if(pngMode)pngMode.disabled=true;buttonState(active,'busy');notice(kind==='png'?'Exporting PNG…':'Exporting data…','Preparing the file…');
    try{
     if(!window.aztecExport)throw new Error('Restart TEM Workbench and reload to load the export tools.');
     let saved;
@@ -449,9 +455,9 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
      const snapshot=context.kind==='line'?window.aztecExport.captureLines(settings):null;
      const image=await window.aztecExport.png({...settings,snapshot});
      saved=await api('export',{id:fileId,...acquisitionRequest(context),format:'png',kind:context.kind,comparison:context.comparison,image});
-    }else saved=await api('export',{id:fileId,...acquisitionRequest(context),signals:selectedSignals(),channel_table:context.table,comparison:context.comparison,...options,export_labels:names,export_line_ranges:lineRanges,format:'data'});
+    }else{const {png_background,...processingOptions}=options;saved=await api('export',{id:fileId,...acquisitionRequest(context),signals:selectedSignals(),channel_table:context.table,comparison:context.comparison,...processingOptions,export_labels:names,export_line_ranges:lineRanges,format:'data'})}
     notice('✓ Export saved · '+saved.path.split(/[\\/]/).at(-1),saved.path,'saved');buttonState(active,'saved');
-   }catch(error){notice('Export failed',error.message,'error');buttonState(active,'error');console.error('AZtec export failed:',error)}finally{png.disabled=data.disabled=false;if(pngMode)pngMode.disabled=false}
+   }catch(error){notice('Export failed',error.message,'error');buttonState(active,'error');console.error('AZtec export failed:',error)}finally{png.disabled=data.disabled=false;backgroundSelect.disabled=false;if(pngMode)pngMode.disabled=false}
   }
   png.onclick=()=>run('png');data.onclick=()=>run('data');
  }
