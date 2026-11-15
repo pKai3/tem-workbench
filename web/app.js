@@ -4184,6 +4184,7 @@ function batchProjectFiles(){const id=$('batch-project').value;return batchFiles
 function populateBatchFolders(rows=(config?.files||[]).filter(row=>!$('batch-project').value||(row.source_id||'demo')===$('batch-project').value)){
  const folders=new Set();
  for(const row of rows){const path=batchFolder(row);folders.add(path);if(path!=='.'){const parts=path.split('/');for(let i=1;i<parts.length;i++)folders.add(parts.slice(0,i).join('/'))}}
+ const selectedProject=$('batch-project').value,projectName=selectedProject?rows.find(row=>(row.source_id||'demo')===selectedProject)?.source_name||'':'',projectRoots=new Set(rows.map(row=>row.source_name).filter(Boolean));
  const host=$('batch-folder-list');host.replaceChildren();
  const add=(name,path)=>{
   const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';
@@ -4198,7 +4199,11 @@ function populateBatchFolders(rows=(config?.files||[]).filter(row=>!$('batch-pro
   label.append(check,document.createTextNode(name));host.append(label);
  };
  add('All folders',null);
- for(const folder of [...folders].sort((a,b)=>a.localeCompare(b)))add(folder==='.'?'Data folder (top level)':folder,folder);
+ for(const folder of [...folders].sort((a,b)=>a.localeCompare(b))){
+  if(projectRoots.has(folder))continue;
+  const name=folder==='.'?'Files at project root':projectName&&folder.startsWith(projectName+'/')?folder.slice(projectName.length+1):folder;
+  add(name,folder);
+ }
  $('batch-folder-summary').textContent=batchFolderSelection===null?'All folders':batchFolderSelection.size===0?'No folders':`${batchFolderSelection.size} folder${batchFolderSelection.size===1?'':'s'} selected`;
 }
 function matchesBatchFolders(row){
