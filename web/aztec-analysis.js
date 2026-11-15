@@ -193,12 +193,12 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  }
  function controls(channels){
   const root=$('eds-analysis-tools');root.replaceChildren();if(current.comparison){presetControls(root);sourceControls(root);acquisitionControls(root)}let row=el('div',undefined,'eds-analysis-controls');root.append(row);
-  const changed=key=>{if(key==='smoothing_unit')smoothing.firstChild.textContent=`Smoothing σ, ${current.options.smoothing_unit}`;keepScroll(updateVisibility);if(['layout','spatial','reference_orientation','trim_mode'].includes(key)){persist();if(current.result)render(current.result)}else update()};
+  const changed=key=>{keepScroll(updateVisibility);if(['layout','spatial','reference_orientation','trim_mode'].includes(key)){persist();if(current.result)render(current.result)}else update()};
   const toggle=(label,key,choices)=>{const wrap=el('div',undefined,'eds-control');wrap.append(el('span',label));const group=el('div',undefined,'signal-toggle inspector-layout');group.setAttribute('role','group');group.setAttribute('aria-label',label);for(const [value,text] of choices){const b=el('button',text);b.type='button';b.setAttribute('aria-pressed',String(current.options[key]===value));b.onclick=()=>{current.options[key]=value;for(const n of group.children)n.setAttribute('aria-pressed',String(n===b));changed(key)};group.append(b)}wrap.append(group);row.append(wrap);return wrap};
   if(current.comparison&&current.kind==='line'&&comparisonGroups(current.files).some(g=>g.table==='QuantLinescans')){const family=el('div',undefined,'eds-control');family.append(el('span','Profiles'));const buttons=el('div',undefined,'signal-toggle inspector-layout');for(const [table,label] of [['XrayLinescans','Intensity'],['QuantLinescans','Composition']]){const button=el('button',label);button.type='button';button.setAttribute('aria-pressed',String(current.table===table));button.disabled=!comparisonGroups(current.files).some(g=>g.table===table);button.onclick=()=>{const key=viewKey(table);selections[key]={...(selections[key]||{}),files:[...current.files]};open(null,'line',table)};buttons.append(button)}family.append(buttons);row.append(family)}
   if(current.kind==='line')toggle('Plots','layout',current.comparison?[['stacked','Stacked'],['elements','Overlay elements'],['overlay','Overlay scans']]:[['stacked','Stacked'],['overlay','Overlay']]);
   if(current.comparison&&current.kind==='line'){toggle('Reference image','reference_orientation',[['native','Original'],['right','Arrow right']]);toggle('Scan length','trim_mode',[['full','Full'],['equal','Equal']])}
-  if(current.comparison&&current.kind==='map'){toggle('Image scale','spatial',[['physical','Equal distance'],['fit','Fit tiles'],['crop','Crop tiles']]);toggle('Smoothing units','smoothing_unit',[['nm','nm'],['px','px']])}
+  if(current.comparison&&current.kind==='map')toggle('Image scale','spatial',[['physical','Equal distance'],['fit','Fit tiles'],['crop','Crop tiles']]);
   if(row.childElementCount){row=el('div',undefined,'eds-analysis-controls');root.append(row)}
   toggle('View','mode',current.kind==='map'?[['signal','Signals'],['ratio','Ratios'],['both','Both']]:[['signal',current.table==='QuantLinescans'?'Composition':'Signals'],['ratio','Ratios']]);
   const denominator=el('label','Divide by'),denSelect=el('select');denSelect.setAttribute('aria-label','Divide by');for(const channel of channels){const option=el('option',channel);option.value=channel;denSelect.append(option)}denSelect.value=current.options.denominator;denSelect.onchange=()=>{current.options.denominator=denSelect.value;updateVisibility();update()};denominator.append(denSelect);row.append(denominator);
@@ -206,13 +206,20 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   toggle(current.comparison?'Normalize each acquisition':'Normalize','normalisation',[['none','Off'],['median','Median'],['mean','Mean'],['p20','P20']]);
   row=el('div',undefined,'eds-analysis-controls');root.append(row);
   const numeric=(label,key)=>{const wrap=el('label',label),input=el('input');input.type='number';input.step='any';input.min=key==='low'?'':0;input.value=current.options[key];input.setAttribute('aria-label',label);input.onchange=()=>{const v=Number(input.value);if(Number.isFinite(v)){current.options[key]=v;update()}};wrap.append(input);row.append(wrap);return wrap};
-  const smoothing=el('label',current.kind==='map'?`Smoothing σ, ${current.options.smoothing_unit}`:'Smoothing FWHM, nm','eds-smoothing');
+  const smoothing=el('div',undefined,'eds-smoothing eds-smoothing-control'),smoothingHeader=el('div',undefined,'eds-smoothing-header');
+  smoothingHeader.append(el('span',current.kind==='map'?(current.comparison?'Smoothing σ':'Smoothing σ, px'):'Smoothing FWHM, nm'));
+  if(current.comparison&&current.kind==='map'){
+   const unitControl=el('div',undefined,'eds-smoothing-units'),units=el('div',undefined,'signal-toggle inspector-layout');
+   units.setAttribute('role','group');units.setAttribute('aria-label','Smoothing units');unitControl.append(el('span','Units'),units);
+   for(const unit of ['nm','px']){const button=el('button',unit);button.type='button';button.setAttribute('aria-pressed',String(current.options.smoothing_unit===unit));button.onclick=()=>{current.options.smoothing_unit=unit;for(const option of units.children)option.setAttribute('aria-pressed',String(option===button));changed('smoothing_unit')};units.append(button)}
+   smoothingHeader.append(unitControl);
+  }
   const smoothingInputs=el('span',undefined,'eds-smoothing-inputs'),range=el('input'),amount=el('input');
   range.type='range';range.min='0';range.max=String(Math.max(current.kind==='map'?32:50,current.options.smoothing));range.step='.5';range.value=current.options.smoothing;range.setAttribute('aria-label','Smoothing');
   amount.type='number';amount.min='0';amount.step='.5';amount.value=current.options.smoothing;amount.setAttribute('aria-label','Smoothing value');
   const smoothChange=(value,immediate)=>{const n=Number(value);if(!Number.isFinite(n)||n<0)return;current.options.smoothing=n;range.max=String(Math.max(Number(range.max),n));range.value=n;amount.value=n;clearTimeout(smoothingTimer);++version;$('eds-preview-busy').hidden=false;if(immediate)update();else smoothingTimer=setTimeout(update,140)};
   range.oninput=()=>smoothChange(range.value,false);range.onchange=()=>smoothChange(range.value,true);amount.oninput=()=>smoothChange(amount.value,false);amount.onchange=()=>smoothChange(amount.value,true);
-  smoothingInputs.append(range,amount);smoothing.append(smoothingInputs);row.append(smoothing);
+  smoothingInputs.append(range,amount);smoothing.append(smoothingHeader,smoothingInputs);row.append(smoothing);
   let brightness;
   if(current.kind==='map'){
    brightness=el('label','Map brightness ×','eds-smoothing');const inputs=el('span',undefined,'eds-smoothing-inputs'),slider=el('input'),value=el('input');
