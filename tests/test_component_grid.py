@@ -1,5 +1,6 @@
 """Component maps use ordinary jobs, batch exports and source isolation."""
 import copy
+import base64
 from io import BytesIO
 import json
 from pathlib import Path
@@ -188,7 +189,7 @@ class ComponentGridTests(unittest.TestCase):
             self.assertTrue(entered.wait(3));self.app.cancel_grid(job['id']);self.app.grid_thread.join(10)
         result=self.app.status(job['id']);self.assertEqual(result['state'],'cancelled');self.assertEqual(result['regions'],[])
 
-    def test_sampling_status_exposes_bounded_spatial_preview(self):
+    def test_sampling_status_shows_completed_fft_locations(self):
         entered=threading.Event();release=threading.Event()
         def paused(array,info,settings,options,cancel,progress):
             progress(1,4,'Sampling local FFTs');entered.set();release.wait(5)
@@ -198,16 +199,31 @@ class ComponentGridTests(unittest.TestCase):
             self.assertTrue(entered.wait(3))
             for _ in range(30):
                 status=self.app.status(job['id'])
-                if status.get('sampling_current') is not None:break
+                if status.get('sampling_map') is not None:break
                 time.sleep(.05)
             self.assertEqual(status['component_progress']['stage'],'Sampling local FFTs')
-            self.assertLessEqual(len(status['sampling_preview']),300)
-            self.assertEqual(status['sampling_preview'][0]['index'],1)
+            self.assertTrue(status['sampling_map'].startswith('data:image/png;base64,'))
             samples=shared_spectra.window_samples(shared_spectra.plan(self.app.engine.load('a')['info'],self.settings,
                 component_grid.options_for(self.app.engine.load('a')['info'],self.overlap,self.component,1)[0]))
             self.assertEqual(status['sampling_current'],samples[1]['roi'])
+            with Image.open(BytesIO(base64.b64decode(status['sampling_map'].split(',',1)[1]))) as overlay:
+                first=samples[0]['roi']
+                x=round((first['x']+first['w']/2)*overlay.width/256)
+                y=round((first['y']+first['h']/2)*overlay.height/256)
+                self.assertGreater(overlay.getpixel((x,y))[3],0)
             self.app.cancel_grid(job['id']);self.assertTrue(self.app.pca.cancel.wait(3));release.set();self.app.grid_thread.join(10)
         self.assertEqual(self.app.status(job['id'])['state'],'cancelled')
+
+    def test_sampling_overlay_includes_locations_beyond_old_preview_cap(self):
+        samples=[{'roi':dict(x=10+20*(i%20),y=10+20*(i//20),w=1,h=1)} for i in range(400)]
+        overlay=component_grid.sampled_positions_image(samples,350,dict(width=400,height=400))
+        with Image.open(BytesIO(base64.b64decode(overlay.split(',',1)[1]))) as image:
+            def alpha(index):
+                roi=samples[index]['roi']
+                return image.getpixel((round((roi['x']+.5)*image.width/400),
+                                       round((roi['y']+.5)*image.height/400)))[3]
+            self.assertGreater(alpha(349),0)
+            self.assertEqual(alpha(399),0)
 
     def test_image_relative_sampling_resolves_per_source(self):
         overlap=dict(size_mode='image_percent',window_percent=25,spacing_mode='window_percent',spacing_percent=50,layout='hex',passes=3,sample_edges=True)

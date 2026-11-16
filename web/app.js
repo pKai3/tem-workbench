@@ -2148,20 +2148,19 @@ function drawActiveGridWindows(group,job){
  if(!keys.size){outlines.remove();spinners.remove()}
 }
 function drawComponentProgress(job){
- const group=$('grid-sampling-progress'),badge=$('component-map-progress');group.replaceChildren();
+ const group=$('grid-sampling-progress'),badge=$('component-map-progress');
  const progress=job?.component_progress,running=job?.state==='running'&&job?.grid?.component_method;
  badge.hidden=!running;
- if(!running)return;
+ if(!running){group.replaceChildren();return}
  const done=Number(progress?.completed)||0,total=Number(progress?.total)||0,stage=progress?.stage||'Preparing';
  $('component-map-stage').textContent=`${job.grid.component_method.toUpperCase()} · ${stage==='NMF iterations'?'Iterations':stage}${total&&!stage.startsWith('Preparing')&&stage!=='Decomposing spectra'?` · ${done}/${total}`:''}`;
  const bar=$('component-map-stage-bar');
  if(total&&stage!=='Decomposing spectra'&&!stage.startsWith('Preparing')){bar.max=total;bar.value=done}else bar.removeAttribute('value');
- if(stage!=='Sampling local FFTs')return;
- const radius=Math.max(4,Math.min(job.source.width,job.source.height)*.005);
- for(const point of job.sampling_preview||[]){
-  if(point.index>done)break;
-  group.append(el('circle',{cx:point.x,cy:point.y,r:radius,fill:'#59d4cb','fill-opacity':.78,stroke:'#07131b','stroke-width':radius*.28}));
- }
+ if(stage!=='Sampling local FFTs'||!job.sampling_map){group.replaceChildren();return}
+ let image=group.firstElementChild;
+ if(!image){image=el('image',{x:0,y:0,preserveAspectRatio:'none'});group.append(image)}
+ if(image.getAttribute('href')!==job.sampling_map)image.setAttribute('href',job.sampling_map);
+ image.setAttribute('width',job.source.width);image.setAttribute('height',job.source.height);
 }
 function drawGrid(){
  document.dispatchEvent(new CustomEvent('tem-grid-view-updated'));

@@ -4,9 +4,12 @@ Only original-window checks enter the map. The decomposition and source fits
 remain available through SharedSpectra for detailed inspection/export.
 """
 import copy
+import base64
+from io import BytesIO
 import logging
 import threading
 import time
+from PIL import Image, ImageDraw
 
 from tem_workbench.mapping import overlap_maps
 from tem_workbench.components import shared_spectra
@@ -14,6 +17,24 @@ from tem_workbench.components.hypothesis_selection import automatic_pool, SORTS
 from tem_workbench.components.component_execution import selected_workers
 
 LOG = logging.getLogger('tem_workbench')
+
+
+def sampled_positions_image(samples, completed, source):
+    """A compact transparent overlay with every completed FFT centre."""
+    scale = 768 / max(source['width'], source['height'])
+    width = max(1, round(source['width'] * scale))
+    height = max(1, round(source['height'] * scale))
+    image = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    for sample in samples[:completed]:
+        roi = sample['roi']
+        x = (roi['x'] + roi['w']/2) * width/source['width']
+        y = (roi['y'] + roi['h']/2) * height/source['height']
+        draw.ellipse((x-3, y-3, x+3, y+3), fill=(89, 212, 203, 230),
+                     outline=(7, 19, 27, 240), width=1)
+    stream = BytesIO()
+    image.save(stream, format='PNG')
+    return 'data:image/png;base64,' + base64.b64encode(stream.getvalue()).decode('ascii')
 
 
 def hypothesis_summary(result):
@@ -129,12 +150,6 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
     options, fit_options, sampling = options_for(item['info'], overlap, component, workers)
     planned = shared_spectra.plan(item['info'], settings, options)
     samples = shared_spectra.window_samples(planned)
-    preview_head = min(30, len(samples))
-    preview_stride = max(1, (len(samples)-preview_head+269)//270)
-    sampling_preview = [{'index': i+1, 'x': sample['roi']['x']+sample['roi']['w']/2,
-                         'y': sample['roi']['y']+sample['roi']['h']/2}
-                        for i, sample in enumerate(samples)
-                        if i < preview_head or (i-preview_head) % preview_stride == 0]
     with app.job_lock:
         if (app.closing or (app.grid_thread and app.grid_thread.is_alive()) or app.pca.running()
                 or app.component_batch_running() or app.window_probe.running()
@@ -150,22 +165,31 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
                    settings=copy.deepcopy(settings), initial_settings=copy.deepcopy(settings),
                    grid={**sampling, 'component_method': options['method']}, component=copy.deepcopy(component),
                    regions=[], active_windows=[], processed=0, pending=planned['count'], error=None, cancel=False,
-                   sampling_preview=sampling_preview, sampling_current=None,
+                   sampling_map=None, sampling_current=None,
                    execution=dict(workers=planned['workers'], requested_workers=workers, elapsed_seconds=0.),
                    interpretation='Auto selects a compact pool retaining at least 99% of available passing-window coverage. All discovered hypotheses remain checked and retained; overlapping support is not phase fraction.')
         app.jobs = {job['id']: job}
 
         def work():
             began = time.monotonic(); last_map = 0.; previous = -1
+            last_sampling_image = 0.; last_sampling_count = -1
             try:
                 while True:
                     if job['cancel']: manager.cancel.set()
                     status = manager.status(job['id'])
                     running = manager.running()
+                    done = min(status.get('completed') or 0, len(samples))
+                    sampling = status.get('stage') == 'Sampling local FFTs'
+                    image = None
+                    if not batch and sampling and done != last_sampling_count and (
+                            time.monotonic()-last_sampling_image >= .35 or done == len(samples)):
+                        image = sampled_positions_image(samples, done, info)
+                        last_sampling_image = time.monotonic(); last_sampling_count = done
                     with app.job_lock:
                         job['component_progress'] = {k: status.get(k) for k in ('operation', 'stage', 'completed', 'total')}
-                        done = min(status.get('completed') or 0, len(samples))
-                        job['sampling_current'] = (samples[done]['roi'] if status.get('stage') == 'Sampling local FFTs' and done < len(samples) else None)
+                        job['sampling_current'] = samples[done]['roi'] if sampling and done < len(samples) else None
+                        if not sampling:job['sampling_map'] = None
+                        elif image is not None:job['sampling_map'] = image
                         job['execution']['elapsed_seconds'] = round(time.monotonic()-began, 1)
                     result = None
                     try: result = manager.inspectable(job['id'])
