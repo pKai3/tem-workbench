@@ -98,6 +98,31 @@ class CoordinatorChecks(unittest.TestCase):
         app.lock=threading.RLock();app.job_lock=threading.RLock()
         return app
 
+    def test_changed_code_rejected_before_spawning_workers_or_components(self):
+        app=self.app();item=image()
+        with patch.object(Engine,'current_analysis_version',return_value='new-code'), \
+             patch('tem_workbench.app.server.RegionPool',side_effect=AssertionError('worker spawned')), \
+             patch('tem_workbench.components.component_grid.start',side_effect=AssertionError('component started')):
+            for component in (None,{'method':'nmf'}):
+                with self.subTest(component=component), self.assertRaisesRegex(ValueError,'Restart Workbench'):
+                    app.grid(item,{},2,False,1,workers=2,component=component)
+        self.assertEqual(app.jobs,{})
+
+    def test_code_change_during_worker_start_reports_restart(self):
+        app=self.app();item=image()
+        class FailedPool:
+            def __init__(self,*args):pass
+            def submit(self,roi):
+                future=Future();future.set_exception(RuntimeError('worker initializer failed'));return future
+            def close(self):pass
+        with patch.object(Engine,'current_analysis_version',side_effect=[app.engine.version,'new-code']), \
+             patch('tem_workbench.app.server.RegionPool',FailedPool):
+            job_id=app.grid(item,{},2,False,1,workers=2)['id']
+            app.grid_thread.join(10)
+        status=app.status(job_id)
+        self.assertEqual(status['state'],'error')
+        self.assertIn('Restart Workbench',status['error'])
+
     def test_active_windows_follow_workers_not_queued_or_completed_futures(self):
         app=self.app();item=image();pools=[]
         class ControlledPool:

@@ -1,6 +1,6 @@
 # TEM Workbench implementation plan
 
-Last updated: 14 November 2026
+Last updated: 17 November 2026
 
 ## AZtec follow-up release — completed 14 November 2026
 
@@ -890,6 +890,8 @@ Deferred explicitly by the user on 31 October 2026 (do not implement in this cha
 - Extend manual editing to real-space FFT mode after the diffraction interaction is established.
 
 ## Parallel grid execution
+
+**Stale analysis-code guard — completed 17 November 2026:** The 16 November log showed spawned overlapping-grid workers rejecting source files changed after Workbench started; the parent reported only `BrokenProcessPool` after starting ten workers. NMF appeared to work because it uses the already-loaded in-process code, so switching modes was incidental. Grid startup now compares the live engine fingerprint with the analysis files before either ordinary or PCA/NMF work begins and returns a direct restart message without creating a pool. If files change between that check and worker startup, the grid status reports the same restart reason. No fitting or numerical behavior changed. A running older server still needs one restart to load this guard; retained in-memory results should be exported first.
 
 Implemented 30 October 2026 in `8f7aa0c`, originally on `perf/parallel-analysis`, and included in the 2 November main integration. Parallel execution was explicitly brought forward ahead of the remaining analysis tasks.
 

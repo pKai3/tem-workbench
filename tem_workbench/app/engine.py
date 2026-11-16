@@ -98,6 +98,12 @@ def spectrum_images(log, detector_signal, crop=None, limits=None):
 
 
 class Engine:
+    @staticmethod
+    def current_analysis_version():
+        """Fingerprint the analysis files a spawned grid worker will import."""
+        return hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
+            ['tem_workbench/analysis/analysis_core.py', 'tem_workbench/analysis/region_masks.py', 'tem_workbench/analysis/materials.py', 'tem_workbench/analysis/crystal_templates.py', 'tem_workbench/analysis/diffraction.py', 'tem_workbench/analysis/beta_omega.py', 'tem_workbench/analysis/diffraction_fitting.py', 'tem_workbench/analysis/spot_intensity.py', 'tem_workbench/analysis/brightness_grouping.py', 'tem_workbench/analysis/double_diffraction.py', 'tem_workbench/analysis/scale_fitting.py', 'tem_workbench/analysis/phase_comparison.py', 'tem_workbench/analysis/peak_evidence.py', 'tem_workbench/analysis/forbidden_reflections.py', 'tem_workbench/mapping/adaptive_refinement.py', 'tem_workbench/storage/demo_data.py', 'tem_workbench/storage/raster_images.py', 'tem_workbench/app/engine.py', 'tem_workbench/analysis/orthorhombic.py', 'tem_workbench/runtime/parallel_execution.py', 'tem_workbench/resources/templates.json'])).hexdigest()
+
     def __init__(self, settings):
         self.settings = settings
         self.data_root = folder_paths.resolve_folder(settings.get('data_root', './data'), ROOT)
@@ -114,8 +120,7 @@ class Engine:
         self.templates = scale_fitting.prepare_templates(self.template_library)
         self.auto_templates = self.templates
         self._template_cache = {(10., 3., .295, .468, .330, .417, .3, .4, .5, .4614, .2832, .85, 1.15): self.templates}
-        self.version = hashlib.sha256(b''.join((ROOT/name).read_bytes() for name in
-            ['tem_workbench/analysis/analysis_core.py', 'tem_workbench/analysis/region_masks.py', 'tem_workbench/analysis/materials.py', 'tem_workbench/analysis/crystal_templates.py', 'tem_workbench/analysis/diffraction.py', 'tem_workbench/analysis/beta_omega.py', 'tem_workbench/analysis/diffraction_fitting.py', 'tem_workbench/analysis/spot_intensity.py', 'tem_workbench/analysis/brightness_grouping.py', 'tem_workbench/analysis/double_diffraction.py', 'tem_workbench/analysis/scale_fitting.py', 'tem_workbench/analysis/phase_comparison.py', 'tem_workbench/analysis/peak_evidence.py', 'tem_workbench/analysis/forbidden_reflections.py', 'tem_workbench/mapping/adaptive_refinement.py', 'tem_workbench/storage/demo_data.py', 'tem_workbench/storage/raster_images.py', 'tem_workbench/app/engine.py', 'tem_workbench/analysis/orthorhombic.py', 'tem_workbench/runtime/parallel_execution.py', 'tem_workbench/resources/templates.json'])).hexdigest()
+        self.version = self.current_analysis_version()
         self.files = {}
         self.loaded = {}
         self.acquisition_index = MetadataIndex()

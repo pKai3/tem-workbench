@@ -56,6 +56,15 @@ from tem_workbench.paths import APP_ROOT as ROOT, RESOURCES
 # Capture at import: updating files must not relabel an already running backend.
 APP_VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip() if (ROOT / 'VERSION').is_file() else 'development'
 LOG = logging.getLogger('tem_workbench')
+STALE_ANALYSIS_MESSAGE = 'Analysis code changed since Workbench started. Restart Workbench, then run the grid again.'
+
+
+def analysis_code_changed(*engines):
+    active = [engine for engine in engines if isinstance(engine, Engine)]
+    if not active:
+        return False
+    current = Engine.current_analysis_version()
+    return any(engine.version != current for engine in active)
 GRID_WAIT_LOG_SECONDS = 10
 
 # Longest marker cycle: 2.4 seconds at 30 fps, rendered at 2800 × 2728.
@@ -296,13 +305,16 @@ class Workbench:
         return deleted
 
     def grid(self, item, settings, count, adaptive, minimum, check_passing=False, workers=0, batch=False, engine=None, overlap=None, component=None):
+        engine = engine or self.engine
+        if analysis_code_changed(self.engine, engine):
+            raise ValueError(STALE_ANALYSIS_MESSAGE)
         if component is not None:
             from tem_workbench.components import component_grid
-            return component_grid.start(self, item, settings, workers, batch, engine or self.engine, overlap, component)
+            return component_grid.start(self, item, settings, workers, batch, engine, overlap, component)
         requested_workers = workers
         workers = worker_count(workers)
         settings = copy.deepcopy(settings)
-        engine = engine or self.engine  # Snapshot even if the open image changes.
+        # Keep the selected source/engine snapshot if the open image changes.
         if (getattr(self, 'pca', None) and self.pca.running()) or self.component_batch_running():
             raise ValueError('Finish or cancel PCA first.')
         if getattr(self, 'window_probe', None) and self.window_probe.running():
@@ -465,7 +477,7 @@ class Workbench:
                 job['cancel'] = True
             except Exception as exc:
                 with self.job_lock:
-                    job['error'] = str(exc)
+                    job['error'] = STALE_ANALYSIS_MESSAGE if analysis_code_changed(self.engine, engine) else str(exc)
                 LOG.exception('Grid analysis failed')
             finally:
                 with self.job_lock:
