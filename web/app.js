@@ -1606,6 +1606,7 @@ function updateBatchPngControls(){
  if(!rows.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='Add a PNG view or choose No PNG maps.';box.insertBefore(empty,add)}
 }
 $('batch-png').onchange=()=>{batchPngEnabledByMode[batchPngMode()]=$('batch-png').value==='on';writePreference('tem-batch-png-enabled',batchPngEnabledByMode);updateBatchPngControls();syncBatchSelection()};
+let batchSelectionReady=false;
 document.addEventListener('tem-phases-changed',()=>{updateBatchPngControls();syncBatchSelection()});
 function overlapRequest(){
  if($('grid-mode').value==='standard')return null;
@@ -4160,6 +4161,7 @@ let batchFolderSelection=null;
 let batchFiles=[],batchPollTimer=null,batchRunning=false,batchReviewReady=false;
 const batchSelected=new Set();
 let batchShowSelected=false;
+batchSelectionReady=true;
 let batchListView=readPreference('tem-batch-list-view','previews');
 if(!['names','previews'].includes(batchListView))batchListView='previews';
 let batchHoverTimer=null,batchHoverRow=null;
@@ -4228,6 +4230,7 @@ function matchingBatchFiles(){
 }
 function displayedBatchFiles(){const matches=matchingBatchFiles();return batchShowSelected?matches.filter(row=>batchSelected.has(row.id)):matches}
 function syncBatchSelection(){
+ if(!batchSelectionReady)return;
  const eligible=batchFiles.filter(row=>row.eligible),selected=eligible.filter(row=>batchSelected.has(row.id)).length;
  const scoped=batchProjectFiles().filter(row=>row.eligible&&matchesBatchFolders(row)),scopedSelected=scoped.filter(row=>batchSelected.has(row.id)).length;
  $('batch-review-results').hidden=!batchReviewReady;$('batch-review-prompt').hidden=batchReviewReady;$('batch-export-step').hidden=!batchReviewReady&&!batchRunning;
@@ -4235,7 +4238,8 @@ function syncBatchSelection(){
  $('batch-start').disabled=batchRunning||!batchReviewReady||selected===0||$('batch-png').value==='on'&&(!batchPngRows().length||duplicateBatchPngRows().size>0||invalidBatchPngRows());
  const shown=matchingBatchFiles().filter(row=>row.eligible),shownSelected=shown.filter(row=>batchSelected.has(row.id)).length;
  if(batchReviewReady&&($('batch-project').value||$('batch-search').value.trim()||batchFolderSelection!==null))$('batch-selection-count').textContent+=` · ${shownSelected} / ${shown.length} matching images selected`;
- $('batch-show-selected').checked=batchShowSelected;
+ $('batch-show-all').setAttribute('aria-pressed',String(!batchShowSelected));
+ $('batch-show-selected').setAttribute('aria-pressed',String(batchShowSelected));
  $('batch-select-only').disabled=!batchReviewReady||!shown.length;
  $('batch-select-all').disabled=!batchReviewReady||!shown.length||shownSelected===shown.length;
  $('batch-deselect-all').disabled=!batchReviewReady||shownSelected===0;
@@ -4278,7 +4282,8 @@ function renderBatchFiles(){
 }
 $('batch-search').oninput=renderBatchFiles;
 for(const view of ['names','previews'])$('batch-view-'+view).onclick=()=>{batchListView=view;writePreference('tem-batch-list-view',view);renderBatchFiles()};
-$('batch-show-selected').onchange=()=>{batchShowSelected=$('batch-show-selected').checked;renderBatchFiles()};
+$('batch-show-all').onclick=()=>{batchShowSelected=false;renderBatchFiles()};
+$('batch-show-selected').onclick=()=>{batchShowSelected=true;renderBatchFiles()};
 $('batch-select-only').onclick=()=>{batchSelected.clear();for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);renderBatchFiles()};
 $('batch-select-all').onclick=()=>{for(const row of matchingBatchFiles())if(row.eligible)batchSelected.add(row.id);renderBatchFiles()};
 $('batch-deselect-all').onclick=()=>{for(const row of matchingBatchFiles())batchSelected.delete(row.id);renderBatchFiles()};
