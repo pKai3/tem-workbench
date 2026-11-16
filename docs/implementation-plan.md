@@ -841,7 +841,7 @@ Evaluate aligned HCP/BCC alternatives, a strong single BCC example, and multiple
 
 ### 3 Batch grids
 
-**Adjustable image previews — completed 16 November 2026 (`de472e5`), refined 16 November 2026:** Batch review and the visual image browser each have a remembered Preview size slider. Its stops are computed from the available row width: each step adds or removes exactly one tile column, with 80–240 px preferred bounds and viewport capping. Batch review prefers 80 px thumbnails, about half the previous size, while the visual browser prefers 160 px. Tile columns do not stretch to fill the row; compact type and format badges retain visibility. The enlarged batch hover preview is unchanged. No release/version change.
+**Adjustable image previews — completed 16 November 2026 (`de472e5`), refined 16 November 2026 (`aef1e93`):** Batch review and the visual image browser each have a remembered Preview size slider. Its stops are computed from the available row width: each step adds or removes exactly one tile column, with 80–240 px preferred bounds and viewport capping. Batch review prefers 80 px thumbnails, about half the previous size, while the visual browser prefers 160 px. Tile columns do not stretch to fill the row; compact type and format badges retain visibility. The enlarged batch hover preview is unchanged. No release/version change.
 
 Implemented 31 October 2026 following explicit approval to proceed now. **Automatic grid → Batch grids** reviews and selects images, captures the current FFT/fitting/grid parameter set, and exports results automatically into a unique batch folder in the configured output directory.
 
