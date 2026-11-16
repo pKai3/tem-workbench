@@ -111,7 +111,7 @@ class SharedSpectraTests(unittest.TestCase):
                              {**options,'method':method,'layout':'square','passes':1,'sample_edges':False,**extras})
             large=pca.plan(INFO,SETTINGS,{**OPTIONS,'method':method,'spacing_nm':.8,
                             'layout':'hex','passes':9,'sample_edges':True})
-            self.assertEqual(large['count'],4634)
+            self.assertEqual(large['count'],3899)
             self.assertGreater(large['grid']['rim_sample_count'],0)
 
     def test_large_window_decomposition_keeps_every_row(self):

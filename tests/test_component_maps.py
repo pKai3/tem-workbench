@@ -88,15 +88,21 @@ class ComponentMapTests(unittest.TestCase):
             for passes in (1,3,9):
                 plan=spectra.plan(info,SETTINGS,{**OPTIONS,'layout':layout,'passes':passes,'sample_edges':True})
                 self.assertEqual(plan['grid']['passes'],passes)
+                coverage=np.zeros((256,256),bool)
+                positions=[]
                 for k in range(passes):
                     rois=[s['roi'] for s in plan['samples'] if s['pass_id']==k]
-                    coverage=np.zeros((256,256),bool)
                     for r in rois:coverage[r['y']:r['y']+r['h'],r['x']:r['x']+r['w']]=True
-                    self.assertTrue(coverage.all(),(layout,passes,k))
                     self.assertEqual(len(rois),len({(r['x'],r['y']) for r in rois}))
+                    positions.extend((r['x'],r['y']) for r in rois)
+                self.assertTrue(coverage.all(),(layout,passes))
+                self.assertEqual(len(positions),len(set(positions)))
                 self.assertEqual(plan['count'],len(plan['samples']))
                 self.assertEqual(np.prod(plan['map_shape']),plan['count'])
-        with self.assertRaises(ValueError):spectra.plan(INFO,SETTINGS,{**OPTIONS,'layout':'hex','passes':9,'spacing_nm':.5})
+        dense={**OPTIONS,'layout':'hex','passes':9,'spacing_nm':.5}
+        planned=spectra.plan(INFO,SETTINGS,dense)
+        with patch.object(spectra.overlap_maps,'MAX_WINDOWS',planned['count']-1):
+            with self.assertRaises(ValueError):spectra.plan(INFO,SETTINGS,dense)
 
     def test_irregular_samples_match_original_crops_and_export_summary(self):
         y,x=np.indices((256,256));image=(np.cos(x*.7)+(x>128)*np.sin(y*.9)).astype(np.float32)

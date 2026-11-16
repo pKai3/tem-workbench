@@ -23,7 +23,7 @@ def job(regions,passes=1):
     return dict(source=INFO,settings=dict(enabled_phases=['HCP','BCC']),grid=dict(passes=passes),regions=regions)
 
 class OverlapTests(unittest.TestCase):
-    def test_optional_rim_preserves_interior_and_covers_each_border_per_pass(self):
+    def test_optional_rim_preserves_interior_and_fills_only_boundary_gaps(self):
         for layout in ('hex', 'square'):
             for passes in (1, 3, 9):
                 for info in (INFO, dict(INFO, width=337, height=229, pixel_y_nm=.05)):
@@ -34,17 +34,34 @@ class OverlapTests(unittest.TestCase):
                         self.assertEqual(samples[:len(interior)],interior)
                         self.assertEqual((samples,options),maps.sampling(info,options))
                         self.assertEqual(options['rim_sample_count'],len(samples)-len(interior))
-                        for k in range(passes):
-                            mask=np.zeros((info['height'],info['width']),dtype=bool)
-                            rois=[s['roi'] for s in samples if s['pass_id']==k]
-                            self.assertEqual(len(rois),len({tuple(r.values()) for r in rois}))
-                            for r in rois:
-                                self.assertGreaterEqual(min(r['x'],r['y']),0)
-                                self.assertLessEqual(r['x']+r['w'],info['width'])
-                                self.assertLessEqual(r['y']+r['h'],info['height'])
-                                self.assertEqual([r['w'],r['h']],options['actual_window_px'])
-                                mask[r['y']:r['y']+r['h'],r['x']:r['x']+r['w']]=True
-                            self.assertTrue(all(edge.all() for edge in (mask[0],mask[-1],mask[:,0],mask[:,-1])))
+                        positions=[(s['roi']['x'],s['roi']['y']) for s in samples]
+                        self.assertEqual(len(positions),len(set(positions)))
+                        mask=np.zeros((info['height'],info['width']),dtype=bool)
+                        for index,sample in enumerate(samples):
+                            r=sample['roi']
+                            self.assertGreaterEqual(min(r['x'],r['y']),0)
+                            self.assertLessEqual(r['x']+r['w'],info['width'])
+                            self.assertLessEqual(r['y']+r['h'],info['height'])
+                            self.assertEqual([r['w'],r['h']],options['actual_window_px'])
+                            if index >= len(interior):
+                                boundary_before=sum(edge.sum() for edge in (mask[0],mask[-1],mask[:,0],mask[:,-1]))
+                            mask[r['y']:r['y']+r['h'],r['x']:r['x']+r['w']]=True
+                            if index >= len(interior):
+                                boundary_after=sum(edge.sum() for edge in (mask[0],mask[-1],mask[:,0],mask[:,-1]))
+                                self.assertGreater(boundary_after,boundary_before)
+                        self.assertTrue(all(edge.all() for edge in (mask[0],mask[-1],mask[:,0],mask[:,-1])))
+
+    def test_dense_multipass_rim_adds_only_one_minimal_boundary_ring(self):
+        info=dict(INFO,width=4096,height=4096)
+        options=dict(size_mode='image_percent',spacing_mode='window_percent',
+                     window_percent=15,spacing_percent=50,layout='hex',passes=3)
+        interior,_=maps.sampling(info,options)
+        samples,meta=maps.sampling(info,{**options,'sample_edges':True})
+        self.assertEqual(len(interior),460)
+        self.assertEqual(meta['rim_sample_count'],24)
+        self.assertEqual(meta['rim_samples_per_pass'],[8,8,8])
+        self.assertEqual(meta['edge_policy'],'full_windows_fill_boundary_gaps')
+        self.assertEqual(len(samples),484)
 
     def test_rim_validation_and_window_limit_include_added_samples(self):
         options=dict(window_nm=2, spacing_nm=1, passes=1)

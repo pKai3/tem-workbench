@@ -8,42 +8,55 @@ from tem_workbench.mapping import phase_support
 import math
 import numpy as np
 
-VERSION = 'overlap-v7'
+VERSION = 'overlap-v8'
 MAX_WINDOWS = 10000
 
 
 def _add_rim(samples, info, w, h, passes):
-    """Append full-size, border-anchored windows without moving interior samples."""
-    def positions(values, limit, length):
-        ordered = sorted({0, limit, *values})
-        result = set(ordered)
-        # Fill any end gap longer than a window, including pixel-rounding gaps.
-        for a, b in zip(ordered, ordered[1:]):
-            count = math.ceil((b-a)/length)
-            result.update(round(a+(b-a)*i/count) for i in range(1, count))
-        return sorted(result)
+    """Cover only boundary gaps, sharing rim locations across placement passes."""
+    width, height = info['width'], info['height']
+    xmax, ymax = width-w, height-h
+    edges = {'top': np.zeros(width, dtype=bool), 'bottom': np.zeros(width, dtype=bool),
+             'left': np.zeros(height, dtype=bool), 'right': np.zeros(height, dtype=bool)}
 
-    counts = []
-    for pass_id in range(passes):
-        rois = [s['roi'] for s in samples if s['pass_id'] == pass_id]
-        seen = {(r['x'], r['y']) for r in rois}
-        top, bottom = min(r['y'] for r in rois), max(r['y'] for r in rois)
-        xmax, ymax = info['width']-w, info['height']-h
-        border = []
-        for row, y in ((top, 0), (bottom, ymax)):
-            border.extend((x, y) for x in positions([r['x'] for r in rois if r['y'] == row], xmax, w))
-        for x in (0, xmax):
-            border.extend((x, y) for y in positions([r['y'] for r in rois], ymax, h))
-        count = 0
-        for x, y in border:
+    def cover(roi):
+        x, y = roi['x'], roi['y']
+        if y == 0:
+            edges['top'][x:x+w] = True
+        if y == ymax:
+            edges['bottom'][x:x+w] = True
+        if x == 0:
+            edges['left'][y:y+h] = True
+        if x == xmax:
+            edges['right'][y:y+h] = True
+
+    seen = set()
+    for sample in samples:
+        roi = sample['roi']
+        seen.add((roi['x'], roi['y']))
+        cover(roi)
+
+    counts = [0]*passes
+    for edge in ('top', 'bottom', 'left', 'right'):
+        covered = edges[edge]
+        limit = xmax if edge in ('top', 'bottom') else ymax
+        while not covered.all():
+            # Place the window as far forward as possible while covering the
+            # first missing pixel. Existing windows and newly filled corners
+            # therefore reduce the number of rim windows automatically.
+            missing = int(np.flatnonzero(~covered)[0])
+            position = min(max(0, missing-1), limit)
+            x, y = (position, 0 if edge == 'top' else ymax) if edge in ('top', 'bottom') else (0 if edge == 'left' else xmax, position)
             if (x, y) in seen:
-                continue
+                raise RuntimeError('Boundary coverage did not advance.')
             seen.add((x, y))
-            samples.append(dict(roi=dict(x=x, y=y, w=w, h=h), pass_id=pass_id, rim=True))
-            count += 1
+            pass_id = min(range(passes), key=lambda k: counts[k])
+            roi = dict(x=x, y=y, w=w, h=h)
+            samples.append(dict(roi=roi, pass_id=pass_id, rim=True))
+            counts[pass_id] += 1
+            cover(roi)
             if len(samples) > MAX_WINDOWS:
                 raise ValueError(f'Map exceeds {MAX_WINDOWS} windows including the rim. Increase spacing, reduce passes or use a larger window.')
-        counts.append(count)
     return counts
 
 
@@ -131,7 +144,7 @@ def sampling(info, options):
                         actual_window_px=[w,h], actual_window_nm=[w*info['pixel_x_nm'], h*info['pixel_y_nm']],
                         sample_count=len(samples), sample_edges=sample_edges, rim_sample_count=sum(rim_counts),
                         rim_samples_per_pass=rim_counts,
-                        edge_policy='full_windows_with_boundary_rim' if sample_edges else 'full_windows_only',
+                        edge_policy='full_windows_fill_boundary_gaps' if sample_edges else 'full_windows_only',
                         placement_origin='centred_sample_bounds', centering_shift_px=shift, adaptive=False)
 
 
