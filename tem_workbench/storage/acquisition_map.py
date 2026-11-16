@@ -2,6 +2,7 @@
 from tem_workbench.analysis.diffraction import reciprocal_factor
 import math
 import re
+from datetime import datetime
 from collections import defaultdict
 
 LENGTH_NM = {'nm': 1., 'µm': 1000., 'μm': 1000., 'um': 1000., 'm': 1e9, 'A': .1, 'Å': .1}
@@ -28,9 +29,9 @@ def describe(meta, width, height):
     if all(u in LENGTH_NM for u in units) and all(s is not None and s > 0 for s in scales):
         if width and height:
             field = [width * scales[0] * LENGTH_NM[units[0]], height * scales[1] * LENGTH_NM[units[1]]]
+    date, time = (str(meta.get('DataBar Acquisition '+part, '')).strip() for part in ('Date', 'Time'))
     return {'stage_position': stage_position(meta), 'field_nm': field,
-            'date': str(meta.get('DataBar Acquisition Date', '')),
-            'time': str(meta.get('DataBar Acquisition Time', '')),
+            'date': date, 'time': time, 'acquisition_timestamp': acquisition_timestamp(date, time),
             'width': width, 'height': height,
             'magnification': finite(meta.get('Microscope Info Indicated Magnification')),
             'image_kind': 'real_space' if all(u in LENGTH_NM for u in units) else ('diffraction' if all(reciprocal_factor(u) is not None for u in units) else 'other')}
@@ -41,6 +42,41 @@ def acquisition_number(row):
     tagged = re.search(r'(?:^|[_\s-])(?:STA|ST)[_\s-]*(\d+)(?=$|[_\s·-])', name, re.I)
     numbers = re.findall(r'(?:^|[_\s-])(\d+)(?=$|[_\s-])', name)
     return int(tagged.group(1)) if tagged else int(numbers[-1]) if numbers else None
+
+
+def acquisition_time(value):
+    text = str(value or '').strip().upper().replace('A.M.', 'AM').replace('P.M.', 'PM')
+    for pattern in ('%I:%M:%S.%f %p', '%I:%M:%S %p', '%I:%M %p',
+                    '%H:%M:%S.%f', '%H:%M:%S', '%H:%M'):
+        try:
+            parsed = datetime.strptime(text, pattern)
+            return parsed.hour*3600 + parsed.minute*60 + parsed.second
+        except ValueError:
+            pass
+    return None
+
+
+def acquisition_timestamp(date, time):
+    seconds = acquisition_time(time)
+    if seconds is None:
+        return None
+    for pattern in ('%Y-%m-%d', '%Y/%m/%d', '%d %b %Y', '%d %B %Y',
+                    '%b %d, %Y', '%B %d, %Y', '%m/%d/%Y', '%d/%m/%Y'):
+        try:
+            day = datetime.strptime(str(date).strip(), pattern).date()
+            return day.toordinal()*86400 + seconds
+        except ValueError:
+            pass
+    return None
+
+
+def consecutive_after_reset(previous, current, elapsed):
+    """Join only a clear decimal counter wrap in one short, timed session."""
+    if previous is None or current not in (0, 1) or elapsed is None or not 0 < elapsed <= 600:
+        return False
+    digits = str(previous)
+    return (len(digits) >= 3 and (set(digits) == {'9'} or
+            (digits[0] == '1' and set(digits[1:]) == {'0'})))
 
 
 def paired_detector_capture(rows):
@@ -71,29 +107,42 @@ def acquisition_batches(rows):
         sessions[(row.get('folder', ''), row.get('date', ''))].append(row)
     batches = []
     for session in sorted(sessions):
+        timed = all(acquisition_timestamp(session[1], row.get('time')) is not None
+                    for row in sessions[session])
         acquisitions = defaultdict(list)
         for row in sessions[session]:
-            acquisitions[row['acquisition_number']].append(row)
-        previous_number, previous_tilt, group = None, None, None
-        for number in sorted(acquisitions, key=lambda n: (n is None, n or 0)):
-            captures = sorted(acquisitions[number], key=lambda f: f['id'])
+            number = row['acquisition_number']
+            key = (acquisition_time(row['time']), number) if timed else number
+            acquisitions[key].append(row)
+        order = sorted(acquisitions, key=lambda key: (key[0], key[1] is None, key[1] or 0)
+                       if timed else (key is None, key or 0))
+        previous_number, previous_tilt, previous_time, group = None, None, None, None
+        for sequence, key in enumerate(order):
+            capture_time, number = key if timed else (None, key)
+            captures = sorted(acquisitions[key], key=lambda f: f['id'])
             tilt = tuple(finite(captures[0].get('stage_position', {}).get(k))
                          for k in ('alpha', 'beta'))
             valid = (number is not None and all(v is not None for v in tilt)
                      and (len(captures) == 1 or paired_detector_capture(captures)))
+            elapsed = capture_time-previous_time if timed and previous_time is not None else None
+            rollover = consecutive_after_reset(previous_number, number, elapsed)
             continues = (valid and previous_number is not None
-                         and number == previous_number + 1 and tilt == previous_tilt)
+                         and (number == previous_number + 1 or rollover)
+                         and tilt == previous_tilt and (not timed or elapsed > 0))
+            if continues and rollover:
+                group['rollovers'] += 1
             for row in captures:
                 if not continues:
                     row_tilt = tuple(finite(row.get('stage_position', {}).get(k))
                                      for k in ('alpha', 'beta'))
                     group = {'id': row['id'], 'members': [], 'alpha': row_tilt[0], 'beta': row_tilt[1],
-                             'folder': session[0], 'date': session[1], 'automatic': valid}
+                             'folder': session[0], 'date': session[1], 'automatic': valid, 'rollovers': 0}
                     batches.append(group)
+                row['acquisition_order'] = sequence
                 row['acquisition_batch'] = group['id']
                 group['members'].append(row['id'])
                 continues = valid
-            previous_number, previous_tilt = (number, tilt) if valid else (None, None)
+            previous_number, previous_tilt, previous_time = (number, tilt, capture_time) if valid else (None, None, None)
     # Select the widest calibrated real-space view, with deterministic ties.
     by_id = {row['id']: row for row in rows}
     for group in batches:

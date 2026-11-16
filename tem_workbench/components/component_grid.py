@@ -128,6 +128,13 @@ def select_pool(app, job_id, model_ids, selection="manual", sort="coverage"):
 def start(app, item, settings, workers, batch, engine, overlap, component):
     options, fit_options, sampling = options_for(item['info'], overlap, component, workers)
     planned = shared_spectra.plan(item['info'], settings, options)
+    samples = shared_spectra.window_samples(planned)
+    preview_head = min(30, len(samples))
+    preview_stride = max(1, (len(samples)-preview_head+269)//270)
+    sampling_preview = [{'index': i+1, 'x': sample['roi']['x']+sample['roi']['w']/2,
+                         'y': sample['roi']['y']+sample['roi']['h']/2}
+                        for i, sample in enumerate(samples)
+                        if i < preview_head or (i-preview_head) % preview_stride == 0]
     with app.job_lock:
         if (app.closing or (app.grid_thread and app.grid_thread.is_alive()) or app.pca.running()
                 or app.component_batch_running() or app.window_probe.running()
@@ -143,6 +150,7 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
                    settings=copy.deepcopy(settings), initial_settings=copy.deepcopy(settings),
                    grid={**sampling, 'component_method': options['method']}, component=copy.deepcopy(component),
                    regions=[], active_windows=[], processed=0, pending=planned['count'], error=None, cancel=False,
+                   sampling_preview=sampling_preview, sampling_current=None,
                    execution=dict(workers=planned['workers'], requested_workers=workers, elapsed_seconds=0.),
                    interpretation='Auto selects a compact pool retaining at least 99% of available passing-window coverage. All discovered hypotheses remain checked and retained; overlapping support is not phase fraction.')
         app.jobs = {job['id']: job}
@@ -156,6 +164,8 @@ def start(app, item, settings, workers, batch, engine, overlap, component):
                     running = manager.running()
                     with app.job_lock:
                         job['component_progress'] = {k: status.get(k) for k in ('operation', 'stage', 'completed', 'total')}
+                        done = min(status.get('completed') or 0, len(samples))
+                        job['sampling_current'] = (samples[done]['roi'] if status.get('stage') == 'Sampling local FFTs' and done < len(samples) else None)
                         job['execution']['elapsed_seconds'] = round(time.monotonic()-began, 1)
                     result = None
                     try: result = manager.inspectable(job['id'])

@@ -221,6 +221,9 @@ function acquisitionNumber(file){return acquisitionToken(file)?.number??null}
 function sortedFiles(files){
  return [...files].sort((a,b)=>{
   if(fileSort==='acquisition'){
+   const at=a.acquisition_timestamp,bt=b.acquisition_timestamp;
+   if(Number.isFinite(at)&&Number.isFinite(bt)&&at!==bt)return at-bt;
+   if(Number.isFinite(at)!==Number.isFinite(bt))return Number.isFinite(at)?-1:1;
    const an=acquisitionNumber(a),bn=acquisitionNumber(b);
    if(an!==bn){if(an===null)return 1;if(bn===null)return -1;return an-bn}
   }
@@ -2144,9 +2147,28 @@ function drawActiveGridWindows(group,job){
  for(const layer of [outlines,spinners])for(const node of [...layer.children])if(!keys.has(node.dataset.window))node.remove();
  if(!keys.size){outlines.remove();spinners.remove()}
 }
+function drawComponentProgress(job){
+ const group=$('grid-sampling-progress'),badge=$('component-map-progress');group.replaceChildren();
+ const progress=job?.component_progress,running=job?.state==='running'&&job?.grid?.component_method;
+ badge.hidden=!running;
+ if(!running)return;
+ const done=Number(progress?.completed)||0,total=Number(progress?.total)||0,stage=progress?.stage||'Preparing';
+ $('component-map-stage').textContent=`${job.grid.component_method.toUpperCase()} · ${stage==='NMF iterations'?'Iterations':stage}${total&&!stage.startsWith('Preparing')&&stage!=='Decomposing spectra'?` · ${done}/${total}`:''}`;
+ const bar=$('component-map-stage-bar');
+ if(total&&stage!=='Decomposing spectra'&&!stage.startsWith('Preparing')){bar.max=total;bar.value=done}else bar.removeAttribute('value');
+ if(stage!=='Sampling local FFTs')return;
+ const radius=Math.max(4,Math.min(job.source.width,job.source.height)*.005);
+ for(const point of job.sampling_preview||[]){
+  if(point.index>done)break;
+  group.append(el('circle',{cx:point.x,cy:point.y,r:radius,fill:'#59d4cb','fill-opacity':.78,stroke:'#07131b','stroke-width':radius*.28}));
+ }
+}
 function drawGrid(){
  document.dispatchEvent(new CustomEvent('tem-grid-view-updated'));
- drawActiveGridWindows($('grid-active-windows'),grid&&gridMatchesSource(grid)?grid:null);
+ const liveGrid=grid&&gridMatchesSource(grid)?grid:null;
+ const sampling=liveGrid?.component_progress?.stage==='Sampling local FFTs'&&liveGrid.sampling_current;
+ drawActiveGridWindows($('grid-active-windows'),sampling?{...liveGrid,active_windows:[liveGrid.sampling_current]}:liveGrid);
+ drawComponentProgress(liveGrid);
  syncMapOpacityControl();
  $('map-colour-key').hidden=true;
  $('overlap-display').hidden=grid?.grid.mode!=='overlap';
@@ -2251,7 +2273,8 @@ function gridStatus(status=grid){
  const grid=status;
  if(!grid)return;
  const progress=grid.component_progress,bar=$('grid-progress');bar.hidden=grid.state!=='running';
- if(progress?.total){bar.max=progress.total;bar.value=progress.completed||0}else{bar.max=Math.max(1,grid.processed+grid.pending);bar.value=grid.processed}
+ if(progress?.stage==='Decomposing spectra'||progress?.stage?.startsWith('Preparing'))bar.removeAttribute('value');
+ else if(progress?.total){bar.max=progress.total;bar.value=progress.completed||0}else{bar.max=Math.max(1,grid.processed+grid.pending);bar.value=grid.processed}
  reportJobError('grid',grid.id,grid.error?'Grid stopped: '+grid.error:'');
  $('grid-status').textContent=`${grid.processed} regions analysed · ${grid.pending} pending · ${grid.cancelling?'stopping':grid.state}${grid.execution?` · ${grid.execution.workers} worker${grid.execution.workers===1?'':'s'} · ${grid.execution.elapsed_seconds.toFixed(1)} s${grid.execution.status?' · '+grid.execution.status:''}`:''}${grid.error?' — '+grid.error:''}`+(grid.rescore?` · reweighted in ${(grid.rescore.elapsed_ms/1000).toFixed(2)} s using cached fits`:'');
  if(progress&&grid.state==='running')$('grid-status').textContent=`${grid.grid.component_method.toUpperCase()} · ${progress.stage} · ${progress.completed||0}/${progress.total||0} · ${grid.execution.elapsed_seconds.toFixed(1)} s`;
@@ -2368,7 +2391,7 @@ function updateGridProgress(status){
  const progress=status.component_progress;
  setJobProgress('grid',{id:status.id,state:status.state,cancelling:status.cancelling,sourceId:status.source.id,name:status.source.name||status.source.id,
   title:(status.grid?.component_method?.toUpperCase()||'Grid')+' · '+(status.cancelling?'stopping':status.state),detail:progress&&running?`${progress.stage} · ${progress.completed||0}/${progress.total||0}`:`${count} analysed${running?' · '+(total-count)+' pending':''}`,
-  fraction:progress&&running?(progress.total?progress.completed/progress.total:null):total?count/total:running?null:1,tooltip:status.execution?`${status.execution.workers} workers · ${status.execution.elapsed_seconds.toFixed(1)} s.`:'Grid analysis continues while you browse.'});
+  fraction:progress&&running?(progress.stage==='Decomposing spectra'||progress.stage?.startsWith('Preparing')?null:progress.total?progress.completed/progress.total:null):total?count/total:running?null:1,tooltip:status.execution?`${status.execution.workers} workers · ${status.execution.elapsed_seconds.toFixed(1)} s.`:'Grid analysis continues while you browse.'});
 }
 function updateBatchProgress(data){
  const finished=Number(data.finished)||0,total=Number(data.total)||0,current=data.current_grid;
@@ -2923,6 +2946,14 @@ function imageBrowserNameParts(file){
  const before=stem.slice(0,token.index).replace(/[_\s·-]+$/,''),after=stem.slice(token.index+token.raw.length).replace(/^[_\s·-]+/,'');
  return {description:[before,after].filter(Boolean).join(' · ')||'Image',number:token.raw};
 }
+function bindPreviewSize(inputId,outputId,hostId,key,initial){
+ const input=$(inputId),output=$(outputId),host=$(hostId),saved=Number(readPreference(key,initial));
+ input.value=Number.isFinite(saved)?clamp(saved,80,240):initial;
+ const update=()=>{const size=Number(input.value);host.style.setProperty('--preview-size',size+'px');output.textContent=size+' px';writePreference(key,size)};
+ input.oninput=update;update();
+}
+bindPreviewSize('image-browser-size','image-browser-size-value','image-browser-list','tem-image-browser-preview-size',160);
+bindPreviewSize('batch-preview-size','batch-preview-size-value','batch-files','tem-batch-preview-size',80);
 function renderImageBrowser(){
  syncImageBrowserFolders();
  const terms=$('image-browser-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
@@ -3657,7 +3688,7 @@ function mapSnapshot(){
  const original=$('overview'),copy=original.cloneNode(true),nodes=[original,...original.querySelectorAll('*')],copies=[copy,...copy.querySelectorAll('*')];
  const properties=['fill','fill-opacity','stroke','stroke-width','stroke-opacity','stroke-dasharray','stroke-linejoin','opacity','vector-effect','paint-order','font-family','font-size','font-weight','text-anchor','dominant-baseline'];
  nodes.forEach((node,i)=>{const style=getComputedStyle(node);for(const property of properties)copies[i].setAttribute(property,style.getPropertyValue(property))});
- for(const node of copy.querySelectorAll('#roi-box,#roi-handle,#detector-overlay,#overlap-preview,#grid-active-windows,title'))node.remove();
+ for(const node of copy.querySelectorAll('#roi-box,#roi-handle,#detector-overlay,#overlap-preview,#grid-sampling-progress,#grid-active-windows,title'))node.remove();
  const source=copy.querySelector('#source-image');
  for(const node of [copy,...copy.querySelectorAll('*')])for(const attribute of ['id','class','style','role','tabindex'])if(attribute!=='id'||node.tagName!=='clipPath')node.removeAttribute(attribute);
  copy.setAttribute('x',20);copy.setAttribute('y',78);copy.setAttribute('width',1160);copy.setAttribute('height',1160);
@@ -4247,6 +4278,7 @@ function syncBatchSelection(){
 function renderBatchFiles(){
  hideBatchHover();const host=$('batch-files');host.replaceChildren();
  host.classList.toggle('batch-preview-grid',batchListView==='previews');
+ $('batch-preview-size-control').hidden=batchListView!=='previews';
  for(const view of ['names','previews'])$('batch-view-'+view).setAttribute('aria-pressed',String(batchListView===view));
  const shown=displayedBatchFiles();
  if(batchReviewReady&&!shown.length){const empty=elHTML('p',batchShowSelected?'No selected images match these filters.':'No matching images.');empty.className='hint';host.append(empty)}

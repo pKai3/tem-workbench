@@ -36,7 +36,7 @@
  const batches=()=>data?.batches||[];
  const batchOf=f=>batches().find(b=>b.id===f?.acquisition_batch);
  const batchReference=b=>data?.files.find(f=>f.id===b?.reference_id);
- const batchLabel=b=>`${b.first??batchReference(b)?.name??"Unnumbered"}${b.last!==b.first?"–"+(b.last??"?"):""} · α ${tilt(b.alpha)}, β ${tilt(b.beta)} · ${b.members.length} images`;
+ const batchLabel=b=>`${b.first??batchReference(b)?.name??"Unnumbered"}${b.last!==b.first?(b.rollovers?' ↻ ':'–')+(b.last??"?"):""} · ${b.folder?.split('/').at(-1)||'root'}${b.date?' · '+b.date:''} · α ${tilt(b.alpha)}, β ${tilt(b.beta)} · ${b.members.length} images`;
  const rotationKey=()=>`tem-acquisition-rotation:${JSON.stringify([(config.state_namespace||config.data_root),reference.id])}`;
  function restoreRotation(){
   if(!reference)return;
@@ -248,7 +248,7 @@
  function footprintPeers(f){return footprintGroups().find(g=>g.files.some(x=>x.id===f.id))?.files||[f]}
  const captureLabel=f=>f.name.match(/(?:^|_)(ADF|Hitachi|OneView)(?:_|$)/i)?.[1]||f.name;
  const groupName=g=>{
-  const files=[...g.files].sort((a,b)=>acquisitionNumber(a)-acquisitionNumber(b)||a.name.localeCompare(b.name));
+  const files=[...g.files].sort((a,b)=>(a.acquisition_order??Infinity)-(b.acquisition_order??Infinity)||a.name.localeCompare(b.name));
   const numbers=[...new Set(files.map(number))],kinds=[...new Set(files.map(captureLabel))];
   return numbers.join('/')+(files.length>1&&kinds.length>1&&kinds.every(k=>!files.some(f=>f.name===k))?` (${kinds.join(' & ')})`:'');
  };

@@ -36,6 +36,19 @@ class AcquisitionMetadata(unittest.TestCase):
         self.assertIsNone(row['stage_position']['x'])
         self.assertEqual(row['image_kind'], 'diffraction')
 
+    def test_acquisition_timestamp_uses_recorded_date_and_time(self):
+        m=metadata()|{'DataBar Acquisition Date':'11/16/2026', 'DataBar Acquisition Time':'1:02:53 PM'}
+        early=describe(m,400,200)['acquisition_timestamp']
+        m['DataBar Acquisition Time']='1:02:54 PM'
+        self.assertEqual(describe(m,400,200)['acquisition_timestamp'],early+1)
+        m['DataBar Acquisition Time']='unknown'
+        self.assertIsNone(describe(m,400,200)['acquisition_timestamp'])
+        m['DataBar Acquisition Time']='1:02:53 PM'
+        m['DataBar Acquisition Date']='10/11/2026'
+        october=describe(m,400,200)['acquisition_timestamp']
+        m['DataBar Acquisition Date']='11/10/2026'
+        self.assertGreater(describe(m,400,200)['acquisition_timestamp'],october)
+
     def test_metadata_cache_never_reads_pixels_and_invalidates(self):
         calls = []
         class FakeDM:
@@ -84,6 +97,38 @@ class AcquisitionBatches(unittest.TestCase):
         rows=[a,duplicate,self.row(2),self.row(3,folder='STA'),self.row(4,date='other'),
               dict(self.row(5),name='overview'),dict(self.row(6),name='no number')]
         self.assertEqual(len(acquisition_batches(rows)),len(rows))
+
+    def test_timed_rollover_and_reused_number_keep_capture_order(self):
+        rows=[self.row(n) for n in (9998,9999,0,1)]
+        for second,row in enumerate(rows):row['time']=f'10:00:{second:02d} AM'
+        repeated=dict(self.row(1),id='later-capture',time='11:00:00 AM')
+        later=dict(self.row(2),time='11:00:01 AM')
+        groups=acquisition_batches([later,rows[2],repeated,rows[0],rows[3],rows[1]])
+        self.assertEqual([g['members'] for g in groups],[[r['id'] for r in rows],[repeated['id'],later['id']]])
+        self.assertEqual(groups[0]['rollovers'],1)
+        self.assertEqual([r['acquisition_order'] for r in rows],[0,1,2,3])
+
+    def test_distant_reset_and_missing_times_do_not_join(self):
+        before=self.row(9999);before['time']='10:00:00 AM'
+        after=self.row(0);after['time']='11:00:00 AM'
+        self.assertEqual(len(acquisition_batches([after,before])),2)
+        before['time']='';after['time']=''
+        self.assertEqual(len(acquisition_batches([after,before])),2)
+
+    def test_same_number_in_different_folders_is_two_sessions(self):
+        first=self.row(42,folder='session-a');first['time']='10:00:00 AM'
+        second=self.row(42,folder='session-b');second['time']='10:00:00 AM'
+        groups=acquisition_batches([second,first])
+        self.assertEqual(len(groups),2)
+        self.assertEqual({g['folder']:g['members'] for g in groups},
+                         {'session-a':[first['id']], 'session-b':[second['id']]})
+        self.assertNotEqual(first['acquisition_batch'],second['acquisition_batch'])
+
+    def test_time_without_date_does_not_reorder_reused_numbers(self):
+        early=self.row(1,date='');early['time']='10:00:00 AM'
+        repeated=dict(self.row(1,date=''),id='later',time='11:00:00 AM')
+        following=self.row(2,date='');following['time']='11:00:01 AM'
+        self.assertEqual(len(acquisition_batches([early,repeated,following])),3)
 
     def pair(self, n, **kwargs):
         result = []

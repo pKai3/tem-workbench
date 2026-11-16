@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -186,6 +187,27 @@ class ComponentGridTests(unittest.TestCase):
             job=self.app.grid(self.app.engine.load('a'),self.settings,20,False,5,workers=1,overlap=self.overlap,component=self.component)
             self.assertTrue(entered.wait(3));self.app.cancel_grid(job['id']);self.app.grid_thread.join(10)
         result=self.app.status(job['id']);self.assertEqual(result['state'],'cancelled');self.assertEqual(result['regions'],[])
+
+    def test_sampling_status_exposes_bounded_spatial_preview(self):
+        entered=threading.Event();release=threading.Event()
+        def paused(array,info,settings,options,cancel,progress):
+            progress(1,4,'Sampling local FFTs');entered.set();release.wait(5)
+            shared_spectra.check_cancel(cancel)
+        with patch.object(shared_spectra,'compute',side_effect=paused):
+            job=self.app.grid(self.app.engine.load('a'),self.settings,20,False,5,workers=1,overlap=self.overlap,component=self.component)
+            self.assertTrue(entered.wait(3))
+            for _ in range(30):
+                status=self.app.status(job['id'])
+                if status.get('sampling_current') is not None:break
+                time.sleep(.05)
+            self.assertEqual(status['component_progress']['stage'],'Sampling local FFTs')
+            self.assertLessEqual(len(status['sampling_preview']),300)
+            self.assertEqual(status['sampling_preview'][0]['index'],1)
+            samples=shared_spectra.window_samples(shared_spectra.plan(self.app.engine.load('a')['info'],self.settings,
+                component_grid.options_for(self.app.engine.load('a')['info'],self.overlap,self.component,1)[0]))
+            self.assertEqual(status['sampling_current'],samples[1]['roi'])
+            self.app.cancel_grid(job['id']);self.assertTrue(self.app.pca.cancel.wait(3));release.set();self.app.grid_thread.join(10)
+        self.assertEqual(self.app.status(job['id'])['state'],'cancelled')
 
     def test_image_relative_sampling_resolves_per_source(self):
         overlap=dict(size_mode='image_percent',window_percent=25,spacing_mode='window_percent',spacing_percent=50,layout='hex',passes=3,sample_edges=True)

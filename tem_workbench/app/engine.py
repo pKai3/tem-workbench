@@ -201,6 +201,7 @@ class Engine:
                         metadata = self.acquisition_index.read(path, self.dm_reader())
                         metadata_updates[row['content_sha256']] = metadata
                     row['image_kind'] = metadata['image_kind']
+                    row['acquisition_timestamp'] = metadata.get('acquisition_timestamp')
                     if time.monotonic() - metadata_started > 2:
                         LOG.info('Reading image metadata: %d/%d.', index + 1, len(tracked))
                         metadata_started = time.monotonic()

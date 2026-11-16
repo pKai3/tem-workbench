@@ -62,6 +62,15 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(len(rows[0]['locations']),2)
         self.assertEqual(self.scan([b])[0]['id'],first['id'])
 
+    def test_reused_acquisition_name_in_separate_folders_keeps_two_identities(self):
+        first=self.root/'session-a'/'ST_0042.dm4';second=self.root/'session-b'/'ST_0042.dm4'
+        first.parent.mkdir();second.parent.mkdir()
+        first.write_bytes(b'first capture');second.write_bytes(b'later capture')
+        rows=self.scan([first,second]);self.assertEqual(len(rows),2)
+        self.assertEqual(len({row['id'] for row in rows}),2)
+        self.assertEqual(len({row['content_sha256'] for row in rows}),2)
+        self.assertEqual({row['id'] for row in self.scan([first,second])},{row['id'] for row in rows})
+
     def test_corrupt_registry_is_not_overwritten(self):
         self.registry.write_text('{broken')
         with self.assertRaises(json.JSONDecodeError):self.scan([])
