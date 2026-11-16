@@ -250,7 +250,7 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 .batch-file-caption{text-align:left;align-items:flex-start}
 .batch-review-toolbar>button{min-height:28px;padding:4px 8px;font-size:12px}
 .batch-review-toolbar .signal-toggle{margin-left:0}
-.preview-size-control{flex:0 0 150px;min-width:0;gap:4px;font-size:11px}.preview-size-control[hidden]{display:none}.preview-size-control>span{display:flex;justify-content:space-between;gap:8px;white-space:nowrap}.preview-size-control input[type=range]{width:100%;min-height:20px;padding:0;margin:0}.preview-size-control output{color:var(--muted);font-variant-numeric:tabular-nums}
+.preview-size-control{flex:0 0 185px;min-width:0;gap:4px;font-size:11px}.preview-size-control[hidden]{display:none}.preview-size-control>span{display:flex;justify-content:space-between;gap:8px;white-space:nowrap}.preview-size-control input[type=range]{width:100%;min-height:20px;padding:0;margin:0}.preview-size-control output{color:var(--muted);font-variant-numeric:tabular-nums}
 
 .batch-review-toolbar .batch-search-label{flex:1 1 230px;min-width:0;text-align:left}.batch-search-label input{width:100%;min-width:0;text-align:left}
 
