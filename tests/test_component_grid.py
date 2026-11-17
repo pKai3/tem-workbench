@@ -142,12 +142,16 @@ class ComponentGridTests(unittest.TestCase):
             self.assertEqual(status['finished'],2);self.assertIs(self.app.pca,original)
             folder=Path(status['output_directory'])
             self.assertEqual(folder.parent,self.folder.resolve())
+            self.assertFalse((self.folder/'a').exists());self.assertFalse((self.folder/'b').exists())
             for row in status['images']:
+                self.assertEqual(Path(row['data_file']).parent,Path('.'))
                 self.assertEqual(set(row['png_files']),{'strength_all','support_bcc','hex','raw'})
                 self.assertEqual(row['summary_folder'],'project')
                 for name in row['png_files'].values():
                     with Image.open(folder/name) as png:self.assertGreater(png.width,1000);png.verify()
-                for name in row['component_export']['files']:self.assertTrue(Path(name).is_file())
+                for name in row['component_export']['files']:
+                    self.assertTrue(Path(name).is_file())
+                    self.assertTrue(Path(name).resolve().is_relative_to(folder))
                 saved=json.loads((folder/row['data_file']).read_text());self.assertEqual(saved['grid']['component_method'],method)
                 self.assertEqual(saved['component_pool']['selection'],'auto')
             self.assertTrue((folder/'folders.csv').is_file())

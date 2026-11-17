@@ -4286,13 +4286,23 @@ function matchingBatchFiles(){
  return batchProjectFiles().filter(row=>matchesBatchFolders(row)&&terms.every(term=>`${row.sample} ${row.name} ${batchFolder(row)}`.toLocaleLowerCase().includes(term)));
 }
 function displayedBatchFiles(){const matches=matchingBatchFiles();return batchShowSelected?matches.filter(row=>batchSelected.has(row.id)):matches}
+function batchOutputPlan(){
+ const selected=batchFiles.filter(row=>row.eligible&&batchSelected.has(row.id));
+ const projects=new Set(selected.map(row=>row.source_id||'demo'));
+ const destinations=new Set(selected.map(row=>(config?.sources||[]).find(source=>source.id===row.source_id)?.output||config?.output_root));
+ const mixed=projects.size>1||destinations.size>1;
+ return {mixed,root:mixed?config?.output_root:[...destinations][0]||config?.output_root};
+}
 function syncBatchSelection(){
  if(!batchSelectionReady)return;
  const eligible=batchFiles.filter(row=>row.eligible),selected=eligible.filter(row=>batchSelected.has(row.id)).length;
  const scoped=batchProjectFiles().filter(row=>row.eligible&&matchesBatchFolders(row)),scopedSelected=scoped.filter(row=>batchSelected.has(row.id)).length;
  $('batch-review-results').hidden=!batchReviewReady;$('batch-review-prompt').hidden=batchReviewReady;$('batch-export-step').hidden=!batchReviewReady&&!batchRunning;
  $('batch-selection-count').textContent=batchReviewReady?`${scopedSelected} / ${scoped.length} eligible images selected`:'';
- $('batch-start').disabled=batchRunning||!batchReviewReady||selected===0||$('batch-png').value==='on'&&(!batchPngRows().length||duplicateBatchPngRows().size>0||invalidBatchPngRows());
+ const output=batchOutputPlan(),warning=$('batch-output-warning'),needsRestart=!config?.batch_unified_output;
+ warning.hidden=!batchReviewReady||batchRunning||selected===0||!output.mixed&&!needsRestart;
+ if(!warning.hidden)warning.textContent=needsRestart?'⚠ Restart TEM Workbench before running another batch. This server can split batch files between output folders.':`⚠ Multiple projects or output folders selected. All batch files will go together in the fallback folder: ${output.root}/batch_…`;
+ $('batch-start').disabled=batchRunning||!batchReviewReady||selected===0||needsRestart||$('batch-png').value==='on'&&(!batchPngRows().length||duplicateBatchPngRows().size>0||invalidBatchPngRows());
  const shown=matchingBatchFiles().filter(row=>row.eligible),shownSelected=shown.filter(row=>batchSelected.has(row.id)).length;
  if(batchReviewReady&&($('batch-project').value||$('batch-search').value.trim()||batchFolderSelection!==null))$('batch-selection-count').textContent+=` · ${shownSelected} / ${shown.length} matching images selected`;
  $('batch-show-all').setAttribute('aria-pressed',String(!batchShowSelected));

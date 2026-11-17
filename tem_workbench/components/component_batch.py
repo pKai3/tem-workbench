@@ -11,6 +11,7 @@ import uuid
 from tem_workbench.app.engine import Engine
 from tem_workbench.components import shared_spectra
 from tem_workbench.components.component_execution import selected_workers
+from tem_workbench.storage import folder_paths
 
 
 def timestamp():
@@ -61,7 +62,8 @@ class ComponentBatch:
             json.dumps([options,fit_options,settings],allow_nan=False)
             engine=Engine(copy.deepcopy(app.config));engine.catalog()
             job_id=uuid.uuid4().hex
-            folder=Path(app.config['output_root']).resolve()/('components_'+datetime.now().strftime('%Y%m%d_%H%M%S')+'_'+job_id[:6])
+            root=folder_paths.batch_output_root(chosen,rows,engine.output_for,app.config['output_root'])
+            folder=root/('components_'+datetime.now().strftime('%Y%m%d_%H%M%S')+'_'+job_id[:6])
             folder.mkdir(parents=True,exist_ok=False)
             with self.lock:
                 self.cancel=threading.Event();self.analysis=shared_spectra.SharedSpectra()
@@ -95,7 +97,7 @@ class ComponentBatch:
                     # fitting limits and pixel footprints are resolved independently.
                     shared_spectra.plan(info,settings,options)
                     if self.cancel.is_set():break
-                    destination=engine.output_for(key)/folder.name
+                    destination=folder
                     started=self.analysis.start({**item,'info':info},settings,options,destination,
                         viewer=dict(file_id=key,roi=roi,settings=settings,options=options,fit_options=fit_options),
                         pipeline=dict(templates=engine.templates_for(settings),options=fit_options))

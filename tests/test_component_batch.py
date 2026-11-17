@@ -71,16 +71,29 @@ class ComponentBatchTests(unittest.TestCase):
             self.assertEqual(status['finished'],2);self.assertEqual(status['options']['workers'],2)
             self.assertEqual([r['state'] for r in status['images']],['complete','complete'],status['images'])
             self.assertIs(self.app.pca,original);self.assertIsNone(self.batch.analysis.result)
+            batch_folder=Path(started['manifest']).parent
+            self.assertEqual(batch_folder.parent,self.folder.resolve())
+            self.assertFalse((self.folder/'a').exists());self.assertFalse((self.folder/'b').exists())
             for row in status['images']:
                 self.assertEqual(row['execution']['workers'],2)
                 self.assertEqual(row['checked_windows'],4)
                 files=row['export']['files'];self.assertTrue(all(Path(f).is_file() for f in files))
+                self.assertTrue(all(Path(f).resolve().is_relative_to(batch_folder) for f in files))
                 metadata=json.loads(Path(files[1]).read_text())
                 self.assertEqual(metadata['source']['id'],row['file_id'])
                 self.assertEqual(metadata['plan']['method'],method)
                 self.assertEqual(metadata['phase_support_status'],'complete')
             manifest=json.loads(Path(started['manifest']).read_text())
             self.assertEqual(manifest['images'],status['images']);self.assertEqual(manifest['state'],'complete')
+
+    def test_single_project_batch_uses_project_output(self):
+        project=(self.folder/'project-output').resolve()
+        with self.patches(),patch.object(BatchEngine,'output_for',lambda _engine,_key:project):
+            started=self.batch.start({**self.body,'file_ids':['a']});self.batch.thread.join(30)
+        self.assertEqual(self.batch.status()['state'],'complete')
+        self.assertEqual(Path(started['manifest']).parent.parent,project)
+        for name in self.batch.status()['images'][0]['export']['files']:
+            self.assertTrue(Path(name).resolve().is_relative_to(Path(started['manifest']).parent))
 
     def test_failure_is_recorded_and_next_image_still_runs(self):
         with self.patches():

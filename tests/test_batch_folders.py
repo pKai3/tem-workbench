@@ -3,10 +3,19 @@ from pathlib import Path
 import tempfile
 import unittest
 from tem_workbench.mapping.batch_grids import summary_folder, folder_summaries, write_folder_csv, BatchGrids
+from tem_workbench.storage.folder_paths import batch_output_root
 import test_batch_stability
 import test_manual_batch
 
 class FolderSummaries(unittest.TestCase):
+    def test_batch_output_follows_project_scope_even_with_shared_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fallback=Path(tmp).resolve()/'fallback';project=Path(tmp).resolve()/'project'
+            rows={'a':dict(source_id='one'),'b':dict(source_id='two')}
+            output_for=lambda _key:project
+            self.assertEqual(batch_output_root(['a'],rows,output_for,fallback),project)
+            self.assertEqual(batch_output_root(['a','b'],rows,output_for,fallback),fallback)
+
     def test_parent_union_and_top_level_flatten(self):
         roots=['ST','STA','ST/nested']
         self.assertEqual(summary_folder('ST/nested/file.dm4',roots,True),'ST')

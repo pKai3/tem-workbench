@@ -182,9 +182,10 @@ class BatchSummaries(unittest.TestCase):
 
     def test_real_coordinator_exports_and_failure_retention(self):
         app=parallel_tests.CoordinatorChecks().app()
-        rows=[dict(id=i,name='1MX_OneView_'+i,sample='ST' if i=='a' else 'STA') for i in ['a','bad','b']]
+        rows=[dict(id=i,name='1MX_OneView_'+i,sample='ST' if i=='a' else 'STA',source_id='p1' if i=='a' else 'p2') for i in ['a','bad','b']]
         class LocalEngine(Engine):
             def catalog(self):return rows
+            def output_for(self,key):return Path(self.settings['output_root'])/('project-a' if key=='a' else 'project-b')
             def load(self,key):
                 if key=='bad':raise ValueError('broken file fixture')
                 item=image();item['info'].update(id=key,name='1MX_OneView_'+key)
@@ -197,8 +198,11 @@ class BatchSummaries(unittest.TestCase):
                 app.batch.thread.join(60)
             status=app.batch.status();self.assertEqual(status['state'],'complete',status)
             self.assertEqual(len(status['images']),2);self.assertEqual(len(status['failures']),1)
-            folder=Path(status['output_directory']);self.assertEqual(len(list(folder.glob('*_grid.json'))),2)
+            folder=Path(status['output_directory']);self.assertEqual(folder.parent,Path(tmp).resolve())
+            self.assertEqual(len(list(folder.glob('*_grid.json'))),2)
             self.assertEqual(len(list(folder.glob('*_grid.png'))),2)
+            self.assertFalse((Path(tmp)/'project-a').exists());self.assertFalse((Path(tmp)/'project-b').exists())
+            self.assertTrue(all(Path(row['data_file']).parent==Path('.') for row in status['images']))
             self.assertTrue((folder/'zones.csv').is_file());self.assertEqual(len(status['samples']),2)
             live=status['live_grid'];self.assertEqual(live['source']['id'],'b')
             self.assertEqual(live['state'],'complete');self.assertEqual(len(live['regions']),4)

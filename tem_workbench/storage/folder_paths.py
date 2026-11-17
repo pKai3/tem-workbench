@@ -22,6 +22,15 @@ def output_folder(sources, default, *, source_id=None, path=None):
     return Path(source.get('output') or default).expanduser().resolve()
 
 
+def batch_output_root(file_ids, rows, output_for, default):
+    """Keep one batch together; mixed projects use the fallback output root."""
+    projects={rows[key].get('source_id','demo') for key in file_ids}
+    destinations={Path(output_for(key)).resolve() for key in file_ids}
+    if not destinations:
+        raise ValueError('Select at least one image for the batch.')
+    return Path(default).expanduser().resolve() if len(projects)>1 or len(destinations)>1 else next(iter(destinations))
+
+
 DEFAULTS = {'data_root': './data', 'output_root': './output'}
 
 

@@ -263,6 +263,7 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 
 #batch-selection-count{flex-basis:100%}
 .batch-png-options{display:flex;flex-direction:column;gap:8px;margin:10px 0}.batch-png-options[hidden]{display:none}.batch-png-row{display:flex;align-items:end;flex-wrap:wrap;gap:8px;padding:9px;border:1px solid var(--line);border-radius:6px;background:#101a25}.batch-png-row>strong{flex:0 0 48px;align-self:center;font-size:11px}.batch-png-row>label{flex:1 1 145px;min-width:0;font-size:11px}.batch-png-row select{box-sizing:border-box;width:100%;min-width:0;margin-top:3px}.batch-png-row .batch-png-remove{align-self:end;min-height:29px;padding:4px 8px}.batch-png-row.duplicate,.batch-png-row.invalid{border-color:#d8787e}.batch-png-duplicate{flex-basis:100%;color:#f4a0a5;font-size:11px}.batch-png-add{align-self:flex-start}.batch-run-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.batch-output-warning{padding:9px 11px;border:1px solid #b8834b;border-radius:6px;background:#33291e;color:#f1cf9e;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.batch-output-warning[hidden]{display:none}
 
 /* The overlay key follows the actual drawn shapes and colours in both views. */
 .spectrum-legend{margin-top:7px;padding-top:6px;border-top:1px solid var(--line);font-size:10px;color:#b9c7d7;line-height:1.3}
