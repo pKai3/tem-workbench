@@ -258,7 +258,10 @@ class BatchGrids:
             json.dumps(options,allow_nan=False)
             if count not in range(2,25) or not 0<minimum<100000:raise ValueError('Invalid grid size or stopping limit.')
             engine=Engine(copy.deepcopy(app.config));engine.catalog()
-            folder=Path(app.config['output_root']).resolve()/('batch_'+datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:6])
+            output_roots={key:Path(engine.output_for(key)).resolve() for key in chosen}
+            destinations=set(output_roots.values())
+            summary_root=(next(iter(destinations)) if len(destinations)==1 else Path(app.config['output_root']).resolve())
+            folder=summary_root/('batch_'+datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:6])
             folder.mkdir(parents=True)
             self.cancel.clear();self.live=None;self.live_preview=None
             self.data=dict(state='running',total=len(chosen),finished=0,images=[],failures=[],current=None,job_id=None,
@@ -305,7 +308,7 @@ class BatchGrids:
                             job['limits']=json.loads((RESOURCES/'engine_provenance.json').read_text())['limits']
                             stem=safe_name(row['sample'])+'_'+safe_name(info['name'])+'_'+uuid.uuid4().hex[:6]
                             kind=job['grid']['component_method']+'_map' if job['grid'].get('component_method') else 'overlap_map' if job.get('grid',{}).get('mode')=='overlap' else 'grid'
-                            image_folder=engine.output_for(key)/folder.name if engine.output_for(key)!=Path(app.config['output_root']).resolve() else folder
+                            image_folder=folder if output_roots[key]==summary_root else output_roots[key]/folder.name
                             image_folder.mkdir(parents=True, exist_ok=True)
                             if options.get('component') is not None:
                                 from tem_workbench.components import shared_spectra

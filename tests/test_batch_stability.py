@@ -157,6 +157,7 @@ class StabilityBatch(unittest.TestCase):
         rows=[dict(id=i,name='1MX_OneView_'+i,sample='ST' if i=='a' else 'STA') for i in ['a','bad','b']]
         class LocalEngine(Engine):
             def catalog(self):return rows
+            def output_for(self,key):return Path(self.settings['output_root'])/'G9-HT-output'
             def load(self,key):
                 if key=='bad':raise ValueError('broken fixture')
                 item=image();item['info'].update(id=key,name='1MX_OneView_'+key)
@@ -175,6 +176,7 @@ class StabilityBatch(unittest.TestCase):
                     self.assertFalse(app.batch.running())
                 status=app.batch.status()
                 self.assertEqual(status['state'],'complete',status)
+                self.assertEqual(Path(status['output_directory']).parent,(Path(tmp)/'G9-HT-output').resolve())
                 self.assertEqual(len(status['images']),2,status['failures'])
                 self.assertEqual(len(status['failures']),1,status['failures'])
                 self.assertEqual(len(status['samples']),2)

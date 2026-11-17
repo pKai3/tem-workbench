@@ -141,6 +141,7 @@ class ComponentGridTests(unittest.TestCase):
             status=self.app.batch.status();self.assertEqual(status['state'],'complete');self.assertEqual(status['failures'],[])
             self.assertEqual(status['finished'],2);self.assertIs(self.app.pca,original)
             folder=Path(status['output_directory'])
+            self.assertEqual(folder.parent,self.folder.resolve())
             for row in status['images']:
                 self.assertEqual(set(row['png_files']),{'strength_all','support_bcc','hex','raw'})
                 self.assertEqual(row['summary_folder'],'project')
