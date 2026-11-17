@@ -32,3 +32,6 @@ outputs/
 
 /.tem-image-registry.json
 /tem-workbench.workspace.json
+
+/.tem-repeat-regions.json
+/.tem-repeat-regions.cache/

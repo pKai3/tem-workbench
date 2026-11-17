@@ -2844,6 +2844,7 @@ function applyCatalogue(data){
  if(matchingFiles().some(f=>f.id===selected))$('file').value=selected;
  else if(selected){$('file').value='';exportNotice('Image unavailable','The open result is retained. Reconnect its source folder or choose another image.','saved')}
  if($('image-browser').open)renderImageBrowser();
+ window.RepeatRegions?.refresh();
  if(meta){const row=config.files.find(f=>f.id===meta.id);if(row){meta.name=row.name;$('source-title').textContent=meta.name}}
 }
 setInterval(async()=>{
@@ -2862,6 +2863,7 @@ function setupFolderControls(){
  $('folder-data').value=config.data_root;$('folder-output').value=config.output_root;projectSettings.render();renderProjectFilter();catalogueRevision=config.catalogue_revision;showFileEvents(config.file_events||[]);
  if(!config.folder_picker)$('folders-note').textContent='Restart TEM Workbench to enable folder selection.';
  $('browse-images').disabled=false;
+ window.RepeatRegions?.configure();
  $('acquisition-map-open').disabled=!config.acquisition_map||!config.files.length;
  renderPreviewProgress(config.preview_job);
  if(config.preview_job?.state==='running')pollPreviewGeneration();
@@ -2974,11 +2976,15 @@ function bindPreviewSize(inputId,outputId,hostId,key,initial){
 }
 const refreshImageBrowserSize=bindPreviewSize('image-browser-size','image-browser-size-value','image-browser-list','tem-image-browser-preview-size',160);
 const refreshBatchPreviewSize=bindPreviewSize('batch-preview-size','batch-preview-size-value','batch-files','tem-batch-preview-size',80);
-function renderImageBrowser(){
- syncImageBrowserFolders();
+function imageBrowserFiles(){
  const terms=$('image-browser-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
  const folder=$('image-browser-folder').value;
  const files=projectFiles().filter(f=>(!folder||imageBrowserFolder(f)===folder||(folder!=='.'&&imageBrowserFolder(f).startsWith(folder+'/')))&&terms.every(term=>`${f.name} ${f.sample} ${f.source_name||''} ${f.folder||''} ${f.id}`.toLocaleLowerCase().includes(term)));
+ return files;
+}
+function renderImageBrowser(){
+ syncImageBrowserFolders();
+ const files=imageBrowserFiles();
  const list=$('image-browser-list');list.replaceChildren();
  $('image-browser-count').textContent=`${files.length} image${files.length===1?'':'s'}`;
  for(const sample of new Set(files.map(f=>f.sample)))for(const file of sortedFiles(files.filter(f=>f.sample===sample))){
@@ -2997,7 +3003,7 @@ function renderImageBrowser(){
   const group=document.createElement('small');group.textContent=file.sample;
   tile.append(preview,name,group);tile.onclick=()=>{
    $('image-browser').close();$('file-search').value='';renderFileList();$('file').value=file.id;openFile();
-  };list.append(tile);
+  };list.append(window.RepeatRegions?.card(tile,file)||tile);
  }
  if(!files.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No matching images.';list.append(empty)}
 }

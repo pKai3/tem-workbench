@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict');
+const {repeatReviewPairs, repeatReviewBadge} = require('../web/repeat-regions.js');
+const pair = (a,b,decision) => ({images:[{id:a},{id:b}],decision});
+const pairs = [pair('a','b','same'),pair('a','c','uncertain'),pair('b','c','different'),pair('c','d','pending')];
+assert.equal(repeatReviewPairs(pairs,['a','b','c'],'all').length,3);
+assert.equal(repeatReviewPairs(pairs,['a','b','c'],'uncertain','a').length,1);
+assert.equal(repeatReviewPairs(pairs,['a','b','c'],'pending').length,0);
+assert.equal(repeatReviewPairs(pairs,['a','b','c','d'],'pending').length,1);
+assert.deepEqual(repeatReviewBadge(pairs,'a'),{confirmed:true,text:'Same-region group'});
+assert.deepEqual(repeatReviewBadge(pairs,'c'),{confirmed:false,text:'Review 2 possible repeats'});
+assert.equal(repeatReviewBadge(pairs,'absent'),null);
+console.log('Repeat review scope, filters and browser badges pass.');

@@ -48,6 +48,7 @@ from tem_workbench.components import shared_spectra
 from tem_workbench.components.component_batch import ComponentBatch
 from tem_workbench.storage import folder_paths
 from tem_workbench.storage.workspace_state import WorkspaceState
+from tem_workbench.storage.repeat_regions import RepeatRegions
 from tem_workbench.storage.preview_files import PreviewBatch, sidecar_path
 from tem_workbench.storage.workbench_project import Project
 from tem_workbench.aztec.browser import AztecBrowser
@@ -84,6 +85,7 @@ class Workbench:
         self.workspace = WorkspaceState(self.config_path)
         self.config = folder_paths.resolve_config(config, self.root)
         self.engine = Engine(self.config)
+        self.repeat_regions = RepeatRegions(self.config_path.with_name('.tem-repeat-regions.json'))
         self.project = Project(self.root)
         self.last_preview_log = 0.
         self.token = secrets.token_urlsafe(24)
@@ -178,7 +180,7 @@ class Workbench:
 
     def config_info(self):
         files = self.engine.catalog()
-        return {'sources': self.engine.sources, 'file_tracking': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'shared_spectra_pca': True, 'component_workers': True, 'component_batch': True, 'component_grid': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
+        return {'sources': self.engine.sources, 'file_tracking': True, 'repeat_region_review': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'shared_spectra_pca': True, 'component_workers': True, 'component_batch': True, 'component_grid': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'parallel_grid': True, 'grid_workers_default': worker_count(), 'grid_workers_max': worker_limit(), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'source_name_autosave': True, 'saved_regions': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'diffraction_processed_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
@@ -517,6 +519,8 @@ class Workbench:
             self.jobs[job_id]['cancel'] = True
 
     def close(self):
+        if getattr(self, 'repeat_regions', None):
+            self.repeat_regions.cancel.set()
         if self.component_batch_running():
             self.component_batch.cancel_run(self.component_batch.data['id'])
         if getattr(self, 'pca', None):
@@ -899,6 +903,9 @@ def make_handler(app):
                 elif url.path == '/api/catalogue':
                     with app.lock:
                         self.send(app.catalogue_status())
+                elif url.path == '/api/repeat-regions':
+                    with app.lock:
+                        self.send(app.repeat_regions.status(list(app.engine.file_rows.values())))
                 elif url.path == '/api/raster-preview':
                     with app.lock:
                         preview = app.engine.raster_preview(query['id'][0])
@@ -962,7 +969,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/export-notice.js': ROOT/'web/export-notice.js', '/app.js': ROOT/'web/app.js', '/diagnostics.js': ROOT/'web/diagnostics.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/favicon.svg': ROOT/'web/favicon.svg', '/favicon.ico': ROOT/'web/favicon.svg', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/component-batch.js': ROOT/'web/component-batch.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/export-notice.js': ROOT/'web/export-notice.js', '/app.js': ROOT/'web/app.js', '/diagnostics.js': ROOT/'web/diagnostics.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/favicon.svg': ROOT/'web/favicon.svg', '/favicon.ico': ROOT/'web/favicon.svg', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/repeat-regions.js': ROOT/'web/repeat-regions.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/component-batch.js': ROOT/'web/component-batch.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
@@ -978,7 +985,7 @@ def make_handler(app):
                 if self.headers.get('X-TEM-Token') != app.token:
                     self.send({'error': 'Reload the workbench to reconnect.'}, status=403); return
                 size=int(self.headers.get('Content-Length', 0))
-                limit = 256*1024*1024 if self.path in ('/api/export-spectrum', '/api/aztec/export') else (16*1024*1024 if self.path == '/api/workspace' else 65536)
+                limit = 256*1024*1024 if self.path in ('/api/export-spectrum', '/api/aztec/export') else (16*1024*1024 if self.path in ('/api/workspace', '/api/repeat-regions/start') else 65536)
                 if size <= 0 or size > limit or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                     raise ValueError('Expected a small JSON request.')
                 body=json.loads(self.rfile.read(size))
@@ -990,6 +997,17 @@ def make_handler(app):
                     self.send(diagnostics.browser_events(body))
                 elif self.path == '/api/workspace':
                     self.send(app.workspace.patch(body.get('records'), body.get('only_missing') is True))
+                elif self.path == '/api/repeat-regions/start':
+                    with app.lock:
+                        app.repeat_regions.start(app.engine, body.get('ids'), body.get('search_all') is True)
+                        self.send(app.repeat_regions.status(list(app.engine.file_rows.values())))
+                elif self.path == '/api/repeat-regions/decision':
+                    with app.lock:
+                        self.send(app.repeat_regions.decide(body.get('key'), body.get('decision'), list(app.engine.file_rows.values())))
+                elif self.path == '/api/repeat-regions/cancel':
+                    app.repeat_regions.cancel.set()
+                    with app.lock:
+                        self.send(app.repeat_regions.status(list(app.engine.file_rows.values())))
                 elif self.path == '/api/aztec/browse':
                     self.send(app.aztec.browse(body.get('path'), app.root, app.engine.sources, body.get('project'),
                                               outputs=folder_paths.output_folders(app.engine.sources, app.config['output_root'])))
