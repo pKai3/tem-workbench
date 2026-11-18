@@ -4,7 +4,7 @@
  const $=id=>document.getElementById(id);
  let config,folderBrowser,projectSettings,files=[],selectedPanel=0,currentId='',timer=0,renderVersion=0,hoverTimer=0,browserPreferred=160,indexPoll=0,indexRecords={};
  let saved={};
- const blank=()=>({schema_version:2,name:'Untitled figure',rows:1,columns:2,aspect:4/3,background:'white',match_tone:false,sharpness:1,crop_metadata:true,scale_bar_overlay:true,scale_bar_position:'left',image_padding:36,metadata_overlay:[],slots:[{},{}]});
+ const blank=()=>({schema_version:2,name:'Untitled figure',rows:1,columns:2,aspect:4/3,background:'white',match_tone:false,sharpness:1,crop_metadata:true,scale_bar_overlay:true,scale_bar_position:'left',image_padding:36,export_scale_percent:100,metadata_overlay:[],slots:[{},{}]});
  function normaliseRecipe(value){
   if(!value||!Array.isArray(value.slots))return blank();
   const next=structuredClone(value),columns=Number(next.columns)||2;
@@ -20,6 +20,7 @@
   next.scale_bar_overlay=next.scale_bar_overlay!==false;
   next.scale_bar_position=['left','right'].includes(next.scale_bar_position)?next.scale_bar_position:'left';
   next.image_padding=Number.isInteger(Number(next.image_padding))&&Number(next.image_padding)>=0&&Number(next.image_padding)<=200?Number(next.image_padding):36;
+  next.export_scale_percent=Number.isInteger(Number(next.export_scale_percent))&&Number(next.export_scale_percent)>=25&&Number(next.export_scale_percent)<=100?Number(next.export_scale_percent):100;
   next.sharpness=Number.isFinite(Number(next.sharpness))&&Number(next.sharpness)>=0&&Number(next.sharpness)<=3?Number(next.sharpness):1;
   next.metadata_overlay=Array.isArray(next.metadata_overlay)?next.metadata_overlay.map(key=>key==='probe_current'?'probe':key).filter(key=>['magnification','voltage_kv','probe','working_distance'].includes(key)):[];
   next.columns=columns;next.rows=Math.max(1,Math.min(6,Number(next.rows)||Math.ceil(next.slots.length/columns)||1));
@@ -34,6 +35,7 @@
  let outputHover,hoveredPanel=-1,hoveredSource='',hoverEnabled=true,hoverPoint=null;
  let detailCache=new Map(),detailPending=new Map(),dragState=null,dropTarget,panelHighlight,suppressOutputClick=false;
  let panelPreviewTimer=0,panelPreviewRevision=0;
+ let previewBytes=0;
  let tagRows=[];
  async function api(path,body){
   const response=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)});
@@ -41,6 +43,43 @@
  }
  function status(text,error=false){$('fig-status').textContent=text;$('fig-error').textContent=error?text:''}
  function draft(){WorkbenchWorkspace.writeRaw('tem-figures-draft-v1',JSON.stringify(recipe));WorkbenchWorkspace.writeRaw('tem-figures-current-v1',currentId)}
+ function exportGeometry(){
+  const ratios=recipe.slots.filter(slot=>slot.path).map(slot=>{
+   const height=(typeof slot.crop_metadata==='boolean'?slot.crop_metadata:recipe.crop_metadata)
+    ?Number(slot.content_height||slot.height):Number(slot.height);
+   return Number(slot.width)>0&&height>0?Number(slot.width)/height:null;
+  }).filter(value=>value&&Number.isFinite(value)).sort((a,b)=>a-b);
+  const middle=Math.floor(ratios.length/2);
+  const aspect=recipe.aspect==='auto'?(ratios.length?(ratios.length%2?ratios[middle]:(ratios[middle-1]+ratios[middle])/2):4/3):Number(recipe.aspect);
+  if(!Number.isFinite(aspect)||aspect<=0)return null;
+  let nativeWidth=1000;
+  for(const slot of recipe.slots){
+   if(!slot.path)continue;
+   const height=(typeof slot.crop_metadata==='boolean'?slot.crop_metadata:recipe.crop_metadata)
+    ?Number(slot.content_height||slot.height):Number(slot.height);
+   const zoom=Number(slot.zoom||1),width=Number(slot.width);
+   if(!Number.isFinite(width)||!Number.isFinite(height)||!Number.isFinite(zoom)||width<=0||height<=0||zoom<=0)return null;
+   nativeWidth=Math.max(nativeWidth,Math.ceil(Math.min(width,height*aspect)/zoom));
+  }
+  const panelWidth=Math.ceil(nativeWidth*recipe.export_scale_percent/100);
+  const panelHeight=Math.ceil(panelWidth/aspect),margin=recipe.image_padding;
+  const width=recipe.columns*panelWidth+(recipe.columns+1)*margin;
+  const rows=Math.ceil(recipe.slots.length/recipe.columns);
+  const height=rows*panelHeight+(rows+1)*margin;
+  return {width,height,pixels:width*height};
+ }
+ function fileSize(bytes){return bytes>=1e9?`${(bytes/1e9).toFixed(1)} GB`:bytes>=1e6?`${(bytes/1e6).toFixed(1)} MB`:`${Math.round(bytes/1e3)} kB`}
+ function updateExportEstimate(){
+  const geometry=exportGeometry(),label=$('fig-export-dimensions');
+  if(!geometry){label.dataset.error='false';label.textContent='Choose images to estimate size.';return}
+  const dimensions=`${geometry.width.toLocaleString()} × ${geometry.height.toLocaleString()} px`;
+  if(geometry.pixels>120_000_000){label.textContent=`${dimensions} · exceeds 120 MP limit`;label.dataset.error='true';return}
+  label.dataset.error='false';
+  const image=$('fig-preview');
+  const bytes=previewBytes&&image.complete&&image.naturalWidth&&image.naturalHeight
+   ?previewBytes*geometry.pixels/(image.naturalWidth*image.naturalHeight):0;
+  label.textContent=dimensions+(bytes?` · ≈${fileSize(bytes)} PNG`:' · estimating PNG size…');
+ }
  function chooseSaved(){
   const select=$('fig-saved');select.replaceChildren(new Option('New figure',''));
   for(const [id,value] of Object.entries(saved).sort((a,b)=>a[1].name.localeCompare(b[1].name)))select.add(new Option(value.name,id));
@@ -61,11 +100,14 @@
   $('fig-scale-left').setAttribute('aria-pressed',String(recipe.scale_bar_position==='left'));
   $('fig-scale-right').setAttribute('aria-pressed',String(recipe.scale_bar_position==='right'));
   $('fig-image-padding').value=String(recipe.image_padding);
+  $('fig-export-scale').value=String(recipe.export_scale_percent);
+  $('fig-export-scale-number').value=String(recipe.export_scale_percent);
   for(const input of document.querySelectorAll('[data-figure-meta]'))input.checked=recipe.metadata_overlay.includes(input.dataset.figureMeta);
   $('fig-count').textContent=`${recipe.slots.filter(slot=>slot.path).length} of ${recipe.slots.length} filled`;
   $('fig-open-browser').disabled=!files.length;
-  $('fig-export').disabled=!recipe.slots.length||recipe.slots.some(slot=>!slot.path||
+  $('fig-export').disabled=!recipe.slots.length||(exportGeometry()?.pixels||0)>120_000_000||recipe.slots.some(slot=>!slot.path||
    recipe.scale_bar_overlay&&slot.scale_mode!=='keep'&&(!slot.scale_nm||!slot.bar_px));
+  updateExportEstimate();
  }
  function saveTags(){WorkbenchWorkspace.writeRaw('tem-figures-tags-v1',JSON.stringify(tagRows))}
  function tagError(message,error=true){$('fig-tags-status').textContent=message;$('fig-tags-status').dataset.error=String(error)}
@@ -474,11 +516,14 @@
   }catch(error){$('fig-original-note').textContent=error.message}
  }
  function schedulePreview(){
-  clearTimeout(timer);const revision=++renderVersion;detailCache.clear();hideOutputHover();
+  clearTimeout(timer);const revision=++renderVersion;detailCache.clear();hideOutputHover();updateExportEstimate();
   timer=setTimeout(async()=>{
    try{const value=await api('figures/render',{recipe});if(revision!==renderVersion)return;
-    $('fig-preview').src=value.image;$('fig-preview').hidden=false;status('Preview updated.');}
-   catch(error){if(revision!==renderVersion)return;$('fig-preview').hidden=true;status(error.message,true)}
+    const encoded=value.image.split(',',2)[1]||'';
+    previewBytes=Math.floor(encoded.length*3/4)-(encoded.endsWith('==')?2:encoded.endsWith('=')?1:0);
+    const image=$('fig-preview');image.onload=()=>{if(revision===renderVersion)updateExportEstimate()};
+    image.src=value.image;image.hidden=false;status('Preview updated.');}
+   catch(error){if(revision!==renderVersion)return;previewBytes=0;$('fig-preview').hidden=true;updateExportEstimate();status(error.message,true)}
   },160);
  }
  function changed(cards=false){draft();if(cards)renderCards();else sync();schedulePreview();schedulePanelPreview()}
@@ -771,6 +816,14 @@
    $('fig-image-padding').onchange=()=>{const value=Number($('fig-image-padding').value);
     if(!$('fig-image-padding').value||!Number.isInteger(value)||value<0||value>200){sync();return}
     recipe.image_padding=value;changed()};
+   $('fig-export-scale').oninput=()=>{recipe.export_scale_percent=Number($('fig-export-scale').value);changed()};
+   $('fig-export-scale-number').onchange=()=>{const value=Number($('fig-export-scale-number').value);
+    if(!$('fig-export-scale-number').value||!Number.isInteger(value)||value<25||value>100){sync();return}
+    recipe.export_scale_percent=value;changed()};
+   document.querySelector('.fig-export-help').onclick=event=>{
+    const help=$('fig-export-help-text');help.hidden=!help.hidden;
+    event.currentTarget.setAttribute('aria-expanded',String(!help.hidden));
+   };
    $('fig-hover-on').onclick=()=>{hoverEnabled=true;WorkbenchWorkspace.writeRaw('tem-figures-hover-detail','on');sync()};
    $('fig-hover-off').onclick=()=>{hoverEnabled=false;WorkbenchWorkspace.writeRaw('tem-figures-hover-detail','off');hideOutputHover();sync()};
    $('fig-sharpness').oninput=()=>{recipe.sharpness=Number($('fig-sharpness').value);
@@ -785,7 +838,9 @@
    $('fig-save').onclick=async()=>{recipe.name=$('fig-name').value.trim()||'Untitled figure';if(!recipe.slots.some(slot=>slot.path)){status('Choose an image before saving.',true);return}
     currentId=currentId||crypto.randomUUID();saved[currentId]=structuredClone(recipe);WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));draft();chooseSaved();await WorkbenchWorkspace.flush();status(`Saved ${recipe.name}.`)};
    $('fig-delete').onclick=async()=>{if(!currentId)return;delete saved[currentId];currentId='';WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));chooseSaved();await WorkbenchWorkspace.flush();status('Saved figure deleted. Current panels remain open.')};
-   $('fig-export').onclick=async()=>{try{status('Exporting full-resolution figure…');const result=await api('figures/export',{recipe});status(`Saved ${result.png} and ${result.recipe}`)}catch(error){status(error.message,true)}};
+   $('fig-export').onclick=async()=>{try{status(`Exporting figure at ${recipe.export_scale_percent}%…`);
+    const result=await api('figures/export',{recipe});status(`Saved ${result.png} (${fileSize(result.size_bytes)}) and ${result.recipe}`)}
+    catch(error){status(error.message,true)}};
    $('fig-tag-open').onclick=()=>{renderTags();$('fig-tags-dialog').showModal()};
    $('fig-tags-close').onclick=()=>$('fig-tags-dialog').close();
    $('fig-tags-add').onclick=()=>{if(tagRows.length>=500){tagError('At most 500 tags can be exported together.');return}

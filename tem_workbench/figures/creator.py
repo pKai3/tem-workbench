@@ -778,7 +778,10 @@ def render(recipe, preview=False):
     padding = int(recipe.get('image_padding', 36))
     if not 0 <= padding <= 200:
         raise ValueError('Image padding must be between 0 and 200 pixels.')
-    export_width = _export_panel_width(slots, aspect, figure_crop_metadata)
+    scale_percent = recipe.get('export_scale_percent', 100)
+    if isinstance(scale_percent, bool) or not isinstance(scale_percent, (int, float)) or not math.isfinite(scale_percent) or not 25 <= scale_percent <= 100:
+        raise ValueError('Export size must be between 25% and 100%.')
+    export_width = math.ceil(_export_panel_width(slots, aspect, figure_crop_metadata) * scale_percent / 100)
     width = 420 if preview else export_width
     margin = round(padding * width / export_width)
     gap = margin
@@ -914,4 +917,4 @@ def export(recipe, sources, output_root):
     png.write_bytes(data)
     atomic_json(manifest, {'schema_version': 1, 'recipe': recipe,
                            'exported_at': datetime.now().astimezone().isoformat()})
-    return {'png': str(png), 'recipe': str(manifest)}
+    return {'png': str(png), 'recipe': str(manifest), 'size_bytes': len(data)}

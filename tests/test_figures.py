@@ -71,6 +71,7 @@ class FiguresTests(unittest.TestCase):
         output = creator.export(recipe, [dict(id='sample',path=str(self.root),output=str(self.root/'project-output'))], self.root/'fallback')
         self.assertEqual(Path(output['png']).parent, (self.root/'project-output').resolve())
         self.assertTrue(Path(output['recipe']).is_file())
+        self.assertEqual(output['size_bytes'], Path(output['png']).stat().st_size)
 
     def test_missing_sidecar_needs_confirmed_scale_and_changed_source_is_rejected(self):
         found = creator.inspect_image(self.path)
@@ -247,6 +248,15 @@ class FiguresTests(unittest.TestCase):
         with Image.open(BytesIO(creator.render(recipe))) as exported:
             self.assertEqual(exported.size, (1600 + 2 * 36, 1200 + 2 * 36))
             self.assertEqual(exported.getpixel((36 + 800, 36 + 600)), original.getpixel((800, 600)))
+        recipe['export_scale_percent'] = 50
+        with Image.open(BytesIO(creator.render(recipe))) as exported:
+            self.assertEqual(exported.size, (800 + 2 * 36, 600 + 2 * 36))
+        with Image.open(BytesIO(creator.render(recipe, preview=True))) as preview:
+            self.assertEqual(preview.size, (420 + 2 * 19, 315 + 2 * 19))
+        for invalid in (24, 101, 'half'):
+            recipe['export_scale_percent'] = invalid
+            with self.assertRaisesRegex(ValueError, 'Export size'):
+                creator.render(recipe)
 
     def test_transparent_tags_export_to_project_and_reject_duplicates(self):
         sources = [dict(id='sample', path=str(self.root), output=str(self.root / 'project-output'))]

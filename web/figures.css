@@ -53,3 +53,9 @@ dialog.fig-slot-dialog{width:min(96vw,1260px);max-height:calc(100dvh - 20px);ove
 .fig-live-preview img:not([src]){display:none}.fig-live-preview-status{margin:5px 0 0;font-size:11px;min-height:1em;overflow-wrap:anywhere}
 @media(max-width:1100px){.fig-popup-columns{grid-template-columns:repeat(2,minmax(0,1fr))}.fig-live-preview{grid-column:1/-1;position:static}.fig-live-preview img{max-height:50vh}}
 @media(max-width:700px){.fig-popup-columns{grid-template-columns:1fr}.fig-live-preview{grid-column:1}}
+.fig-export-scale-row{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin:12px 0 0;font-size:12px}
+.fig-export-scale-row>label{font-weight:600;white-space:nowrap}.fig-export-scale-row input[type=range]{width:min(190px,25vw);min-height:22px;accent-color:var(--cyan)}
+.fig-export-scale-row input[type=number]{width:65px;min-height:29px;padding:4px 6px}.fig-export-scale-row .fig-export-help{min-height:24px;width:24px;padding:1px;border-radius:50%;font-size:13px}
+#fig-export-dimensions{min-width:0;overflow-wrap:anywhere}
+#fig-export-dimensions[data-error=true]{color:#f4a0a5}
+.fig-export-help-text{flex-basis:100%;color:var(--muted);font-size:11px}.fig-export-help-text[hidden]{display:none}
