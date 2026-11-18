@@ -1030,7 +1030,8 @@ def make_handler(app):
                 elif self.path == '/api/figures/index/status':
                     self.send(app.figure_index.status(body.get('folder')))
                 elif self.path == '/api/figures/index/start':
-                    self.send(app.figure_index.start(body['folder']))
+                    self.send(app.figure_index.start(body['folder'], force=body.get('force') is True,
+                                                     workers=body.get('workers', 4)))
                 elif self.path == '/api/figures/index/cancel':
                     self.send(app.figure_index.stop())
                 elif self.path == '/api/figures/inspect':
@@ -1041,7 +1042,8 @@ def make_handler(app):
                     self.send({'image': figure_creator.preview(body['recipe'])})
                 elif self.path == '/api/figures/panel':
                     self.send({'image': figure_creator.panel_preview(body['slot'], body.get('aspect', 4 / 3),
-                                                                     body.get('metadata_overlay'), body.get('recipe'))})
+                                                                     body.get('metadata_overlay'), body.get('recipe'),
+                                                                     body.get('width', 1000))})
                 elif self.path == '/api/figures/export':
                     self.send(figure_creator.export(body['recipe'], app.engine.sources, app.config['output_root']))
                 elif self.path == '/api/aztec/files':

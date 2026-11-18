@@ -1,4 +1,5 @@
 """Persistent, read-only source-image metadata preprocessing for Figures."""
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import json
 from pathlib import Path
 import threading
@@ -13,7 +14,8 @@ class FigureMetadataIndex:
         self.lock = threading.RLock()
         self.cancel = threading.Event()
         self.thread = None
-        self.job = dict(state='idle', folder='', done=0, total=0, reused=0, failed=0, current='', errors=[])
+        self.job = dict(state='idle', folder='', done=0, total=0, reused=0, failed=0,
+                        workers=0, current='', errors=[])
         try:
             saved = json.loads(self.path.read_text(encoding='utf-8')) if self.path.is_file() else {}
         except (OSError, ValueError):
@@ -48,23 +50,31 @@ class FigureMetadataIndex:
                 root = Path(folder).expanduser().resolve()
                 job['records'] = {path: {key: value for key, value in record.items()
                                          if key in ('sha256', 'metadata', 'metadata_sidecar', 'footer_ocr_text',
+                                                    'footer_ocr_raw_text',
                                                     'scale_ocr_text',
                                                     'content_height', 'scale_nm', 'error')}
                                   for path, record in self.records.items()
                                   if Path(path).is_relative_to(root)}
             return job
 
-    def start(self, folder):
+    def start(self, folder, force=False, workers=4):
         root = Path(folder).expanduser().resolve()
         if not root.is_dir():
             raise ValueError('Choose an available image folder.')
+        try:
+            count = int(workers)
+            if count < 1 or float(workers) != count:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError('Choose a positive whole number of OCR workers.') from None
         with self.lock:
             if self.thread and self.thread.is_alive():
                 raise ValueError('Finish or cancel the current image preprocessing first.')
             self.cancel.clear()
-            self.job = dict(state='running', folder=str(root), done=0, total=0, reused=0,
-                            failed=0, current='', errors=[])
-            self.thread = threading.Thread(target=self._work, args=(root,), daemon=True, name='figure-metadata-index')
+            self.job = dict(state='running', folder=str(root), force=bool(force), workers=count,
+                            done=0, total=0, reused=0, failed=0, current='', errors=[])
+            self.thread = threading.Thread(target=self._work, args=(root, bool(force), count), daemon=True,
+                                           name='figure-metadata-index')
             self.thread.start()
             return self.status(str(root))
 
@@ -72,47 +82,66 @@ class FigureMetadataIndex:
         self.cancel.set()
         return self.status()
 
-    def _work(self, root):
+    def _work(self, root, force, workers):
         try:
             images = creator.list_images(root)['images']
             with self.lock:
                 self.job['total'] = len(images)
             changed = False
-            for item in images:
-                if self.cancel.is_set():
-                    break
+            def inspect(item):
                 path = item['path']
+                fingerprint = self._fingerprint(path)
                 with self.lock:
-                    self.job['current'] = item['relative_path']
-                try:
-                    fingerprint = self._fingerprint(path)
+                    cached = self.records.get(path)
+                if (not force and cached and cached.get('fingerprint') == fingerprint
+                        and not cached.get('error') and cached.get('inspection_version') == 7):
+                    return None
+                found = creator.inspect_image(path)
+                return dict(path=path, name=item['name'], sha256=found['sha256'],
+                            metadata=found['metadata'], metadata_sidecar=found['metadata_sidecar'],
+                            footer_ocr_text=found['footer_ocr_text'],
+                            footer_ocr_raw_text=found['footer_ocr_raw_text'],
+                            scale_ocr_text=found['scale_ocr_text'], inspection_version=7,
+                            content_height=found['content_height'], scale_nm=found['scale_nm'],
+                            fingerprint=fingerprint)
+
+            pending = {}
+            next_index = 0
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='figure-ocr') as pool:
+                def fill():
+                    nonlocal next_index
+                    while len(pending) < workers and next_index < len(images) and not self.cancel.is_set():
+                        item = images[next_index]
+                        next_index += 1
+                        pending[pool.submit(inspect, item)] = item
                     with self.lock:
-                        cached = self.records.get(path)
-                    if cached and cached.get('fingerprint') == fingerprint and not cached.get('error') \
-                            and cached.get('inspection_version') == 5:
+                        first = next(iter(pending.values()), None)
+                        self.job['current'] = (first['relative_path'] if first else '')
+
+                fill()
+                while pending:
+                    completed, _ = wait(tuple(pending), timeout=.2, return_when=FIRST_COMPLETED)
+                    for future in completed:
+                        item = pending.pop(future)
+                        try:
+                            record = future.result()
+                            with self.lock:
+                                if record is None:
+                                    self.job['reused'] += 1
+                                else:
+                                    self.records[item['path']] = record
+                                    changed = True
+                        except Exception as error:
+                            with self.lock:
+                                self.job['failed'] += 1
+                                if len(self.job['errors']) < 20:
+                                    self.job['errors'].append(f'{item["relative_path"]}: {error}')
                         with self.lock:
-                            self.job['reused'] += 1
-                    else:
-                        inspected = creator.inspect_image(path)
-                        record = dict(path=path, name=item['name'], sha256=inspected['sha256'],
-                                      metadata=inspected['metadata'], metadata_sidecar=inspected['metadata_sidecar'],
-                                      footer_ocr_text=inspected['footer_ocr_text'],
-                                      scale_ocr_text=inspected['scale_ocr_text'], inspection_version=5,
-                                      content_height=inspected['content_height'], scale_nm=inspected['scale_nm'],
-                                      fingerprint=fingerprint)
-                        with self.lock:
-                            self.records[path] = record
-                            changed = True
-                except (OSError, ValueError, TypeError) as error:
-                    with self.lock:
-                        self.job['failed'] += 1
-                        if len(self.job['errors']) < 20:
-                            self.job['errors'].append(f'{item["relative_path"]}: {error}')
-                with self.lock:
-                    self.job['done'] += 1
-                    if changed and self.job['done'] % 10 == 0:
-                        self._save()
-                        changed = False
+                            self.job['done'] += 1
+                            if changed and self.job['done'] % 10 == 0:
+                                self._save()
+                                changed = False
+                    fill()
             with self.lock:
                 if changed:
                     self._save()

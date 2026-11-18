@@ -1,14 +1,47 @@
 """Persistent figure metadata preprocessing across folder scans."""
 from pathlib import Path
 import tempfile
+import threading
+import time
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
 
+from tem_workbench.figures import creator
 from tem_workbench.figures.index import FigureMetadataIndex
 
 
 class FigureMetadataIndexTests(unittest.TestCase):
+    def test_selected_worker_count_processes_images_concurrently(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for number in range(4):
+                Image.new('RGB', (80, 60), '#777777').save(root / f'{number}.png')
+            index = FigureMetadataIndex(root / 'index.json')
+            original = creator.inspect_image
+            lock = threading.Lock()
+            active = maximum = 0
+
+            def inspect(path):
+                nonlocal active, maximum
+                with lock:
+                    active += 1
+                    maximum = max(maximum, active)
+                try:
+                    time.sleep(.04)
+                    return original(path)
+                finally:
+                    with lock:
+                        active -= 1
+
+            with patch('tem_workbench.figures.creator.inspect_image', side_effect=inspect):
+                index.start(root, workers=3)
+                index.thread.join(timeout=15)
+            self.assertEqual(index.status(root)['state'], 'complete')
+            self.assertEqual(index.status(root)['workers'], 3)
+            self.assertGreaterEqual(maximum, 2)
+
     def test_preprocess_persists_reuses_and_refreshes_changed_images(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -33,6 +66,9 @@ class FigureMetadataIndexTests(unittest.TestCase):
             reopened.start(source)
             reopened.thread.join(timeout=15)
             self.assertEqual(reopened.status(source)['reused'], 2)
+            reopened.start(source, force=True)
+            reopened.thread.join(timeout=15)
+            self.assertEqual(reopened.status(source)['reused'], 0)
             Image.new('RGB', (80, 60), '#333333').save(second)
             reopened.start(source)
             reopened.thread.join(timeout=15)

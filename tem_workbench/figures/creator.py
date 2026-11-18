@@ -229,6 +229,7 @@ def _ocr_image(image, *, psm=6, whitelist=None):
         command.extend(['-c', 'tessedit_char_whitelist=' + whitelist])
     try:
         result = subprocess.run(command, input=stream.getvalue(), capture_output=True,
+                                env={**os.environ, 'OMP_THREAD_LIMIT': '1', 'OMP_NUM_THREADS': '1'},
                                 timeout=5, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return ''
@@ -238,9 +239,20 @@ def _ocr_image(image, *, psm=6, whitelist=None):
 def _footer_ocr(image, footer, bar):
     if footer >= image.height or not _tesseract_path():
         return '', None, ''
-    band = image.crop((0, footer, image.width, image.height))
+    band = image.crop((0, footer, image.width, image.height)).convert('RGB')
+    if bar:
+        # The bar is a graphic. Its white edges otherwise become stray OCR letters.
+        ImageDraw.Draw(band).rectangle((bar['x'] - 4, bar['y'] - footer - 4,
+                                        bar['x'] + bar['w'] + 4, bar['y'] - footer + bar['h'] + 4),
+                                       fill='black')
     enlarged = band.resize((band.width * 2, band.height * 2))
-    text = _ocr_image(enlarged, psm=11) or _ocr_image(enlarged, psm=6)
+    line_text = _ocr_image(enlarged, psm=6)
+    sparse_text = _ocr_image(enlarged, psm=11)
+    def score(candidate):
+        return sum(bool(re.search(pattern, candidate, re.I)) for pattern in (
+            r'[x×]\s*\d[\d, ]{2,}', r'\d+(?:\.\d+)?\s*kV\b',
+            r'\bWD\s*\d', r'\d{1,4}/\d{1,2}/\d{2,4}'))
+    text = sparse_text if score(sparse_text) > score(line_text) else line_text or sparse_text
     if not bar:
         return text, None, ''
 
@@ -291,6 +303,24 @@ def _footer_ocr(image, footer, bar):
     return text, scale_nm or standalone_scale, scale_text if scale_nm else standalone or scale_text
 
 
+def _correct_footer_scale(text, scale_nm):
+    """Show the independently read scale label without changing stored raw OCR."""
+    if not text:
+        return text
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if scale_nm is None:
+        return '\n'.join(lines)
+    label = _scale_label(scale_nm)
+    for index, line in enumerate(lines):
+        if re.match(r'(?i)^\s*WD\b', line):
+            continue
+        match = re.search(r'(?i)(?<![\w.])(?:a\s+)?(?:\d+(?:\.\d+)?|[Il|l])\s*(?:[upµμ]m|nm)\b', line)
+        if match:
+            lines[index] = line[:match.start()] + label + line[match.end():]
+            return '\n'.join(lines)
+    return 'Scale label: ' + label + '\n' + text
+
+
 def _footer_and_bar(image):
     gray = np.asarray(image.convert('L'))
     height, width = gray.shape
@@ -327,7 +357,8 @@ def inspect_image(path):
         width, height = image.size
         footer, bar = _footer_and_bar(image)
         description = raw.tag_v2.get(270) if hasattr(raw, 'tag_v2') else raw.info.get('description')
-        footer_text, scale_nm, scale_text = _footer_ocr(image, footer, bar)
+        footer_raw_text, scale_nm, scale_text = _footer_ocr(image, footer, bar)
+        footer_text = _correct_footer_scale(footer_raw_text, scale_nm)
         scale_source = 'Footer OCR; verify against original' if scale_nm else None
         sidecar_bar_px = None
         sidecar = source.with_suffix('.txt')
@@ -354,13 +385,14 @@ def inspect_image(path):
             except (OSError, ValueError, TypeError, AttributeError):
                 pass
         return dict(path=str(source), name=source.name, sha256=_digest(source), width=width,
-                    height=height, content_height=footer, footer_detected=footer < height,
+                    height=height, content_height=footer, detected_content_height=footer,
+                    footer_detected=footer < height,
                     bar=bar, bar_px=bar['w'] if bar else None, scale_nm=scale_nm,
                     scale_source=scale_source, sidecar_bar_px=sidecar_bar_px, analysis=analysis,
-                    metadata=_acquisition_metadata(source, sidecar_text, description, footer_text),
+                    metadata=_acquisition_metadata(source, sidecar_text, description, footer_raw_text),
                     metadata_sidecar=metadata_sidecar,
-                    footer_ocr_text=footer_text, scale_ocr_text=scale_text,
-                    ocr_available=bool(_tesseract_path()), inspection_version=5,
+                    footer_ocr_text=footer_text, footer_ocr_raw_text=footer_raw_text,
+                    scale_ocr_text=scale_text, ocr_available=bool(_tesseract_path()), inspection_version=7,
                     scale_mode='replace' if footer < height and bar else 'keep')
 
 
@@ -511,10 +543,36 @@ def _tone_quantiles(image):
     return np.percentile(luminance, [5, 95])
 
 
-def _tone_target(slots, aspect):
-    ranges = [_tone_quantiles(_panel(slot, 240, aspect, strict=False, raw_only=True))
+def _tone_target(slots, aspect, figure_crop_metadata=True):
+    ranges = [_tone_quantiles(_panel(slot, 240, aspect, strict=False, raw_only=True,
+                                     figure_crop_metadata=figure_crop_metadata))
               for slot in slots if slot.get('path')]
     return tuple(np.median(ranges, axis=0)) if len(ranges) > 1 else None
+
+
+def _crop_metadata(slot, figure_crop_metadata):
+    override = slot.get('crop_metadata')
+    return override if isinstance(override, bool) else figure_crop_metadata
+
+
+def _figure_aspect(recipe):
+    selected = recipe.get('aspect', 4 / 3)
+    if selected == 'auto':
+        ratios = []
+        for slot in recipe.get('slots', []):
+            if not slot.get('path'):
+                continue
+            width = float(slot.get('width') or 0)
+            height = float((slot.get('content_height') or slot.get('height') or 0)
+                           if _crop_metadata(slot, recipe.get('crop_metadata', True))
+                           else (slot.get('height') or 0))
+            if math.isfinite(width) and math.isfinite(height) and width > 0 and height > 0:
+                ratios.append(width / height)
+        return float(np.median(ratios)) if ratios else 4 / 3
+    aspect = float(selected)
+    if aspect not in (1, 4 / 3, 16 / 9):
+        raise ValueError('Choose Auto, square, 4:3 or 16:9 panels.')
+    return aspect
 
 
 def _adjust_tone(image, slot, target):
@@ -537,7 +595,8 @@ def _adjust_tone(image, slot, target):
     return image
 
 
-def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False):
+def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure_sharpness=1,
+           figure_crop_metadata=True):
     source = _source(slot['path'])
     if _digest(source) != slot.get('sha256'):
         raise ValueError(f'{source.name} changed since this panel was saved. Replace it explicitly.')
@@ -554,9 +613,10 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False):
     scale_mode = slot.get('scale_mode', 'replace')
     if scale_mode not in ('replace', 'keep'):
         raise ValueError('Choose a supported scale display mode.')
-    content_height = int(slot.get('content_height', image.height))
-    if not 1 <= content_height <= image.height:
+    saved_content_height = int(slot.get('content_height', image.height))
+    if not 1 <= saved_content_height <= image.height:
         raise ValueError('Invalid saved image-field boundary. Replace this panel.')
+    content_height = saved_content_height if _crop_metadata(slot, figure_crop_metadata) else image.height
     bar = slot.get('bar')
     if strict and scale_mode == 'keep' and isinstance(bar, dict) and bar.get('y', -1) >= content_height:
         raise ValueError(f'The source scale bar for {source.name} is outside the cropped field. Add a calibrated bar.')
@@ -575,6 +635,11 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False):
     if raw_only:
         return image
     image = _adjust_tone(image, slot, tone_target)
+    sharpness = float(slot.get('sharpness') if slot.get('sharpness') is not None else figure_sharpness)
+    if not math.isfinite(sharpness) or not 0 <= sharpness <= 3:
+        raise ValueError('Sharpness must be between 0 and 3.')
+    if sharpness != 1:
+        image = ImageEnhance.Sharpness(image).enhance(sharpness)
     if scale_mode == 'keep':
         return image
     bar_px, scale_nm = slot.get('bar_px'), slot.get('scale_nm')
@@ -624,15 +689,20 @@ def render(recipe, preview=False):
     metadata_overlay = recipe.get('metadata_overlay', [])
     if not isinstance(metadata_overlay, list) or any(key not in METADATA_FIELDS for key in metadata_overlay):
         raise ValueError('Choose supported metadata overlay fields.')
-    aspect = float(recipe.get('aspect', 4 / 3))
-    if aspect not in (1, 4 / 3, 16 / 9):
-        raise ValueError('Choose square, 4:3 or 16:9 panels.')
+    aspect = _figure_aspect(recipe)
+    figure_crop_metadata = recipe.get('crop_metadata', True)
+    if not isinstance(figure_crop_metadata, bool):
+        raise ValueError('Choose whether to crop metadata bars.')
     width = 420 if preview else 1000
-    gap, margin = (12, 18) if preview else (24, 36)
+    margin = 18 if preview else 36
+    gap = margin
     rows = math.ceil(len(slots) / columns)
     tile_height = round(width / aspect)
     color = 'white' if recipe.get('background', 'white') == 'white' else '#101820'
-    tone_target = _tone_target(slots, aspect) if recipe.get('match_tone') else None
+    tone_target = _tone_target(slots, aspect, figure_crop_metadata) if recipe.get('match_tone') else None
+    figure_sharpness = float(recipe.get('sharpness', 1))
+    if not math.isfinite(figure_sharpness) or not 0 <= figure_sharpness <= 3:
+        raise ValueError('Figure sharpness must be between 0 and 3.')
     figure = Image.new('RGB', (columns * width + (columns - 1) * gap + 2 * margin,
                                rows * tile_height + (rows - 1) * gap + 2 * margin), color)
     for index, slot in enumerate(slots):
@@ -649,7 +719,8 @@ def render(recipe, preview=False):
                              fill='#263445' if color == 'white' else '#edf5fc')
             figure.paste(panel, (x, y))
         else:
-            panel = _panel(slot, width, aspect, strict=not preview, tone_target=tone_target)
+            panel = _panel(slot, width, aspect, strict=not preview, tone_target=tone_target,
+                           figure_sharpness=figure_sharpness, figure_crop_metadata=figure_crop_metadata)
             label = str(slot.get('label') or Path(slot['path']).stem)[:120]
             lines = _metadata_lines(slot, metadata_overlay)
             _, values, units, unit_gap = _metadata_layout(lines, _font(max(14, round(width * .032))))
@@ -665,14 +736,20 @@ def preview(recipe):
     return 'data:image/png;base64,' + base64.b64encode(render(recipe, preview=True)).decode('ascii')
 
 
-def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None):
-    aspect = float(aspect)
-    if aspect not in (1, 4 / 3, 16 / 9):
+def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=1000):
+    width = int(width)
+    if not 420 <= width <= 2000:
+        raise ValueError('Choose a panel preview width from 420 to 2000 pixels.')
+    aspect = _figure_aspect(recipe) if recipe else float(aspect)
+    if not recipe and aspect not in (1, 4 / 3, 16 / 9):
         raise ValueError('Choose square, 4:3 or 16:9 panels.')
-    tone_target = _tone_target(recipe.get('slots', []), aspect) if recipe and recipe.get('match_tone') else None
-    panel = _panel(slot, 1000, aspect, strict=False, tone_target=tone_target)
+    crop_metadata = recipe.get('crop_metadata', True) if recipe else True
+    tone_target = _tone_target(recipe.get('slots', []), aspect, crop_metadata) if recipe and recipe.get('match_tone') else None
+    panel = _panel(slot, width, aspect, strict=False, tone_target=tone_target,
+                   figure_sharpness=recipe.get('sharpness', 1) if recipe else 1,
+                   figure_crop_metadata=crop_metadata)
     lines = _metadata_lines(slot, metadata_overlay or [])
-    _, values, units, unit_gap = _metadata_layout(lines, _font(32))
+    _, values, units, unit_gap = _metadata_layout(lines, _font(max(14, round(width * .032))))
     reserved = math.ceil(values + units + unit_gap) + 2 * max(6, panel.width // 70) + 12 if lines else 0
     panel = _metadata_badge(_badge(panel, slot.get('label') or Path(slot['path']).stem,
                                    slot.get('label_colour'), reserved_right=reserved), lines)

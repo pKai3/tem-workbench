@@ -49,6 +49,9 @@ class FiguresTests(unittest.TestCase):
         panel = creator.panel_preview(recipe['slots'][0])
         with Image.open(BytesIO(base64.b64decode(panel.split(',', 1)[1]))) as image:
             self.assertEqual(image.size, (1000, 750))
+        detail = creator.panel_preview(recipe['slots'][0], width=1600)
+        with Image.open(BytesIO(base64.b64decode(detail.split(',', 1)[1]))) as image:
+            self.assertEqual(image.size, (1600, 1200))
         output = creator.export(recipe, [dict(id='sample',path=str(self.root),output=str(self.root/'project-output'))], self.root/'fallback')
         self.assertEqual(Path(output['png']).parent, (self.root/'project-output').resolve())
         self.assertTrue(Path(output['recipe']).is_file())
@@ -158,6 +161,12 @@ class FiguresTests(unittest.TestCase):
         self.assertIn('Detector BSE', text)
         self.assertEqual((scale, label), (1000, '1um'))
 
+    def test_verified_scale_reading_replaces_bad_footer_ocr_token(self):
+        raw = '1pm CMM UQ 21/06/2026\nx15,000 15.0kV WD 9.4mm'
+        self.assertEqual(creator._correct_footer_scale(raw, 1000),
+                         '1 µm CMM UQ 21/06/2026\nx15,000 15.0kV WD 9.4mm')
+        self.assertEqual(creator._correct_footer_scale('a lpm CMM UQ', 1000), '1 µm CMM UQ')
+
     def test_metadata_overlay_and_tone_matching_are_rendered_in_preview(self):
         first = self.root / 'bright.png'
         second = self.root / 'dim.png'
@@ -181,6 +190,36 @@ class FiguresTests(unittest.TestCase):
         adjusted = np.asarray(creator._panel(a, 420, 4 / 3, strict=False).convert('L'))
         default = np.asarray(creator._panel({**a, 'brightness': 1}, 420, 4 / 3, strict=False).convert('L'))
         self.assertGreater(float(adjusted.mean()), float(default.mean()))
+
+    def test_sharpness_override_and_equal_panel_spacing(self):
+        path = self.root / 'detail.png'
+        pattern = (np.indices((315, 420)).sum(axis=0) % 2 * 255).astype(np.uint8)
+        Image.fromarray(pattern).save(path)
+        slot = creator.inspect_image(path)
+        inherited = np.asarray(creator._panel(slot, 420, 4 / 3, strict=False, figure_sharpness=0))
+        overridden = np.asarray(creator._panel({**slot, 'sharpness': 3}, 420, 4 / 3,
+                                                strict=False, figure_sharpness=0))
+        self.assertGreater(float(overridden.std()), float(inherited.std()))
+        recipe = dict(columns=2, slots=[slot, slot], sharpness=1)
+        with Image.open(BytesIO(creator.render(recipe, preview=True))) as preview:
+            self.assertEqual(preview.size, (2 * 420 + 3 * 18, 315 + 2 * 18))
+            self.assertEqual(preview.getpixel((0, 150)), (255, 255, 255))
+            self.assertEqual(preview.getpixel((445, 150)), (255, 255, 255))
+
+    def test_automatic_shape_and_metadata_crop_override(self):
+        slot = creator.inspect_image(self.path)
+        recipe = dict(slots=[slot], columns=1, aspect='auto', crop_metadata=True)
+        self.assertAlmostEqual(creator._figure_aspect(recipe), 400 / 260)
+        recipe['crop_metadata'] = False
+        self.assertAlmostEqual(creator._figure_aspect(recipe), 400 / 300)
+        slot['crop_metadata'] = True
+        self.assertAlmostEqual(creator._figure_aspect(recipe), 400 / 260)
+        slot['scale_mode'] = 'keep'
+        with self.assertRaisesRegex(ValueError, 'outside the cropped field'):
+            creator._panel(slot, 400, 4 / 3, strict=True, figure_crop_metadata=False)
+        slot['crop_metadata'] = False
+        self.assertEqual(creator._panel(slot, 400, 4 / 3, strict=True,
+                                        figure_crop_metadata=True).size, (400, 300))
 
     def test_custom_folder_finds_images_recursively_and_keeps_folder_context(self):
         nested = self.root / 'sample A' / 'site 2'
