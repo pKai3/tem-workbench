@@ -2,7 +2,7 @@
 
 Last updated: 18 November 2026
 
-## Figures workspace — first version completed 18 November 2026
+## Figures workspace — first version completed 18 November 2026 (`97a3136`)
 
 The user approved a third **Figures** area beside TEM and AZtec for editable, re-exportable multi-image panels. It reuses the shared project selector/settings and also accepts a chosen local folder; images may be added across folders. Figure recipes and named layouts save through the existing disk workspace. A panel stores its source path and content hash, label/shade colour, crop zoom and centre, footer boundary, measured printed-bar width and confirmed physical scale. Rows and columns create the exact output layout, including empty placeholders; the preview image grid itself is the slot selector. Clicking an image or empty tile opens that slot's detailed controls, with no separate controls grid. Images can be replaced or swapped between slots; zoom and centre reset independently, and a side-by-side original view retains the microscope footer for checking the printed bar against the processed panel. Changed source files stop re-export until explicitly replaced. A rendered analysis PNG can retain provenance from an adjacent saved JSON with source metadata; numerical grid-result import/recomputation remains the separate open item below.
 
