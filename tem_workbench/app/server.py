@@ -52,6 +52,7 @@ from tem_workbench.storage.repeat_regions import RepeatRegions
 from tem_workbench.storage.preview_files import PreviewBatch, sidecar_path
 from tem_workbench.storage.workbench_project import Project
 from tem_workbench.aztec.browser import AztecBrowser
+from tem_workbench.figures import creator as figure_creator
 
 from tem_workbench.paths import APP_ROOT as ROOT, RESOURCES
 # Capture at import: updating files must not relabel an already running backend.
@@ -893,8 +894,8 @@ def make_handler(app):
                                'source_name_autosave': True, 'aztec_output_exports': True})
                 elif url.path == '/project-tools.js':
                     self.send((ROOT/'web/project-tools.js').read_bytes(), 'application/javascript')
-                elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec-export.js', '/aztec.css'):
-                    name = {'/eds': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec-export.js': 'aztec-export.js', '/aztec.css': 'aztec.css'}[url.path]
+                elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec-export.js', '/aztec.css', '/figures', '/figures.js', '/figures.css'):
+                    name = {'/eds': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec-export.js': 'aztec-export.js', '/aztec.css': 'aztec.css', '/figures': 'figures.html', '/figures.js': 'figures.js', '/figures.css': 'figures.css'}[url.path]
                     self.send((ROOT / 'web' / name).read_bytes(), mimetypes.guess_type(name)[0] or 'text/plain')
                 elif url.path == '/api/config':
                     LOG.info('Viewer connected: version=%s', APP_VERSION)
@@ -939,6 +940,8 @@ def make_handler(app):
                     self.send(preview, 'image/png')
                 elif url.path == '/api/file-preview':
                     self.send(app.file_preview(query['id'][0]), 'image/png')
+                elif url.path == '/api/figures/thumbnail':
+                    self.send(figure_creator.thumbnail(query['path'][0]), 'image/png')
                 elif url.path == '/api/batch':
                     self.send(app.batch.status())
                 elif url.path == '/api/pca':
@@ -1011,6 +1014,18 @@ def make_handler(app):
                 elif self.path == '/api/aztec/browse':
                     self.send(app.aztec.browse(body.get('path'), app.root, app.engine.sources, body.get('project'),
                                               outputs=folder_paths.output_folders(app.engine.sources, app.config['output_root'])))
+                elif self.path == '/api/figures/list':
+                    self.send(figure_creator.list_images(body['folder']))
+                elif self.path == '/api/figures/inspect':
+                    self.send(figure_creator.inspect_image(body['path']))
+                elif self.path == '/api/figures/original':
+                    self.send({'image': figure_creator.original_preview(body['path'])})
+                elif self.path == '/api/figures/render':
+                    self.send({'image': figure_creator.preview(body['recipe'])})
+                elif self.path == '/api/figures/panel':
+                    self.send({'image': figure_creator.panel_preview(body['slot'], body.get('aspect', 4 / 3))})
+                elif self.path == '/api/figures/export':
+                    self.send(figure_creator.export(body['recipe'], app.engine.sources, app.config['output_root']))
                 elif self.path == '/api/aztec/files':
                     self.send(app.aztec.files(app.engine.sources, body.get('project'),
                                              outputs=folder_paths.output_folders(app.engine.sources, app.config['output_root'])))
