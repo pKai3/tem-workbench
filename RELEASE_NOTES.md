@@ -1,4 +1,4 @@
-# TEM Workbench next release
+# TEM Workbench 1.0.38
 
 - Add Figures, a third workspace for reusable multi-image panels. Browse project or custom-folder images, arrange and replace panels, inspect original metadata bars, calibrate replacement scale bars, adjust tone and sharpness, and reopen saved figure recipes.
 - Read available SEM footer and matching TXT metadata for figure labels and filters. Preprocess folders with a chosen OCR worker count; verify extracted values and printed scale bars against the source image.
