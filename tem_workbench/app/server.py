@@ -951,6 +951,8 @@ def make_handler(app):
                     self.send(app.file_preview(query['id'][0]), 'image/png')
                 elif url.path == '/api/figures/thumbnail':
                     self.send(figure_creator.thumbnail(query['path'][0]), 'image/png')
+                elif url.path == '/api/figures/footer':
+                    self.send(figure_creator.footer_preview(query['path'][0], query['row'][0]), 'image/png')
                 elif url.path == '/api/batch':
                     self.send(app.batch.status())
                 elif url.path == '/api/pca':

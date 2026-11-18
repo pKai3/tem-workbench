@@ -18,7 +18,7 @@ class FigureMetadataIndex:
             saved = json.loads(self.path.read_text(encoding='utf-8')) if self.path.is_file() else {}
         except (OSError, ValueError):
             saved = {}
-        self.records = saved.get('records', {}) if isinstance(saved, dict) and saved.get('schema_version') in (1, 2) else {}
+        self.records = saved.get('records', {}) if isinstance(saved, dict) and saved.get('schema_version') in (1, 2, 3) else {}
         if not isinstance(self.records, dict):
             self.records = {}
         for record in self.records.values():
@@ -39,7 +39,7 @@ class FigureMetadataIndex:
 
     def _save(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_json(self.path, dict(schema_version=2, records=self.records))
+        atomic_json(self.path, dict(schema_version=3, records=self.records))
 
     def status(self, folder=None):
         with self.lock:
@@ -48,6 +48,7 @@ class FigureMetadataIndex:
                 root = Path(folder).expanduser().resolve()
                 job['records'] = {path: {key: value for key, value in record.items()
                                          if key in ('sha256', 'metadata', 'metadata_sidecar', 'footer_ocr_text',
+                                                    'scale_ocr_text',
                                                     'content_height', 'scale_nm', 'error')}
                                   for path, record in self.records.items()
                                   if Path(path).is_relative_to(root)}
@@ -87,7 +88,8 @@ class FigureMetadataIndex:
                     fingerprint = self._fingerprint(path)
                     with self.lock:
                         cached = self.records.get(path)
-                    if cached and cached.get('fingerprint') == fingerprint and not cached.get('error'):
+                    if cached and cached.get('fingerprint') == fingerprint and not cached.get('error') \
+                            and cached.get('inspection_version') == 5:
                         with self.lock:
                             self.job['reused'] += 1
                     else:
@@ -95,6 +97,7 @@ class FigureMetadataIndex:
                         record = dict(path=path, name=item['name'], sha256=inspected['sha256'],
                                       metadata=inspected['metadata'], metadata_sidecar=inspected['metadata_sidecar'],
                                       footer_ocr_text=inspected['footer_ocr_text'],
+                                      scale_ocr_text=inspected['scale_ocr_text'], inspection_version=5,
                                       content_height=inspected['content_height'], scale_nm=inspected['scale_nm'],
                                       fingerprint=fingerprint)
                         with self.lock:

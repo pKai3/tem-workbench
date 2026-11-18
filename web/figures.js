@@ -83,24 +83,45 @@
     const input=document.createElement('input');input.type='number';input.min='0.000001';input.step='any';input.value=entry?.value??'';
     input.placeholder='Unavailable';input.title=entry?.source||'Not found in the source image';
     input.onchange=()=>{slot.metadata??={};slot.metadata[key]={value:Number(input.value)>0?Number(input.value):null,
-     unit:entry?.unit||unit,source:'Manual',kind:entry?.kind||(key==='probe'?'number':undefined)};slot.inspection_version=4;source.textContent='Manual';changed()};
+     unit:entry?.unit||unit,source:'Manual',kind:entry?.kind||(key==='probe'?'number':undefined)};slot.inspection_version=5;source.textContent='Manual';changed()};
     const source=document.createElement('small');source.textContent=entry?.reported?`${entry.source} reported ${entry.reported}`:entry?.source||'Not found';
     field.append(input,source);metadata.append(field);
    }
    const dateEntry=slot.metadata?.acquisition_date,dateField=document.createElement('label');dateField.textContent='Acquired';
    const dateInput=document.createElement('input');dateInput.type='date';dateInput.value=dateEntry?.value||'';
    dateInput.onchange=()=>{slot.metadata??={};slot.metadata.acquisition_date={value:dateInput.value||null,source:'Manual'};
-    slot.inspection_version=4;dateSource.textContent='Manual';changed()};
+    slot.inspection_version=5;dateSource.textContent='Manual';changed()};
    const dateSource=document.createElement('small');dateSource.textContent=dateEntry?.source||'Not found in footer, TXT or TIFF';
    dateField.append(dateInput,dateSource);metadata.append(dateField);
+   const footer=document.createElement('section');footer.className='fig-footer-evidence';
+   const footerHead=document.createElement('div');footerHead.className='fig-footer-head';
+   const footerTitle=document.createElement('strong');footerTitle.textContent='Trimmed metadata bar';
+   const fullSize=document.createElement('button');fullSize.type='button';fullSize.textContent='Full size';
+   fullSize.setAttribute('aria-pressed','false');fullSize.onclick=()=>{
+    const expanded=footer.classList.toggle('expanded');fullSize.textContent=expanded?'Fit width':'Full size';
+    fullSize.setAttribute('aria-pressed',String(expanded));
+   };
+   footerHead.append(footerTitle,fullSize);
+   const footerFrame=document.createElement('div');footerFrame.className='fig-footer-frame';
+   const footerImage=document.createElement('img');footerImage.alt=`Trimmed source metadata bar for ${slot.name||slot.label||'this image'}`;
+   const footerNote=document.createElement('span');footerNote.className='hint';footerNote.textContent='No rows are trimmed at this crop boundary.';
+   footerImage.onerror=()=>{footerImage.hidden=true;footerNote.hidden=false;footerNote.textContent='Metadata bar preview unavailable.'};
+   footerFrame.append(footerImage,footerNote);
+   const updateFooter=()=>{
+    const row=Number(slot.content_height??slot.height),trimmed=Number.isFinite(row)&&row>=1&&row<Number(slot.height);
+    footerImage.hidden=!trimmed;footerNote.hidden=trimmed;fullSize.hidden=!trimmed;
+    if(trimmed)footerImage.src=`/api/figures/footer?path=${encodeURIComponent(slot.path)}&row=${row}`;
+    else footerImage.removeAttribute('src');
+   };
+   const ocrLabel=document.createElement('strong');ocrLabel.textContent='Footer OCR text';
+   const ocrText=document.createElement('pre');ocrText.textContent=(slot.footer_ocr_text||'No footer text extracted.')+
+    (slot.scale_ocr_text?`\nScale label OCR: ${slot.scale_ocr_text}`:'');
+   footer.append(footerHead,footerFrame,ocrLabel,ocrText);metadata.append(footer);updateFooter();
    card.append(metadata);
    const sidecarNote=document.createElement('p');sidecarNote.className='hint fig-sidecar-note';
    sidecarNote.textContent=slot.metadata_sidecar?`TXT sidecar: ${slot.metadata_sidecar.path.split(/[\\/]/).at(-1)}${slot.metadata_sidecar.checks?.acquired_at?` · acquired ${slot.metadata_sidecar.checks.acquired_at.replace('T',' ')}`:''}`:'No matching TXT sidecar';
    sidecarNote.title=slot.metadata_sidecar?.path||'Only an exact same-name TXT in this folder is matched.';card.append(sidecarNote);
    for(const warning of slot.metadata_sidecar?.warnings||[]){const note=document.createElement('p');note.className='fig-meta-warning';note.textContent=warning;card.append(note)}
-   if(slot.footer_ocr_text){const details=document.createElement('details');details.className='fig-ocr-text';
-    const summary=document.createElement('summary');summary.textContent='Footer OCR text';const pre=document.createElement('pre');pre.textContent=slot.footer_ocr_text;
-    details.append(summary,pre);card.append(details)}
    const viewActions=document.createElement('div');viewActions.className='fig-view-actions';
    const compare=document.createElement('button');compare.type='button';compare.textContent='Compare original';compare.onclick=()=>showOriginal(slot);
    const resetZoom=document.createElement('button');resetZoom.type='button';resetZoom.textContent='Reset zoom';resetZoom.onclick=()=>{slot.zoom=1;changed(true)};
@@ -124,15 +145,16 @@
    inputField(fields,'Zoom ×','number',slot.zoom||1,value=>{slot.zoom=Number(value);changed()}, {min:'1',max:'20',step:'0.1'});
    inputField(fields,'Brightness ×','number',slot.brightness??1,value=>{slot.brightness=Number(value);changed()}, {min:'0.25',max:'3',step:'0.05'});
    inputField(fields,'Contrast ×','number',slot.contrast??1,value=>{slot.contrast=Number(value);changed()}, {min:'0.25',max:'3',step:'0.05'});
-   const rowInput=inputField(fields,'Keep rows through','number',slot.content_height,value=>{slot.content_height=Number(value);cropSlider.value=value;changed()}, {min:'1',max:String(slot.height),step:'1'});
-   const cropSlider=inputField(fields,'Bottom crop','range',slot.content_height,value=>{slot.content_height=Number(value);rowInput.value=value;changed()}, {min:'1',max:String(slot.height),step:'1'});
+   const rowInput=inputField(fields,'Keep rows through','number',slot.content_height,value=>{slot.content_height=Number(value);cropSlider.value=value;updateFooter();changed()}, {min:'1',max:String(slot.height),step:'1'});
+   const cropSlider=inputField(fields,'Bottom crop','range',slot.content_height,value=>{slot.content_height=Number(value);rowInput.value=value;updateFooter();changed()}, {min:'1',max:String(slot.height),step:'1'});
    const detect=document.createElement('button');detect.type='button';detect.textContent='Re-read image';detect.title='Recheck the footer crop, scale bar and acquisition text in this source image.';
    detect.onclick=async()=>{try{status('Checking image footer…');const info=await api('figures/inspect',{path:slot.path});
     if(info.sha256!==slot.sha256)throw new Error('The source image changed. Replace this panel to use the new file.');
     slot.content_height=info.content_height;slot.footer_detected=info.footer_detected;slot.bar=info.bar;slot.bar_px=info.bar_px;
     const oldScaleSource=slot.scale_source;slot.sidecar_bar_px=info.sidecar_bar_px;slot.scale_source=info.scale_source;
     if(!slot.scale_nm||/sidecar/i.test(oldScaleSource||''))slot.scale_nm=info.scale_nm;
-    slot.metadata=info.metadata;slot.metadata_sidecar=info.metadata_sidecar;slot.footer_ocr_text=info.footer_ocr_text;slot.ocr_available=info.ocr_available;slot.inspection_version=info.inspection_version;
+    slot.metadata=info.metadata;slot.metadata_sidecar=info.metadata_sidecar;slot.footer_ocr_text=info.footer_ocr_text;
+    slot.scale_ocr_text=info.scale_ocr_text;slot.ocr_available=info.ocr_available;slot.inspection_version=info.inspection_version;
     if(info.bar&&info.footer_detected)slot.scale_mode='replace';changed(true);
     status(info.footer_detected?`Footer found at row ${info.content_height}.`:'No footer found. Set the crop row manually if needed.');
    }catch(error){status(error.message,true)}};
@@ -344,7 +366,7 @@
  }
  function loadRecipe(next){recipe=normaliseRecipe(next);selectedPanel=0;renderCards();draft();schedulePreview();refreshLegacySlots()}
  async function refreshLegacySlots(){
-  const current=recipe,pending=current.slots.filter(slot=>slot.path&&Number(slot.inspection_version||0)<4);
+  const current=recipe,pending=current.slots.filter(slot=>slot.path&&Number(slot.inspection_version||0)<5);
   if(!pending.length)return;
   status(`Reading footer metadata for ${pending.length} images…`);
   let updated=false;
@@ -352,17 +374,17 @@
    try{
     const info=await api('figures/inspect',{path:slot.path});
     if(recipe!==current)return;
-    if(!current.slots.includes(slot)||Number(slot.inspection_version||0)>=4)continue;
+    if(!current.slots.includes(slot)||Number(slot.inspection_version||0)>=5)continue;
     if(info.sha256!==slot.sha256)continue;
     slot.metadata=info.metadata;slot.metadata_sidecar=info.metadata_sidecar;
-    slot.footer_ocr_text=info.footer_ocr_text;slot.ocr_available=info.ocr_available;
+    slot.footer_ocr_text=info.footer_ocr_text;slot.scale_ocr_text=info.scale_ocr_text;slot.ocr_available=info.ocr_available;
     if(!slot.footer_detected&&slot.content_height===slot.height&&info.footer_detected){
      slot.content_height=info.content_height;slot.footer_detected=true;slot.bar=info.bar;slot.bar_px=info.bar_px;
      slot.scale_nm=info.scale_nm;slot.scale_source=info.scale_source;slot.scale_mode=info.scale_mode;
     }else if(/sidecar/i.test(slot.scale_source||'')){
      slot.scale_nm=info.scale_nm;slot.scale_source=info.scale_source;
     }
-    slot.inspection_version=4;updated=true;
+    slot.inspection_version=5;updated=true;
    }catch(error){status(error.message,true)}
   }
   if(updated&&recipe===current)changed(true);

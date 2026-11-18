@@ -237,11 +237,21 @@ def _ocr_image(image, *, psm=6, whitelist=None):
 
 def _footer_ocr(image, footer, bar):
     if footer >= image.height or not _tesseract_path():
-        return '', None
+        return '', None, ''
     band = image.crop((0, footer, image.width, image.height))
-    text = _ocr_image(band.resize((band.width * 2, band.height * 2)), psm=6)
+    enlarged = band.resize((band.width * 2, band.height * 2))
+    text = _ocr_image(enlarged, psm=11) or _ocr_image(enlarged, psm=6)
     if not bar:
-        return text, None
+        return text, None, ''
+
+    # A standalone physical-length line can be the scale label; WD remains excluded.
+    standalone = ''
+    for line in text.splitlines():
+        candidate = re.sub(r'^[Il|](?=\s*[uµμ]m\b)', '1', line.strip())
+        if re.fullmatch(r'\d+(?:\.\d+)?\s*(?:nm|[uµμ]m|mm)', candidate, re.I):
+            standalone = line.strip()
+            break
+    standalone_scale = _printed_scale(re.sub(r'^[Il|](?=\s*[uµμ]m\b)', '1', standalone)) if standalone else None
 
     # The short scale label sits on the upper footer row, often well right of the bar.
     gray = np.asarray(image.convert('L'))
@@ -259,7 +269,7 @@ def _footer_ocr(image, footer, bar):
             glyphs.append((left + xs.start, left + xs.stop, top + ys.start, top + ys.stop))
     glyphs.sort()
     if not glyphs:
-        return text, None
+        return text, standalone_scale, standalone
     group = [glyphs[0]]
     for glyph in glyphs[1:]:
         if glyph[0] - group[-1][1] > max(24, round(image.width * .012)):
@@ -273,11 +283,12 @@ def _footer_ocr(image, footer, bar):
     focused = focused.resize((focused.width * 4, focused.height * 4))
     label = _ocr_image(focused, psm=7, whitelist='0123456789.umµμ')
     scale_nm = _printed_scale(label)
+    scale_text = label
     if scale_nm is None:
         plain = _ocr_image(focused, psm=7)
-        plain = re.sub(r'^[Il|](?=\s*[uµμ]m\b)', '1', plain.strip())
-        scale_nm = _printed_scale(plain)
-    return text, scale_nm
+        scale_text = plain or label
+        scale_nm = _printed_scale(re.sub(r'^[Il|](?=\s*[uµμ]m\b)', '1', plain.strip()))
+    return text, scale_nm or standalone_scale, scale_text if scale_nm else standalone or scale_text
 
 
 def _footer_and_bar(image):
@@ -316,7 +327,7 @@ def inspect_image(path):
         width, height = image.size
         footer, bar = _footer_and_bar(image)
         description = raw.tag_v2.get(270) if hasattr(raw, 'tag_v2') else raw.info.get('description')
-        footer_text, scale_nm = _footer_ocr(image, footer, bar)
+        footer_text, scale_nm, scale_text = _footer_ocr(image, footer, bar)
         scale_source = 'Footer OCR; verify against original' if scale_nm else None
         sidecar_bar_px = None
         sidecar = source.with_suffix('.txt')
@@ -348,8 +359,8 @@ def inspect_image(path):
                     scale_source=scale_source, sidecar_bar_px=sidecar_bar_px, analysis=analysis,
                     metadata=_acquisition_metadata(source, sidecar_text, description, footer_text),
                     metadata_sidecar=metadata_sidecar,
-                    footer_ocr_text=footer_text, ocr_available=bool(_tesseract_path()),
-                    inspection_version=4,
+                    footer_ocr_text=footer_text, scale_ocr_text=scale_text,
+                    ocr_available=bool(_tesseract_path()), inspection_version=5,
                     scale_mode='replace' if footer < height and bar else 'keep')
 
 
@@ -363,6 +374,23 @@ def original_preview(path):
     stream = BytesIO()
     image.save(stream, format='PNG')
     return 'data:image/png;base64,' + base64.b64encode(stream.getvalue()).decode('ascii')
+
+
+def footer_preview(path, content_height):
+    """Return the rows removed from a panel so the source footer can be inspected."""
+    source = _source(path)
+    with Image.open(source) as raw:
+        if raw.width * raw.height > MAX_SOURCE_PIXELS:
+            raise ValueError('This image is too large for the figure editor.')
+        image = ImageOps.exif_transpose(raw)
+        row = int(content_height)
+        if not 1 <= row < image.height:
+            raise ValueError('No footer rows are trimmed at this crop boundary.')
+        footer = image.crop((0, row, image.width, image.height)).convert('RGB')
+    footer.thumbnail((2400, 1000), Image.Resampling.LANCZOS)
+    stream = BytesIO()
+    footer.save(stream, format='PNG')
+    return stream.getvalue()
 
 
 def _font(size):
@@ -434,6 +462,19 @@ def _metadata_lines(slot, selected):
     return lines
 
 
+def _metadata_layout(lines, font):
+    """Right-align values against a shared unit column."""
+    measure = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+    parts = []
+    for line in lines:
+        match = re.fullmatch(r'(.*?\d(?:[.,]\d+)*)(×|[A-Za-zµμ]+)', line)
+        parts.append((match[1], match[2]) if match else (line, ''))
+    value_width = max((measure.textlength(value, font=font) for value, _ in parts), default=0)
+    unit_width = max((measure.textlength(unit, font=font) for _, unit in parts), default=0)
+    gap = max(3, round(font.size * .18)) if unit_width else 0
+    return parts, value_width, unit_width, gap
+
+
 def _metadata_badge(panel, lines):
     if not lines:
         return panel
@@ -441,15 +482,19 @@ def _metadata_badge(panel, lines):
     font = _font(max(14, round(width * .032)))
     padding = max(6, width // 70)
     line_height = max(20, round(width * .044))
-    measure = ImageDraw.Draw(panel)
-    box_width = max(measure.textbbox((0, 0), line, font=font)[2] for line in lines) + 2 * padding
+    parts, value_width, unit_width, gap = _metadata_layout(lines, font)
+    box_width = math.ceil(value_width + gap + unit_width) + 2 * padding
     x, y = width - box_width - max(6, width // 80), max(6, width // 80)
     overlay = Image.new('RGBA', panel.size)
     draw = ImageDraw.Draw(overlay)
     draw.rounded_rectangle((x, y, x + box_width, y + len(lines) * line_height + padding),
                            radius=max(4, width // 160), fill=(5, 10, 16, 200))
-    for index, line in enumerate(lines):
-        draw.text((x + padding, y + padding // 2 + index * line_height), line, font=font, fill='white')
+    boundary = x + padding + value_width
+    for index, (value, unit) in enumerate(parts):
+        baseline = y + padding // 2 + index * line_height
+        draw.text((boundary - draw.textlength(value, font=font), baseline), value, font=font, fill='white')
+        if unit:
+            draw.text((boundary + gap, baseline), unit, font=font, fill='white')
     return Image.alpha_composite(panel.convert('RGBA'), overlay).convert('RGB')
 
 
@@ -607,8 +652,8 @@ def render(recipe, preview=False):
             panel = _panel(slot, width, aspect, strict=not preview, tone_target=tone_target)
             label = str(slot.get('label') or Path(slot['path']).stem)[:120]
             lines = _metadata_lines(slot, metadata_overlay)
-            reserved = max((ImageDraw.Draw(panel).textbbox((0, 0), line,
-                        font=_font(max(14, round(width * .032))))[2] for line in lines), default=0) + (24 if lines else 0)
+            _, values, units, unit_gap = _metadata_layout(lines, _font(max(14, round(width * .032))))
+            reserved = math.ceil(values + units + unit_gap) + 2 * max(6, width // 70) + 12 if lines else 0
             panel = _badge(panel, label, slot.get('label_colour'), reserved_right=reserved)
             figure.paste(_metadata_badge(panel, lines), (x, y))
     stream = BytesIO()
@@ -627,8 +672,8 @@ def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None):
     tone_target = _tone_target(recipe.get('slots', []), aspect) if recipe and recipe.get('match_tone') else None
     panel = _panel(slot, 1000, aspect, strict=False, tone_target=tone_target)
     lines = _metadata_lines(slot, metadata_overlay or [])
-    reserved = max((ImageDraw.Draw(panel).textbbox((0, 0), line, font=_font(32))[2]
-                    for line in lines), default=0) + (24 if lines else 0)
+    _, values, units, unit_gap = _metadata_layout(lines, _font(32))
+    reserved = math.ceil(values + units + unit_gap) + 2 * max(6, panel.width // 70) + 12 if lines else 0
     panel = _metadata_badge(_badge(panel, slot.get('label') or Path(slot['path']).stem,
                                    slot.get('label_colour'), reserved_right=reserved), lines)
     stream = BytesIO()

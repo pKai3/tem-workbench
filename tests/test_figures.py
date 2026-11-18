@@ -101,6 +101,13 @@ class FiguresTests(unittest.TestCase):
             self.assertEqual(preview.size, (100, 75))
             self.assertLess(preview.convert('L').getpixel((2, 70)), 35)
 
+    def test_footer_preview_shows_only_rows_trimmed_from_the_panel(self):
+        with Image.open(BytesIO(creator.footer_preview(self.path, 260))) as preview:
+            self.assertEqual(preview.size, (400, 40))
+            self.assertEqual(preview.convert('L').getpixel((220, 8)), 255)
+        with self.assertRaisesRegex(ValueError, 'No footer rows'):
+            creator.footer_preview(self.path, 300)
+
     def test_footer_text_is_metadata_source_and_txt_only_supplies_probe_current(self):
         text = '$CM_MAG 8000\n$CM_ACCEL_VOLT 5.00\n$$SM_WD 10.25\n$$SM_PROBE_NO 16\n$$SM_PROBE_CURRENT 0.00\n'
         metadata = creator._acquisition_metadata(self.path, text, '',
@@ -138,8 +145,18 @@ class FiguresTests(unittest.TestCase):
     def test_working_distance_text_cannot_be_read_as_scale_bar(self):
         with Image.open(self.path) as image, patch.object(creator, '_tesseract_path', return_value='fake'), \
              patch.object(creator, '_ocr_image', return_value='x15,000 15.0kV WD 9.4mm'):
-            _, scale = creator._footer_ocr(image, 260, {'x': 210, 'y': 266, 'w': 40, 'h': 8})
+            _, scale, _ = creator._footer_ocr(image, 260, {'x': 210, 'y': 266, 'w': 40, 'h': 8})
         self.assertIsNone(scale)
+
+    def test_sparse_footer_ocr_keeps_the_scale_label_and_other_text(self):
+        def sparse(image, *, psm=6, whitelist=None):
+            return '1um\nWD 9.4mm\nDetector BSE' if psm == 11 else ''
+        with Image.open(self.path) as image, patch.object(creator, '_tesseract_path', return_value='fake'), \
+             patch.object(creator, '_ocr_image', side_effect=sparse):
+            text, scale, label = creator._footer_ocr(image, 260,
+                                                      {'x': 210, 'y': 266, 'w': 40, 'h': 8})
+        self.assertIn('Detector BSE', text)
+        self.assertEqual((scale, label), (1000, '1um'))
 
     def test_metadata_overlay_and_tone_matching_are_rendered_in_preview(self):
         first = self.root / 'bright.png'
