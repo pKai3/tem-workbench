@@ -7,6 +7,6 @@
 - Refine diffraction grid sampling and progress: fill only uncovered image-rim gaps, show every PCA/NMF FFT sample as it completes, and identify acquisitions by folder as well as number when counters repeat.
 - Add white and transparent AZtec plot backgrounds and colourable export labels. Visual image browsers retain acquisition numbers, show image-type badges, and offer snapped preview sizes.
 
-Figure PNGs are edited 8-bit RGB renderings; standalone label tags retain transparency. PNG size estimates are approximate because compression depends on image detail. Confirm OCR fields and scale-bar calibration before using a figure for publication.
+Figure PNGs are edited 8-bit RGB renderings; standalone label tags retain transparency. Smaller PNG sizes are measured directly; larger sizes are estimated from native-detail samples and can vary with image content. Confirm OCR fields and scale-bar calibration before using a figure for publication.
 
 Use **Check for updates → Install update and restart**.

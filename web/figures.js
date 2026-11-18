@@ -35,7 +35,7 @@
  let outputHover,hoveredPanel=-1,hoveredSource='',hoverEnabled=true,hoverPoint=null;
  let detailCache=new Map(),detailPending=new Map(),dragState=null,dropTarget,panelHighlight,suppressOutputClick=false;
  let panelPreviewTimer=0,panelPreviewRevision=0;
- let previewBytes=0;
+ let estimateTimer=0,estimateVersion=0,estimatedBytes=null,estimateExact=false,estimateError='';
  let tagRows=[];
  async function api(path,body){
   const response=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)});
@@ -74,11 +74,19 @@
   if(!geometry){label.dataset.error='false';label.textContent='Choose images to estimate size.';return}
   const dimensions=`${geometry.width.toLocaleString()} × ${geometry.height.toLocaleString()} px`;
   if(geometry.pixels>120_000_000){label.textContent=`${dimensions} · exceeds 120 MP limit`;label.dataset.error='true';return}
-  label.dataset.error='false';
-  const image=$('fig-preview');
-  const bytes=previewBytes&&image.complete&&image.naturalWidth&&image.naturalHeight
-   ?previewBytes*geometry.pixels/(image.naturalWidth*image.naturalHeight):0;
-  label.textContent=dimensions+(bytes?` · ≈${fileSize(bytes)} PNG`:' · estimating PNG size…');
+  label.dataset.error=String(Boolean(estimateError));
+  label.textContent=dimensions+(estimateError?` · ${estimateError}`:
+   estimatedBytes!=null?` · ${estimateExact?'':'≈'}${fileSize(estimatedBytes)} PNG`:' · estimating PNG size…');
+ }
+ function scheduleEstimate(){
+  clearTimeout(estimateTimer);const revision=++estimateVersion;
+  estimatedBytes=null;estimateExact=false;estimateError='';updateExportEstimate();
+  if(!recipe.slots.some(slot=>slot.path))return;
+  estimateTimer=setTimeout(async()=>{
+   try{const result=await api('figures/estimate',{recipe});if(revision!==estimateVersion)return;
+    estimatedBytes=result.estimated_size_bytes;estimateExact=Boolean(result.exact);updateExportEstimate()}
+   catch(error){if(revision!==estimateVersion)return;estimateError=error.message;updateExportEstimate()}
+  },450);
  }
  function chooseSaved(){
   const select=$('fig-saved');select.replaceChildren(new Option('New figure',''));
@@ -519,14 +527,11 @@
   clearTimeout(timer);const revision=++renderVersion;detailCache.clear();hideOutputHover();updateExportEstimate();
   timer=setTimeout(async()=>{
    try{const value=await api('figures/render',{recipe});if(revision!==renderVersion)return;
-    const encoded=value.image.split(',',2)[1]||'';
-    previewBytes=Math.floor(encoded.length*3/4)-(encoded.endsWith('==')?2:encoded.endsWith('=')?1:0);
-    const image=$('fig-preview');image.onload=()=>{if(revision===renderVersion)updateExportEstimate()};
-    image.src=value.image;image.hidden=false;status('Preview updated.');}
-   catch(error){if(revision!==renderVersion)return;previewBytes=0;$('fig-preview').hidden=true;updateExportEstimate();status(error.message,true)}
+    const image=$('fig-preview');image.src=value.image;image.hidden=false;status('Preview updated.');}
+   catch(error){if(revision!==renderVersion)return;$('fig-preview').hidden=true;status(error.message,true)}
   },160);
  }
- function changed(cards=false){draft();if(cards)renderCards();else sync();schedulePreview();schedulePanelPreview()}
+ function changed(cards=false){draft();if(cards)renderCards();else sync();schedulePreview();scheduleEstimate();schedulePanelPreview()}
  function populateProjects(){
   const select=$('fig-project'),remembered=WorkbenchWorkspace.readRaw('tem-figures-project');
   const previous=select.dataset.populated==='true'?select.value:remembered!==null?remembered:WorkbenchWorkspace.get('active_project','');
@@ -706,7 +711,7 @@
    changed(true);return true;
   }catch(error){status(error.message,true);return false}
  }
- function loadRecipe(next){recipe=normaliseRecipe(next);selectedPanel=0;renderCards();draft();schedulePreview();refreshLegacySlots()}
+ function loadRecipe(next){recipe=normaliseRecipe(next);selectedPanel=0;renderCards();draft();schedulePreview();scheduleEstimate();refreshLegacySlots()}
  async function refreshLegacySlots(){
   const current=recipe,pending=current.slots.filter(slot=>slot.path&&Number(slot.inspection_version||0)<7);
   if(!pending.length)return;
@@ -767,7 +772,7 @@
    recipe=normaliseRecipe(parse(WorkbenchWorkspace.readRaw('tem-figures-draft-v1'),blank()));
    $('fig-folder').value=WorkbenchWorkspace.readRaw('tem-figures-folder')||config.sources?.[0]?.path||config.data_root||'';
    populateProjects();projectSettings.render();
-   chooseSaved();renderCards();schedulePreview();
+   chooseSaved();renderCards();schedulePreview();scheduleEstimate();
    $('fig-browse').onclick=()=>folderBrowser.open({path:$('fig-folder').value,title:'Choose image folder',onSelect:path=>{$('fig-folder').value=path;scan()}});$('fig-scan').onclick=scan;
    $('fig-project').onchange=()=>{const value=$('fig-project').value;WorkbenchWorkspace.writeRaw('tem-figures-project',value);if(value)WorkbenchWorkspace.set('active_project',value);$('fig-folder-controls').hidden=Boolean(value);scan()};
    $('fig-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('fig-project-dialog'));

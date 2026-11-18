@@ -1040,6 +1040,8 @@ def make_handler(app):
                     self.send({'image': figure_creator.original_preview(body['path'])})
                 elif self.path == '/api/figures/render':
                     self.send({'image': figure_creator.preview(body['recipe'])})
+                elif self.path == '/api/figures/estimate':
+                    self.send(figure_creator.estimate_png_size(body['recipe']))
                 elif self.path == '/api/figures/panel':
                     self.send({'image': figure_creator.panel_preview(body['slot'], body.get('aspect', 4 / 3),
                                                                      body.get('metadata_overlay'), body.get('recipe'),

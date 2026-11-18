@@ -25,6 +25,7 @@ EXTENSIONS = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'}
 MAX_PANELS = 24
 MAX_SOURCE_PIXELS = 150_000_000
 MAX_FIGURE_PIXELS = 120_000_000
+MAX_EXACT_ESTIMATE_PIXELS = 8_000_000
 
 
 def _source(path):
@@ -641,6 +642,92 @@ def _export_panel_width(slots, aspect, figure_crop_metadata):
     return width
 
 
+@lru_cache(maxsize=256)
+def _sampled_png_bytes_per_pixel(path, digest, content_height, crop_metadata, aspect,
+                                 zoom, center_x, center_y, panel_width):
+    """Measure representative final-size texture without encoding the whole figure."""
+    source = _source(path)
+    with Image.open(source) as raw:
+        if raw.width * raw.height > MAX_SOURCE_PIXELS:
+            raise ValueError('This image is too large for the figure editor.')
+        image = ImageOps.exif_transpose(raw).convert('RGB')
+    if not 1 <= content_height <= image.height:
+        raise ValueError('Invalid saved image-field boundary. Replace this panel.')
+    image = image.crop((0, 0, image.width, content_height if crop_metadata else image.height))
+    if not (1 <= zoom <= 20 and 0 <= center_x <= 1 and 0 <= center_y <= 1):
+        raise ValueError('Panel zoom and centre must be within the image.')
+    crop_width = min(image.width, image.height * aspect) / zoom
+    crop_height = crop_width / aspect
+    left = min(max(center_x * image.width - crop_width / 2, 0), image.width - crop_width)
+    top = min(max(center_y * image.height - crop_height / 2, 0), image.height - crop_height)
+    image = image.crop((round(left), round(top), round(left + crop_width), round(top + crop_height)))
+    scale = panel_width / image.width
+    sample_width = min(image.width, image.height, max(1, round(256 / scale)))
+    target_width = max(1, round(sample_width * scale))
+    total_bytes = 0
+    total_pixels = 0
+    for fx in (.2, .5, .8):
+        for fy in (.2, .5, .8):
+            x = round((image.width - sample_width) * fx)
+            y = round((image.height - sample_width) * fy)
+            patch = image.crop((x, y, x + sample_width, y + sample_width))
+            if patch.width != target_width:
+                patch = patch.resize((target_width, target_width), Image.Resampling.LANCZOS)
+            stream = BytesIO()
+            patch.save(stream, format='PNG')
+            total_bytes += stream.tell()
+            total_pixels += target_width * target_width
+    return total_bytes / total_pixels
+
+
+def estimate_png_size(recipe):
+    """Measure small outputs exactly; sample native-detail PNG patches for large ones."""
+    if not isinstance(recipe, dict) or not isinstance(recipe.get('slots'), list):
+        raise ValueError('Expected a saved figure recipe.')
+    slots = recipe['slots']
+    if not 1 <= len(slots) <= MAX_PANELS:
+        raise ValueError(f'Choose 1–{MAX_PANELS} image panels.')
+    columns = int(recipe.get('columns', 2))
+    if columns not in (1, 2, 3, 4):
+        raise ValueError('Choose 1–4 columns.')
+    crop_metadata = recipe.get('crop_metadata', True)
+    if not isinstance(crop_metadata, bool):
+        raise ValueError('Choose whether to crop metadata bars.')
+    padding = int(recipe.get('image_padding', 36))
+    if not 0 <= padding <= 200:
+        raise ValueError('Image padding must be between 0 and 200 pixels.')
+    percent = recipe.get('export_scale_percent', 100)
+    if isinstance(percent, bool) or not isinstance(percent, (int, float)) or not math.isfinite(percent) or not 25 <= percent <= 100:
+        raise ValueError('Export size must be between 25% and 100%.')
+    aspect = _figure_aspect(recipe)
+    panel_width = math.ceil(_export_panel_width(slots, aspect, crop_metadata) * percent / 100)
+    panel_height = math.ceil(panel_width / aspect)
+    canvas_width = columns * panel_width + (columns + 1) * padding
+    canvas_height = math.ceil(len(slots) / columns) * panel_height + (math.ceil(len(slots) / columns) + 1) * padding
+    if canvas_width * canvas_height > MAX_FIGURE_PIXELS:
+        raise ValueError('The selected figure is too large. Use fewer panels or a smaller export size.')
+    filled = [slot for slot in slots if slot.get('path')]
+    if not filled:
+        raise ValueError('Choose an image to estimate the PNG size.')
+    if canvas_width * canvas_height <= MAX_EXACT_ESTIMATE_PIXELS and len(filled) == len(slots):
+        return {'estimated_size_bytes': len(render(recipe)), 'width': canvas_width,
+                'height': canvas_height, 'exact': True}
+    rates = []
+    for slot in filled:
+        source = _source(slot['path'])
+        if _digest(source) != slot.get('sha256'):
+            raise ValueError(f'{source.name} changed since this panel was saved. Replace it explicitly.')
+        height = int(slot.get('content_height') or slot.get('height') or 0)
+        rates.append(_sampled_png_bytes_per_pixel(
+            slot['path'], slot.get('sha256'), height,
+            _crop_metadata(slot, crop_metadata), aspect, float(slot.get('zoom', 1)),
+            float(slot.get('center_x', .5)), float(slot.get('center_y', .5)), panel_width))
+    # Allow for labels, bars and compression-stream variation outside sampled patches.
+    estimate = round(canvas_width * canvas_height * (sum(rates) / len(rates)) * 1.05)
+    return {'estimated_size_bytes': estimate, 'width': canvas_width,
+            'height': canvas_height, 'exact': False}
+
+
 def _adjust_tone(image, slot, target):
     if target is not None:
         low, high = _tone_quantiles(image)
@@ -795,7 +882,7 @@ def render(recipe, preview=False):
     figure_width = columns * width + (columns + 1) * margin
     figure_height = rows * tile_height + (rows + 1) * margin
     if not preview and figure_width * figure_height > MAX_FIGURE_PIXELS:
-        raise ValueError('The native-resolution figure is too large. Use fewer panels or smaller crops.')
+        raise ValueError('The selected figure is too large. Use fewer panels or a smaller export size.')
     figure = Image.new('RGB', (figure_width, figure_height), color)
     for index, slot in enumerate(slots):
         x = margin + (index % columns) * (width + gap)

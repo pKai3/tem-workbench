@@ -276,6 +276,34 @@ class FiguresTests(unittest.TestCase):
             self.assertEqual(creator._font(56, system_ui=True, semibold=True).getname(),
                              ('System Font', 'Semibold'))
 
+    def test_png_size_estimate_samples_native_detail_and_detects_changed_source(self):
+        noise = np.random.default_rng(31).integers(0, 256, (600, 800), dtype=np.uint8)
+        slots = []
+        for index in range(2):
+            path = self.root / f'texture-{index}.png'
+            Image.fromarray(np.roll(noise, index * 127, axis=1)).save(path)
+            slots.append(dict(path=str(path), sha256=creator._digest(path), width=800,
+                              height=600, content_height=600, scale_mode='keep'))
+        recipe = dict(columns=2, slots=slots, scale_bar_overlay=False)
+        for percent in (100, 50):
+            recipe['export_scale_percent'] = percent
+            estimate = creator.estimate_png_size(recipe)
+            rendered = creator.render(recipe)
+            self.assertTrue(estimate['exact'])
+            self.assertEqual(estimate['estimated_size_bytes'], len(rendered))
+            with Image.open(BytesIO(rendered)) as image:
+                self.assertEqual((estimate['width'], estimate['height']), image.size)
+        with patch.object(creator, 'MAX_EXACT_ESTIMATE_PIXELS', 0):
+            sampled = creator.estimate_png_size(recipe)
+        self.assertFalse(sampled['exact'])
+        self.assertLess(abs(sampled['estimated_size_bytes'] / len(rendered) - 1), .4)
+        with Image.open(slots[0]['path']) as original:
+            changed = original.copy()
+        changed.putpixel((0, 0), (changed.getpixel((0, 0)) + 1) % 256)
+        changed.save(slots[0]['path'])
+        with self.assertRaisesRegex(ValueError, 'changed since this panel'):
+            creator.estimate_png_size(recipe)
+
     def test_automatic_shape_and_metadata_crop_override(self):
         slot = creator.inspect_image(self.path)
         recipe = dict(slots=[slot], columns=1, aspect='auto', crop_metadata=True)
