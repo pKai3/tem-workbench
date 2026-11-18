@@ -173,6 +173,7 @@ class Engine:
                     candidates.append((path, dict(id=relative.as_posix(), name=path.stem, sample=sample, sample_name=sample_name,
                         extension=path.suffix, source_id=source['id'], source_name=source['name'], folder=folder,
                         raster=path.suffix.lower() in raster_images.EXTENSIONS,
+                        has_sidecar=path.with_suffix('.txt').is_file(),
                         has_preview=path.suffix.lower() in raster_images.EXTENSIONS or sidecar_path(path).is_file())))
         tracked = self.catalogue.scan(candidates)
         history_records = json.loads(self.catalogue.path.read_text())['records'] if self.catalogue.path.exists() else {}

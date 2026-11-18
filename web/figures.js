@@ -2,13 +2,21 @@
 (() => {
  'use strict';
  const $=id=>document.getElementById(id);
- let config,folderBrowser,projectSettings,files=[],selectedPanel=0,currentId='',timer=0,renderVersion=0,hoverTimer=0,browserPreferred=160;
+ let config,folderBrowser,projectSettings,files=[],selectedPanel=0,currentId='',timer=0,renderVersion=0,hoverTimer=0,browserPreferred=160,indexPoll=0,indexRecords={};
  let saved={};
- const blank=()=>({schema_version:1,name:'Untitled figure',rows:1,columns:2,aspect:4/3,background:'white',slots:[{},{}]});
+ const blank=()=>({schema_version:2,name:'Untitled figure',rows:1,columns:2,aspect:4/3,background:'white',match_tone:false,metadata_overlay:[],slots:[{},{}]});
  function normaliseRecipe(value){
   if(!value||!Array.isArray(value.slots))return blank();
   const next=structuredClone(value),columns=Number(next.columns)||2;
   if(columns<1||columns>4||next.slots.length>24)return blank();
+  if(Number(next.schema_version||1)<2){
+   for(const slot of next.slots)if(slot.scale_mode==='keep'&&slot.height)slot.content_height=slot.height;
+   next.schema_version=2;
+  }
+  for(const slot of next.slots)if(slot.metadata&&typeof slot.metadata==='object')
+   for(const [key,entry] of Object.entries(slot.metadata))if(entry?.source==='Filename')delete slot.metadata[key];
+  next.match_tone=Boolean(next.match_tone);
+  next.metadata_overlay=Array.isArray(next.metadata_overlay)?next.metadata_overlay.map(key=>key==='probe_current'?'probe':key).filter(key=>['magnification','voltage_kv','probe','working_distance'].includes(key)):[];
   next.columns=columns;next.rows=Math.max(1,Math.min(6,Number(next.rows)||Math.ceil(next.slots.length/columns)||1));
   next.rows=Math.max(next.rows,Math.ceil(next.slots.length/columns));
   if(next.rows*columns>24)return blank();
@@ -32,14 +40,17 @@
  function sync(){
   $('fig-name').value=recipe.name;$('fig-rows').value=String(recipe.rows);$('fig-columns').value=String(recipe.columns);
   $('fig-aspect').value=String(recipe.aspect);$('fig-background').value=recipe.background;
+  $('fig-match-tone').checked=recipe.match_tone;
+  for(const input of document.querySelectorAll('[data-figure-meta]'))input.checked=recipe.metadata_overlay.includes(input.dataset.figureMeta);
   $('fig-count').textContent=`${recipe.slots.filter(slot=>slot.path).length} of ${recipe.slots.length} filled`;
   $('fig-open-browser').disabled=!files.length;
   $('fig-export').disabled=!recipe.slots.length||recipe.slots.some(slot=>!slot.path||slot.scale_mode!=='keep'&&(!slot.scale_nm||!slot.bar_px));
  }
  function inputField(parent,title,type,value,onchange,attrs={}){
   const label=document.createElement('label');label.textContent=title;
-  const input=document.createElement('input');input.type=type;input.value=value??'';
+  const input=document.createElement('input');input.type=type;
   for(const [key,item] of Object.entries(attrs))input.setAttribute(key,item);
+  input.value=value??'';
   input.addEventListener(type==='range'?'input':'change',()=>onchange(input.value));label.append(input);parent.append(label);
   return input;
  }
@@ -64,6 +75,32 @@
    const choose=document.createElement('button');choose.type='button';choose.textContent=slot.path?'Replace image…':'Choose image…';
    choose.onclick=openImageBrowser;card.append(choose);
    if(!slot.path){const note=document.createElement('p');note.className='hint';note.textContent='Choose an image for this slot.';card.append(note);host.append(card);return}
+   const metadata=document.createElement('div');metadata.className='fig-acquisition-meta';
+   const metadataTitle=document.createElement('h3');metadataTitle.textContent='Acquisition metadata';metadata.append(metadataTitle);
+   for(const [key,label,unit] of [['magnification','Magnification','×'],['voltage_kv','Voltage','kV'],['probe','Probe',''],['working_distance','WD','mm']]){
+    const entry=slot.metadata?.[key],field=document.createElement('label');field.textContent=label+(entry?.unit?` · ${entry.unit}`:unit?` · ${unit}`:'');
+    if(key==='probe'&&entry?.kind)field.textContent=entry.kind==='number'?'Probe No.':'Probe current';
+    const input=document.createElement('input');input.type='number';input.min='0.000001';input.step='any';input.value=entry?.value??'';
+    input.placeholder='Unavailable';input.title=entry?.source||'Not found in the source image';
+    input.onchange=()=>{slot.metadata??={};slot.metadata[key]={value:Number(input.value)>0?Number(input.value):null,
+     unit:entry?.unit||unit,source:'Manual',kind:entry?.kind||(key==='probe'?'number':undefined)};slot.inspection_version=4;source.textContent='Manual';changed()};
+    const source=document.createElement('small');source.textContent=entry?.reported?`${entry.source} reported ${entry.reported}`:entry?.source||'Not found';
+    field.append(input,source);metadata.append(field);
+   }
+   const dateEntry=slot.metadata?.acquisition_date,dateField=document.createElement('label');dateField.textContent='Acquired';
+   const dateInput=document.createElement('input');dateInput.type='date';dateInput.value=dateEntry?.value||'';
+   dateInput.onchange=()=>{slot.metadata??={};slot.metadata.acquisition_date={value:dateInput.value||null,source:'Manual'};
+    slot.inspection_version=4;dateSource.textContent='Manual';changed()};
+   const dateSource=document.createElement('small');dateSource.textContent=dateEntry?.source||'Not found in footer, TXT or TIFF';
+   dateField.append(dateInput,dateSource);metadata.append(dateField);
+   card.append(metadata);
+   const sidecarNote=document.createElement('p');sidecarNote.className='hint fig-sidecar-note';
+   sidecarNote.textContent=slot.metadata_sidecar?`TXT sidecar: ${slot.metadata_sidecar.path.split(/[\\/]/).at(-1)}${slot.metadata_sidecar.checks?.acquired_at?` · acquired ${slot.metadata_sidecar.checks.acquired_at.replace('T',' ')}`:''}`:'No matching TXT sidecar';
+   sidecarNote.title=slot.metadata_sidecar?.path||'Only an exact same-name TXT in this folder is matched.';card.append(sidecarNote);
+   for(const warning of slot.metadata_sidecar?.warnings||[]){const note=document.createElement('p');note.className='fig-meta-warning';note.textContent=warning;card.append(note)}
+   if(slot.footer_ocr_text){const details=document.createElement('details');details.className='fig-ocr-text';
+    const summary=document.createElement('summary');summary.textContent='Footer OCR text';const pre=document.createElement('pre');pre.textContent=slot.footer_ocr_text;
+    details.append(summary,pre);card.append(details)}
    const viewActions=document.createElement('div');viewActions.className='fig-view-actions';
    const compare=document.createElement('button');compare.type='button';compare.textContent='Compare original';compare.onclick=()=>showOriginal(slot);
    const resetZoom=document.createElement('button');resetZoom.type='button';resetZoom.textContent='Reset zoom';resetZoom.onclick=()=>{slot.zoom=1;changed(true)};
@@ -81,11 +118,25 @@
    reset.onclick=()=>{slot.label_colour=null;hex.value='';picker.value='#0c131c';hex.setAttribute('aria-invalid','false');changed()};
    colourRow.append(picker,hex,reset);colourLabel.append(colourRow);fields.append(colourLabel);
    const modeLabel=document.createElement('label');modeLabel.textContent='Scale display';const mode=document.createElement('select');
-   mode.add(new Option('Trim footer + new bar','replace'));mode.add(new Option('Keep source image','keep'));
+   mode.add(new Option('Add calibrated bar','replace'));mode.add(new Option('No new bar','keep'));
    mode.value=slot.scale_mode||'replace';mode.onchange=()=>{slot.scale_mode=mode.value;changed(true)};modeLabel.append(mode);fields.append(modeLabel);
    const keep=slot.scale_mode==='keep';
    inputField(fields,'Zoom ×','number',slot.zoom||1,value=>{slot.zoom=Number(value);changed()}, {min:'1',max:'20',step:'0.1'});
-   inputField(fields,'Field ends at row','number',slot.content_height,value=>{slot.content_height=Number(value);changed()}, {min:'1',max:String(slot.height),step:'1'}).disabled=keep;
+   inputField(fields,'Brightness ×','number',slot.brightness??1,value=>{slot.brightness=Number(value);changed()}, {min:'0.25',max:'3',step:'0.05'});
+   inputField(fields,'Contrast ×','number',slot.contrast??1,value=>{slot.contrast=Number(value);changed()}, {min:'0.25',max:'3',step:'0.05'});
+   const rowInput=inputField(fields,'Keep rows through','number',slot.content_height,value=>{slot.content_height=Number(value);cropSlider.value=value;changed()}, {min:'1',max:String(slot.height),step:'1'});
+   const cropSlider=inputField(fields,'Bottom crop','range',slot.content_height,value=>{slot.content_height=Number(value);rowInput.value=value;changed()}, {min:'1',max:String(slot.height),step:'1'});
+   const detect=document.createElement('button');detect.type='button';detect.textContent='Re-read image';detect.title='Recheck the footer crop, scale bar and acquisition text in this source image.';
+   detect.onclick=async()=>{try{status('Checking image footer…');const info=await api('figures/inspect',{path:slot.path});
+    if(info.sha256!==slot.sha256)throw new Error('The source image changed. Replace this panel to use the new file.');
+    slot.content_height=info.content_height;slot.footer_detected=info.footer_detected;slot.bar=info.bar;slot.bar_px=info.bar_px;
+    const oldScaleSource=slot.scale_source;slot.sidecar_bar_px=info.sidecar_bar_px;slot.scale_source=info.scale_source;
+    if(!slot.scale_nm||/sidecar/i.test(oldScaleSource||''))slot.scale_nm=info.scale_nm;
+    slot.metadata=info.metadata;slot.metadata_sidecar=info.metadata_sidecar;slot.footer_ocr_text=info.footer_ocr_text;slot.ocr_available=info.ocr_available;slot.inspection_version=info.inspection_version;
+    if(info.bar&&info.footer_detected)slot.scale_mode='replace';changed(true);
+    status(info.footer_detected?`Footer found at row ${info.content_height}.`:'No footer found. Set the crop row manually if needed.');
+   }catch(error){status(error.message,true)}};
+   cropSlider.parentElement.append(detect);
    inputField(fields,'Centre X, %','range',Math.round((slot.center_x??.5)*100),value=>{slot.center_x=Number(value)/100;changed()}, {min:'0',max:'100',step:'1'});
    inputField(fields,'Centre Y, %','range',Math.round((slot.center_y??.5)*100),value=>{slot.center_y=Number(value)/100;changed()}, {min:'0',max:'100',step:'1'});
    const unit=(slot.scale_nm||0)>=1000?'µm':'nm',factor=unit==='µm'?1000:1;
@@ -101,7 +152,7 @@
    for(const name of ['Left','Right'])position.add(new Option(name,name.toLowerCase()));position.value=slot.scale_position||'left';
    position.onchange=()=>{slot.scale_position=position.value;changed()};position.disabled=keep;positionLabel.append(position);fields.append(positionLabel);
    card.append(fields);
-   const note=document.createElement('p');note.className='hint';note.textContent=`${slot.name} · ${slot.width} × ${slot.height} px · ${slot.footer_detected?'footer detected':'no footer detected'} · ${slot.scale_source||'confirm printed scale value'}${slot.analysis?` · linked analysis: ${slot.analysis.path.split(/[\\/]/).at(-1)}`:''}`;card.append(note);
+   const note=document.createElement('p');note.className='hint';note.textContent=`${slot.name} · ${slot.width} × ${slot.height} px · ${slot.height-(slot.content_height||slot.height)} bottom rows removed · ${slot.scale_source||'confirm printed scale value'}${slot.analysis?` · linked analysis: ${slot.analysis.path.split(/[\\/]/).at(-1)}`:''}`;card.append(note);
    host.append(card);
   });
   sync();
@@ -113,9 +164,9 @@
  }
  async function showOriginal(slot){
   const dialog=$('fig-original-dialog');$('fig-original-title').textContent=`Compare original · ${slot.name}`;
-  $('fig-original-note').textContent=`Image field ends at row ${slot.content_height} of ${slot.height}. Printed bar: ${slot.bar_px||'not found'} px${slot.sidecar_bar_px?` (TXT: ${slot.sidecar_bar_px} px)`:''}${slot.scale_nm?` · ${slot.scale_nm>=1000?slot.scale_nm/1000+' µm':slot.scale_nm+' nm'}`:' · value needs confirmation'}.`;
+  $('fig-original-note').textContent=`Crop ends at row ${slot.content_height} of ${slot.height}. Printed bar: ${slot.bar_px||'not found'} px${slot.sidecar_bar_px?` (TXT: ${slot.sidecar_bar_px} px)`:''}${slot.scale_nm?` · ${slot.scale_nm>=1000?slot.scale_nm/1000+' µm':slot.scale_nm+' nm'}`:' · value needs confirmation'}.`;
   $('fig-original-image').removeAttribute('src');$('fig-panel-image').removeAttribute('src');dialog.showModal();
-  try{const [original,panel]=await Promise.all([api('figures/original',{path:slot.path}),api('figures/panel',{slot,aspect:recipe.aspect})]);
+  try{const [original,panel]=await Promise.all([api('figures/original',{path:slot.path}),api('figures/panel',{slot,aspect:recipe.aspect,metadata_overlay:recipe.metadata_overlay,recipe})]);
    if(!dialog.open)return;$('fig-original-image').src=original.image;$('fig-panel-image').src=panel.image;
   }catch(error){$('fig-original-note').textContent=error.message}
  }
@@ -134,6 +185,48 @@
   select.replaceChildren(new Option('Custom folder',''),...(config.sources||[]).map(source=>new Option(source.name||source.path,source.id)));
   select.value=(config.sources||[]).some(source=>source.id===previous)?previous:'';select.dataset.populated='true';
   $('fig-folder-controls').hidden=Boolean(select.value);
+ }
+ function selectedRoot(){
+  const project=$('fig-project').value;
+  return project?(config.sources||[]).find(source=>source.id===project)?.path||'':$('fig-folder').value;
+ }
+ function cachedMetadata(row){return indexRecords[row.path]?.metadata||recipe.slots.find(slot=>slot.path===row.path)?.metadata||{}}
+ function formatMetadata(key,entry){
+  if(!entry||entry.value==null)return '';
+  if(key==='acquisition_date')return String(entry.value);
+  const value=Number(entry.value);
+  if(key==='magnification')return `${Math.round(value).toLocaleString()}×`;
+  if(key==='voltage_kv')return `${value}kV`;
+  if(key==='probe')return entry.kind==='number'?`P${value}`:`I=${value}${entry.unit||''}`;
+  return `WD ${value}${entry.unit||''}`;
+ }
+ function refreshFilters(){
+  for(const [id,key] of [['fig-filter-mag','magnification'],['fig-filter-kv','voltage_kv'],['fig-filter-probe','probe'],['fig-filter-wd','working_distance'],['fig-filter-date','acquisition_date']]){
+   const select=$(id),previous=select.value,entries=new Map();
+   for(const row of files){const entry=cachedMetadata(row)[key];if(entry?.value!=null)entries.set(String(entry.value),formatMetadata(key,entry))}
+   const ordered=[...entries].sort((a,b)=>key==='acquisition_date'?b[0].localeCompare(a[0]):Number(a[0])-Number(b[0]));
+   select.replaceChildren(new Option('All',''),...ordered.map(([value,label])=>new Option(label,value)));
+   select.value=entries.has(previous)?previous:'';
+  }
+ }
+ function showIndexStatus(result){
+  indexRecords=result.records||indexRecords;
+  const active=result.state==='running',progress=$('fig-preprocess-progress'),status=$('fig-preprocess-status');
+  if(!active){refreshFilters();if($('fig-browser-dialog').open)renderBrowser()}
+  $('fig-preprocess').disabled=active||!files.length;$('fig-preprocess-cancel').hidden=!active;
+  progress.hidden=!active&&result.state==='idle';progress.max=Math.max(1,result.total||1);progress.value=result.done||0;
+  if(active)status.textContent=`Preprocessing ${result.done}/${result.total||'…'} · ${result.current||'scanning files'}`;
+  else if(result.state==='complete'||result.state==='cancelled')status.textContent=`${result.state==='complete'?'Processed':'Stopped after'} ${result.done} images · ${result.reused} reused · ${result.failed} failed`;
+  else if(result.state==='error')status.textContent=`Preprocessing failed: ${result.errors?.at(-1)||'unknown error'}`;
+  else status.textContent=`${Object.keys(indexRecords).length} images indexed`;
+  status.title=[result.index_path,...(result.errors||[])].filter(Boolean).join('\n');
+ }
+ async function refreshIndex(){
+  clearTimeout(indexPoll);
+  try{
+   const result=await api('figures/index/status',{folder:selectedRoot()});showIndexStatus(result);
+   if(result.state==='running')indexPoll=setTimeout(refreshIndex,750);
+  }catch(error){$('fig-preprocess-status').textContent=error.message}
  }
  function previewUrl(row){return row.id&&row.has_preview?'/api/file-preview?id='+encodeURIComponent(row.id):'/api/figures/thumbnail?path='+encodeURIComponent(row.path)}
  function hideHover(){clearTimeout(hoverTimer);$('fig-browser-hover').hidden=true}
@@ -186,22 +279,34 @@
  }
  function renderBrowser(){
   const host=$('fig-browser-list'),term=$('fig-browser-search').value.trim().toLocaleLowerCase();host.replaceChildren();
-  const visible=files.filter(row=>(row.name+' '+row.path).toLocaleLowerCase().includes(term));
-  $('fig-browser-count').textContent=`${visible.length} image${visible.length===1?'':'s'}`;
+  const selected=[['fig-filter-mag','magnification'],['fig-filter-kv','voltage_kv'],['fig-filter-probe','probe'],['fig-filter-wd','working_distance'],['fig-filter-date','acquisition_date']];
+  const visible=files.filter(row=>{
+   if(!(row.name+' '+row.path).toLocaleLowerCase().includes(term))return false;
+   const sidecar=$('fig-filter-sidecar').value;
+   if(sidecar&&row.has_sidecar!==(sidecar==='yes'))return false;
+   const metadata=cachedMetadata(row);
+   return selected.every(([id,key])=>!$(id).value||String(metadata[key]?.value)===$(id).value);
+  });
+  $('fig-browser-count').textContent=`${visible.length} of ${files.length} images`;
   for(const row of visible){
    const tile=document.createElement('button');tile.type='button';tile.className='image-browser-tile';tile.title=row.path;
-   tile.setAttribute('aria-label',`Use ${row.name} in panel ${selectedPanel+1}`);
+   tile.setAttribute('aria-label',`Use ${row.name} in panel ${selectedPanel+1} · ${row.has_sidecar?'TXT sidecar available':'no TXT sidecar'}`);
    const picture=document.createElement('span');picture.className='image-browser-preview';
    const placeholder=document.createElement('span');placeholder.className='muted';placeholder.textContent='Loading preview…';picture.append(placeholder);
    const image=document.createElement('img');image.alt='';image.loading='lazy';image.decoding='async';image.src=previewUrl(row);
    image.onload=()=>placeholder.hidden=true;image.onerror=()=>{placeholder.textContent='Preview unavailable';image.remove()};picture.append(image);
    picture.append(browserTypeIcon(row),browserFormatIcon(row));
+   const sidecar=document.createElement('span');sidecar.className='image-browser-sidecar '+(row.has_sidecar?'available':'missing');
+   sidecar.textContent='TXT';sidecar.title=row.has_sidecar?'Matching TXT sidecar available':'No matching TXT sidecar';
+   sidecar.setAttribute('aria-hidden','true');picture.append(sidecar);
    const name=document.createElement('strong');name.className='image-browser-name';
    const stem=row.name.replace(/\.[^.]+$/,''),match=stem.match(/^(.*?)[_\s-](\d+)$/);
    const description=document.createElement('span');description.className='image-browser-name-text';description.textContent=match?match[1]:stem;name.append(description);
    if(match){const number=document.createElement('span');number.className='image-browser-number';number.textContent='#'+match[2];name.append(number)}
    const group=document.createElement('small');group.textContent=row.folder&&row.folder!=='.'?row.folder:row.sample||'Selected folder';group.title=row.relative_path||row.path;
-   tile.append(picture,name,group);
+   const metadata=document.createElement('small');metadata.className='fig-browser-metadata';
+   metadata.textContent=['magnification','voltage_kv','probe','working_distance','acquisition_date'].map(key=>formatMetadata(key,cachedMetadata(row)[key])).filter(Boolean).join(' · ')||(indexRecords[row.path]?'No acquisition metadata':'Not preprocessed');
+   tile.append(picture,name,group,metadata);
    tile.onmouseenter=event=>showHover(row,event.clientX,event.clientY);
    tile.onmousemove=event=>{if(!$('fig-browser-hover').hidden)positionHover(event.clientX,event.clientY)};
    tile.onmouseleave=hideHover;
@@ -215,15 +320,17 @@
  function openImageBrowser(){
   $('fig-browser-title').textContent=`Choose image for panel ${selectedPanel+1}`;
   $('fig-browser-search').value='';
+  refreshFilters();
   renderBrowser();$('fig-browser-dialog').showModal();refreshBrowserSize();$('fig-browser-search').focus();
  }
  async function scan(){
   $('fig-folder-status').textContent='Scanning…';
   try{
    const project=$('fig-project').value;
-   if(project){files=(config.files||[]).filter(row=>row.source_id===project&&/\.(tif|tiff|png|jpe?g)$/i.test(row.path||'')).map(row=>({path:row.path,name:row.name+(row.extension||''),extension:row.extension,id:row.id,has_preview:row.has_preview,sample:row.sample,folder:row.folder,image_kind:row.image_kind}));}
+   if(project){files=(config.files||[]).filter(row=>row.source_id===project&&/\.(tif|tiff|png|jpe?g)$/i.test(row.path||'')).map(row=>({path:row.path,name:row.name+(row.extension||''),extension:row.extension,id:row.id,has_preview:row.has_preview,has_sidecar:row.has_sidecar,sample:row.sample,folder:row.folder,image_kind:row.image_kind}));}
    else{const result=await api('figures/list',{folder:$('fig-folder').value});files=result.images;$('fig-folder').value=result.folder;WorkbenchWorkspace.writeRaw('tem-figures-folder',result.folder)}
-   sync();if($('fig-browser-dialog').open)renderBrowser();$('fig-folder-status').textContent=`${files.length} images found${project?' in this project':' in folder and subfolders'}`;
+   sync();$('fig-folder-status').textContent=`${files.length} images found${project?' in this project':' in folder and subfolders'}`;
+   await refreshIndex();
   }catch(error){$('fig-folder-status').textContent=error.message}
  }
  async function add(path){
@@ -235,7 +342,31 @@
    changed(true);return true;
   }catch(error){status(error.message,true);return false}
  }
- function loadRecipe(next){recipe=normaliseRecipe(next);selectedPanel=0;renderCards();draft();schedulePreview()}
+ function loadRecipe(next){recipe=normaliseRecipe(next);selectedPanel=0;renderCards();draft();schedulePreview();refreshLegacySlots()}
+ async function refreshLegacySlots(){
+  const current=recipe,pending=current.slots.filter(slot=>slot.path&&Number(slot.inspection_version||0)<4);
+  if(!pending.length)return;
+  status(`Reading footer metadata for ${pending.length} images…`);
+  let updated=false;
+  for(const slot of pending){
+   try{
+    const info=await api('figures/inspect',{path:slot.path});
+    if(recipe!==current)return;
+    if(!current.slots.includes(slot)||Number(slot.inspection_version||0)>=4)continue;
+    if(info.sha256!==slot.sha256)continue;
+    slot.metadata=info.metadata;slot.metadata_sidecar=info.metadata_sidecar;
+    slot.footer_ocr_text=info.footer_ocr_text;slot.ocr_available=info.ocr_available;
+    if(!slot.footer_detected&&slot.content_height===slot.height&&info.footer_detected){
+     slot.content_height=info.content_height;slot.footer_detected=true;slot.bar=info.bar;slot.bar_px=info.bar_px;
+     slot.scale_nm=info.scale_nm;slot.scale_source=info.scale_source;slot.scale_mode=info.scale_mode;
+    }else if(/sidecar/i.test(slot.scale_source||'')){
+     slot.scale_nm=info.scale_nm;slot.scale_source=info.scale_source;
+    }
+    slot.inspection_version=4;updated=true;
+   }catch(error){status(error.message,true)}
+  }
+  if(updated&&recipe===current)changed(true);
+ }
  function changeLayout(){
   const rows=Number($('fig-rows').value),columns=Number($('fig-columns').value),total=rows*columns;
   if(recipe.slots.slice(total).some(slot=>slot.path)){
@@ -265,10 +396,15 @@
    $('fig-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('fig-project-dialog'));
    $('fig-project-close').onclick=()=>$('fig-project-dialog').close();
    $('fig-open-browser').onclick=openImageBrowser;
+   $('fig-preprocess').onclick=async()=>{try{showIndexStatus(await api('figures/index/start',{folder:selectedRoot()}));refreshIndex()}
+    catch(error){$('fig-preprocess-status').textContent=error.message}};
+   $('fig-preprocess-cancel').onclick=async()=>{try{await api('figures/index/cancel',{});refreshIndex()}
+    catch(error){$('fig-preprocess-status').textContent=error.message}};
    $('fig-browser-close').onclick=()=>{$('fig-browser-dialog').close();hideHover()};
    $('fig-browser-dialog').onclose=hideHover;
    $('fig-browser-search').oninput=renderBrowser;
    $('fig-browser-size').oninput=()=>refreshBrowserSize(true);
+   for(const id of ['fig-filter-mag','fig-filter-kv','fig-filter-probe','fig-filter-wd','fig-filter-date','fig-filter-sidecar'])$(id).onchange=renderBrowser;
    new ResizeObserver(()=>{if($('fig-browser-dialog').open)refreshBrowserSize()}).observe($('fig-browser-list'));
    $('fig-slot-close').onclick=()=>$('fig-slot-dialog').close();
    $('fig-original-close').onclick=()=>$('fig-original-dialog').close();
@@ -282,13 +418,16 @@
    $('fig-name').oninput=()=>{recipe.name=$('fig-name').value;draft()};
    $('fig-rows').onchange=changeLayout;$('fig-columns').onchange=changeLayout;
    for(const [id,key,transform] of [['fig-aspect','aspect',Number],['fig-background','background',String]])$(id).onchange=()=>{recipe[key]=transform($(id).value);changed()};
+   $('fig-match-tone').onchange=()=>{recipe.match_tone=$('fig-match-tone').checked;changed()};
+   for(const input of document.querySelectorAll('[data-figure-meta]'))input.onchange=()=>{
+    recipe.metadata_overlay=[...document.querySelectorAll('[data-figure-meta]:checked')].map(item=>item.dataset.figureMeta);changed()};
    $('fig-new').onclick=()=>{currentId='';loadRecipe(blank());chooseSaved()};
    $('fig-saved').onchange=()=>{currentId=$('fig-saved').value;if(currentId)loadRecipe(saved[currentId]);else loadRecipe(blank());chooseSaved()};
    $('fig-save').onclick=async()=>{recipe.name=$('fig-name').value.trim()||'Untitled figure';if(!recipe.slots.some(slot=>slot.path)){status('Choose an image before saving.',true);return}
     currentId=currentId||crypto.randomUUID();saved[currentId]=structuredClone(recipe);WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));draft();chooseSaved();await WorkbenchWorkspace.flush();status(`Saved ${recipe.name}.`)};
    $('fig-delete').onclick=async()=>{if(!currentId)return;delete saved[currentId];currentId='';WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));chooseSaved();await WorkbenchWorkspace.flush();status('Saved figure deleted. Current panels remain open.')};
    $('fig-export').onclick=async()=>{try{status('Exporting full-resolution figure…');const result=await api('figures/export',{recipe});status(`Saved ${result.png} and ${result.recipe}`)}catch(error){status(error.message,true)}};
-   if($('fig-folder').value)scan();
+   if($('fig-folder').value)scan();refreshLegacySlots();
   }catch(error){status(error.message,true)}
  }
  document.addEventListener('DOMContentLoaded',start);

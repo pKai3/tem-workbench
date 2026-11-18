@@ -53,6 +53,7 @@ from tem_workbench.storage.preview_files import PreviewBatch, sidecar_path
 from tem_workbench.storage.workbench_project import Project
 from tem_workbench.aztec.browser import AztecBrowser
 from tem_workbench.figures import creator as figure_creator
+from tem_workbench.figures.index import FigureMetadataIndex
 
 from tem_workbench.paths import APP_ROOT as ROOT, RESOURCES
 # Capture at import: updating files must not relabel an already running backend.
@@ -86,6 +87,7 @@ class Workbench:
         self.workspace = WorkspaceState(self.config_path)
         self.config = folder_paths.resolve_config(config, self.root)
         self.engine = Engine(self.config)
+        self.figure_index = FigureMetadataIndex(Path(self.config['output_root']) / 'figures' / 'image-metadata-index.json')
         self.repeat_regions = RepeatRegions(self.config_path.with_name('.tem-repeat-regions.json'))
         self.project = Project(self.root)
         self.last_preview_log = 0.
@@ -195,6 +197,8 @@ class Workbench:
 
     def set_folders(self, data, output):
         with self.lock, self.job_lock:
+            if self.figure_index.status()['state'] == 'running':
+                raise ValueError('Finish or cancel image metadata preprocessing before changing folders.')
             if self.batch.running() or self.component_batch_running():
                 raise ValueError('Finish or cancel batch grids before changing folders.')
             if self.preview_batch and self.preview_status()['state'] == 'running':
@@ -204,6 +208,7 @@ class Workbench:
             saved = folder_paths.save_locations(self.config_path, self.root, self.config, data, output)
             self.config = folder_paths.resolve_config(saved, self.root)
             self.engine = Engine(self.config)
+            self.figure_index = FigureMetadataIndex(Path(self.config['output_root']) / 'figures' / 'image-metadata-index.json')
             self.jobs.clear()
             self.preview_batch = None
             LOG.info('Folders changed: data=%s; output=%s', self.config['data_root'], self.config['output_root'])
@@ -520,6 +525,8 @@ class Workbench:
             self.jobs[job_id]['cancel'] = True
 
     def close(self):
+        if getattr(self, 'figure_index', None):
+            self.figure_index.stop()
         if getattr(self, 'repeat_regions', None):
             self.repeat_regions.cancel.set()
         if self.component_batch_running():
@@ -544,6 +551,8 @@ class Workbench:
             self.batch.thread.join()
         if getattr(self, 'component_batch', None) and self.component_batch.thread:
             self.component_batch.thread.join()
+        if getattr(self, 'figure_index', None) and self.figure_index.thread:
+            self.figure_index.thread.join()
 
     @staticmethod
     def best_zones(region):
@@ -1016,6 +1025,12 @@ def make_handler(app):
                                               outputs=folder_paths.output_folders(app.engine.sources, app.config['output_root'])))
                 elif self.path == '/api/figures/list':
                     self.send(figure_creator.list_images(body['folder']))
+                elif self.path == '/api/figures/index/status':
+                    self.send(app.figure_index.status(body.get('folder')))
+                elif self.path == '/api/figures/index/start':
+                    self.send(app.figure_index.start(body['folder']))
+                elif self.path == '/api/figures/index/cancel':
+                    self.send(app.figure_index.stop())
                 elif self.path == '/api/figures/inspect':
                     self.send(figure_creator.inspect_image(body['path']))
                 elif self.path == '/api/figures/original':
@@ -1023,7 +1038,8 @@ def make_handler(app):
                 elif self.path == '/api/figures/render':
                     self.send({'image': figure_creator.preview(body['recipe'])})
                 elif self.path == '/api/figures/panel':
-                    self.send({'image': figure_creator.panel_preview(body['slot'], body.get('aspect', 4 / 3))})
+                    self.send({'image': figure_creator.panel_preview(body['slot'], body.get('aspect', 4 / 3),
+                                                                     body.get('metadata_overlay'), body.get('recipe'))})
                 elif self.path == '/api/figures/export':
                     self.send(figure_creator.export(body['recipe'], app.engine.sources, app.config['output_root']))
                 elif self.path == '/api/aztec/files':
