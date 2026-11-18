@@ -37,6 +37,13 @@ class FiguresTests(unittest.TestCase):
         found['scale_nm'] = 500
         recipe = dict(name='Example', columns=1, slots=[{**found, 'zoom':1,'center_x':.5,'center_y':.5}])
         self.assertTrue(creator.render(recipe).startswith(b'\x89PNG'))
+        with Image.open(BytesIO(creator.render(recipe, preview=True))) as with_bar:
+            shown = np.asarray(with_bar).copy()
+        recipe['scale_bar_overlay'] = False
+        with Image.open(BytesIO(creator.render(recipe, preview=True))) as without_bar:
+            hidden = np.asarray(without_bar).copy()
+        self.assertGreater(np.count_nonzero(shown != hidden), 100)
+        recipe['scale_bar_overlay'] = True
         recipe['slots'][0]['label_colour'] = '#ff0000'
         with Image.open(BytesIO(creator.render(recipe, preview=True))) as preview:
             self.assertEqual(preview.getpixel((27, 27)), (255, 0, 0))
@@ -45,6 +52,14 @@ class FiguresTests(unittest.TestCase):
         right = np.asarray(Image.open(BytesIO(creator.render(recipe, preview=True))).convert('L'))
         self.assertGreater(np.count_nonzero(right[-70:-20, -145:-25] > 240),
                            np.count_nonzero(left[-70:-20, -145:-25] > 240))
+        del recipe['slots'][0]['scale_position']
+        recipe['scale_bar_position'] = 'right'
+        inherited_right = np.asarray(Image.open(BytesIO(creator.render(recipe, preview=True))).convert('L'))
+        np.testing.assert_array_equal(inherited_right, right)
+        for position in ('left', 'right'):
+            full_panel = np.asarray(creator._panel({**found, 'scale_position': position},
+                                                   1000, 4 / 3, strict=True))
+            self.assertEqual(np.count_nonzero(np.all(full_panel[700:705] > 245, axis=2)), 0)
         self.assertTrue(creator.original_preview(self.path).startswith('data:image/png;base64,'))
         panel = creator.panel_preview(recipe['slots'][0])
         with Image.open(BytesIO(base64.b64decode(panel.split(',', 1)[1]))) as image:
@@ -63,6 +78,9 @@ class FiguresTests(unittest.TestCase):
         self.assertTrue(creator.render(recipe, preview=True).startswith(b'\x89PNG'))
         with self.assertRaisesRegex(ValueError, 'Confirm the printed scale'):
             creator.render(recipe)
+        recipe['scale_bar_overlay'] = False
+        self.assertTrue(creator.render(recipe).startswith(b'\x89PNG'))
+        recipe['scale_bar_overlay'] = True
         recipe['slots'][0]['scale_nm'] = 500
         self.assertTrue(creator.render(recipe).startswith(b'\x89PNG'))
         with Image.open(self.path) as image:
@@ -202,9 +220,14 @@ class FiguresTests(unittest.TestCase):
         self.assertGreater(float(overridden.std()), float(inherited.std()))
         recipe = dict(columns=2, slots=[slot, slot], sharpness=1)
         with Image.open(BytesIO(creator.render(recipe, preview=True))) as preview:
-            self.assertEqual(preview.size, (2 * 420 + 3 * 18, 315 + 2 * 18))
+            self.assertEqual(preview.size, (2 * 420 + 3 * 15, 315 + 2 * 15))
             self.assertEqual(preview.getpixel((0, 150)), (255, 255, 255))
-            self.assertEqual(preview.getpixel((445, 150)), (255, 255, 255))
+            self.assertEqual(preview.getpixel((440, 150)), (255, 255, 255))
+        recipe['image_padding'] = 50
+        with Image.open(BytesIO(creator.render(recipe, preview=True))) as preview:
+            self.assertEqual(preview.size, (2 * 420 + 3 * 21, 315 + 2 * 21))
+        with Image.open(BytesIO(creator.render(recipe))) as exported:
+            self.assertEqual(exported.size, (2 * 1000 + 3 * 50, 750 + 2 * 50))
 
     def test_automatic_shape_and_metadata_crop_override(self):
         slot = creator.inspect_image(self.path)
@@ -247,6 +270,8 @@ class FiguresTests(unittest.TestCase):
         self.assertGreater(cropped.convert('L').getpixel((200, 295)), 100)
         with self.assertRaisesRegex(ValueError, 'outside the cropped field'):
             creator._panel(found, 400, 4 / 3, strict=True)
+        self.assertEqual(creator._panel(found, 400, 4 / 3, strict=True,
+                                        figure_scale_bar_overlay=False).size, (400, 300))
 
 
 if __name__ == '__main__':

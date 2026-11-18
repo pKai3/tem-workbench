@@ -4,7 +4,7 @@
  const $=id=>document.getElementById(id);
  let config,folderBrowser,projectSettings,files=[],selectedPanel=0,currentId='',timer=0,renderVersion=0,hoverTimer=0,browserPreferred=160,indexPoll=0,indexRecords={};
  let saved={};
- const blank=()=>({schema_version:2,name:'Untitled figure',rows:1,columns:2,aspect:4/3,background:'white',match_tone:false,sharpness:1,crop_metadata:true,metadata_overlay:[],slots:[{},{}]});
+ const blank=()=>({schema_version:2,name:'Untitled figure',rows:1,columns:2,aspect:4/3,background:'white',match_tone:false,sharpness:1,crop_metadata:true,scale_bar_overlay:true,scale_bar_position:'left',image_padding:36,metadata_overlay:[],slots:[{},{}]});
  function normaliseRecipe(value){
   if(!value||!Array.isArray(value.slots))return blank();
   const next=structuredClone(value),columns=Number(next.columns)||2;
@@ -17,6 +17,9 @@
    for(const [key,entry] of Object.entries(slot.metadata))if(entry?.source==='Filename')delete slot.metadata[key];
   next.match_tone=Boolean(next.match_tone);
   next.crop_metadata=next.crop_metadata!==false;
+  next.scale_bar_overlay=next.scale_bar_overlay!==false;
+  next.scale_bar_position=['left','right'].includes(next.scale_bar_position)?next.scale_bar_position:'left';
+  next.image_padding=Number.isInteger(Number(next.image_padding))&&Number(next.image_padding)>=0&&Number(next.image_padding)<=200?Number(next.image_padding):36;
   next.sharpness=Number.isFinite(Number(next.sharpness))&&Number(next.sharpness)>=0&&Number(next.sharpness)<=3?Number(next.sharpness):1;
   next.metadata_overlay=Array.isArray(next.metadata_overlay)?next.metadata_overlay.map(key=>key==='probe_current'?'probe':key).filter(key=>['magnification','voltage_kv','probe','working_distance'].includes(key)):[];
   next.columns=columns;next.rows=Math.max(1,Math.min(6,Number(next.rows)||Math.ceil(next.slots.length/columns)||1));
@@ -51,10 +54,16 @@
   $('fig-crop-off').setAttribute('aria-pressed',String(!recipe.crop_metadata));
   $('fig-hover-on').setAttribute('aria-pressed',String(hoverEnabled));
   $('fig-hover-off').setAttribute('aria-pressed',String(!hoverEnabled));
+  $('fig-scale-bar-overlay').checked=recipe.scale_bar_overlay;
+  $('fig-scale-position-control').hidden=!recipe.scale_bar_overlay;
+  $('fig-scale-left').setAttribute('aria-pressed',String(recipe.scale_bar_position==='left'));
+  $('fig-scale-right').setAttribute('aria-pressed',String(recipe.scale_bar_position==='right'));
+  $('fig-image-padding').value=String(recipe.image_padding);
   for(const input of document.querySelectorAll('[data-figure-meta]'))input.checked=recipe.metadata_overlay.includes(input.dataset.figureMeta);
   $('fig-count').textContent=`${recipe.slots.filter(slot=>slot.path).length} of ${recipe.slots.length} filled`;
   $('fig-open-browser').disabled=!files.length;
-  $('fig-export').disabled=!recipe.slots.length||recipe.slots.some(slot=>!slot.path||slot.scale_mode!=='keep'&&(!slot.scale_nm||!slot.bar_px));
+  $('fig-export').disabled=!recipe.slots.length||recipe.slots.some(slot=>!slot.path||
+   recipe.scale_bar_overlay&&slot.scale_mode!=='keep'&&(!slot.scale_nm||!slot.bar_px));
  }
  function inputField(parent,title,type,value,onchange,attrs={}){
   const label=document.createElement('label');label.textContent=title;
@@ -127,8 +136,9 @@
    const modeLabel=document.createElement('label');modeLabel.textContent='Scale display';const mode=document.createElement('select');
    mode.add(new Option('Add calibrated bar','replace'));mode.add(new Option('No new bar','keep'));
    mode.value=slot.scale_mode||'replace';mode.onchange=()=>{slot.scale_mode=mode.value;changed(true)};
+   mode.disabled=!recipe.scale_bar_overlay;
    modeLabel.append(mode);metadata.append(modeLabel);
-   const keep=slot.scale_mode==='keep';
+   const keep=slot.scale_mode==='keep'||!recipe.scale_bar_overlay;
    const unit=(slot.scale_nm||0)>=1000?'µm':'nm',factor=unit==='µm'?1000:1;
    const valueInput=inputField(metadata,'Printed bar value','number',slot.scale_nm?slot.scale_nm/factor:'',value=>{
     slot.scale_nm=value?Number(value)*Number(unitSelect.value==='µm'?1000:1):null;
@@ -140,8 +150,9 @@
    unitSelect.disabled=keep;unitLabel.append(unitSelect);metadata.append(unitLabel);
    inputField(metadata,'Printed bar width, px','number',slot.bar_px??'',value=>{slot.bar_px=value?Number(value):null;changed()}, {min:'1',step:'1'}).disabled=keep;
    const positionLabel=document.createElement('label');positionLabel.textContent='Scale bar position';const position=document.createElement('select');
-   for(const name of ['Left','Right'])position.add(new Option(name,name.toLowerCase()));position.value=slot.scale_position||'left';
-   position.onchange=()=>{slot.scale_position=position.value;changed()};position.disabled=keep;
+   position.add(new Option(`Figure (${recipe.scale_bar_position==='left'?'Left':'Right'})`,''));
+   for(const name of ['Left','Right'])position.add(new Option(name,name.toLowerCase()));position.value=slot.scale_position||'';
+   position.onchange=()=>{if(position.value)slot.scale_position=position.value;else delete slot.scale_position;changed()};position.disabled=keep;
    positionLabel.append(position);metadata.append(positionLabel);
    const footer=document.createElement('section');footer.className='fig-footer-evidence';
    const footerHead=document.createElement('div');footerHead.className='fig-footer-head';
@@ -252,7 +263,8 @@
  function previewPanelHit(event){
   const image=event.currentTarget,rect=image.getBoundingClientRect();
   if(!image.naturalWidth||!rect.width)return null;
-  const scale=image.naturalWidth/rect.width,margin=18,gap=18,width=420;
+  const scale=image.naturalWidth/rect.width,width=420;
+  const margin=Math.round(recipe.image_padding*width/1000),gap=margin;
   const height=Math.round((image.naturalHeight-(recipe.rows+1)*gap)/recipe.rows);
   const x=(event.clientX-rect.left)*scale-margin,y=(event.clientY-rect.top)*scale-margin;
   const column=Math.floor(x/(width+gap)),row=Math.floor(y/(height+gap));
@@ -628,6 +640,12 @@
    $('fig-match-tone').onchange=()=>{recipe.match_tone=$('fig-match-tone').checked;changed()};
    $('fig-crop-on').onclick=()=>{recipe.crop_metadata=true;changed(true)};
    $('fig-crop-off').onclick=()=>{recipe.crop_metadata=false;changed(true)};
+   $('fig-scale-bar-overlay').onchange=()=>{recipe.scale_bar_overlay=$('fig-scale-bar-overlay').checked;changed(true)};
+   $('fig-scale-left').onclick=()=>{recipe.scale_bar_position='left';changed(true)};
+   $('fig-scale-right').onclick=()=>{recipe.scale_bar_position='right';changed(true)};
+   $('fig-image-padding').onchange=()=>{const value=Number($('fig-image-padding').value);
+    if(!$('fig-image-padding').value||!Number.isInteger(value)||value<0||value>200){sync();return}
+    recipe.image_padding=value;changed()};
    $('fig-hover-on').onclick=()=>{hoverEnabled=true;WorkbenchWorkspace.writeRaw('tem-figures-hover-detail','on');sync()};
    $('fig-hover-off').onclick=()=>{hoverEnabled=false;WorkbenchWorkspace.writeRaw('tem-figures-hover-detail','off');hideOutputHover();sync()};
    $('fig-sharpness').oninput=()=>{recipe.sharpness=Number($('fig-sharpness').value);

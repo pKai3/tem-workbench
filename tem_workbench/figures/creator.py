@@ -596,7 +596,8 @@ def _adjust_tone(image, slot, target):
 
 
 def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure_sharpness=1,
-           figure_crop_metadata=True):
+           figure_crop_metadata=True, figure_scale_bar_overlay=True,
+           figure_scale_bar_position='left'):
     source = _source(slot['path'])
     if _digest(source) != slot.get('sha256'):
         raise ValueError(f'{source.name} changed since this panel was saved. Replace it explicitly.')
@@ -618,7 +619,7 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
         raise ValueError('Invalid saved image-field boundary. Replace this panel.')
     content_height = saved_content_height if _crop_metadata(slot, figure_crop_metadata) else image.height
     bar = slot.get('bar')
-    if strict and scale_mode == 'keep' and isinstance(bar, dict) and bar.get('y', -1) >= content_height:
+    if strict and figure_scale_bar_overlay and scale_mode == 'keep' and isinstance(bar, dict) and bar.get('y', -1) >= content_height:
         raise ValueError(f'The source scale bar for {source.name} is outside the cropped field. Add a calibrated bar.')
     image = image.crop((0, 0, image.width, content_height))
     zoom = float(slot.get('zoom', 1))
@@ -640,7 +641,7 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
         raise ValueError('Sharpness must be between 0 and 3.')
     if sharpness != 1:
         image = ImageEnhance.Sharpness(image).enhance(sharpness)
-    if scale_mode == 'keep':
+    if not figure_scale_bar_overlay or scale_mode == 'keep':
         return image
     bar_px, scale_nm = slot.get('bar_px'), slot.get('scale_nm')
     if not bar_px or not scale_nm:
@@ -658,15 +659,23 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
     draw = ImageDraw.Draw(image)
     margin = max(16, round(width * .035))
     bar_height = max(5, round(width * .008))
-    position = slot.get('scale_position', 'left')
+    position = slot.get('scale_position') or figure_scale_bar_position
     if position not in ('left', 'right'):
         raise ValueError('Choose Left or Right for the scale bar.')
     x = margin if position == 'left' else width - margin - length
     y = height - margin - bar_height
     draw.rectangle((x - 2, y - 2, x + length + 2, y + bar_height + 2), fill='black')
     draw.rectangle((x, y, x + length, y + bar_height), fill='white')
-    draw.text((x, y - max(30, round(width * .047))), _scale_label(chosen_nm), font=_font(max(19, round(width * .035))),
-              fill='white', stroke_width=max(2, width // 300), stroke_fill='black')
+    label = _scale_label(chosen_nm)
+    font = _font(max(19, round(width * .035)))
+    stroke = max(2, width // 300)
+    bounds = draw.textbbox((0, 0), label, font=font, stroke_width=stroke)
+    label_width = bounds[2] - bounds[0]
+    label_x = min(max(x + (length - label_width) / 2 - bounds[0], margin),
+                  width - margin - label_width - bounds[0])
+    label_y = y - max(7, round(width * .008)) - bounds[3]
+    draw.text((round(label_x), round(label_y)), label, font=font,
+              fill='white', stroke_width=stroke, stroke_fill='black')
     return image
 
 
@@ -693,8 +702,17 @@ def render(recipe, preview=False):
     figure_crop_metadata = recipe.get('crop_metadata', True)
     if not isinstance(figure_crop_metadata, bool):
         raise ValueError('Choose whether to crop metadata bars.')
+    scale_bar_overlay = recipe.get('scale_bar_overlay', True)
+    if not isinstance(scale_bar_overlay, bool):
+        raise ValueError('Choose whether to overlay scale bars.')
+    scale_bar_position = recipe.get('scale_bar_position', 'left')
+    if scale_bar_position not in ('left', 'right'):
+        raise ValueError('Choose Left or Right for the figure scale bars.')
+    padding = int(recipe.get('image_padding', 36))
+    if not 0 <= padding <= 200:
+        raise ValueError('Image padding must be between 0 and 200 pixels.')
     width = 420 if preview else 1000
-    margin = 18 if preview else 36
+    margin = round(padding * width / 1000)
     gap = margin
     rows = math.ceil(len(slots) / columns)
     tile_height = round(width / aspect)
@@ -720,7 +738,9 @@ def render(recipe, preview=False):
             figure.paste(panel, (x, y))
         else:
             panel = _panel(slot, width, aspect, strict=not preview, tone_target=tone_target,
-                           figure_sharpness=figure_sharpness, figure_crop_metadata=figure_crop_metadata)
+                           figure_sharpness=figure_sharpness, figure_crop_metadata=figure_crop_metadata,
+                           figure_scale_bar_overlay=scale_bar_overlay,
+                           figure_scale_bar_position=scale_bar_position)
             label = str(slot.get('label') or Path(slot['path']).stem)[:120]
             lines = _metadata_lines(slot, metadata_overlay)
             _, values, units, unit_gap = _metadata_layout(lines, _font(max(14, round(width * .032))))
@@ -744,10 +764,14 @@ def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=
     if not recipe and aspect not in (1, 4 / 3, 16 / 9):
         raise ValueError('Choose square, 4:3 or 16:9 panels.')
     crop_metadata = recipe.get('crop_metadata', True) if recipe else True
+    scale_bar_overlay = recipe.get('scale_bar_overlay', True) if recipe else True
+    scale_bar_position = recipe.get('scale_bar_position', 'left') if recipe else 'left'
     tone_target = _tone_target(recipe.get('slots', []), aspect, crop_metadata) if recipe and recipe.get('match_tone') else None
     panel = _panel(slot, width, aspect, strict=False, tone_target=tone_target,
                    figure_sharpness=recipe.get('sharpness', 1) if recipe else 1,
-                   figure_crop_metadata=crop_metadata)
+                   figure_crop_metadata=crop_metadata,
+                   figure_scale_bar_overlay=scale_bar_overlay,
+                   figure_scale_bar_position=scale_bar_position)
     lines = _metadata_lines(slot, metadata_overlay or [])
     _, values, units, unit_gap = _metadata_layout(lines, _font(max(14, round(width * .032))))
     reserved = math.ceil(values + units + unit_gap) + 2 * max(6, panel.width // 70) + 12 if lines else 0
