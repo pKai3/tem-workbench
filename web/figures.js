@@ -428,17 +428,11 @@
   if(dragState?.dragging){panelHighlight.hidden=true;return}
   const hit=previewPanelHit(event);
   if(!hit){panelHighlight.hidden=true;return}
-  const image=event.currentTarget,rect=image.getBoundingClientRect(),scale=rect.width/image.naturalWidth;
-  const clip=image.parentElement.getBoundingClientRect();
-  const left=Math.max(rect.left+hit.x*scale,clip.left,0);
-  const top=Math.max(rect.top+hit.y*scale,clip.top,0);
-  const right=Math.min(rect.left+(hit.x+hit.width)*scale,clip.right,innerWidth);
-  const bottom=Math.min(rect.top+(hit.y+hit.height)*scale,clip.bottom,innerHeight);
-  if(right<=left||bottom<=top){panelHighlight.hidden=true;return}
-  panelHighlight.style.left=left+'px';
-  panelHighlight.style.top=top+'px';
-  panelHighlight.style.width=right-left+'px';
-  panelHighlight.style.height=bottom-top+'px';
+  const image=event.currentTarget,scale=image.getBoundingClientRect().width/image.naturalWidth;
+  panelHighlight.style.left=hit.x*scale+'px';
+  panelHighlight.style.top=hit.y*scale+'px';
+  panelHighlight.style.width=hit.width*scale+'px';
+  panelHighlight.style.height=hit.height*scale+'px';
   panelHighlight.hidden=false;
  }
  function hideOutputHover(){if(outputHover)outputHover.hidden=true;hoveredPanel=-1;hoverPoint=null}
@@ -799,8 +793,7 @@
    document.body.append(outputHover);
    dropTarget=document.createElement('div');dropTarget.id='fig-drop-target';dropTarget.hidden=true;
    dropTarget.setAttribute('aria-hidden','true');document.body.append(dropTarget);
-   panelHighlight=document.createElement('div');panelHighlight.id='fig-panel-highlight';panelHighlight.hidden=true;
-   panelHighlight.setAttribute('aria-hidden','true');document.body.append(panelHighlight);
+   panelHighlight=$('fig-panel-highlight');
    $('fig-preview').draggable=false;
    $('fig-preview').onclick=event=>{if(suppressOutputClick){suppressOutputClick=false;return}
     const hit=previewPanelHit(event);if(hit)openSlot(hit.index)};

@@ -20,6 +20,8 @@ The native-resolution export, transparent tag exporter and live panel-editing re
 
 The native-detail estimate correction was completed 18 November 2026 in `530e3db`; the six-image 100% example changed from a 28.2 MB preview-based estimate to a 49.2 MB native-detail estimate, compared with its measured 48.1 MB PNG.
 
+**Figure frame-highlight alignment — completed 18 November 2026:** The panel hover border now lives in the preview image's coordinate system. It scrolls with its frame when the page or preview moves and clips at the preview viewport. This is a display-only correction; figure exports are unchanged.
+
 **Release record — 18 November 2026:** The user approved publication of the corrected figure-size estimator and accumulated post-v1.0.37 work. The earlier release run 44246356508 was cancelled before publication after the reported size-estimate error. The corrected candidate `62d9a9c` passed its push checks, then the [manual Publish Workbench release workflow](https://github.com/pKai3/tem-workbench/actions/runs/44256538632) passed the full Linux analysis/browser and Windows/macOS verification gates and published [v1.0.38](https://github.com/pKai3/tem-workbench/releases/tag/v1.0.38) at `d1cac2d`. The downloaded ZIP passed its published SHA-256 checksum (`d92f9cbbe94a634768882c2a383fcd9a4aaaa97af754ee05c42d4cb310355640`), archive integrity, embedded-version and commit checks. The local checkout was fast-forwarded to the release commit.
 
 ## AZtec follow-up release — completed 14 November 2026
