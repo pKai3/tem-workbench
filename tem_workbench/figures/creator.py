@@ -449,22 +449,27 @@ def _badge(panel, label, colour, reserved_right=0):
     if colour is not None and not re.fullmatch(r'#[0-9a-fA-F]{6}', colour):
         raise ValueError('Use #RRGGBB for the panel label colour.')
     width = panel.width
-    font = _font(max(18, round(width * .039)))
+    font = _font(max(18, round(width * 18 / 320)))
     overlay = Image.new('RGBA', panel.size)
     draw = ImageDraw.Draw(overlay)
     label = str(label)[:120]
-    original = label
-    while label and draw.textbbox((0, 0), label, font=font)[2] > max(25, width - 32 - reserved_right):
-        label = label[:-1]
-    if label != original and label:
-        label = label[:-1] + '…'
-    text_width = draw.textbbox((0, 0), label, font=font)[2]
-    x, y = max(6, width // 80), max(6, width // 80)
-    padding = max(6, width // 70)
-    draw.rounded_rectangle((x, y, x + text_width + 2 * padding, y + max(24, round(width * .055)) + padding),
-                           radius=max(4, width // 160), fill=colour or (5, 10, 16, 200))
-    draw.text((x + padding, y + padding // 2), label, font=font,
-              fill=_label_ink(colour) if colour else 'white')
+    x = y = max(6, round(width * 5 / 320))
+    padding = max(6, round(width * 7 / 320))
+    stroke = 1
+    available = max(0, width - x - 2 * padding - reserved_right)
+    if draw.textbbox((0, 0), label, font=font, stroke_width=stroke)[2] > available:
+        while label and draw.textbbox((0, 0), label + '…', font=font, stroke_width=stroke)[2] > available:
+            label = label[:-1]
+        label = label + '…' if label else ''
+    if not label:
+        return panel
+    bounds = draw.textbbox((0, 0), label, font=font, stroke_width=stroke)
+    text_width, text_height = bounds[2] - bounds[0], bounds[3] - bounds[1]
+    draw.rounded_rectangle((x, y, x + text_width + 2 * padding, y + text_height + 2 * padding),
+                           radius=max(4, round(width * 4 / 320)), fill=colour or (5, 10, 16, 200))
+    ink = _label_ink(colour) if colour else 'white'
+    draw.text((x + padding - bounds[0], y + padding - bounds[1]), label, font=font,
+              fill=ink, stroke_width=stroke, stroke_fill=ink)
     return Image.alpha_composite(panel.convert('RGBA'), overlay).convert('RGB')
 
 
@@ -511,9 +516,9 @@ def _metadata_badge(panel, lines):
     if not lines:
         return panel
     width = panel.width
-    font = _font(max(14, round(width * .032)))
+    font = _font(max(14, round(width * 12 / 320)))
     padding = max(6, width // 70)
-    line_height = max(20, round(width * .044))
+    line_height = max(20, round(width * 16 / 320))
     parts, value_width, unit_width, gap = _metadata_layout(lines, font)
     box_width = math.ceil(value_width + gap + unit_width) + 2 * padding
     x, y = width - box_width - max(6, width // 80), max(6, width // 80)
@@ -528,6 +533,15 @@ def _metadata_badge(panel, lines):
         if unit:
             draw.text((boundary + gap, baseline), unit, font=font, fill='white')
     return Image.alpha_composite(panel.convert('RGBA'), overlay).convert('RGB')
+
+
+def _metadata_reserved(width, lines):
+    if not lines:
+        return 0
+    font = _font(max(14, round(width * 12 / 320)))
+    _, values, units, unit_gap = _metadata_layout(lines, font)
+    return (math.ceil(values + units + unit_gap) + 2 * max(6, width // 70)
+            + max(6, width // 80) + 12)
 
 
 def _nice_bar(nm_per_display_px, width):
@@ -667,7 +681,7 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
     draw.rectangle((x - 2, y - 2, x + length + 2, y + bar_height + 2), fill='black')
     draw.rectangle((x, y, x + length, y + bar_height), fill='white')
     label = _scale_label(chosen_nm)
-    font = _font(max(19, round(width * .035)))
+    font = _font(max(19, round(width * 14 / 320)))
     stroke = max(2, width // 300)
     bounds = draw.textbbox((0, 0), label, font=font, stroke_width=stroke)
     label_width = bounds[2] - bounds[0]
@@ -743,8 +757,7 @@ def render(recipe, preview=False):
                            figure_scale_bar_position=scale_bar_position)
             label = str(slot.get('label') or Path(slot['path']).stem)[:120]
             lines = _metadata_lines(slot, metadata_overlay)
-            _, values, units, unit_gap = _metadata_layout(lines, _font(max(14, round(width * .032))))
-            reserved = math.ceil(values + units + unit_gap) + 2 * max(6, width // 70) + 12 if lines else 0
+            reserved = _metadata_reserved(width, lines)
             panel = _badge(panel, label, slot.get('label_colour'), reserved_right=reserved)
             figure.paste(_metadata_badge(panel, lines), (x, y))
     stream = BytesIO()
@@ -773,8 +786,7 @@ def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=
                    figure_scale_bar_overlay=scale_bar_overlay,
                    figure_scale_bar_position=scale_bar_position)
     lines = _metadata_lines(slot, metadata_overlay or [])
-    _, values, units, unit_gap = _metadata_layout(lines, _font(max(14, round(width * .032))))
-    reserved = math.ceil(values + units + unit_gap) + 2 * max(6, panel.width // 70) + 12 if lines else 0
+    reserved = _metadata_reserved(width, lines)
     panel = _metadata_badge(_badge(panel, slot.get('label') or Path(slot['path']).stem,
                                    slot.get('label_colour'), reserved_right=reserved), lines)
     stream = BytesIO()
