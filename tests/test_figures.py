@@ -5,6 +5,7 @@ import base64
 import json
 import tempfile
 import unittest
+import sys
 from unittest.mock import patch
 import numpy as np
 
@@ -228,6 +229,42 @@ class FiguresTests(unittest.TestCase):
             self.assertEqual(preview.size, (2 * 420 + 3 * 21, 315 + 2 * 21))
         with Image.open(BytesIO(creator.render(recipe))) as exported:
             self.assertEqual(exported.size, (2 * 1000 + 3 * 50, 750 + 2 * 50))
+
+    def test_full_export_preserves_native_crop_pixels(self):
+        path = self.root / 'large.png'
+        pixels = np.zeros((1200, 1600, 3), dtype=np.uint8)
+        pixels[..., 0] = np.arange(1600, dtype=np.uint16)[None, :] % 256
+        pixels[..., 1] = np.arange(1200, dtype=np.uint16)[:, None] % 256
+        original = Image.fromarray(pixels, 'RGB')
+        original.save(path)
+        slot = dict(path=str(path), sha256=creator._digest(path), width=1600, height=1200,
+                    content_height=1200, scale_mode='keep')
+        panel = creator._panel(slot, 1600, 4 / 3, strict=True)
+        np.testing.assert_array_equal(np.asarray(panel), pixels)
+        recipe = dict(columns=1, slots=[slot], scale_bar_overlay=False)
+        with Image.open(BytesIO(creator.render(recipe, preview=True))) as preview:
+            self.assertEqual(preview.size, (420 + 2 * 9, 315 + 2 * 9))
+        with Image.open(BytesIO(creator.render(recipe))) as exported:
+            self.assertEqual(exported.size, (1600 + 2 * 36, 1200 + 2 * 36))
+            self.assertEqual(exported.getpixel((36 + 800, 36 + 600)), original.getpixel((800, 600)))
+
+    def test_transparent_tags_export_to_project_and_reject_duplicates(self):
+        sources = [dict(id='sample', path=str(self.root), output=str(self.root / 'project-output'))]
+        tags = [dict(label='ST', colour='#0072B2'), dict(label='STA', colour=None)]
+        result = creator.export_label_tags(tags, {}, sources, self.root / 'fallback', self.path)
+        self.assertEqual(Path(result['folder']).parent, (self.root / 'project-output').resolve())
+        self.assertEqual(len(result['files']), 2)
+        with Image.open(result['files'][0]) as tag:
+            self.assertEqual(tag.mode, 'RGBA')
+            self.assertEqual(tag.getpixel((0, 0))[3], 0)
+            self.assertEqual(tag.getpixel((tag.width // 2, tag.height - 1))[3], 255)
+        with self.assertRaisesRegex(ValueError, 'duplicate'):
+            creator.export_label_tags([dict(label='ST'), dict(label='st')], {}, sources, self.root)
+        with self.assertRaisesRegex(ValueError, 'Each tag'):
+            creator.export_label_tags(['ST'], {}, sources, self.root)
+        if sys.platform == 'darwin':
+            self.assertEqual(creator._font(56, system_ui=True, semibold=True).getname(),
+                             ('System Font', 'Semibold'))
 
     def test_automatic_shape_and_metadata_crop_override(self):
         slot = creator.inspect_image(self.path)

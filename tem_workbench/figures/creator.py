@@ -1,6 +1,7 @@
 """Read-only image inspection and reproducible, calibrated panel rendering."""
 import base64
 from datetime import datetime
+from functools import lru_cache
 import hashlib
 from io import BytesIO
 import json
@@ -10,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 
 import numpy as np
@@ -22,6 +24,7 @@ from tem_workbench.storage.folder_paths import atomic_json, output_folder
 EXTENSIONS = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'}
 MAX_PANELS = 24
 MAX_SOURCE_PIXELS = 150_000_000
+MAX_FIGURE_PIXELS = 120_000_000
 
 
 def _source(path):
@@ -425,10 +428,42 @@ def footer_preview(path, content_height):
     return stream.getvalue()
 
 
-def _font(size):
+@lru_cache(maxsize=2)
+def _system_ui_font_path(semibold):
+    if sys.platform == 'darwin':
+        return Path('/System/Library/Fonts/SFNS.ttf')
+    if os.name == 'nt':
+        return Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Fonts' / ('seguisb.ttf' if semibold else 'segoeui.ttf')
+    executable = shutil.which('fc-match')
+    if executable:
+        try:
+            result = subprocess.run([executable, '-f', '%{file}',
+                                     'system-ui:style=Semibold' if semibold else 'system-ui'],
+                                    capture_output=True, text=True, timeout=2, check=False)
+            if result.returncode == 0 and result.stdout.strip():
+                return Path(result.stdout.strip())
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return None
+
+
+def _font(size, *, system_ui=False, semibold=False):
+    if system_ui:
+        path = _system_ui_font_path(semibold)
+        if path and path.is_file():
+            try:
+                font = ImageFont.truetype(path, size)
+                if semibold and sys.platform == 'darwin':
+                    font.set_variation_by_name('Semibold')
+                return font
+            except (OSError, ValueError):
+                pass
     try:
-        return ImageFont.truetype(RESOURCES / 'NotoSans.ttf', size)
-    except OSError:
+        font = ImageFont.truetype(RESOURCES / 'NotoSans.ttf', size)
+        if semibold:
+            font.set_variation_by_name('SemiBold')
+        return font
+    except (OSError, ValueError):
         return ImageFont.load_default(size=size)
 
 
@@ -446,16 +481,16 @@ def _label_ink(hex_colour):
 
 
 def _badge(panel, label, colour, reserved_right=0):
-    if colour is not None and not re.fullmatch(r'#[0-9a-fA-F]{6}', colour):
+    if colour is not None and (not isinstance(colour, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', colour)):
         raise ValueError('Use #RRGGBB for the panel label colour.')
     width = panel.width
-    font = _font(max(18, round(width * 18 / 320)))
+    font = _font(max(18, round(width * 18 / 320)), system_ui=True, semibold=True)
     overlay = Image.new('RGBA', panel.size)
     draw = ImageDraw.Draw(overlay)
     label = str(label)[:120]
     x = y = max(6, round(width * 5 / 320))
     padding = max(6, round(width * 7 / 320))
-    stroke = 1
+    stroke = 0
     available = max(0, width - x - 2 * padding - reserved_right)
     if draw.textbbox((0, 0), label, font=font, stroke_width=stroke)[2] > available:
         while label and draw.textbbox((0, 0), label + '…', font=font, stroke_width=stroke)[2] > available:
@@ -516,7 +551,7 @@ def _metadata_badge(panel, lines):
     if not lines:
         return panel
     width = panel.width
-    font = _font(max(14, round(width * 12 / 320)))
+    font = _font(max(14, round(width * 12 / 320)), system_ui=True)
     padding = max(6, width // 70)
     line_height = max(20, round(width * 16 / 320))
     parts, value_width, unit_width, gap = _metadata_layout(lines, font)
@@ -538,7 +573,7 @@ def _metadata_badge(panel, lines):
 def _metadata_reserved(width, lines):
     if not lines:
         return 0
-    font = _font(max(14, round(width * 12 / 320)))
+    font = _font(max(14, round(width * 12 / 320)), system_ui=True)
     _, values, units, unit_gap = _metadata_layout(lines, font)
     return (math.ceil(values + units + unit_gap) + 2 * max(6, width // 70)
             + max(6, width // 80) + 12)
@@ -587,6 +622,23 @@ def _figure_aspect(recipe):
     if aspect not in (1, 4 / 3, 16 / 9):
         raise ValueError('Choose Auto, square, 4:3 or 16:9 panels.')
     return aspect
+
+
+def _export_panel_width(slots, aspect, figure_crop_metadata):
+    """Keep every displayed source crop at or above its native pixel size."""
+    width = 1000
+    for slot in slots:
+        if not slot.get('path'):
+            continue
+        image_width = float(slot.get('width') or 0)
+        image_height = float((slot.get('content_height') or slot.get('height') or 0)
+                             if _crop_metadata(slot, figure_crop_metadata) else (slot.get('height') or 0))
+        zoom = float(slot.get('zoom', 1))
+        if not all(math.isfinite(value) and value > 0 for value in (image_width, image_height, zoom)):
+            raise ValueError('Reinspect each source image before full-resolution export.')
+        native_crop = min(image_width, image_height * aspect) / zoom
+        width = max(width, math.ceil(native_crop))
+    return width
 
 
 def _adjust_tone(image, slot, target):
@@ -645,8 +697,9 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
     left = min(max(cx * image.width - crop_w / 2, 0), image.width - crop_w)
     top = min(max(cy * image.height - crop_h / 2, 0), image.height - crop_h)
     image = image.crop((round(left), round(top), round(left + crop_w), round(top + crop_h)))
-    height = round(width / aspect)
-    image = image.resize((width, height), Image.Resampling.LANCZOS)
+    height = math.ceil(width / aspect)
+    if image.size != (width, height):
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
     if raw_only:
         return image
     image = _adjust_tone(image, slot, tone_target)
@@ -681,7 +734,7 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
     draw.rectangle((x - 2, y - 2, x + length + 2, y + bar_height + 2), fill='black')
     draw.rectangle((x, y, x + length, y + bar_height), fill='white')
     label = _scale_label(chosen_nm)
-    font = _font(max(19, round(width * 14 / 320)))
+    font = _font(max(19, round(width * 14 / 320)), system_ui=True)
     stroke = max(2, width // 300)
     bounds = draw.textbbox((0, 0), label, font=font, stroke_width=stroke)
     label_width = bounds[2] - bounds[0]
@@ -725,18 +778,22 @@ def render(recipe, preview=False):
     padding = int(recipe.get('image_padding', 36))
     if not 0 <= padding <= 200:
         raise ValueError('Image padding must be between 0 and 200 pixels.')
-    width = 420 if preview else 1000
-    margin = round(padding * width / 1000)
+    export_width = _export_panel_width(slots, aspect, figure_crop_metadata)
+    width = 420 if preview else export_width
+    margin = round(padding * width / export_width)
     gap = margin
     rows = math.ceil(len(slots) / columns)
-    tile_height = round(width / aspect)
+    tile_height = math.ceil(width / aspect)
     color = 'white' if recipe.get('background', 'white') == 'white' else '#101820'
     tone_target = _tone_target(slots, aspect, figure_crop_metadata) if recipe.get('match_tone') else None
     figure_sharpness = float(recipe.get('sharpness', 1))
     if not math.isfinite(figure_sharpness) or not 0 <= figure_sharpness <= 3:
         raise ValueError('Figure sharpness must be between 0 and 3.')
-    figure = Image.new('RGB', (columns * width + (columns - 1) * gap + 2 * margin,
-                               rows * tile_height + (rows - 1) * gap + 2 * margin), color)
+    figure_width = columns * width + (columns + 1) * margin
+    figure_height = rows * tile_height + (rows + 1) * margin
+    if not preview and figure_width * figure_height > MAX_FIGURE_PIXELS:
+        raise ValueError('The native-resolution figure is too large. Use fewer panels or smaller crops.')
+    figure = Image.new('RGB', (figure_width, figure_height), color)
     for index, slot in enumerate(slots):
         x = margin + (index % columns) * (width + gap)
         y = margin + (index // columns) * (tile_height + gap)
@@ -792,6 +849,56 @@ def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=
     stream = BytesIO()
     panel.save(stream, format='PNG')
     return 'data:image/png;base64,' + base64.b64encode(stream.getvalue()).decode('ascii')
+
+
+def label_tag_png(label, colour=None):
+    """Render a tightly cropped label tag on a transparent canvas."""
+    label = str(label or '').strip()
+    if not label or len(label) > 120:
+        raise ValueError('Enter a label of 1–120 characters for each tag.')
+    if colour is not None and (not isinstance(colour, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', colour)):
+        raise ValueError('Use #RRGGBB for a tag shade.')
+    width = 1000
+    font = _font(round(width * 18 / 320), system_ui=True, semibold=True)
+    padding = round(width * 7 / 320)
+    bounds = ImageDraw.Draw(Image.new('RGBA', (1, 1))).textbbox((0, 0), label, font=font)
+    tag_width = math.ceil(bounds[2] - bounds[0]) + 2 * padding
+    tag_height = math.ceil(bounds[3] - bounds[1]) + 2 * padding
+    tag = Image.new('RGBA', (tag_width, tag_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(tag)
+    draw.rounded_rectangle((0, 0, tag_width - 1, tag_height - 1),
+                           radius=round(width * 4 / 320), fill=colour or (5, 10, 16, 200))
+    draw.text((padding - bounds[0], padding - bounds[1]), label, font=font,
+              fill=_label_ink(colour) if colour else 'white')
+    stream = BytesIO()
+    tag.save(stream, format='PNG')
+    return stream.getvalue()
+
+
+def export_label_tags(tags, recipe, sources, output_root, source_path=None):
+    if not isinstance(tags, list) or not 1 <= len(tags) <= 500:
+        raise ValueError('Choose 1–500 label tags to export.')
+    if not isinstance(recipe, dict):
+        raise ValueError('Expected a figure recipe.')
+    if any(not isinstance(tag, dict) for tag in tags):
+        raise ValueError('Each tag needs a label and an optional shade.')
+    names = [str(tag.get('label') or '').strip() for tag in tags]
+    if len({name.casefold() for name in names}) != len(names):
+        raise ValueError('Remove duplicate label tags before exporting.')
+    rendered = [label_tag_png(name, tag.get('colour')) for name, tag in zip(names, tags)]
+    paths = [source_path] if source_path else [slot['path'] for slot in recipe.get('slots', []) if slot.get('path')]
+    destinations = {output_folder(sources, output_root, path=path) for path in paths}
+    parent = next(iter(destinations)) if len(destinations) == 1 else Path(output_root).resolve()
+    folder = parent / f'figure_tags_{datetime.now().astimezone():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:6]}'
+    folder.mkdir(parents=True, exist_ok=False)
+    files = []
+    for index, (name, tag, data) in enumerate(zip(names, tags, rendered), 1):
+        slug = re.sub(r'[^\w.-]+', '_', name).strip('._')[:64] or 'tag'
+        shade = str(tag.get('colour') or 'default').lstrip('#').lower()
+        path = folder / f'{index:03d}_{slug}_{shade}.png'
+        path.write_bytes(data)
+        files.append(str(path))
+    return {'folder': str(folder), 'files': files}
 
 
 def export(recipe, sources, output_root):

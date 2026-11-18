@@ -1046,6 +1046,10 @@ def make_handler(app):
                                                                      body.get('width', 1000))})
                 elif self.path == '/api/figures/export':
                     self.send(figure_creator.export(body['recipe'], app.engine.sources, app.config['output_root']))
+                elif self.path == '/api/figures/tags/export':
+                    self.send(figure_creator.export_label_tags(body['tags'], body.get('recipe', {}),
+                                                               app.engine.sources, app.config['output_root'],
+                                                               body.get('source_path')))
                 elif self.path == '/api/aztec/files':
                     self.send(app.aztec.files(app.engine.sources, body.get('project'),
                                              outputs=folder_paths.output_folders(app.engine.sources, app.config['output_root'])))
