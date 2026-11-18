@@ -5,6 +5,7 @@ import hashlib
 from io import BytesIO
 import json
 import math
+import os
 from pathlib import Path
 import re
 import shutil
@@ -42,9 +43,16 @@ def list_images(folder):
     root = Path(folder).expanduser().resolve()
     if not root.is_dir():
         raise ValueError('Choose an available image folder.')
-    return {'folder': str(root), 'images': [dict(path=str(path), name=path.name)
-            for path in sorted(root.iterdir(), key=lambda p: p.name.casefold())
-            if path.is_file() and path.suffix.lower() in EXTENSIONS][:2000]}
+    images = []
+    for directory, subfolders, filenames in os.walk(root, followlinks=False):
+        subfolders[:] = sorted((name for name in subfolders if not name.startswith('.')), key=str.casefold)
+        relative_folder = Path(directory).relative_to(root).as_posix()
+        for name in sorted(filenames, key=str.casefold):
+            path = Path(directory) / name
+            if path.suffix.lower() in EXTENSIONS and path.is_file():
+                images.append(dict(path=str(path), name=name, folder=relative_folder,
+                                   relative_path=path.relative_to(root).as_posix()))
+    return {'folder': str(root), 'images': images}
 
 
 def thumbnail(path, size=512):

@@ -99,6 +99,17 @@ class FiguresTests(unittest.TestCase):
             self.assertEqual(preview.size, (100, 75))
             self.assertLess(preview.convert('L').getpixel((2, 70)), 35)
 
+    def test_custom_folder_finds_images_recursively_and_keeps_folder_context(self):
+        nested = self.root / 'sample A' / 'site 2'
+        nested.mkdir(parents=True)
+        duplicate = nested / self.path.name
+        Image.new('RGB', (20, 20), 'white').save(duplicate)
+        (nested / 'notes.txt').write_text('not an image')
+        found = creator.list_images(self.root)
+        self.assertEqual([(item['name'], item['folder']) for item in found['images']],
+                         [(self.path.name, '.'), (self.path.name, 'sample A/site 2')])
+        self.assertEqual(found['images'][1]['relative_path'], 'sample A/site 2/Sample 8kx.tif')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -200,7 +200,7 @@
    const stem=row.name.replace(/\.[^.]+$/,''),match=stem.match(/^(.*?)[_\s-](\d+)$/);
    const description=document.createElement('span');description.className='image-browser-name-text';description.textContent=match?match[1]:stem;name.append(description);
    if(match){const number=document.createElement('span');number.className='image-browser-number';number.textContent='#'+match[2];name.append(number)}
-   const group=document.createElement('small');group.textContent=row.sample||row.path.split('/').slice(-2,-1)[0]||'';
+   const group=document.createElement('small');group.textContent=row.folder&&row.folder!=='.'?row.folder:row.sample||'Selected folder';group.title=row.relative_path||row.path;
    tile.append(picture,name,group);
    tile.onmouseenter=event=>showHover(row,event.clientX,event.clientY);
    tile.onmousemove=event=>{if(!$('fig-browser-hover').hidden)positionHover(event.clientX,event.clientY)};
@@ -221,9 +221,9 @@
   $('fig-folder-status').textContent='Scanning…';
   try{
    const project=$('fig-project').value;
-   if(project){files=(config.files||[]).filter(row=>row.source_id===project&&/\.(tif|tiff|png|jpe?g)$/i.test(row.path||'')).map(row=>({path:row.path,name:row.name+(row.extension||''),extension:row.extension,id:row.id,has_preview:row.has_preview,sample:row.sample,image_kind:row.image_kind}));}
+   if(project){files=(config.files||[]).filter(row=>row.source_id===project&&/\.(tif|tiff|png|jpe?g)$/i.test(row.path||'')).map(row=>({path:row.path,name:row.name+(row.extension||''),extension:row.extension,id:row.id,has_preview:row.has_preview,sample:row.sample,folder:row.folder,image_kind:row.image_kind}));}
    else{const result=await api('figures/list',{folder:$('fig-folder').value});files=result.images;$('fig-folder').value=result.folder;WorkbenchWorkspace.writeRaw('tem-figures-folder',result.folder)}
-   sync();if($('fig-browser-dialog').open)renderBrowser();$('fig-folder-status').textContent=`${files.length} images found${project?' in this project':''}`;
+   sync();if($('fig-browser-dialog').open)renderBrowser();$('fig-folder-status').textContent=`${files.length} images found${project?' in this project':' in folder and subfolders'}`;
   }catch(error){$('fig-folder-status').textContent=error.message}
  }
  async function add(path){
