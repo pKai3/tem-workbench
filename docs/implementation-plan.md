@@ -1,6 +1,6 @@
 # TEM Workbench implementation plan
 
-Last updated: 18 November 2026
+Last updated: 19 November 2026
 
 ## Figures workspace — first version completed 18 November 2026 (`97a3136`)
 
@@ -21,6 +21,8 @@ The native-resolution export, transparent tag exporter and live panel-editing re
 The native-detail estimate correction was completed 18 November 2026 in `530e3db`; the six-image 100% example changed from a 28.2 MB preview-based estimate to a 49.2 MB native-detail estimate, compared with its measured 48.1 MB PNG.
 
 **Figure frame-highlight alignment — completed 18 November 2026 (`1c5784b`):** The panel hover border now lives in the preview image's coordinate system. It scrolls with its frame when the page or preview moves and clips at the preview viewport. This is a display-only correction; figure exports are unchanged.
+
+**Editable figure annotations — completed 19 November 2026 (`68208fd`):** Each panel can carry manually placed arrows and text in its saved figure recipe. The live panel has Select, Arrow and Text tools; arrows can be drawn, moved and reshaped at either endpoint, while text can be placed, moved, edited and deleted. Selected annotations have colour and size or stroke-width controls. Text accepts `_` and `^` for subscript and superscript (`x_y`, `x^y`), braces for longer scripts (`α_{phase}`), and an insert-at-cursor Greek character picker. Default arrows are red and text is white; the source image stays untouched. Annotation positions are relative to the rendered panel, so a later crop or zoom change may require repositioning them. The panel label can be hidden, and calibrated scale bars now offer a black-backed style in addition to the existing style. Preview, full-size PNG and recipe manifest use the same saved annotations. Focused Python rendering tests, JavaScript syntax/text-parser checks and browser placement, editing, Greek-picker and popup-layout checks pass. No app version or release change.
 
 **Release record — 18 November 2026:** The user approved publication of the corrected figure-size estimator and accumulated post-v1.0.37 work. The earlier release run 44246356508 was cancelled before publication after the reported size-estimate error. The corrected candidate `62d9a9c` passed its push checks, then the [manual Publish Workbench release workflow](https://github.com/pKai3/tem-workbench/actions/runs/44256538632) passed the full Linux analysis/browser and Windows/macOS verification gates and published [v1.0.38](https://github.com/pKai3/tem-workbench/releases/tag/v1.0.38) at `d1cac2d`. The downloaded ZIP passed its published SHA-256 checksum (`d92f9cbbe94a634768882c2a383fcd9a4aaaa97af754ee05c42d4cb310355640`), archive integrity, embedded-version and commit checks. The local checkout was fast-forwarded to the release commit.
 
