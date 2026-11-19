@@ -35,6 +35,8 @@
  let outputHover,hoveredPanel=-1,hoveredSource='',hoverEnabled=true,hoverPoint=null;
  let detailCache=new Map(),detailPending=new Map(),dragState=null,dropTarget,panelHighlight,suppressOutputClick=false;
  let panelPreviewTimer=0,panelPreviewRevision=0;
+ let annotationTool='select',selectedAnnotation=-1,annotationDrag=null;
+ const annotationDefaults={arrowColor:'#ff2020',textColor:'#ffffff',width:3,size:30,text:'β'};
  let estimateTimer=0,estimateVersion=0,estimatedBytes=null,estimateExact=false,estimateError='';
  let tagRows=[];
  async function api(path,body){
@@ -202,12 +204,163 @@
   if(!dialog.open||!slot?.path||!image||!note)return;
   note.textContent='Updating preview…';
   panelPreviewTimer=setTimeout(async()=>{
-   try{const result=await api('figures/panel',{slot,aspect:recipe.aspect,
+   try{const result=await api('figures/panel',{slot:{...slot,annotations:[]},aspect:recipe.aspect,
     metadata_overlay:recipe.metadata_overlay,recipe,width:800});
     if(revision!==panelPreviewRevision||!dialog.open)return;
     image.src=result.image;note.textContent='';
    }catch(error){if(revision===panelPreviewRevision&&dialog.open)note.textContent=error.message}
   },180);
+ }
+ const svgNode=(tag,attributes={})=>{const node=document.createElementNS('http://www.w3.org/2000/svg',tag);
+  for(const [key,value] of Object.entries(attributes))node.setAttribute(key,String(value));return node};
+ const clamp=value=>Math.max(0,Math.min(1,value));
+ function annotationAtoms(value){
+  const atoms=[];for(let index=0;index<value.length;index++){
+   let char=value[index],escaped=false;
+   if(char==='\\'&&index+1<value.length){char=value[++index];escaped=true}
+   if(!escaped&&(char==='_'||char==='^')&&atoms.length&&index+1<value.length){
+    let script;if(value[index+1]==='{'){const end=value.indexOf('}',index+2);
+     if(end<0){atoms.push({base:char,sub:'',sup:''});continue}
+     script=value.slice(index+2,end);index=end;
+    }else script=value[++index];
+    atoms.at(-1)[char==='_'?'sub':'sup']=script;
+   }else atoms.push({base:char,sub:'',sup:''});
+  }return atoms;
+ }
+ function annotationChanged(){draft();sync();schedulePreview();scheduleEstimate();renderAnnotationOverlay()}
+ function renderAnnotationOverlay(){
+  const svg=$('fig-annotation-svg'),image=$('fig-slot-dialog').querySelector('.fig-live-preview img');
+  if(!svg||!image)return;
+  const slot=recipe.slots[selectedPanel],items=slot.annotations||[];
+  const viewHeight=1000*(image.naturalHeight||750)/(image.naturalWidth||1000);
+  svg.setAttribute('viewBox',`0 0 1000 ${viewHeight}`);svg.replaceChildren();
+  const measure=document.createElement('canvas').getContext('2d');
+  items.forEach((item,index)=>{
+   const group=svgNode('g',{'data-annotation':index});
+   if(item.type==='arrow'){
+    const x1=item.x1*1000,y1=item.y1*viewHeight,x2=item.x2*1000,y2=item.y2*viewHeight;
+    const distance=Math.hypot(x2-x1,y2-y1)||1,ux=(x2-x1)/distance,uy=(y2-y1)/distance;
+    const stroke=Math.max(2,Number(item.width||3)*1000/320),head=Math.min(distance*.55,Math.max(stroke*3,26)),wing=head*.42;
+    const bx=x2-ux*head,by=y2-uy*head;
+    group.append(svgNode('line',{x1,y1,x2:x2-ux*head*.8,y2:y2-uy*head*.8,stroke:item.color,'stroke-width':stroke,'stroke-linecap':'round'}));
+    group.append(svgNode('polygon',{points:`${x2},${y2} ${bx-uy*wing},${by+ux*wing} ${bx+uy*wing},${by-ux*wing}`,fill:item.color}));
+    group.append(svgNode('line',{x1,y1,x2,y2,stroke:'transparent','stroke-width':Math.max(20,stroke*3),'data-annotation':index}));
+    if(index===selectedAnnotation)for(const [handle,x,y] of [['start',x1,y1],['end',x2,y2]])
+     group.append(svgNode('circle',{cx:x,cy:y,r:9,fill:'#fff',stroke:'#111','stroke-width':2,'data-annotation':index,'data-handle':handle}));
+   }else if(item.type==='text'){
+    const size=Number(item.size||30)*1000/320,small=size*.68;
+    let x=item.x*1000,y=item.y*viewHeight;
+    for(const atom of annotationAtoms(item.text||'')){
+     const base=svgNode('text',{x,y,'font-size':size,'font-family':'system-ui, sans-serif','font-weight':600,
+      'dominant-baseline':'text-before-edge',fill:item.color,stroke:'#000','stroke-width':Math.max(2,1000/640),'paint-order':'stroke'});
+     base.textContent=atom.base;group.append(base);
+     measure.font=`600 ${size}px system-ui`;const after=x+measure.measureText(atom.base).width;
+     let extra=0;for(const [key,offset] of [['sup',-.16],['sub',.47]])if(atom[key]){
+      const script=svgNode('text',{x:after,y:y+size*offset,'font-size':small,'font-family':'system-ui, sans-serif','font-weight':600,
+       'dominant-baseline':'text-before-edge',fill:item.color,stroke:'#000','stroke-width':Math.max(2,1000/640),'paint-order':'stroke'});
+      script.textContent=atom[key];group.append(script);measure.font=`600 ${small}px system-ui`;
+      extra=Math.max(extra,measure.measureText(atom[key]).width);
+     }x=after+extra;
+    }
+    const hit=svgNode('rect',{x:item.x*1000,y:item.y*viewHeight-10,width:Math.max(24,x-item.x*1000),height:size*1.4,
+     fill:'transparent','data-annotation':index});group.append(hit);
+    if(index===selectedAnnotation)group.insertBefore(svgNode('rect',{x:item.x*1000-5,y:item.y*viewHeight-10,
+     width:Math.max(24,x-item.x*1000)+10,height:size*1.4,fill:'none',stroke:'#5dd6da','stroke-width':2,'pointer-events':'none'}),group.firstChild);
+   }
+   svg.append(group);
+  });
+  svg.style.cursor=annotationTool==='select'?'default':'crosshair';
+ }
+ function annotationEditor(slot,previewPane,previewImage){
+  slot.annotations=Array.isArray(slot.annotations)?slot.annotations:[];
+  const frame=document.createElement('div');frame.className='fig-annotation-frame';
+  const svg=svgNode('svg',{id:'fig-annotation-svg',role:'img','aria-label':'Editable annotations on this panel'});
+  frame.append(previewImage,svg);previewPane.append(frame);
+  previewImage.onload=renderAnnotationOverlay;
+  const tools=document.createElement('div');tools.className='fig-annotation-tools';
+  for(const [mode,label] of [['select','Select'],['arrow','Arrow'],['text','Text']]){
+   const button=document.createElement('button');button.type='button';button.textContent=label;
+   button.onclick=()=>{annotationTool=mode;updateControls();renderAnnotationOverlay()};tools.append(button);
+   button.dataset.tool=mode;
+  }
+  const remove=document.createElement('button');remove.type='button';remove.textContent='Delete';
+  remove.onclick=()=>{if(selectedAnnotation<0)return;slot.annotations.splice(selectedAnnotation,1);selectedAnnotation=-1;updateControls();annotationChanged()};tools.append(remove);
+  previewPane.append(tools);
+  const fields=document.createElement('div');fields.className='fig-annotation-fields';
+  const textLabel=document.createElement('label');textLabel.textContent='Text';
+  const textInput=document.createElement('input');textInput.type='text';textInput.maxLength=120;
+  textInput.placeholder='β or α_p or x^{2+}';textLabel.append(textInput);fields.append(textLabel);
+  const greek=document.createElement('details');greek.className='fig-greek-picker';
+  const summary=document.createElement('summary');summary.textContent='Greek picker';greek.append(summary);
+  const grid=document.createElement('div');grid.className='fig-greek-grid';
+  let selectionStart=0,selectionEnd=0;
+  const rememberSelection=()=>{selectionStart=textInput.selectionStart;selectionEnd=textInput.selectionEnd};
+  for(const letter of 'αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩµ'){
+   const button=document.createElement('button');button.type='button';button.textContent=letter;button.title=`Insert ${letter}`;
+   button.onpointerdown=event=>event.preventDefault();
+   button.onclick=()=>{textInput.setRangeText(letter,selectionStart,selectionEnd,'end');textInput.focus();rememberSelection();
+    textInput.dispatchEvent(new Event('input',{bubbles:true}))};grid.append(button);
+  }greek.append(grid);fields.append(greek);
+  const colourLabel=document.createElement('label');colourLabel.textContent='Colour';
+  const colour=document.createElement('input');colour.type='color';colourLabel.append(colour);fields.append(colourLabel);
+  const sizeLabel=document.createElement('label');sizeLabel.textContent='Text size';
+  const size=document.createElement('input');size.type='number';size.min='12';size.max='72';size.value='30';sizeLabel.append(size);fields.append(sizeLabel);
+  const widthLabel=document.createElement('label');widthLabel.textContent='Arrow width';
+  const width=document.createElement('input');width.type='number';width.min='1';width.max='12';width.value='3';widthLabel.append(width);fields.append(widthLabel);
+  previewPane.append(fields);
+  const help=document.createElement('p');help.className='hint fig-annotation-help';help.textContent='Drag to draw an arrow; click to place text. Drag selected items or arrow ends. Use _ and ^ for subscript and superscript; braces group longer text.';previewPane.append(help);
+  function updateControls(){
+   for(const button of tools.querySelectorAll('[data-tool]'))button.setAttribute('aria-pressed',String(button.dataset.tool===annotationTool));
+   const item=slot.annotations[selectedAnnotation];remove.disabled=!item;
+   textInput.value=item?.type==='text'?item.text:annotationDefaults.text;
+   colour.value=item?.color||annotationDefaults[annotationTool==='arrow'?'arrowColor':'textColor'];size.value=String(item?.type==='text'?item.size:annotationDefaults.size);
+   width.value=String(item?.type==='arrow'?item.width:annotationDefaults.width);
+   textInput.disabled=Boolean(item&&item.type!=='text');size.disabled=Boolean(item&&item.type!=='text');
+   width.disabled=Boolean(item&&item.type!=='arrow');selectionStart=selectionEnd=textInput.value.length;
+  }
+  textInput.addEventListener('select',rememberSelection);textInput.addEventListener('keyup',rememberSelection);
+  textInput.oninput=()=>{rememberSelection();annotationDefaults.text=textInput.value;const item=slot.annotations[selectedAnnotation];
+   if(item?.type==='text'){item.text=textInput.value;annotationChanged()}};
+  colour.oninput=()=>{const item=slot.annotations[selectedAnnotation];
+   annotationDefaults[item?.type==='arrow'||!item&&annotationTool==='arrow'?'arrowColor':'textColor']=colour.value;
+   if(item){item.color=colour.value;annotationChanged()}};
+  size.onchange=()=>{const value=Number(size.value);if(!Number.isFinite(value)||value<12||value>72){updateControls();return}
+   annotationDefaults.size=value;const item=slot.annotations[selectedAnnotation];if(item?.type==='text'){item.size=value;annotationChanged()}};
+  width.onchange=()=>{const value=Number(width.value);if(!Number.isFinite(value)||value<1||value>12){updateControls();return}
+   annotationDefaults.width=value;const item=slot.annotations[selectedAnnotation];if(item?.type==='arrow'){item.width=value;annotationChanged()}};
+  const point=event=>{const box=svg.getBoundingClientRect();return {x:clamp((event.clientX-box.left)/box.width),y:clamp((event.clientY-box.top)/box.height)}};
+  svg.onpointerdown=event=>{
+   const at=point(event),target=event.target.closest('[data-annotation]');
+   if(annotationTool==='arrow'){
+    if(slot.annotations.length>=40){status('At most 40 annotations per panel.',true);return}
+    selectedAnnotation=slot.annotations.push({type:'arrow',x1:at.x,y1:at.y,x2:at.x,y2:at.y,color:annotationDefaults.arrowColor,width:annotationDefaults.width})-1;
+    annotationDrag={index:selectedAnnotation,mode:'end',start:at,original:structuredClone(slot.annotations[selectedAnnotation]),created:true};
+   }else if(annotationTool==='text'){
+    if(slot.annotations.length>=40){status('At most 40 annotations per panel.',true);return}
+    selectedAnnotation=slot.annotations.push({type:'text',x:at.x,y:at.y,text:annotationDefaults.text,color:annotationDefaults.textColor,size:annotationDefaults.size})-1;
+    annotationTool='select';updateControls();annotationChanged();textInput.focus();textInput.select();return;
+   }else if(target){selectedAnnotation=Number(target.dataset.annotation);
+    annotationDrag={index:selectedAnnotation,mode:target.dataset.handle||'move',start:at,original:structuredClone(slot.annotations[selectedAnnotation])};
+   }else{selectedAnnotation=-1;updateControls();renderAnnotationOverlay();return}
+   svg.setPointerCapture(event.pointerId);updateControls();renderAnnotationOverlay();event.preventDefault();
+  };
+  svg.onpointermove=event=>{if(!annotationDrag)return;
+   const at=point(event),drag=annotationDrag,item=slot.annotations[drag.index],dx=at.x-drag.start.x,dy=at.y-drag.start.y;
+   if(item.type==='text'){item.x=clamp(drag.original.x+dx);item.y=clamp(drag.original.y+dy)}
+   else if(drag.mode==='move'){
+    item.x1=clamp(drag.original.x1+dx);item.y1=clamp(drag.original.y1+dy);
+    item.x2=clamp(drag.original.x2+dx);item.y2=clamp(drag.original.y2+dy);
+   }else{item[drag.mode==='start'?'x1':'x2']=at.x;item[drag.mode==='start'?'y1':'y2']=at.y}
+   renderAnnotationOverlay();
+  };
+  svg.onpointerup=event=>{if(!annotationDrag)return;
+   if(svg.hasPointerCapture(event.pointerId))svg.releasePointerCapture(event.pointerId);
+   const item=slot.annotations[annotationDrag.index];
+   if(annotationDrag.created&&Math.hypot(item.x2-item.x1,item.y2-item.y)<.005){slot.annotations.splice(annotationDrag.index,1);selectedAnnotation=-1}
+   annotationDrag=null;updateControls();annotationChanged();
+  };
+  svg.onpointercancel=()=>{annotationDrag=null;renderAnnotationOverlay()};
+  updateControls();renderAnnotationOverlay();
  }
  function renderCards(){
   const host=$('fig-slot-content');host.replaceChildren();
@@ -242,7 +395,9 @@
    const previewStatus=document.createElement('p');previewStatus.className='hint fig-live-preview-status';
    previewStatus.setAttribute('role','status');
    if(!slot.path)previewStatus.textContent='Choose an image to preview it.';
-   previewPane.append(previewTitle,previewImage,previewStatus);
+   previewPane.append(previewTitle);
+   if(slot.path)annotationEditor(slot,previewPane,previewImage);
+   previewPane.append(previewStatus);
    sourcePane.append(sourceTitle,sourceButtons);editPane.append(editTitle);
    columns.append(sourcePane,editPane,previewPane);card.append(columns);
    if(!slot.path){const note=document.createElement('p');note.className='hint';note.textContent='Choose an image for this slot.';sourcePane.append(note);host.append(card);return}
@@ -299,6 +454,10 @@
    for(const name of ['Left','Right'])position.add(new Option(name,name.toLowerCase()));position.value=slot.scale_position||'';
    position.onchange=()=>{if(position.value)slot.scale_position=position.value;else delete slot.scale_position;changed()};position.disabled=keep;
    positionLabel.append(position);metadata.append(positionLabel);
+   const styleLabel=document.createElement('label');styleLabel.textContent='Scale bar style';
+   const style=document.createElement('select');style.add(new Option('Standard','standard'));
+   style.add(new Option('Black plaque','plaque'));style.value=slot.scale_style||'standard';style.disabled=keep;
+   style.onchange=()=>{slot.scale_style=style.value;changed()};styleLabel.append(style);metadata.append(styleLabel);
    const footer=document.createElement('section');footer.className='fig-footer-evidence';
    const footerHead=document.createElement('div');footerHead.className='fig-footer-head';
    const footerTitle=document.createElement('strong');footerTitle.textContent='Trimmed metadata bar';
@@ -343,6 +502,10 @@
    inputField(fields,'Export label','text',slot.label,value=>{slot.label=value;
     title.textContent=`${index+1}. ${panelDisplayName(slot)}`;title.title=title.textContent;
     previewImage.alt=`Preview of ${panelDisplayName(slot)}`;changed()}, {maxlength:'120'},true);
+   const labelChoice=document.createElement('label');labelChoice.className='fig-label-choice';
+   const labelCheck=document.createElement('input');labelCheck.type='checkbox';labelCheck.checked=slot.label_visible!==false;
+   labelCheck.onchange=()=>{slot.label_visible=labelCheck.checked;changed()};
+   labelChoice.append(labelCheck,document.createTextNode('Show panel label'));fields.append(labelChoice);
    const colourLabel=document.createElement('label');colourLabel.textContent='Label shade';const colourRow=document.createElement('span');colourRow.className='fig-colour-row';
    const picker=document.createElement('input');picker.type='color';picker.value=normaliseHex(slot.label_colour)||'#0c131c';picker.setAttribute('aria-label',`Pick label shade for panel ${index+1}`);
    const hex=document.createElement('input');hex.type='text';hex.maxLength=7;hex.placeholder='#RRGGBB';hex.value=normaliseHex(slot.label_colour)||'';hex.setAttribute('aria-label',`Hex label shade for panel ${index+1}`);
@@ -407,7 +570,7 @@
  function openSlot(index){
   if(index<0||index>=recipe.slots.length)return;
   hideOutputHover();
-  selectedPanel=index;renderCards();
+  selectedPanel=index;selectedAnnotation=-1;annotationTool='select';renderCards();
   if(!$('fig-slot-dialog').open)$('fig-slot-dialog').showModal();
   schedulePanelPreview();
  }

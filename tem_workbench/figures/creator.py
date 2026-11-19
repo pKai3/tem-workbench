@@ -481,6 +481,107 @@ def _label_ink(hex_colour):
     return '#0b1520' if sum(a * b for a, b in zip(linear, (.2126, .7152, .0722))) > .179 else 'white'
 
 
+def _annotation_atoms(value):
+    """Parse plain text with one-character or braced sub/superscripts."""
+    atoms = []
+    index = 0
+    while index < len(value):
+        char = value[index]
+        escaped = False
+        if char == '\\' and index + 1 < len(value):
+            index += 1
+            char = value[index]
+            escaped = True
+        if not escaped and char in ('_', '^') and atoms and index + 1 < len(value):
+            index += 1
+            if value[index] == '{':
+                end = value.find('}', index + 1)
+                if end < 0:
+                    atoms.append({'base': char, 'sub': '', 'sup': ''})
+                    continue
+                script = value[index + 1:end]
+                index = end
+            else:
+                script = value[index]
+            atoms[-1]['sub' if char == '_' else 'sup'] = script
+        else:
+            atoms.append({'base': char, 'sub': '', 'sup': ''})
+        index += 1
+    return atoms
+
+
+def _annotations(panel, slot):
+    annotations = slot.get('annotations', [])
+    if not isinstance(annotations, list) or len(annotations) > 40:
+        raise ValueError('Use at most 40 panel annotations.')
+    if not annotations:
+        return panel
+    image = panel.convert('RGBA')
+    draw = ImageDraw.Draw(image)
+    width, height = image.size
+    for item in annotations:
+        if not isinstance(item, dict) or item.get('type') not in ('arrow', 'text'):
+            raise ValueError('Unsupported panel annotation.')
+        colour = item.get('color', '#ffffff')
+        if not isinstance(colour, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', colour):
+            raise ValueError('Use #RRGGBB for annotation colour.')
+        keys = ('x1', 'y1', 'x2', 'y2') if item['type'] == 'arrow' else ('x', 'y')
+        try:
+            coordinates = [float(item[key]) for key in keys]
+        except (KeyError, TypeError, ValueError):
+            raise ValueError('Invalid annotation position.') from None
+        if any(not math.isfinite(value) or not 0 <= value <= 1 for value in coordinates):
+            raise ValueError('Annotation positions must be inside the panel.')
+        if item['type'] == 'arrow':
+            try:
+                thickness = float(item.get('width', 3))
+            except (TypeError, ValueError):
+                raise ValueError('Arrow thickness must be between 1 and 12.') from None
+            if not math.isfinite(thickness) or not 1 <= thickness <= 12:
+                raise ValueError('Arrow thickness must be between 1 and 12.')
+            stroke = max(1, round(thickness * width / 320))
+            x1, y1, x2, y2 = coordinates[0] * width, coordinates[1] * height, coordinates[2] * width, coordinates[3] * height
+            distance = math.hypot(x2 - x1, y2 - y1)
+            if distance < 1:
+                continue
+            ux, uy = (x2 - x1) / distance, (y2 - y1) / distance
+            head = min(distance * .55, max(stroke * 3, width * .026))
+            wing = head * .42
+            base_x, base_y = x2 - ux * head, y2 - uy * head
+            draw.line((round(x1), round(y1), round(base_x + ux * head * .2), round(base_y + uy * head * .2)),
+                      fill=colour, width=stroke)
+            draw.polygon(((x2, y2), (base_x - uy * wing, base_y + ux * wing),
+                          (base_x + uy * wing, base_y - ux * wing)), fill=colour)
+        else:
+            value = item.get('text', '')
+            try:
+                size = float(item.get('size', 30))
+            except (TypeError, ValueError):
+                raise ValueError('Text size must be between 12 and 72.') from None
+            if not isinstance(value, str) or len(value) > 120 or '\n' in value or not math.isfinite(size) or not 12 <= size <= 72:
+                raise ValueError('Text annotations need one line of up to 120 characters and size 12–72.')
+            pixel_size = max(10, round(size * width / 320))
+            base_font = _font(pixel_size, system_ui=True, semibold=True)
+            script_font = _font(max(8, round(pixel_size * .68)), system_ui=True, semibold=True)
+            cursor = coordinates[0] * width
+            top = coordinates[1] * height
+            stroke = max(1, round(width / 640))
+            for atom in _annotation_atoms(value):
+                base = atom['base']
+                draw.text((round(cursor), round(top)), base, font=base_font, fill=colour,
+                          stroke_width=stroke, stroke_fill='black')
+                after_base = cursor + draw.textlength(base, font=base_font)
+                script_widths = []
+                for key, offset in (('sup', -.16), ('sub', .47)):
+                    script = atom[key]
+                    if script:
+                        draw.text((round(after_base), round(top + pixel_size * offset)), script,
+                                  font=script_font, fill=colour, stroke_width=stroke, stroke_fill='black')
+                        script_widths.append(draw.textlength(script, font=script_font))
+                cursor = after_base + (max(script_widths) if script_widths else 0)
+    return image.convert('RGB')
+
+
 def _badge(panel, label, colour, reserved_right=0):
     if colour is not None and (not isinstance(colour, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', colour)):
         raise ValueError('Use #RRGGBB for the panel label colour.')
@@ -818,6 +919,27 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
         raise ValueError('Choose Left or Right for the scale bar.')
     x = margin if position == 'left' else width - margin - length
     y = height - margin - bar_height
+    style = slot.get('scale_style', 'standard')
+    if style not in ('standard', 'plaque'):
+        raise ValueError('Choose a supported scale bar style.')
+    if style == 'plaque':
+        label = _scale_label(chosen_nm)
+        font = _font(max(20, round(width * 24 / 320)), system_ui=True, semibold=True)
+        label_box = draw.textbbox((0, 0), label, font=font)
+        label_width = label_box[2] - label_box[0]
+        label_height = label_box[3] - label_box[1]
+        inset = max(8, round(width * .018))
+        plaque_width = max(length, label_width) + 2 * inset
+        plaque_height = bar_height + label_height + 3 * inset
+        plaque_x = margin if position == 'left' else width - margin - plaque_width
+        plaque_y = height - margin - plaque_height
+        draw.rectangle((plaque_x, plaque_y, plaque_x + plaque_width, plaque_y + plaque_height), fill='black')
+        bar_x = plaque_x + (plaque_width - length) / 2
+        draw.rectangle((round(bar_x), plaque_y + inset, round(bar_x + length), plaque_y + inset + bar_height), fill='white')
+        draw.text((round(plaque_x + (plaque_width - label_width) / 2 - label_box[0]),
+                   round(plaque_y + 2 * inset + bar_height - label_box[1])),
+                  label, font=font, fill='white')
+        return image
     draw.rectangle((x - 2, y - 2, x + length + 2, y + bar_height + 2), fill='black')
     draw.rectangle((x, y, x + length, y + bar_height), fill='white')
     label = _scale_label(chosen_nm)
@@ -905,8 +1027,9 @@ def render(recipe, preview=False):
             label = str(slot.get('label') or Path(slot['path']).stem)[:120]
             lines = _metadata_lines(slot, metadata_overlay)
             reserved = _metadata_reserved(width, lines)
-            panel = _badge(panel, label, slot.get('label_colour'), reserved_right=reserved)
-            figure.paste(_metadata_badge(panel, lines), (x, y))
+            if slot.get('label_visible', True):
+                panel = _badge(panel, label, slot.get('label_colour'), reserved_right=reserved)
+            figure.paste(_annotations(_metadata_badge(panel, lines), slot), (x, y))
     stream = BytesIO()
     figure.save(stream, format='PNG', dpi=(300, 300))
     return stream.getvalue()
@@ -934,8 +1057,10 @@ def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=
                    figure_scale_bar_position=scale_bar_position)
     lines = _metadata_lines(slot, metadata_overlay or [])
     reserved = _metadata_reserved(width, lines)
-    panel = _metadata_badge(_badge(panel, slot.get('label') or Path(slot['path']).stem,
-                                   slot.get('label_colour'), reserved_right=reserved), lines)
+    if slot.get('label_visible', True):
+        panel = _badge(panel, slot.get('label') or Path(slot['path']).stem,
+                       slot.get('label_colour'), reserved_right=reserved)
+    panel = _annotations(_metadata_badge(panel, lines), slot)
     stream = BytesIO()
     panel.save(stream, format='PNG')
     return 'data:image/png;base64,' + base64.b64encode(stream.getvalue()).decode('ascii')

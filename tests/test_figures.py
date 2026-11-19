@@ -73,6 +73,43 @@ class FiguresTests(unittest.TestCase):
         self.assertTrue(Path(output['recipe']).is_file())
         self.assertEqual(output['size_bytes'], Path(output['png']).stat().st_size)
 
+    def test_editable_annotations_render_in_preview_and_export(self):
+        found = creator.inspect_image(self.path)
+        slot = {**found, 'label_visible': False, 'annotations': [
+            {'type': 'arrow', 'x1': .2, 'y1': .3, 'x2': .7, 'y2': .6,
+             'color': '#ff0000', 'width': 4},
+            {'type': 'text', 'x': .2, 'y': .1, 'text': 'α_{p} β^2',
+             'color': '#ffffff', 'size': 30},
+        ]}
+        recipe = {'slots': [slot], 'columns': 1, 'scale_bar_overlay': False}
+        with Image.open(BytesIO(creator.render(recipe, preview=True))) as preview:
+            pixels = np.asarray(preview).copy()
+        self.assertGreater(np.count_nonzero((pixels[:, :, 0] > 200) &
+                                            (pixels[:, :, 1] < 50) &
+                                            (pixels[:, :, 2] < 50)), 100)
+        with Image.open(BytesIO(creator.render(recipe))) as exported:
+            full = np.asarray(exported).copy()
+        self.assertGreater(full.shape[1], pixels.shape[1])
+        self.assertGreater(np.count_nonzero((full[:, :, 0] > 200) &
+                                            (full[:, :, 1] < 50) &
+                                            (full[:, :, 2] < 50)), 100)
+        self.assertEqual(creator._annotation_atoms('x_y^2')[0],
+                         {'base': 'x', 'sub': 'y', 'sup': '2'})
+        self.assertEqual(creator._annotation_atoms(r'x\_y')[1]['base'], '_')
+        output = creator.export(recipe, [], self.root / 'output')
+        manifest = json.loads(Path(output['recipe']).read_text())
+        self.assertEqual(manifest['recipe']['slots'][0]['annotations'][1]['text'], 'α_{p} β^2')
+        slot['annotations'][0]['x2'] = 1.5
+        with self.assertRaisesRegex(ValueError, 'inside the panel'):
+            creator.render(recipe, preview=True)
+
+    def test_black_plaque_scale_style(self):
+        found = creator.inspect_image(self.path)
+        slot = {**found, 'scale_nm': 500, 'scale_style': 'plaque', 'scale_position': 'right'}
+        panel = np.asarray(creator._panel(slot, 420, 4 / 3, strict=True))
+        self.assertGreater(np.count_nonzero(np.all(panel[-100:, -190:] < 10, axis=2)), 1000)
+        self.assertGreater(np.count_nonzero(np.all(panel[-100:, -190:] > 245, axis=2)), 100)
+
     def test_missing_sidecar_needs_confirmed_scale_and_changed_source_is_rejected(self):
         found = creator.inspect_image(self.path)
         self.assertIsNone(found['scale_nm'])
