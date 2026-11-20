@@ -4,6 +4,7 @@
  const $=id=>document.getElementById(id);
  let config,folderBrowser,projectSettings,files=[],selectedPanel=0,currentId='',timer=0,renderVersion=0,hoverTimer=0,browserPreferred=160,indexPoll=0,indexRecords={};
  let saved={};
+ let indexStarting=false,indexJob=null;
  let scanVersion=0,browserRoot='',previewPoll=0,previewStarting=false,previewJob=null;
  const metadataFilters=[['fig-filter-mag','magnification'],['fig-filter-kv','voltage_kv'],['fig-filter-probe','probe'],['fig-filter-wd','working_distance'],['fig-filter-date','acquisition_date']];
  const blank=()=>({schema_version:2,name:'Untitled figure',rows:1,columns:2,aspect:4/3,background:'white',match_tone:false,sharpness:1,crop_metadata:true,scale_bar_overlay:true,scale_bar_position:'left',image_padding:36,export_scale_percent:100,metadata_overlay:[],slots:[{},{}]});
@@ -774,9 +775,29 @@
    select.value=entries.has(previous)?previous:'';
   }
  }
+ function indexControls(){
+  const active=indexJob?.state==='running';
+  for(const prefix of ['fig-','fig-browser-']){
+   $(prefix+'preprocess').disabled=$(prefix+'reprocess-ocr').disabled=indexStarting||active||!files.length;
+   $(prefix+'preprocess-cancel').hidden=!active;
+   $(prefix+'ocr-workers').disabled=indexStarting||active;
+  }
+ }
+ function indexMessage(message){
+  for(const prefix of ['fig-','fig-browser-'])$(prefix+'preprocess-status').textContent=message;
+ }
+ async function startPreprocess(force=false){
+  if(indexStarting||indexJob?.state==='running')return;
+  indexStarting=true;indexControls();indexMessage('Starting metadata preprocessing…');
+  try{
+   const result=await api('figures/index/start',{...sourceSelection(),force,workers:Number($('fig-ocr-workers').value)});
+   indexStarting=false;showIndexStatus(result);refreshIndex();
+  }catch(error){indexStarting=false;indexControls();indexMessage(error.message)}
+ }
  function showIndexStatus(result){
   indexRecords=result.records||indexRecords;
-  const active=result.state==='running',progress=$('fig-preprocess-progress'),status=$('fig-preprocess-status');
+  indexJob=result;
+  const active=result.state==='running';
   if(result.state==='complete'){
    let refreshed=false;
    for(const slot of recipe.slots){
@@ -793,14 +814,20 @@
    if(refreshed)changed(true);
   }
   if(!active){refreshFilters();if($('fig-browser-dialog').open)renderBrowser()}
-  $('fig-preprocess').disabled=active||!files.length;
-  $('fig-reprocess-ocr').disabled=active||!files.length;$('fig-preprocess-cancel').hidden=!active;
-  progress.hidden=!active&&result.state==='idle';progress.max=Math.max(1,result.total||1);progress.value=result.done||0;
-  if(active)status.textContent=`${result.force?'Reprocessing metadata':'Preprocessing'} ${result.done}/${result.total||'…'} · ${result.workers} workers · ${result.current||'scanning files'}`;
-  else if(result.state==='complete'||result.state==='cancelled')status.textContent=`${result.state==='complete'?'Processed':'Stopped after'} ${result.done} images · ${result.reused} reused · ${result.failed} failed`;
-  else if(result.state==='error')status.textContent=`Preprocessing failed: ${result.errors?.at(-1)||'unknown error'}`;
-  else status.textContent=`${Object.keys(indexRecords).length} images indexed`;
-  status.title=[result.index_path,...(result.errors||[])].filter(Boolean).join('\n');
+  indexControls();
+  let message;
+  if(active)message=`${result.force?'Reprocessing metadata':'Preprocessing'} ${result.done}/${result.total||'…'} · ${result.workers} workers · ${result.current||'scanning files'}`;
+  else if(result.state==='complete'||result.state==='cancelled')message=`${result.state==='complete'?'Processed':'Stopped after'} ${result.done} images · ${result.reused} reused · ${result.failed} failed`;
+  else if(result.state==='error')message=`Preprocessing failed: ${result.errors?.at(-1)||'unknown error'}`;
+  else message=`${Object.keys(indexRecords).length} images indexed`;
+  indexMessage(message);
+  for(const prefix of ['fig-','fig-browser-']){
+   const progress=$(prefix+'preprocess-progress');
+   progress.hidden=!active&&result.state==='idle';progress.max=Math.max(1,result.total||1);progress.value=result.done||0;
+   $(prefix+'preprocess-status').title=[result.index_path,...(result.errors||[])].filter(Boolean).join('\n');
+  }
+  $('fig-browser-preprocess-errors').hidden=!result.errors?.length;$('fig-browser-preprocess-error-list').replaceChildren();
+  for(const error of result.errors||[]){const item=document.createElement('li');item.textContent=error;$('fig-browser-preprocess-error-list').append(item)}
  }
  async function refreshIndex(){
   clearTimeout(indexPoll);
@@ -808,7 +835,7 @@
   try{
    const result=await api('figures/index/status',{folder:root});if(root!==selectedRoot())return;showIndexStatus(result);
    if(result.state==='running')indexPoll=setTimeout(refreshIndex,750);
-  }catch(error){$('fig-preprocess-status').textContent=error.message}
+  }catch(error){indexMessage(error.message)}
  }
  function previewUrl(row){const path=row.thumbnail_path||(browserFileType(row)==='dm4'?null:row.path);return path?'/api/figures/thumbnail?path='+encodeURIComponent(path):null}
  function hideHover(){clearTimeout(hoverTimer);$('fig-browser-hover').hidden=true}
@@ -924,7 +951,7 @@
    if(match){const number=document.createElement('span');number.className='image-browser-number';number.textContent='#'+match[2];name.append(number)}
    const group=document.createElement('small');group.textContent=row.folder&&row.folder!=='.'?row.folder:row.sample||'Selected folder';group.title=row.relative_path||row.path;
    const metadata=document.createElement('small');metadata.className='fig-browser-metadata';
-   metadata.textContent=(['magnification','voltage_kv','probe','working_distance','acquisition_date'].map(key=>formatMetadata(key,cachedMetadata(row)[key])).filter(Boolean).join(' · ')||(native?(indexRecords[row.path]?'No acquisition tags recorded':'Embedded DM4 metadata'):(indexRecords[row.path]?'No acquisition metadata':'Not preprocessed')));
+   metadata.textContent=(['magnification','voltage_kv','probe','working_distance','acquisition_date'].map(key=>formatMetadata(key,cachedMetadata(row)[key])).filter(Boolean).join(' · ')||(indexRecords[row.path]?(native?'No acquisition tags recorded':'No acquisition metadata'):'Run Preprocess folder'));
    tile.append(picture,name,group,metadata);
    tile.onmouseenter=event=>showHover(row,event.clientX,event.clientY);
    tile.onmousemove=event=>{if(!$('fig-browser-hover').hidden)positionHover(event.clientX,event.clientY)};
@@ -943,10 +970,10 @@
  }
  async function scan(){
   const version=++scanVersion,selection=sourceSelection();
-  $('fig-folder-status').textContent='Scanning…';
+  $('fig-folder-status').textContent=$('fig-browser-scan-status').textContent='Scanning…';
   $('fig-dm4-status').textContent='';
   files=[];sync();
-  $('fig-preprocess').disabled=true;$('fig-reprocess-ocr').disabled=true;
+  indexControls();
   try{
    const result=await api('figures/list',selection);if(version!==scanVersion)return;
    const known=new Map();for(const row of config.files||[])for(const path of row.locations||[row.path])known.set(path,row);
@@ -954,11 +981,11 @@
    if(browserRoot!==result.folder){$('fig-filter-folder').value='';browserRoot=result.folder;indexRecords={}}
    if(!selection.project){$('fig-folder').value=result.folder;WorkbenchWorkspace.writeRaw('tem-figures-folder',result.folder)}
    refreshFilters();if($('fig-browser-dialog').open)renderBrowser();
-   sync();$('fig-folder-status').textContent=`${files.length} images · DM4, TIFF, PNG, JPEG`;
+   sync();$('fig-folder-status').textContent=$('fig-browser-scan-status').textContent=`${files.length} images · DM4, TIFF, PNG, JPEG`;
    $('fig-dm4-status').textContent=result.dm4_count?`${result.dm4_count} DM4 files · ${result.dm4_missing_previews} missing PNG previews`:'';
    showPreviewStatus(previewJob);
    await refreshIndex();
-  }catch(error){if(version!==scanVersion)return;$('fig-folder-status').textContent=error.message;if($('fig-browser-dialog').open)renderBrowser()}
+  }catch(error){if(version!==scanVersion)return;$('fig-folder-status').textContent=$('fig-browser-scan-status').textContent=error.message;if($('fig-browser-dialog').open)renderBrowser()}
  }
  async function add(path){
   if(!path||selectedPanel<0||!recipe.slots[selectedPanel])return;
@@ -1030,16 +1057,20 @@
    $('fig-filter-subfolders').checked=browserSettings.subfolders!==false;
    hoverEnabled=WorkbenchWorkspace.readRaw('tem-figures-hover-detail')!=='off';
    const savedWorkers=Number(WorkbenchWorkspace.readRaw('tem-figures-ocr-workers'));
-   $('fig-ocr-workers').value=String(Number.isInteger(savedWorkers)&&savedWorkers>0?savedWorkers:4);
-   $('fig-ocr-workers').onchange=()=>{const count=Number($('fig-ocr-workers').value);
-    if(!Number.isInteger(count)||count<1){$('fig-ocr-workers').value='4';return}
-    WorkbenchWorkspace.writeRaw('tem-figures-ocr-workers',String(count))};
+   for(const id of ['fig-ocr-workers','fig-browser-ocr-workers']){
+    $(id).value=String(Number.isInteger(savedWorkers)&&savedWorkers>0?savedWorkers:4);
+    $(id).onchange=()=>{
+     const value=Number($(id).value),count=Number.isInteger(value)&&value>0?value:4;
+     $('fig-ocr-workers').value=$('fig-browser-ocr-workers').value=String(count);
+     WorkbenchWorkspace.writeRaw('tem-figures-ocr-workers',String(count));
+    };
+   }
    currentId=WorkbenchWorkspace.readRaw('tem-figures-current-v1')||'';if(!saved[currentId])currentId='';
    recipe=normaliseRecipe(parse(WorkbenchWorkspace.readRaw('tem-figures-draft-v1'),blank()));
    $('fig-folder').value=WorkbenchWorkspace.readRaw('tem-figures-folder')||config.sources?.[0]?.path||config.data_root||'';
    populateProjects();projectSettings.render();
    chooseSaved();renderCards();schedulePreview();scheduleEstimate();
-   $('fig-browse').onclick=()=>folderBrowser.open({path:$('fig-folder').value,title:'Choose image folder',onSelect:path=>{$('fig-folder').value=path;scan()}});$('fig-scan').onclick=scan;
+   $('fig-browse').onclick=()=>folderBrowser.open({path:$('fig-folder').value,title:'Choose image folder',onSelect:path=>{$('fig-folder').value=path;scan()}});$('fig-scan').onclick=$('fig-browser-scan').onclick=scan;
    $('fig-project').onchange=()=>{const value=$('fig-project').value;WorkbenchWorkspace.writeRaw('tem-figures-project',value);if(value)WorkbenchWorkspace.set('active_project',value);$('fig-folder-controls').hidden=Boolean(value);scan()};
    $('fig-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('fig-project-dialog'));
    $('fig-project-close').onclick=()=>$('fig-project-dialog').close();
@@ -1048,12 +1079,10 @@
    $('fig-cancel-previews').onclick=$('fig-browser-cancel-previews').onclick=async()=>{try{showPreviewStatus(await api('previews/cancel',{}));pollPreviews()}
     catch(error){previewError(error.message)}};
    showPreviewStatus(config.preview_job);if(config.preview_job?.state==='running')pollPreviews();
-   $('fig-preprocess').onclick=async()=>{try{showIndexStatus(await api('figures/index/start',{...sourceSelection(),workers:Number($('fig-ocr-workers').value)}));refreshIndex()}
-    catch(error){$('fig-preprocess-status').textContent=error.message}};
-   $('fig-reprocess-ocr').onclick=async()=>{try{showIndexStatus(await api('figures/index/start',{...sourceSelection(),force:true,workers:Number($('fig-ocr-workers').value)}));refreshIndex()}
-    catch(error){$('fig-preprocess-status').textContent=error.message}};
-   $('fig-preprocess-cancel').onclick=async()=>{try{await api('figures/index/cancel',{});refreshIndex()}
-    catch(error){$('fig-preprocess-status').textContent=error.message}};
+   $('fig-preprocess').onclick=$('fig-browser-preprocess').onclick=()=>startPreprocess();
+   $('fig-reprocess-ocr').onclick=$('fig-browser-reprocess-ocr').onclick=()=>startPreprocess(true);
+   $('fig-preprocess-cancel').onclick=$('fig-browser-preprocess-cancel').onclick=async()=>{try{await api('figures/index/cancel',{});refreshIndex()}
+    catch(error){indexMessage(error.message)}};
    $('fig-browser-close').onclick=()=>{$('fig-browser-dialog').close();hideHover()};
    $('fig-browser-dialog').onclose=hideHover;
    $('fig-browser-search').oninput=renderBrowser;
