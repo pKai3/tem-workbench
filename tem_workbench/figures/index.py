@@ -9,8 +9,9 @@ from tem_workbench.storage.folder_paths import atomic_json
 
 
 class FigureMetadataIndex:
-    def __init__(self, path):
+    def __init__(self, path, dm_reader=None):
         self.path = Path(path)
+        self.dm_reader = dm_reader
         self.lock = threading.RLock()
         self.cancel = threading.Event()
         self.thread = None
@@ -34,7 +35,7 @@ class FigureMetadataIndex:
         source = Path(path)
         stat = source.stat()
         sidecar = source.with_suffix('.txt')
-        sidecar_stat = sidecar.stat() if sidecar.is_file() else None
+        sidecar_stat = sidecar.stat() if source.suffix.lower() != '.dm4' and sidecar.is_file() else None
         return [stat.st_size, stat.st_mtime_ns,
                 sidecar_stat.st_size if sidecar_stat else None,
                 sidecar_stat.st_mtime_ns if sidecar_stat else None]
@@ -97,7 +98,7 @@ class FigureMetadataIndex:
                 if (not force and cached and cached.get('fingerprint') == fingerprint
                         and not cached.get('error') and cached.get('inspection_version') == creator.INSPECTION_VERSION):
                     return None
-                found = creator.inspect_image(path)
+                found = creator.inspect_image(path, dm_reader=self.dm_reader)
                 return dict(path=path, name=item['name'], sha256=found['sha256'],
                             metadata=found['metadata'], metadata_sidecar=found['metadata_sidecar'],
                             footer_ocr_text=found['footer_ocr_text'],

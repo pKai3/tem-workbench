@@ -440,7 +440,7 @@ class FiguresTests(unittest.TestCase):
                          [(self.path.name, '.'), (self.path.name, 'sample A/site 2')])
         self.assertEqual(found['images'][1]['relative_path'], 'sample A/site 2/Sample 8kx.tif')
 
-    def test_figures_include_all_raster_formats_and_dm4_previews_in_aztec_folders(self):
+    def test_figures_include_native_dm4_and_rasters_in_aztec_folders(self):
         nested = self.root / 'AZtec'
         nested.mkdir()
         (nested / 'project.oipx').touch()
@@ -449,13 +449,21 @@ class FiguresTests(unittest.TestCase):
         for name in ('native.PNG', 'micrograph.tiff', 'photo.JPG', 'photo.jpeg', 'photo.png'):
             Image.new('RGB', (40, 40), '#888888').save(nested / name)
         found = creator.list_images(self.root)
-        self.assertEqual(len(found['images']), 6)
+        self.assertEqual(len(found['images']), 7)
         self.assertEqual((found['dm4_count'], found['dm4_missing_previews']), (2, 1))
-        preview = next(row for row in found['images'] if row['name'] == 'native.PNG')
-        self.assertEqual(preview['dm4_source'], str((nested / 'native.DM4').resolve()))
-        self.assertEqual(preview['extension'], '.png')
+        preview = next(row for row in found['images'] if row['name'] == 'native.DM4')
+        self.assertEqual(preview['path'], str((nested / 'native.DM4').resolve()))
+        self.assertEqual(preview['thumbnail_path'], str((nested / 'native.PNG').resolve()))
+        self.assertEqual(preview['extension'], '.dm4')
+        self.assertIsNone(preview['has_sidecar'])
+        self.assertNotIn('native.PNG', [row['name'] for row in found['images']])
         for row in found['images']:
-            self.assertTrue(creator.thumbnail(row['path']).startswith(b'\x89PNG'))
+            if row['name'] == 'missing.dm4':
+                self.assertIsNone(row['thumbnail_path'])
+                with self.assertRaisesRegex(ValueError, 'Create DM4 previews'):
+                    creator.thumbnail(row['path'])
+            else:
+                self.assertTrue(creator.thumbnail(row['path']).startswith(b'\x89PNG'))
 
     def test_project_scan_excludes_outputs_and_aliases_but_custom_folder_can_open_exports(self):
         output = self.root / 'results'

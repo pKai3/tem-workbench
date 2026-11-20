@@ -87,7 +87,7 @@ class Workbench:
         self.workspace = WorkspaceState(self.config_path)
         self.config = folder_paths.resolve_config(config, self.root)
         self.engine = Engine(self.config)
-        self.figure_index = FigureMetadataIndex(Path(self.config['output_root']) / 'figures' / 'image-metadata-index.json')
+        self.figure_index = FigureMetadataIndex(Path(self.config['output_root']) / 'figures' / 'image-metadata-index.json', self.engine.dm_reader)
         self.repeat_regions = RepeatRegions(self.config_path.with_name('.tem-repeat-regions.json'))
         self.project = Project(self.root)
         self.last_preview_log = 0.
@@ -208,7 +208,7 @@ class Workbench:
             saved = folder_paths.save_locations(self.config_path, self.root, self.config, data, output)
             self.config = folder_paths.resolve_config(saved, self.root)
             self.engine = Engine(self.config)
-            self.figure_index = FigureMetadataIndex(Path(self.config['output_root']) / 'figures' / 'image-metadata-index.json')
+            self.figure_index = FigureMetadataIndex(Path(self.config['output_root']) / 'figures' / 'image-metadata-index.json', self.engine.dm_reader)
             self.jobs.clear()
             self.preview_batch = None
             LOG.info('Folders changed: data=%s; output=%s', self.config['data_root'], self.config['output_root'])
@@ -974,7 +974,7 @@ def make_handler(app):
                 elif url.path == '/api/figures/thumbnail':
                     self.send(figure_creator.thumbnail(query['path'][0]), 'image/png')
                 elif url.path == '/api/figures/footer':
-                    self.send(figure_creator.footer_preview(query['path'][0], query['row'][0]), 'image/png')
+                    self.send(figure_creator.footer_preview(query['path'][0], query['row'][0], dm_reader=app.engine.dm_reader), 'image/png')
                 elif url.path == '/api/batch':
                     self.send(app.batch.status())
                 elif url.path == '/api/pca':
@@ -1061,19 +1061,19 @@ def make_handler(app):
                 elif self.path == '/api/figures/index/cancel':
                     self.send(app.figure_index.stop())
                 elif self.path == '/api/figures/inspect':
-                    self.send(figure_creator.inspect_image(body['path']))
+                    self.send(figure_creator.inspect_image(body['path'], dm_reader=app.engine.dm_reader))
                 elif self.path == '/api/figures/original':
-                    self.send({'image': figure_creator.original_preview(body['path'])})
+                    self.send({'image': figure_creator.original_preview(body['path'], dm_reader=app.engine.dm_reader)})
                 elif self.path == '/api/figures/render':
-                    self.send({'image': figure_creator.preview(body['recipe'])})
+                    self.send({'image': figure_creator.preview(body['recipe'], dm_reader=app.engine.dm_reader)})
                 elif self.path == '/api/figures/estimate':
-                    self.send(figure_creator.estimate_png_size(body['recipe']))
+                    self.send(figure_creator.estimate_png_size(body['recipe'], dm_reader=app.engine.dm_reader))
                 elif self.path == '/api/figures/panel':
                     self.send({'image': figure_creator.panel_preview(body['slot'], body.get('aspect', 4 / 3),
                                                                      body.get('metadata_overlay'), body.get('recipe'),
-                                                                     body.get('width', 1000))})
+                                                                     body.get('width', 1000), dm_reader=app.engine.dm_reader)})
                 elif self.path == '/api/figures/export':
-                    self.send(figure_creator.export(body['recipe'], app.engine.sources, app.config['output_root']))
+                    self.send(figure_creator.export(body['recipe'], app.engine.sources, app.config['output_root'], dm_reader=app.engine.dm_reader))
                 elif self.path == '/api/figures/tags/export':
                     self.send(figure_creator.export_label_tags(body['tags'], body.get('recipe', {}),
                                                                app.engine.sources, app.config['output_root'],

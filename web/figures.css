@@ -80,3 +80,5 @@ dialog.fig-slot-dialog{width:min(96vw,1260px);max-height:calc(100dvh - 20px);ove
 #fig-export-dimensions{min-width:0;overflow-wrap:anywhere}
 #fig-export-dimensions[data-error=true]{color:#f4a0a5}
 .fig-export-help-text{flex-basis:100%;color:var(--muted);font-size:11px}.fig-export-help-text[hidden]{display:none}
+
+#fig-browser-preview-status{overflow-wrap:anywhere;min-width:0}#fig-browser-preview-status:empty{display:none}#fig-browser-preview-progress{max-width:160px;height:10px;accent-color:var(--cyan)}#fig-browser-preview-error-list{overflow-wrap:anywhere;padding-left:18px}

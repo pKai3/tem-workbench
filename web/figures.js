@@ -403,6 +403,7 @@
    sourcePane.append(sourceTitle,sourceButtons);editPane.append(editTitle);
    columns.append(sourcePane,editPane,previewPane);card.append(columns);
    if(!slot.path){const note=document.createElement('p');note.className='hint';note.textContent='Choose an image for this slot.';sourcePane.append(note);host.append(card);return}
+   const native=slot.source_format==='dm4'||/\.dm4$/i.test(slot.path);
    const metadata=document.createElement('div');metadata.className='fig-acquisition-meta';
    const metadataTitle=document.createElement('h3');metadataTitle.textContent='Acquisition metadata';metadata.append(metadataTitle);
    for(const [key,label,unit] of [['magnification','Magnification','×'],['voltage_kv','Voltage','kV'],['probe','Probe',''],['working_distance','WD','mm']]){
@@ -419,7 +420,7 @@
    const dateInput=document.createElement('input');dateInput.type='date';dateInput.value=dateEntry?.value||'';
    dateInput.onchange=()=>{slot.metadata??={};slot.metadata.acquisition_date={value:dateInput.value||null,source:'Manual'};
     dateSource.textContent='Manual';changed()};
-   const dateSource=document.createElement('small');dateSource.textContent=dateEntry?.source||'Not found in footer, TXT or TIFF';
+   const dateSource=document.createElement('small');dateSource.textContent=dateEntry?.source||(native?'Not recorded in DM4':'Not found in footer, TXT or TIFF');
    dateField.append(dateInput,dateSource);metadata.append(dateField);
    const cropOverride=document.createElement('div');cropOverride.className='fig-crop-override';
    const cropChoice=document.createElement('label'),cropCheck=document.createElement('input');cropCheck.type='checkbox';
@@ -484,14 +485,15 @@
    footerFrame.append(footerImage,footerNote);
    const updateFooter=()=>{
     const row=Number(slot.content_height??slot.height),trimmed=Number.isFinite(row)&&row>=1&&row<Number(slot.height);
-    footerTitle.textContent=effectiveCrop()?'Trimmed metadata bar':'Metadata bar retained';
+    footerTitle.textContent=native?'Trimmed image rows':effectiveCrop()?'Trimmed metadata bar':'Metadata bar retained';
+    footer.hidden=native&&!trimmed;
     footerImage.hidden=!trimmed;footerNote.hidden=trimmed;fullSize.hidden=!trimmed;
     if(trimmed)footerImage.src=`/api/figures/footer?path=${encodeURIComponent(slot.path)}&row=${row}`;
     else footerImage.removeAttribute('src');
    };
    const ocrLabel=document.createElement('strong');ocrLabel.textContent='Footer OCR text';
    const ocrText=document.createElement('pre');ocrText.textContent=slot.footer_ocr_text||'No footer text extracted.';
-   footer.append(footerHead,footerFrame,ocrLabel,ocrText);metadata.append(footer);updateFooter();
+   footer.append(footerHead,footerFrame);if(!native)footer.append(ocrLabel,ocrText);metadata.append(footer);updateFooter();
    if(slot.footer_ocr_raw_text&&slot.footer_ocr_raw_text!==slot.footer_ocr_text){
     const raw=document.createElement('details');raw.className='fig-ocr-raw';
     const summary=document.createElement('summary');summary.textContent='Uncorrected OCR';
@@ -500,8 +502,8 @@
    }
    sourcePane.append(metadata);
    const sidecarNote=document.createElement('p');sidecarNote.className='hint fig-sidecar-note';
-   sidecarNote.textContent=slot.metadata_sidecar?`TXT sidecar: ${slot.metadata_sidecar.path.split(/[\\/]/).at(-1)}${slot.metadata_sidecar.checks?.acquired_at?` · acquired ${slot.metadata_sidecar.checks.acquired_at.replace('T',' ')}`:''}`:'No matching TXT sidecar';
-   sidecarNote.title=slot.metadata_sidecar?.path||'Only an exact same-name TXT in this folder is matched.';sourcePane.append(sidecarNote);
+   sidecarNote.textContent=native?'Embedded DM4 metadata · original pixels':slot.metadata_sidecar?`TXT sidecar: ${slot.metadata_sidecar.path.split(/[\\/]/).at(-1)}${slot.metadata_sidecar.checks?.acquired_at?` · acquired ${slot.metadata_sidecar.checks.acquired_at.replace('T',' ')}`:''}`:'No matching TXT sidecar';
+   sidecarNote.title=native?'Pixels and calibration are read from the original DM4. PNGs are used only in the image browser.':slot.metadata_sidecar?.path||'Only an exact same-name TXT in this folder is matched.';sourcePane.append(sidecarNote);
    for(const warning of slot.metadata_sidecar?.warnings||[]){const note=document.createElement('p');note.className='fig-meta-warning';note.textContent=warning;sourcePane.append(note)}
    const viewActions=document.createElement('div');viewActions.className='fig-view-actions';
    const compare=document.createElement('button');compare.type='button';compare.textContent='Compare original';compare.onclick=()=>showOriginal(slot);
@@ -549,9 +551,9 @@
    const rowInput=inputField(fields,'Keep rows through','number',slot.content_height,value=>{slot.content_height=Number(value);cropSlider.value=value;updateFooter();changed()}, {min:'1',max:String(slot.height),step:'1'});
    const cropSlider=inputField(fields,'Bottom crop','range',slot.content_height,value=>{slot.content_height=Number(value);rowInput.value=value;updateFooter();changed()}, {min:'1',max:String(slot.height),step:'1'});
    rowInput.disabled=cropSlider.disabled=!effectiveCrop();rowInput.title=slot.content_height_source||'Image pixels';
-   const detect=document.createElement('button');detect.type='button';detect.textContent='Re-detect footer';
-   detect.title='Reread this image’s footer, printed bar and OCR. Keep manual metadata and crop edits.';
-   detect.onclick=async()=>{try{status('Checking image footer…');const info=await api('figures/inspect',{path:slot.path});
+   const detect=document.createElement('button');detect.type='button';detect.textContent=native?'Reread metadata':'Re-detect footer';
+   detect.title=native?'Reread the original DM4 metadata. Keep manual edits.':'Reread this image’s footer, printed bar and OCR. Keep manual metadata and crop edits.';
+   detect.onclick=async()=>{try{status(native?'Reading DM4 metadata…':'Checking image footer…');const info=await api('figures/inspect',{path:slot.path});
     if(info.sha256!==slot.sha256)throw new Error('The source image changed. Replace this panel to use the new file.');
     if(slot.detected_content_height!=null&&slot.content_height===slot.detected_content_height)
      slot.content_height=info.content_height;
@@ -568,13 +570,13 @@
     slot.footer_ocr_raw_text=info.footer_ocr_raw_text;slot.scale_ocr_text=info.scale_ocr_text;
     slot.ocr_available=info.ocr_available;slot.inspection_version=info.inspection_version;
     changed(true);
-    status(info.footer_detected?`Footer found at row ${info.content_height}.`:'No footer found. Set the crop row manually if needed.');
+    status(native?'DM4 metadata refreshed.':info.footer_detected?`Footer found at row ${info.content_height}.`:'No footer found. Set the crop row manually if needed.');
    }catch(error){status(error.message,true)}};
    sourceButtons.append(detect);
    inputField(fields,'Centre X, %','range',Math.round((slot.center_x??.5)*100),value=>{slot.center_x=Number(value)/100;changed()}, {min:'0',max:'100',step:'1'});
    inputField(fields,'Centre Y, %','range',Math.round((slot.center_y??.5)*100),value=>{slot.center_y=Number(value)/100;changed()}, {min:'0',max:'100',step:'1'});
    editPane.append(fields);
-   const note=document.createElement('p');note.className='hint';note.textContent=`${slot.name} · ${slot.width} × ${slot.height} px · ${effectiveCrop()?slot.height-(slot.content_height||slot.height):0} bottom rows removed · ${(slot.scale_mode==='metadata'?slot.pixel_size_source:slot.scale_source)||'confirm printed scale value'}${slot.analysis?` · linked analysis: ${slot.analysis.path.split(/[\\/]/).at(-1)}`:''}`;editPane.append(note);
+   const note=document.createElement('p');note.className='hint';note.textContent=`${slot.name} · ${slot.width} × ${slot.height} px · ${effectiveCrop()?slot.height-(slot.content_height||slot.height):0} bottom rows removed · ${(slot.scale_mode==='metadata'?slot.pixel_size_source:slot.scale_source)||(native?'No spatial calibration recorded':'confirm printed scale value')}${slot.analysis?` · linked analysis: ${slot.analysis.path.split(/[\\/]/).at(-1)}`:''}`;editPane.append(note);
    host.append(card);
   });
   sync();
@@ -686,7 +688,7 @@
  }
  async function showOriginal(slot){
   const dialog=$('fig-original-dialog');$('fig-original-title').textContent=`Compare original · ${slot.name}`;
-  $('fig-original-note').textContent=`Crop ends at row ${slot.content_height} of ${slot.height}. ${slot.scale_mode==='metadata'?`Recorded scale: ${slot.pixel_size_nm} nm/px`:`Printed bar: ${slot.bar_px||'not found'} px`}${slot.sidecar_bar_px?` (TXT: ${slot.sidecar_bar_px} px)`:''}${slot.scale_nm?` · ${slot.scale_nm>=1000?slot.scale_nm/1000+' µm':slot.scale_nm+' nm'}`:' · value needs confirmation'}.`;
+  $('fig-original-note').textContent=`Crop ends at row ${slot.content_height} of ${slot.height}. ${slot.scale_mode==='metadata'?`Recorded scale: ${slot.pixel_size_nm} nm/px`:`Printed bar: ${slot.bar_px||'not found'} px`}${slot.sidecar_bar_px?` (TXT: ${slot.sidecar_bar_px} px)`:''}${slot.scale_nm?` · ${slot.scale_nm>=1000?slot.scale_nm/1000+' µm':slot.scale_nm+' nm'}`:slot.scale_mode==='metadata'?'':' · value needs confirmation'}.`;
   $('fig-original-image').removeAttribute('src');$('fig-panel-image').removeAttribute('src');dialog.showModal();
   try{const [original,panel]=await Promise.all([api('figures/original',{path:slot.path}),api('figures/panel',{slot,aspect:recipe.aspect,metadata_overlay:recipe.metadata_overlay,recipe})]);
    if(!dialog.open)return;$('fig-original-image').src=original.image;$('fig-panel-image').src=panel.image;
@@ -713,18 +715,23 @@
   return project?(config.sources||[]).find(source=>source.id===project)?.path||'':$('fig-folder').value;
  }
  function sourceSelection(){return $('fig-project').value?{project:$('fig-project').value}:{folder:$('fig-folder').value}}
+ function previewError(message){
+  for(const prefix of ['fig-','fig-browser-'])$(prefix+'preview-status').textContent=message;
+ }
  function showPreviewStatus(job){
   previewJob=job;
   const running=job?.state==='running';
-  $('fig-generate-previews').disabled=!config.sidecar_previews||running||previewStarting||!selectedRoot();
-  $('fig-cancel-previews').hidden=!running;
-  const progress=$('fig-preview-progress');progress.hidden=!running;
-  progress.max=Math.max(1,job?.total||1);progress.value=job?.processed||0;
-  $('fig-preview-status').textContent=previewStarting?'Starting DM4 previews…':job?
-   `${running?'Creating previews':job.state==='cancelled'?'Previews cancelled':'Previews complete'} · ${job.processed}/${job.total} · ${job.created} saved · ${job.skipped} existing · ${job.failed} failed${job.current?' · '+job.current:''}`:'';
-  $('fig-preview-status').title=job?.data_root||'';
-  $('fig-preview-errors').hidden=!job?.errors?.length;$('fig-preview-error-list').replaceChildren();
-  for(const error of job?.errors||[]){const item=document.createElement('li');item.textContent=error;$('fig-preview-error-list').append(item)}
+  for(const prefix of ['fig-','fig-browser-']){
+   $(prefix+'generate-previews').disabled=!config.sidecar_previews||running||previewStarting||!selectedRoot();
+   $(prefix+'cancel-previews').hidden=!running;
+   const progress=$(prefix+'preview-progress');progress.hidden=!running;
+   progress.max=Math.max(1,job?.total||1);progress.value=job?.processed||0;
+   $(prefix+'preview-status').textContent=previewStarting?'Starting DM4 previews…':job?
+    `${running?'Creating previews':job.state==='cancelled'?'Previews cancelled':'Previews complete'} · ${job.processed}/${job.total} · ${job.created} saved · ${job.skipped} existing · ${job.failed} failed${job.current?' · '+job.current:''}`:'';
+   $(prefix+'preview-status').title=job?.data_root||'';
+   $(prefix+'preview-errors').hidden=!job?.errors?.length;$(prefix+'preview-error-list').replaceChildren();
+   for(const error of job?.errors||[]){const item=document.createElement('li');item.textContent=error;$(prefix+'preview-error-list').append(item)}
+  }
  }
  async function pollPreviews(){
   clearTimeout(previewPoll);
@@ -734,7 +741,7 @@
    showPreviewStatus(job);
    if(job?.state==='running'){previewPoll=setTimeout(pollPreviews,800);return}
    await scan();
-  }catch(error){$('fig-preview-status').textContent=error.message;previewPoll=setTimeout(pollPreviews,3000)}
+  }catch(error){previewError(error.message);previewPoll=setTimeout(pollPreviews,3000)}
  }
  async function generatePreviews(){
   if(previewStarting||previewJob?.state==='running')return;
@@ -742,7 +749,7 @@
   try{
    const job=await api('figures/previews',sourceSelection());
    previewStarting=false;showPreviewStatus(job);pollPreviews();
-  }catch(error){previewStarting=false;showPreviewStatus(null);$('fig-preview-status').textContent=error.message}
+  }catch(error){previewStarting=false;showPreviewStatus(null);previewError(error.message)}
  }
  function cachedMetadata(row){return indexRecords[row.path]?.metadata||recipe.slots.find(slot=>slot.path===row.path)?.metadata||{}}
  function formatMetadata(key,entry){
@@ -789,7 +796,7 @@
   $('fig-preprocess').disabled=active||!files.length;
   $('fig-reprocess-ocr').disabled=active||!files.length;$('fig-preprocess-cancel').hidden=!active;
   progress.hidden=!active&&result.state==='idle';progress.max=Math.max(1,result.total||1);progress.value=result.done||0;
-  if(active)status.textContent=`${result.force?'Reprocessing OCR':'Preprocessing'} ${result.done}/${result.total||'…'} · ${result.workers} workers · ${result.current||'scanning files'}`;
+  if(active)status.textContent=`${result.force?'Reprocessing metadata':'Preprocessing'} ${result.done}/${result.total||'…'} · ${result.workers} workers · ${result.current||'scanning files'}`;
   else if(result.state==='complete'||result.state==='cancelled')status.textContent=`${result.state==='complete'?'Processed':'Stopped after'} ${result.done} images · ${result.reused} reused · ${result.failed} failed`;
   else if(result.state==='error')status.textContent=`Preprocessing failed: ${result.errors?.at(-1)||'unknown error'}`;
   else status.textContent=`${Object.keys(indexRecords).length} images indexed`;
@@ -803,7 +810,7 @@
    if(result.state==='running')indexPoll=setTimeout(refreshIndex,750);
   }catch(error){$('fig-preprocess-status').textContent=error.message}
  }
- function previewUrl(row){return row.id&&row.has_preview?'/api/file-preview?id='+encodeURIComponent(row.id):'/api/figures/thumbnail?path='+encodeURIComponent(row.path)}
+ function previewUrl(row){const path=row.thumbnail_path||(browserFileType(row)==='dm4'?null:row.path);return path?'/api/figures/thumbnail?path='+encodeURIComponent(path):null}
  function hideHover(){clearTimeout(hoverTimer);$('fig-browser-hover').hidden=true}
  function positionHover(x,y){
   const host=$('fig-browser-hover'),box=host.getBoundingClientRect(),gap=16;
@@ -812,7 +819,7 @@
   host.style.top=Math.max(8,Math.min(y+gap,innerHeight-box.height-8))+'px';
  }
  function showHover(row,x,y){
-  hideHover();hoverTimer=setTimeout(()=>{
+  hideHover();if(!previewUrl(row))return;hoverTimer=setTimeout(()=>{
    const host=$('fig-browser-hover'),img=$('fig-browser-hover-image');
    $('fig-browser-hover-name').textContent=row.name;img.src=previewUrl(row);
    host.hidden=false;positionHover(x,y);img.onload=()=>positionHover(x,y);
@@ -848,7 +855,7 @@
  function browserFormatIcon(row){
   const extension=(row.extension||row.name.match(/\.[^.]+$/)?.[0]||'').replace(/^\./,'').toUpperCase();
   const badge=document.createElement('span'),svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),path=document.createElementNS('http://www.w3.org/2000/svg','path'),text=document.createElement('span');
-  badge.className='image-browser-format';badge.title=row.dm4_source?'PNG preview of '+row.dm4_source:extension+' file';badge.setAttribute('aria-hidden','true');
+  badge.className='image-browser-format';badge.title=extension==='DM4'?'Original DM4 source · PNG thumbnail only':extension+' file';badge.setAttribute('aria-hidden','true');
   svg.setAttribute('viewBox','0 0 16 18');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.5');path.setAttribute('d','M3 1h7l3 3v13H3z M10 1v4h3');svg.append(path);
   text.textContent=extension;badge.append(svg,text);return badge;
  }
@@ -863,7 +870,7 @@
   const visible=files.filter(row=>{
    const text=(row.name+' '+(row.relative_path||row.folder||'')).toLocaleLowerCase();
    if(!terms.every(term=>text.includes(term)))return false;
-   if(type&&(type==='dm4-preview'?!row.dm4_source:browserFileType(row)!==type))return false;
+   if(type&&browserFileType(row)!==type)return false;
    const parent=row.folder||'.';
    if(folder&&parent!==folder&&!(subfolders&&(folder==='.'||parent.startsWith(folder+'/'))))return false;
    const sidecar=$('fig-filter-sidecar').value;
@@ -897,22 +904,27 @@
   $('fig-browser-count').textContent=`${visible.length} of ${files.length} images`;
   for(const row of visible){
    const tile=document.createElement('button');tile.type='button';tile.className='image-browser-tile';tile.title=row.path;
-   tile.setAttribute('aria-label',`Use ${row.name} in panel ${selectedPanel+1}${row.dm4_source?' · DM4 preview':''} · ${row.has_sidecar?'TXT sidecar available':'no TXT sidecar'}`);
+   const native=browserFileType(row)==='dm4';
+   tile.setAttribute('aria-label',`Use ${row.name} in panel ${selectedPanel+1} · ${native?'Embedded DM4 metadata':row.has_sidecar?'TXT sidecar available':'no TXT sidecar'}`);
    const picture=document.createElement('span');picture.className='image-browser-preview';
-   const placeholder=document.createElement('span');placeholder.className='muted';placeholder.textContent='Loading preview…';picture.append(placeholder);
+   const placeholder=document.createElement('span');placeholder.className='muted';placeholder.textContent=previewUrl(row)?'Loading preview…':'Create DM4 previews';picture.append(placeholder);
+   if(previewUrl(row)){
    const image=document.createElement('img');image.alt='';image.loading='lazy';image.decoding='async';image.src=previewUrl(row);
    image.onload=()=>placeholder.hidden=true;image.onerror=()=>{placeholder.textContent='Preview unavailable';image.remove()};picture.append(image);
+   }
    picture.append(browserTypeIcon(row),browserFormatIcon(row));
+   if(!native){
    const sidecar=document.createElement('span');sidecar.className='image-browser-sidecar '+(row.has_sidecar?'available':'missing');
    sidecar.textContent='TXT';sidecar.title=row.has_sidecar?'Matching TXT sidecar available':'No matching TXT sidecar';
    sidecar.setAttribute('aria-hidden','true');picture.append(sidecar);
+   }
    const name=document.createElement('strong');name.className='image-browser-name';
    const stem=row.name.replace(/\.[^.]+$/,''),match=stem.match(/^(.*?)[_\s-](\d+)$/);
    const description=document.createElement('span');description.className='image-browser-name-text';description.textContent=match?match[1]:stem;name.append(description);
    if(match){const number=document.createElement('span');number.className='image-browser-number';number.textContent='#'+match[2];name.append(number)}
    const group=document.createElement('small');group.textContent=row.folder&&row.folder!=='.'?row.folder:row.sample||'Selected folder';group.title=row.relative_path||row.path;
    const metadata=document.createElement('small');metadata.className='fig-browser-metadata';
-   metadata.textContent=(row.dm4_source?'DM4 preview · ':'')+(['magnification','voltage_kv','probe','working_distance','acquisition_date'].map(key=>formatMetadata(key,cachedMetadata(row)[key])).filter(Boolean).join(' · ')||(indexRecords[row.path]?'No acquisition metadata':'Not preprocessed'));
+   metadata.textContent=(['magnification','voltage_kv','probe','working_distance','acquisition_date'].map(key=>formatMetadata(key,cachedMetadata(row)[key])).filter(Boolean).join(' · ')||(native?(indexRecords[row.path]?'No acquisition tags recorded':'Embedded DM4 metadata'):(indexRecords[row.path]?'No acquisition metadata':'Not preprocessed')));
    tile.append(picture,name,group,metadata);
    tile.onmouseenter=event=>showHover(row,event.clientX,event.clientY);
    tile.onmousemove=event=>{if(!$('fig-browser-hover').hidden)positionHover(event.clientX,event.clientY)};
@@ -938,11 +950,11 @@
   try{
    const result=await api('figures/list',selection);if(version!==scanVersion)return;
    const known=new Map();for(const row of config.files||[])for(const path of row.locations||[row.path])known.set(path,row);
-   files=result.images.map(row=>({...row,image_kind:known.get(row.dm4_source||row.path)?.image_kind}));
+   files=result.images.map(row=>({...row,image_kind:known.get(row.path)?.image_kind}));
    if(browserRoot!==result.folder){$('fig-filter-folder').value='';browserRoot=result.folder;indexRecords={}}
    if(!selection.project){$('fig-folder').value=result.folder;WorkbenchWorkspace.writeRaw('tem-figures-folder',result.folder)}
    refreshFilters();if($('fig-browser-dialog').open)renderBrowser();
-   sync();$('fig-folder-status').textContent=`${files.length} images · TIFF, PNG, JPEG`;
+   sync();$('fig-folder-status').textContent=`${files.length} images · DM4, TIFF, PNG, JPEG`;
    $('fig-dm4-status').textContent=result.dm4_count?`${result.dm4_count} DM4 files · ${result.dm4_missing_previews} missing PNG previews`:'';
    showPreviewStatus(previewJob);
    await refreshIndex();
@@ -959,7 +971,7 @@
  }
  function loadRecipe(next){recipe=normaliseRecipe(next);selectedPanel=0;renderCards();draft();schedulePreview();scheduleEstimate();refreshLegacySlots()}
  async function refreshLegacySlots(){
-  const current=recipe,pending=current.slots.filter(slot=>slot.path&&Number(slot.inspection_version||0)<9);
+  const current=recipe,pending=current.slots.filter(slot=>slot.path&&Number(slot.inspection_version||0)<10);
   if(!pending.length)return;
   status(`Reading footer metadata for ${pending.length} images…`);
   let updated=false;
@@ -967,7 +979,7 @@
    try{
     const info=await api('figures/inspect',{path:slot.path});
     if(recipe!==current)return;
-    if(!current.slots.includes(slot)||Number(slot.inspection_version||0)>=9)continue;
+    if(!current.slots.includes(slot)||Number(slot.inspection_version||0)>=10)continue;
     if(info.sha256!==slot.sha256)continue;
     const manual=Object.fromEntries(Object.entries(slot.metadata||{}).filter(([,entry])=>entry?.source==='Manual'));
     slot.metadata={...info.metadata,...manual};slot.metadata_sidecar=info.metadata_sidecar;
@@ -1013,7 +1025,7 @@
    if(!tagRows.length)tagRows=[{label:'',colour:''}];
    browserPreferred=Math.max(80,Math.min(240,Number(WorkbenchWorkspace.readRaw('tem-figures-preview-size'))||160));
    const browserSettings=parse(WorkbenchWorkspace.readRaw('tem-figures-browser-settings'),{});
-   $('fig-filter-type').value=['tiff','png','jpeg','dm4-preview'].includes(browserSettings.type)?browserSettings.type:'';
+   $('fig-filter-type').value=browserSettings.type==='dm4-preview'?'dm4':['tiff','png','jpeg','dm4'].includes(browserSettings.type)?browserSettings.type:'';
    $('fig-browser-sort').value=['name','type','date'].includes(browserSettings.sort)?browserSettings.sort:'folder';
    $('fig-filter-subfolders').checked=browserSettings.subfolders!==false;
    hoverEnabled=WorkbenchWorkspace.readRaw('tem-figures-hover-detail')!=='off';
@@ -1032,9 +1044,9 @@
    $('fig-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('fig-project-dialog'));
    $('fig-project-close').onclick=()=>$('fig-project-dialog').close();
    $('fig-open-browser').onclick=openImageBrowser;
-   $('fig-generate-previews').onclick=generatePreviews;
-   $('fig-cancel-previews').onclick=async()=>{try{showPreviewStatus(await api('previews/cancel',{}));pollPreviews()}
-    catch(error){$('fig-preview-status').textContent=error.message}};
+   $('fig-generate-previews').onclick=$('fig-browser-generate-previews').onclick=generatePreviews;
+   $('fig-cancel-previews').onclick=$('fig-browser-cancel-previews').onclick=async()=>{try{showPreviewStatus(await api('previews/cancel',{}));pollPreviews()}
+    catch(error){previewError(error.message)}};
    showPreviewStatus(config.preview_job);if(config.preview_job?.state==='running')pollPreviews();
    $('fig-preprocess').onclick=async()=>{try{showIndexStatus(await api('figures/index/start',{...sourceSelection(),workers:Number($('fig-ocr-workers').value)}));refreshIndex()}
     catch(error){$('fig-preprocess-status').textContent=error.message}};

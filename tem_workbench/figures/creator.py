@@ -22,12 +22,12 @@ from tem_workbench.paths import RESOURCES
 from tem_workbench.storage.folder_paths import atomic_json, output_folder
 from tem_workbench.storage.mode_folders import scan_folders
 from tem_workbench.storage.preview_files import sidecar_path
-from tem_workbench.figures import instrument_metadata
+from tem_workbench.figures import dm4_source, instrument_metadata
 
-EXTENSIONS = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'}
-INSPECTION_VERSION = 9
+EXTENSIONS = {'.dm4', '.tif', '.tiff', '.png', '.jpg', '.jpeg'}
+INSPECTION_VERSION = 10
 MAX_PANELS = 24
-MAX_SOURCE_PIXELS = 150_000_000
+MAX_SOURCE_PIXELS = dm4_source.MAX_SOURCE_PIXELS
 MAX_FIGURE_PIXELS = 120_000_000
 MAX_EXACT_ESTIMATE_PIXELS = 8_000_000
 
@@ -35,8 +35,12 @@ MAX_EXACT_ESTIMATE_PIXELS = 8_000_000
 def _source(path):
     source = Path(path).expanduser().resolve()
     if source.suffix.lower() not in EXTENSIONS or not source.is_file():
-        raise ValueError('Choose an available TIFF, PNG or JPEG image.')
+        raise ValueError('Choose an available DM4, TIFF, PNG or JPEG image.')
     return source
+
+
+def _open_image(source, dm_reader=None):
+    return dm4_source.image(source, dm_reader) if source.suffix.lower() == '.dm4' else Image.open(source)
 
 
 def _source_sidecar(path, source):
@@ -61,17 +65,23 @@ def list_images(folder, outputs=()):
     images, dm4_files = [], []
     for directory, filenames in scan_folders(root, outputs):
         relative_folder = directory.relative_to(root).as_posix()
-        previews = {str((directory / name).with_suffix('.png')): str(directory / name)
-                    for name in filenames if Path(name).suffix.lower() == '.dm4'}
+        native_stems = {Path(name).stem for name in filenames
+                        if Path(name).suffix.lower() == '.dm4' and (directory / name).is_file()}
+        previews = {Path(name).stem: directory / name for name in filenames
+                    if Path(name).suffix.lower() == '.png' and (directory / name).is_file()}
         for name in sorted(filenames, key=str.casefold):
             path = directory / name
             if path.suffix.lower() == '.dm4' and path.is_file():
                 dm4_files.append(path)
+            if path.suffix.lower() == '.png' and path.stem in native_stems:
+                continue  # Paired PNGs are browser previews, never duplicate figure sources.
             if path.suffix.lower() in EXTENSIONS and path.is_file():
+                native = path.suffix.lower() == '.dm4'
+                preview = previews.get(path.stem) if native else path
                 images.append(dict(path=str(path), name=name, folder=relative_folder,
                                    extension=path.suffix.lower(),
-                                   dm4_source=previews.get(str(path.with_suffix('.png'))) if path.suffix.lower() == '.png' else None,
-                                   has_sidecar=path.with_suffix('.txt').is_file(),
+                                   thumbnail_path=str(preview) if preview else None,
+                                   has_sidecar=None if native else path.with_suffix('.txt').is_file(),
                                    relative_path=path.relative_to(root).as_posix()))
     return {'folder': str(root), 'images': images, 'dm4_count': len(dm4_files),
             'dm4_missing_previews': sum(not sidecar_path(path).is_file() for path in dm4_files)}
@@ -80,6 +90,10 @@ def list_images(folder, outputs=()):
 def thumbnail(path, size=512):
     """Return a small original-image preview for the shared visual browser UI."""
     source = _source(path)
+    if source.suffix.lower() == '.dm4':
+        source = sidecar_path(source)
+        if not source.is_file():
+            raise ValueError('Create DM4 previews to show a browser thumbnail.')
     with Image.open(source) as original:
         if original.width * original.height > MAX_SOURCE_PIXELS:
             raise ValueError('This image exceeds the supported panel size.')
@@ -403,8 +417,17 @@ def _footer_and_bar(image, recorded_footer=None):
     return footer, max(candidates, key=lambda item: item[0])[1] if candidates else None
 
 
-def inspect_image(path):
+def inspect_image(path, *, dm_reader=None):
     source = _source(path)
+    if source.suffix.lower() == '.dm4':
+        recorded = dm4_source.inspect(source, dm_reader)
+        return dict(path=str(source), name=source.name, sha256=_digest(source), source_format='dm4',
+                    **recorded, content_height=recorded['height'], detected_content_height=recorded['height'],
+                    footer_detected=False, content_height_source='DM4 image dimensions',
+                    bar=None, bar_px=None, scale_nm=None, scale_source=None, sidecar_bar_px=None,
+                    analysis=None, metadata_sidecar=None, footer_ocr_text='', footer_ocr_raw_text='',
+                    scale_ocr_text='', ocr_available=False, inspection_version=INSPECTION_VERSION,
+                    scale_mode='metadata' if recorded['pixel_size_nm'] else 'keep')
     with Image.open(source) as raw:
         if raw.width * raw.height > MAX_SOURCE_PIXELS:
             raise ValueError('This image is too large for the figure editor.')
@@ -458,9 +481,9 @@ def inspect_image(path):
                     scale_mode='metadata' if recorded.get('pixel_size_nm') else 'replace' if footer < height and bar else 'keep')
 
 
-def original_preview(path):
+def original_preview(path, *, dm_reader=None):
     source = _source(path)
-    with Image.open(source) as raw:
+    with _open_image(source, dm_reader) as raw:
         if raw.width * raw.height > MAX_SOURCE_PIXELS:
             raise ValueError('This image is too large for the figure editor.')
         image = ImageOps.exif_transpose(raw).convert('RGB')
@@ -470,10 +493,10 @@ def original_preview(path):
     return 'data:image/png;base64,' + base64.b64encode(stream.getvalue()).decode('ascii')
 
 
-def footer_preview(path, content_height):
+def footer_preview(path, content_height, *, dm_reader=None):
     """Return the rows removed from a panel so the source footer can be inspected."""
     source = _source(path)
-    with Image.open(source) as raw:
+    with _open_image(source, dm_reader) as raw:
         if raw.width * raw.height > MAX_SOURCE_PIXELS:
             raise ValueError('This image is too large for the figure editor.')
         image = ImageOps.exif_transpose(raw)
@@ -752,9 +775,9 @@ def _tone_quantiles(image):
     return np.percentile(luminance, [5, 95])
 
 
-def _tone_target(slots, aspect, figure_crop_metadata=True):
+def _tone_target(slots, aspect, figure_crop_metadata=True, dm_reader=None):
     ranges = [_tone_quantiles(_panel(slot, 240, aspect, strict=False, raw_only=True,
-                                     figure_crop_metadata=figure_crop_metadata))
+                                     figure_crop_metadata=figure_crop_metadata, dm_reader=dm_reader))
               for slot in slots if slot.get('path')]
     return tuple(np.median(ranges, axis=0)) if len(ranges) > 1 else None
 
@@ -803,10 +826,10 @@ def _export_panel_width(slots, aspect, figure_crop_metadata):
 
 @lru_cache(maxsize=256)
 def _sampled_png_bytes_per_pixel(path, digest, content_height, crop_metadata, aspect,
-                                 zoom, center_x, center_y, panel_width):
+                                 zoom, center_x, center_y, panel_width, dm_reader=None):
     """Measure representative final-size texture without encoding the whole figure."""
     source = _source(path)
-    with Image.open(source) as raw:
+    with _open_image(source, dm_reader) as raw:
         if raw.width * raw.height > MAX_SOURCE_PIXELS:
             raise ValueError('This image is too large for the figure editor.')
         image = ImageOps.exif_transpose(raw).convert('RGB')
@@ -839,7 +862,7 @@ def _sampled_png_bytes_per_pixel(path, digest, content_height, crop_metadata, as
     return total_bytes / total_pixels
 
 
-def estimate_png_size(recipe):
+def estimate_png_size(recipe, *, dm_reader=None):
     """Measure small outputs exactly; sample native-detail PNG patches for large ones."""
     if not isinstance(recipe, dict) or not isinstance(recipe.get('slots'), list):
         raise ValueError('Expected a saved figure recipe.')
@@ -869,7 +892,7 @@ def estimate_png_size(recipe):
     if not filled:
         raise ValueError('Choose an image to estimate the PNG size.')
     if canvas_width * canvas_height <= MAX_EXACT_ESTIMATE_PIXELS and len(filled) == len(slots):
-        return {'estimated_size_bytes': len(render(recipe)), 'width': canvas_width,
+        return {'estimated_size_bytes': len(render(recipe, dm_reader=dm_reader)), 'width': canvas_width,
                 'height': canvas_height, 'exact': True}
     rates = []
     for slot in filled:
@@ -880,7 +903,7 @@ def estimate_png_size(recipe):
         rates.append(_sampled_png_bytes_per_pixel(
             slot['path'], slot.get('sha256'), height,
             _crop_metadata(slot, crop_metadata), aspect, float(slot.get('zoom', 1)),
-            float(slot.get('center_x', .5)), float(slot.get('center_y', .5)), panel_width))
+            float(slot.get('center_x', .5)), float(slot.get('center_y', .5)), panel_width, dm_reader))
     # Allow for labels, bars and compression-stream variation outside sampled patches.
     estimate = round(canvas_width * canvas_height * (sum(rates) / len(rates)) * 1.05)
     return {'estimated_size_bytes': estimate, 'width': canvas_width,
@@ -909,7 +932,7 @@ def _adjust_tone(image, slot, target):
 
 def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure_sharpness=1,
            figure_crop_metadata=True, figure_scale_bar_overlay=True,
-           figure_scale_bar_position='left'):
+           figure_scale_bar_position='left', dm_reader=None):
     source = _source(slot['path'])
     if _digest(source) != slot.get('sha256'):
         raise ValueError(f'{source.name} changed since this panel was saved. Replace it explicitly.')
@@ -919,7 +942,7 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
     analysis = slot.get('analysis')
     if strict and analysis and _digest(_source_analysis(analysis['path'])) != analysis.get('sha256'):
         raise ValueError(f'The linked analysis for {source.name} changed. Review or replace this panel.')
-    with Image.open(source) as raw:
+    with _open_image(source, dm_reader) as raw:
         if raw.width * raw.height > MAX_SOURCE_PIXELS:
             raise ValueError('This image is too large for the figure editor.')
         image = ImageOps.exif_transpose(raw).convert('RGB')
@@ -1022,7 +1045,7 @@ def _source_analysis(path):
     return source
 
 
-def render(recipe, preview=False):
+def render(recipe, preview=False, *, dm_reader=None):
     if not isinstance(recipe, dict):
         raise ValueError('Expected a saved figure recipe.')
     slots = recipe.get('slots')
@@ -1057,7 +1080,7 @@ def render(recipe, preview=False):
     rows = math.ceil(len(slots) / columns)
     tile_height = math.ceil(width / aspect)
     color = 'white' if recipe.get('background', 'white') == 'white' else '#101820'
-    tone_target = _tone_target(slots, aspect, figure_crop_metadata) if recipe.get('match_tone') else None
+    tone_target = _tone_target(slots, aspect, figure_crop_metadata, dm_reader) if recipe.get('match_tone') else None
     figure_sharpness = float(recipe.get('sharpness', 1))
     if not math.isfinite(figure_sharpness) or not 0 <= figure_sharpness <= 3:
         raise ValueError('Figure sharpness must be between 0 and 3.')
@@ -1083,7 +1106,7 @@ def render(recipe, preview=False):
             panel = _panel(slot, width, aspect, strict=not preview, tone_target=tone_target,
                            figure_sharpness=figure_sharpness, figure_crop_metadata=figure_crop_metadata,
                            figure_scale_bar_overlay=scale_bar_overlay,
-                           figure_scale_bar_position=scale_bar_position)
+                           figure_scale_bar_position=scale_bar_position, dm_reader=dm_reader)
             label = str(slot.get('label') or Path(slot['path']).stem)[:120]
             lines = _metadata_lines(slot, metadata_overlay)
             reserved = _metadata_reserved(width, lines)
@@ -1095,11 +1118,11 @@ def render(recipe, preview=False):
     return stream.getvalue()
 
 
-def preview(recipe):
-    return 'data:image/png;base64,' + base64.b64encode(render(recipe, preview=True)).decode('ascii')
+def preview(recipe, *, dm_reader=None):
+    return 'data:image/png;base64,' + base64.b64encode(render(recipe, preview=True, dm_reader=dm_reader)).decode('ascii')
 
 
-def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=1000):
+def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=1000, *, dm_reader=None):
     width = int(width)
     if not 420 <= width <= 2000:
         raise ValueError('Choose a panel preview width from 420 to 2000 pixels.')
@@ -1109,12 +1132,12 @@ def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=
     crop_metadata = recipe.get('crop_metadata', True) if recipe else True
     scale_bar_overlay = recipe.get('scale_bar_overlay', True) if recipe else True
     scale_bar_position = recipe.get('scale_bar_position', 'left') if recipe else 'left'
-    tone_target = _tone_target(recipe.get('slots', []), aspect, crop_metadata) if recipe and recipe.get('match_tone') else None
+    tone_target = _tone_target(recipe.get('slots', []), aspect, crop_metadata, dm_reader) if recipe and recipe.get('match_tone') else None
     panel = _panel(slot, width, aspect, strict=False, tone_target=tone_target,
                    figure_sharpness=recipe.get('sharpness', 1) if recipe else 1,
                    figure_crop_metadata=crop_metadata,
                    figure_scale_bar_overlay=scale_bar_overlay,
-                   figure_scale_bar_position=scale_bar_position)
+                   figure_scale_bar_position=scale_bar_position, dm_reader=dm_reader)
     lines = _metadata_lines(slot, metadata_overlay or [])
     reserved = _metadata_reserved(width, lines)
     if slot.get('label_visible', True):
@@ -1176,8 +1199,8 @@ def export_label_tags(tags, recipe, sources, output_root, source_path=None):
     return {'folder': str(folder), 'files': files}
 
 
-def export(recipe, sources, output_root):
-    data = render(recipe)
+def export(recipe, sources, output_root, *, dm_reader=None):
+    data = render(recipe, dm_reader=dm_reader)
     paths = [slot['path'] for slot in recipe['slots']]
     destinations = {output_folder(sources, output_root, path=path) for path in paths}
     folder = next(iter(destinations)) if len(destinations) == 1 else Path(output_root).resolve()

@@ -36,14 +36,14 @@ class FigureMetadataIndexTests(unittest.TestCase):
             lock = threading.Lock()
             active = maximum = 0
 
-            def inspect(path):
+            def inspect(path, **options):
                 nonlocal active, maximum
                 with lock:
                     active += 1
                     maximum = max(maximum, active)
                 try:
                     time.sleep(.04)
-                    return original(path)
+                    return original(path, **options)
                 finally:
                     with lock:
                         active -= 1
