@@ -13,6 +13,19 @@ from tem_workbench.figures.index import FigureMetadataIndex
 
 
 class FigureMetadataIndexTests(unittest.TestCase):
+    def test_project_preprocessing_excludes_output_images(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output'; output.mkdir()
+            Image.new('RGB', (80, 60), '#888888').save(root / 'source.png')
+            Image.new('RGB', (80, 60), '#777777').save(output / 'export.png')
+            index = FigureMetadataIndex(output / 'index.json')
+            index.start(root, outputs=[output])
+            index.thread.join(timeout=15)
+            self.assertEqual(index.status(root)['state'], 'complete')
+            self.assertEqual(index.status(root)['total'], 1)
+            self.assertEqual(set(index.status(root)['records']), {str((root / 'source.png').resolve())})
+
     def test_selected_worker_count_processes_images_concurrently(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -69,6 +82,11 @@ class FigureMetadataIndexTests(unittest.TestCase):
             reopened.start(source, force=True)
             reopened.thread.join(timeout=15)
             self.assertEqual(reopened.status(source)['reused'], 0)
+            reopened.records[str(first.resolve())]['inspection_version'] = creator.INSPECTION_VERSION - 1
+            reopened.start(source)
+            reopened.thread.join(timeout=15)
+            self.assertEqual(reopened.status(source)['reused'], 1)
+            self.assertEqual(reopened.records[str(first.resolve())]['inspection_version'], creator.INSPECTION_VERSION)
             Image.new('RGB', (80, 60), '#333333').save(second)
             reopened.start(source)
             reopened.thread.join(timeout=15)

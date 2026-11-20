@@ -224,6 +224,79 @@ class FiguresTests(unittest.TestCase):
                          '1 µm CMM UQ 21/06/2026\nx15,000 15.0kV WD 9.4mm')
         self.assertEqual(creator._correct_footer_scale('a lpm CMM UQ', 1000), '1 µm CMM UQ')
 
+    def test_thin_footer_fallback_works_in_both_polarities(self):
+        for width, footer_height, background in [(1024, 32, 0), (800, 16, 255), (1920, 56, 0)]:
+            with self.subTest(width=width, footer_height=footer_height, background=background):
+                height = width + footer_height
+                image = Image.new('L', (width, height), 128)
+                draw = ImageDraw.Draw(image)
+                draw.rectangle((0, width, width - 1, height - 1), fill=background)
+                start, spacing = width // 2, width // 25
+                for i in range(11):
+                    x = start + i * spacing
+                    draw.rectangle((x, width, x + 1, width + 6), fill=255 - background)
+                # Metadata begins immediately, so no six-row empty strip exists.
+                draw.text((2, width + 2), 'x40.0k DF 200kV', fill=255 - background)
+                footer, bar = creator._footer_and_bar(image)
+                self.assertEqual(footer, width)
+                self.assertIsNone(bar)  # A ruler is not misrepresented as a solid bar.
+        image = Image.fromarray(np.random.default_rng(19).integers(0, 256, (500, 600), dtype=np.uint8))
+        self.assertEqual(creator._footer_and_bar(image), (500, None))
+        self.assertEqual(creator._footer_and_bar(Image.new('L', (600, 500), 0)), (500, None))
+
+    def test_magnification_suffixes_and_tem_footer_metadata(self):
+        for text, value in [('x40.0k', 40000), ('40.0kX', 40000), ('Mag: 1.2M', 1200000), ('x8,000', 8000)]:
+            found = creator._acquisition_metadata(self.path, footer_text=text + ' DF 200k¥ 2026/10/27')
+            self.assertEqual(found['magnification']['value'], value)
+            self.assertEqual(found['voltage_kv']['value'], 200)
+            self.assertEqual(found['acquisition_date']['value'], '2026-10-27')
+
+    def test_scale_label_below_bar_is_read_without_a_sem_specific_position(self):
+        image = Image.new('L', (1024, 1056), 128)
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((0, 1024, 1023, 1055), fill=0)
+        draw.rectangle((650, 1024, 1010, 1030), fill=255)
+        draw.text((940, 1038), '200nm', fill=255)
+        footer, bar = creator._footer_and_bar(image, recorded_footer=1024)
+        def ocr(region, *, psm=6, whitelist=None):
+            return 'x40.0k DF 200kV\n200nm'
+        with patch.object(creator, '_tesseract_path', return_value='fake'), patch.object(creator, '_ocr_image', side_effect=ocr):
+            text, scale, label = creator._footer_ocr(image, footer, bar)
+        self.assertEqual((scale, label), (200, '200nm'))
+        self.assertIn('200kV', text)
+
+    def test_recorded_hitachi_metadata_overrides_ocr_and_needs_no_ruler_measurement(self):
+        description = ('[SemImageFile]\rData size=1024x1024\rPixelSize=0.549316\r'
+                       'Magnification=40000\rAccelerating voltage=200000\rDate=2026/10/27\r')
+        Image.new('L', (1024, 1056), 128).save(self.path, tiffinfo={270: description})
+        with patch.object(creator, '_footer_ocr', return_value=('x8,000 15kV 18/11/2026', None, '')):
+            found = creator.inspect_image(self.path)
+        self.assertEqual(found['content_height'], 1024)
+        self.assertIn('Data size', found['content_height_source'])
+        self.assertEqual(found['pixel_size_nm'], .549316)
+        self.assertIsNone(found['bar_px'])
+        self.assertEqual(found['scale_mode'], 'metadata')
+        self.assertEqual(found['metadata']['magnification']['value'], 40000)
+        self.assertEqual(found['metadata']['voltage_kv']['value'], 200)
+        self.assertEqual(found['metadata']['acquisition_date']['value'], '2026-10-27')
+        self.assertIn('TIFF ImageDescription', found['metadata']['magnification']['source'])
+        native = creator._panel(found, 500, 1, strict=True)
+        equivalent = creator._panel({**found, 'scale_mode': 'replace', 'bar_px': 100,
+                                     'scale_nm': 54.9316}, 500, 1, strict=True)
+        np.testing.assert_array_equal(np.asarray(native), np.asarray(equivalent))
+
+    def test_recorded_geometry_rejects_mismatched_dimensions_and_sidecars(self):
+        from tem_workbench.figures import instrument_metadata
+        fields = '[SemImageFile]\nData size=1024x1024\nPixelSize=0.549316\nMagnification=40000\n'
+        self.assertNotIn('pixel_size_nm', instrument_metadata.read(fields, '', self.path, 512, 528))
+        self.assertNotIn('content_height', instrument_metadata.read(fields, '', self.path, 1024, 900))
+        self.assertNotIn('pixel_size_nm', instrument_metadata.read('', fields + 'File name=wrong.tif', self.path, 1024, 1056))
+        found = instrument_metadata.read('', fields + f'File name={self.path.name}', self.path, 1024, 1056)
+        self.assertEqual(found['pixel_size_nm'], .549316)
+        self.assertIn('TXT', found['pixel_size_source'])
+        self.assertNotIn('pixel_size_nm', instrument_metadata.read(fields + 'Calibration factor X=2\nCalibration factor Y=1', '', self.path, 1024, 1056))
+        self.assertNotIn('pixel_size_nm', instrument_metadata.read(fields.replace('0.549316', 'nan'), '', self.path, 1024, 1056))
+
     def test_metadata_overlay_and_tone_matching_are_rendered_in_preview(self):
         first = self.root / 'bright.png'
         second = self.root / 'dim.png'
@@ -366,6 +439,34 @@ class FiguresTests(unittest.TestCase):
         self.assertEqual([(item['name'], item['folder']) for item in found['images']],
                          [(self.path.name, '.'), (self.path.name, 'sample A/site 2')])
         self.assertEqual(found['images'][1]['relative_path'], 'sample A/site 2/Sample 8kx.tif')
+
+    def test_figures_include_all_raster_formats_and_dm4_previews_in_aztec_folders(self):
+        nested = self.root / 'AZtec'
+        nested.mkdir()
+        (nested / 'project.oipx').touch()
+        (nested / 'native.DM4').touch()
+        (nested / 'missing.dm4').touch()
+        for name in ('native.PNG', 'micrograph.tiff', 'photo.JPG', 'photo.jpeg', 'photo.png'):
+            Image.new('RGB', (40, 40), '#888888').save(nested / name)
+        found = creator.list_images(self.root)
+        self.assertEqual(len(found['images']), 6)
+        self.assertEqual((found['dm4_count'], found['dm4_missing_previews']), (2, 1))
+        preview = next(row for row in found['images'] if row['name'] == 'native.PNG')
+        self.assertEqual(preview['dm4_source'], str((nested / 'native.DM4').resolve()))
+        self.assertEqual(preview['extension'], '.png')
+        for row in found['images']:
+            self.assertTrue(creator.thumbnail(row['path']).startswith(b'\x89PNG'))
+
+    def test_project_scan_excludes_outputs_and_aliases_but_custom_folder_can_open_exports(self):
+        output = self.root / 'results'
+        output.mkdir()
+        Image.new('RGB', (40, 40)).save(output / 'export.png')
+        (output / 'ignored.dm4').touch()
+        (self.root / 'export-alias.png').symlink_to(output / 'export.png')
+        found = creator.list_images(self.root, outputs=[output])
+        self.assertEqual([row['name'] for row in found['images']], [self.path.name])
+        self.assertEqual(found['dm4_count'], 0)
+        self.assertEqual(creator.list_images(output)['images'][0]['name'], 'export.png')
 
     def test_bright_footer_metadata_does_not_hide_boundary_or_force_uncropped_keep(self):
         image = Image.new('L', (400, 300), 128)

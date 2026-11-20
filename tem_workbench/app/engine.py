@@ -320,6 +320,10 @@ class Engine:
             raise ValueError('Choose an image from the configured data folder.')
         if path.suffix.lower() in raster_images.EXTENSIONS:
             return png(raster_images.read(path), max_size=1400)
+        return self.dm4_preview(path)
+
+    def dm4_preview(self, path):
+        """Render an explicitly selected DM4 without adding it to the TEM catalogue."""
         array, meta = self.read_dm4(path)
         if array.ndim != 2 or min(array.shape) < 1 or not np.isfinite(array).all():
             raise ValueError('Preview requires a finite two-dimensional image.')

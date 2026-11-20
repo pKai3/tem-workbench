@@ -2,15 +2,50 @@
 from io import BytesIO
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import Mock, patch
 import numpy as np
 from PIL import Image
 from tem_workbench.app.engine import Engine
+from tem_workbench.app.server import Workbench
+from tem_workbench.figures import creator
 from tem_workbench.storage.preview_files import PreviewBatch, sidecar_path
 
 
 class PreviewChecks(unittest.TestCase):
+    def test_figures_preview_selection_scopes_projects_and_custom_folders(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            project = root / 'project'; project.mkdir()
+            other = root / 'other'; other.mkdir()
+            output = project / 'results'; output.mkdir()
+            nested = project / 'AZtec'; nested.mkdir()
+            (nested / 'project.oipx').touch()
+            for path in (project / 'one.dm4', nested / 'two.DM4', output / 'ignore.dm4', other / 'three.dm4'):
+                path.write_bytes(b'original')
+            (nested / 'two.PNG').write_bytes(b'existing PNG')
+            engine = Engine(dict(data_root=str(project), output_root=str(output)))
+            app = Workbench.__new__(Workbench)
+            app.engine, app.lock, app.preview_batch = engine, threading.RLock(), None
+            app.config = {'output_root': str(output)}
+            raw = np.arange(64 * 96, dtype=float).reshape(64, 96)
+            with patch.object(PreviewBatch, 'start', PreviewBatch.run), patch.object(engine, 'read_dm4', return_value=(raw, {})) as read:
+                status = app.generate_previews({'project': 'primary'})
+                self.assertEqual((status['created'], status['skipped'], status['failed']), (1, 1, 0))
+                read.assert_called_once_with(project / 'one.dm4')
+                self.assertFalse((other / 'three.png').exists())
+                self.assertFalse((output / 'ignore.png').exists())
+                self.assertEqual((nested / 'two.PNG').read_bytes(), b'existing PNG')
+                self.assertEqual((project / 'one.dm4').read_bytes(), b'original')
+                status = app.generate_previews({'folder': str(other)})
+                self.assertEqual(status['created'], 1)
+                self.assertEqual(creator.list_images(other)['images'][0]['name'], 'three.png')
+                with self.assertRaisesRegex(ValueError, 'available project'):
+                    app.generate_previews({'project': 'missing'})
+                with self.assertRaisesRegex(ValueError, 'available image folder'):
+                    app.generate_previews({'folder': str(root / 'missing')})
+
     def test_nested_catalog_generation_and_existing_previews(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()

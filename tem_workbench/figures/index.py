@@ -52,12 +52,13 @@ class FigureMetadataIndex:
                                          if key in ('sha256', 'metadata', 'metadata_sidecar', 'footer_ocr_text',
                                                     'footer_ocr_raw_text',
                                                     'scale_ocr_text',
-                                                    'content_height', 'scale_nm', 'error')}
+                                                    'content_height', 'content_height_source', 'pixel_size_nm',
+                                                    'pixel_size_source', 'scale_nm', 'inspection_version', 'error')}
                                   for path, record in self.records.items()
                                   if Path(path).is_relative_to(root)}
             return job
 
-    def start(self, folder, force=False, workers=4):
+    def start(self, folder, force=False, workers=4, outputs=()):
         root = Path(folder).expanduser().resolve()
         if not root.is_dir():
             raise ValueError('Choose an available image folder.')
@@ -73,7 +74,7 @@ class FigureMetadataIndex:
             self.cancel.clear()
             self.job = dict(state='running', folder=str(root), force=bool(force), workers=count,
                             done=0, total=0, reused=0, failed=0, current='', errors=[])
-            self.thread = threading.Thread(target=self._work, args=(root, bool(force), count), daemon=True,
+            self.thread = threading.Thread(target=self._work, args=(root, bool(force), count, tuple(outputs)), daemon=True,
                                            name='figure-metadata-index')
             self.thread.start()
             return self.status(str(root))
@@ -82,9 +83,9 @@ class FigureMetadataIndex:
         self.cancel.set()
         return self.status()
 
-    def _work(self, root, force, workers):
+    def _work(self, root, force, workers, outputs=()):
         try:
-            images = creator.list_images(root)['images']
+            images = creator.list_images(root, outputs=outputs)['images']
             with self.lock:
                 self.job['total'] = len(images)
             changed = False
@@ -94,15 +95,17 @@ class FigureMetadataIndex:
                 with self.lock:
                     cached = self.records.get(path)
                 if (not force and cached and cached.get('fingerprint') == fingerprint
-                        and not cached.get('error') and cached.get('inspection_version') == 7):
+                        and not cached.get('error') and cached.get('inspection_version') == creator.INSPECTION_VERSION):
                     return None
                 found = creator.inspect_image(path)
                 return dict(path=path, name=item['name'], sha256=found['sha256'],
                             metadata=found['metadata'], metadata_sidecar=found['metadata_sidecar'],
                             footer_ocr_text=found['footer_ocr_text'],
                             footer_ocr_raw_text=found['footer_ocr_raw_text'],
-                            scale_ocr_text=found['scale_ocr_text'], inspection_version=7,
+                            scale_ocr_text=found['scale_ocr_text'], inspection_version=creator.INSPECTION_VERSION,
                             content_height=found['content_height'], scale_nm=found['scale_nm'],
+                            content_height_source=found['content_height_source'],
+                            pixel_size_nm=found['pixel_size_nm'], pixel_size_source=found['pixel_size_source'],
                             fingerprint=fingerprint)
 
             pending = {}

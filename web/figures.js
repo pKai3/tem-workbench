@@ -4,6 +4,8 @@
  const $=id=>document.getElementById(id);
  let config,folderBrowser,projectSettings,files=[],selectedPanel=0,currentId='',timer=0,renderVersion=0,hoverTimer=0,browserPreferred=160,indexPoll=0,indexRecords={};
  let saved={};
+ let scanVersion=0,browserRoot='',previewPoll=0,previewStarting=false,previewJob=null;
+ const metadataFilters=[['fig-filter-mag','magnification'],['fig-filter-kv','voltage_kv'],['fig-filter-probe','probe'],['fig-filter-wd','working_distance'],['fig-filter-date','acquisition_date']];
  const blank=()=>({schema_version:2,name:'Untitled figure',rows:1,columns:2,aspect:4/3,background:'white',match_tone:false,sharpness:1,crop_metadata:true,scale_bar_overlay:true,scale_bar_position:'left',image_padding:36,export_scale_percent:100,metadata_overlay:[],slots:[{},{}]});
  function normaliseRecipe(value){
   if(!value||!Array.isArray(value.slots))return blank();
@@ -116,7 +118,7 @@
   $('fig-count').textContent=`${recipe.slots.filter(slot=>slot.path).length} of ${recipe.slots.length} filled`;
   $('fig-open-browser').disabled=!files.length;
   $('fig-export').disabled=!recipe.slots.length||(exportGeometry()?.pixels||0)>120_000_000||recipe.slots.some(slot=>!slot.path||
-   recipe.scale_bar_overlay&&slot.scale_mode!=='keep'&&(!slot.scale_nm||!slot.bar_px));
+   recipe.scale_bar_overlay&&slot.scale_mode!=='keep'&&(slot.scale_mode==='metadata'?!slot.pixel_size_nm:!slot.scale_nm||!slot.bar_px));
   updateExportEstimate();
  }
  function saveTags(){WorkbenchWorkspace.writeRaw('tem-figures-tags-v1',JSON.stringify(tagRows))}
@@ -409,14 +411,14 @@
     const input=document.createElement('input');input.type='number';input.min='0.000001';input.step='any';input.value=entry?.value??'';
     input.placeholder='Unavailable';input.title=entry?.source||'Not found in the source image';
     input.onchange=()=>{slot.metadata??={};slot.metadata[key]={value:Number(input.value)>0?Number(input.value):null,
-     unit:entry?.unit||unit,source:'Manual',kind:entry?.kind||(key==='probe'?'number':undefined)};slot.inspection_version=7;source.textContent='Manual';changed()};
+     unit:entry?.unit||unit,source:'Manual',kind:entry?.kind||(key==='probe'?'number':undefined)};source.textContent='Manual';changed()};
     const source=document.createElement('small');source.textContent=entry?.reported?`${entry.source} reported ${entry.reported}`:entry?.source||'Not found';
     field.append(input,source);metadata.append(field);
    }
    const dateEntry=slot.metadata?.acquisition_date,dateField=document.createElement('label');dateField.textContent='Acquired';
    const dateInput=document.createElement('input');dateInput.type='date';dateInput.value=dateEntry?.value||'';
    dateInput.onchange=()=>{slot.metadata??={};slot.metadata.acquisition_date={value:dateInput.value||null,source:'Manual'};
-    slot.inspection_version=7;dateSource.textContent='Manual';changed()};
+    dateSource.textContent='Manual';changed()};
    const dateSource=document.createElement('small');dateSource.textContent=dateEntry?.source||'Not found in footer, TXT or TIFF';
    dateField.append(dateInput,dateSource);metadata.append(dateField);
    const cropOverride=document.createElement('div');cropOverride.className='fig-crop-override';
@@ -434,11 +436,18 @@
    cropOn.onclick=()=>{slot.crop_metadata=true;changed(true)};cropOff.onclick=()=>{slot.crop_metadata=false;changed(true)};
    updateCropSwitch();cropSwitch.append(cropOn,cropOff);cropOverride.append(cropChoice,cropSwitch);metadata.append(cropOverride);
    const modeLabel=document.createElement('label');modeLabel.textContent='Scale display';const mode=document.createElement('select');
-   mode.add(new Option('Add calibrated bar','replace'));mode.add(new Option('No new bar','keep'));
+   if(slot.pixel_size_nm)mode.add(new Option('Recorded calibration','metadata'));
+   mode.add(new Option('Printed scale bar','replace'));mode.add(new Option('No new bar','keep'));
    mode.value=slot.scale_mode||'replace';mode.onchange=()=>{slot.scale_mode=mode.value;changed(true)};
    mode.disabled=!recipe.scale_bar_overlay;
    modeLabel.append(mode);metadata.append(modeLabel);
    const keep=slot.scale_mode==='keep'||!recipe.scale_bar_overlay;
+   if(slot.scale_mode==='metadata'){
+    const calibration=document.createElement('label');calibration.textContent='Pixel size, nm/px';
+    const value=document.createElement('input');value.type='number';value.value=slot.pixel_size_nm;value.readOnly=true;
+    const source=document.createElement('small');source.textContent=slot.pixel_size_source||'Recorded calibration';
+    calibration.append(value,source);metadata.append(calibration);
+   }else{
    const unit=(slot.scale_nm||0)>=1000?'µm':'nm',factor=unit==='µm'?1000:1;
    const valueInput=inputField(metadata,'Printed bar value','number',slot.scale_nm?slot.scale_nm/factor:'',value=>{
     slot.scale_nm=value?Number(value)*Number(unitSelect.value==='µm'?1000:1):null;
@@ -449,6 +458,7 @@
    unitSelect.onchange=()=>{if(slot.scale_nm)valueInput.value=slot.scale_nm/(unitSelect.value==='µm'?1000:1);changed()};
    unitSelect.disabled=keep;unitLabel.append(unitSelect);metadata.append(unitLabel);
    inputField(metadata,'Printed bar width, px','number',slot.bar_px??'',value=>{slot.bar_px=value?Number(value):null;changed()}, {min:'1',step:'1'}).disabled=keep;
+   }
    const positionLabel=document.createElement('label');positionLabel.textContent='Scale bar position';const position=document.createElement('select');
    position.add(new Option(`Figure (${recipe.scale_bar_position==='left'?'Left':'Right'})`,''));
    for(const name of ['Left','Right'])position.add(new Option(name,name.toLowerCase()));position.value=slot.scale_position||'';
@@ -538,7 +548,7 @@
    refreshSharpness();sharpnessControl.append(sharpnessChoice,sharpnessValue,sharpnessSlider);fields.append(sharpnessControl);
    const rowInput=inputField(fields,'Keep rows through','number',slot.content_height,value=>{slot.content_height=Number(value);cropSlider.value=value;updateFooter();changed()}, {min:'1',max:String(slot.height),step:'1'});
    const cropSlider=inputField(fields,'Bottom crop','range',slot.content_height,value=>{slot.content_height=Number(value);rowInput.value=value;updateFooter();changed()}, {min:'1',max:String(slot.height),step:'1'});
-   rowInput.disabled=cropSlider.disabled=!effectiveCrop();
+   rowInput.disabled=cropSlider.disabled=!effectiveCrop();rowInput.title=slot.content_height_source||'Image pixels';
    const detect=document.createElement('button');detect.type='button';detect.textContent='Re-detect footer';
    detect.title='Reread this image’s footer, printed bar and OCR. Keep manual metadata and crop edits.';
    detect.onclick=async()=>{try{status('Checking image footer…');const info=await api('figures/inspect',{path:slot.path});
@@ -546,6 +556,8 @@
     if(slot.detected_content_height!=null&&slot.content_height===slot.detected_content_height)
      slot.content_height=info.content_height;
     slot.detected_content_height=info.content_height;slot.footer_detected=info.footer_detected;
+    slot.content_height_source=info.content_height_source;slot.pixel_size_nm=info.pixel_size_nm;slot.pixel_size_source=info.pixel_size_source;
+    if(info.pixel_size_nm&&slot.scale_source!=='Manual')slot.scale_mode='metadata';
     if(slot.bar_px===slot.bar?.w||slot.bar_px==null)slot.bar_px=info.bar_px;
     slot.bar=info.bar;
     const oldScaleSource=slot.scale_source;slot.sidecar_bar_px=info.sidecar_bar_px;
@@ -562,7 +574,7 @@
    inputField(fields,'Centre X, %','range',Math.round((slot.center_x??.5)*100),value=>{slot.center_x=Number(value)/100;changed()}, {min:'0',max:'100',step:'1'});
    inputField(fields,'Centre Y, %','range',Math.round((slot.center_y??.5)*100),value=>{slot.center_y=Number(value)/100;changed()}, {min:'0',max:'100',step:'1'});
    editPane.append(fields);
-   const note=document.createElement('p');note.className='hint';note.textContent=`${slot.name} · ${slot.width} × ${slot.height} px · ${effectiveCrop()?slot.height-(slot.content_height||slot.height):0} bottom rows removed · ${slot.scale_source||'confirm printed scale value'}${slot.analysis?` · linked analysis: ${slot.analysis.path.split(/[\\/]/).at(-1)}`:''}`;editPane.append(note);
+   const note=document.createElement('p');note.className='hint';note.textContent=`${slot.name} · ${slot.width} × ${slot.height} px · ${effectiveCrop()?slot.height-(slot.content_height||slot.height):0} bottom rows removed · ${(slot.scale_mode==='metadata'?slot.pixel_size_source:slot.scale_source)||'confirm printed scale value'}${slot.analysis?` · linked analysis: ${slot.analysis.path.split(/[\\/]/).at(-1)}`:''}`;editPane.append(note);
    host.append(card);
   });
   sync();
@@ -674,7 +686,7 @@
  }
  async function showOriginal(slot){
   const dialog=$('fig-original-dialog');$('fig-original-title').textContent=`Compare original · ${slot.name}`;
-  $('fig-original-note').textContent=`Crop ends at row ${slot.content_height} of ${slot.height}. Printed bar: ${slot.bar_px||'not found'} px${slot.sidecar_bar_px?` (TXT: ${slot.sidecar_bar_px} px)`:''}${slot.scale_nm?` · ${slot.scale_nm>=1000?slot.scale_nm/1000+' µm':slot.scale_nm+' nm'}`:' · value needs confirmation'}.`;
+  $('fig-original-note').textContent=`Crop ends at row ${slot.content_height} of ${slot.height}. ${slot.scale_mode==='metadata'?`Recorded scale: ${slot.pixel_size_nm} nm/px`:`Printed bar: ${slot.bar_px||'not found'} px`}${slot.sidecar_bar_px?` (TXT: ${slot.sidecar_bar_px} px)`:''}${slot.scale_nm?` · ${slot.scale_nm>=1000?slot.scale_nm/1000+' µm':slot.scale_nm+' nm'}`:' · value needs confirmation'}.`;
   $('fig-original-image').removeAttribute('src');$('fig-panel-image').removeAttribute('src');dialog.showModal();
   try{const [original,panel]=await Promise.all([api('figures/original',{path:slot.path}),api('figures/panel',{slot,aspect:recipe.aspect,metadata_overlay:recipe.metadata_overlay,recipe})]);
    if(!dialog.open)return;$('fig-original-image').src=original.image;$('fig-panel-image').src=panel.image;
@@ -700,6 +712,38 @@
   const project=$('fig-project').value;
   return project?(config.sources||[]).find(source=>source.id===project)?.path||'':$('fig-folder').value;
  }
+ function sourceSelection(){return $('fig-project').value?{project:$('fig-project').value}:{folder:$('fig-folder').value}}
+ function showPreviewStatus(job){
+  previewJob=job;
+  const running=job?.state==='running';
+  $('fig-generate-previews').disabled=!config.sidecar_previews||running||previewStarting||!selectedRoot();
+  $('fig-cancel-previews').hidden=!running;
+  const progress=$('fig-preview-progress');progress.hidden=!running;
+  progress.max=Math.max(1,job?.total||1);progress.value=job?.processed||0;
+  $('fig-preview-status').textContent=previewStarting?'Starting DM4 previews…':job?
+   `${running?'Creating previews':job.state==='cancelled'?'Previews cancelled':'Previews complete'} · ${job.processed}/${job.total} · ${job.created} saved · ${job.skipped} existing · ${job.failed} failed${job.current?' · '+job.current:''}`:'';
+  $('fig-preview-status').title=job?.data_root||'';
+  $('fig-preview-errors').hidden=!job?.errors?.length;$('fig-preview-error-list').replaceChildren();
+  for(const error of job?.errors||[]){const item=document.createElement('li');item.textContent=error;$('fig-preview-error-list').append(item)}
+ }
+ async function pollPreviews(){
+  clearTimeout(previewPoll);
+  try{
+   const response=await fetch('/api/previews'),job=await response.json();
+   if(!response.ok)throw new Error(job?.error||'Could not read preview progress.');
+   showPreviewStatus(job);
+   if(job?.state==='running'){previewPoll=setTimeout(pollPreviews,800);return}
+   await scan();
+  }catch(error){$('fig-preview-status').textContent=error.message;previewPoll=setTimeout(pollPreviews,3000)}
+ }
+ async function generatePreviews(){
+  if(previewStarting||previewJob?.state==='running')return;
+  previewStarting=true;showPreviewStatus(null);
+  try{
+   const job=await api('figures/previews',sourceSelection());
+   previewStarting=false;showPreviewStatus(job);pollPreviews();
+  }catch(error){previewStarting=false;showPreviewStatus(null);$('fig-preview-status').textContent=error.message}
+ }
  function cachedMetadata(row){return indexRecords[row.path]?.metadata||recipe.slots.find(slot=>slot.path===row.path)?.metadata||{}}
  function formatMetadata(key,entry){
   if(!entry||entry.value==null)return '';
@@ -711,7 +755,11 @@
   return `WD ${value}${entry.unit||''}`;
  }
  function refreshFilters(){
-  for(const [id,key] of [['fig-filter-mag','magnification'],['fig-filter-kv','voltage_kv'],['fig-filter-probe','probe'],['fig-filter-wd','working_distance'],['fig-filter-date','acquisition_date']]){
+  const folder=$('fig-filter-folder'),previousFolder=folder.value,folders=new Set(['.']);
+  for(const row of files){const parts=(row.folder||'.').split('/');for(let i=1;i<=parts.length;i++)folders.add(parts.slice(0,i).join('/'))}
+  folder.replaceChildren(new Option('All folders',''),...Array.from(folders).sort(naturalCompare).map(value=>new Option(value==='.'?'Top folder':value,value)));
+  folder.value=folders.has(previousFolder)?previousFolder:'';
+  for(const [id,key] of metadataFilters){
    const select=$(id),previous=select.value,entries=new Map();
    for(const row of files){const entry=cachedMetadata(row)[key];if(entry?.value!=null)entries.set(String(entry.value),formatMetadata(key,entry))}
    const ordered=[...entries].sort((a,b)=>key==='acquisition_date'?b[0].localeCompare(a[0]):Number(a[0])-Number(b[0]));
@@ -733,7 +781,7 @@
        JSON.stringify(slot.metadata)===JSON.stringify(metadata))continue;
     slot.metadata=metadata;slot.metadata_sidecar=record.metadata_sidecar;
     slot.footer_ocr_text=record.footer_ocr_text;slot.footer_ocr_raw_text=record.footer_ocr_raw_text;
-    slot.scale_ocr_text=record.scale_ocr_text;slot.inspection_version=7;refreshed=true;
+    slot.scale_ocr_text=record.scale_ocr_text;refreshed=true;
    }
    if(refreshed)changed(true);
   }
@@ -749,8 +797,9 @@
  }
  async function refreshIndex(){
   clearTimeout(indexPoll);
+  const root=selectedRoot();
   try{
-   const result=await api('figures/index/status',{folder:selectedRoot()});showIndexStatus(result);
+   const result=await api('figures/index/status',{folder:root});if(root!==selectedRoot())return;showIndexStatus(result);
    if(result.state==='running')indexPoll=setTimeout(refreshIndex,750);
   }catch(error){$('fig-preprocess-status').textContent=error.message}
  }
@@ -799,24 +848,56 @@
  function browserFormatIcon(row){
   const extension=(row.extension||row.name.match(/\.[^.]+$/)?.[0]||'').replace(/^\./,'').toUpperCase();
   const badge=document.createElement('span'),svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),path=document.createElementNS('http://www.w3.org/2000/svg','path'),text=document.createElement('span');
-  badge.className='image-browser-format';badge.title=extension+' file';badge.setAttribute('aria-hidden','true');
+  badge.className='image-browser-format';badge.title=row.dm4_source?'PNG preview of '+row.dm4_source:extension+' file';badge.setAttribute('aria-hidden','true');
   svg.setAttribute('viewBox','0 0 16 18');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.5');path.setAttribute('d','M3 1h7l3 3v13H3z M10 1v4h3');svg.append(path);
   text.textContent=extension;badge.append(svg,text);return badge;
  }
- function renderBrowser(){
-  const host=$('fig-browser-list'),term=$('fig-browser-search').value.trim().toLocaleLowerCase();host.replaceChildren();
-  const selected=[['fig-filter-mag','magnification'],['fig-filter-kv','voltage_kv'],['fig-filter-probe','probe'],['fig-filter-wd','working_distance'],['fig-filter-date','acquisition_date']];
+ function naturalCompare(a,b){return a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'})}
+ function browserFileType(row){
+  const extension=(row.extension||row.name.match(/\.[^.]+$/)?.[0]||'').replace(/^\./,'').toLowerCase();
+  return ['tif','tiff'].includes(extension)?'tiff':['jpg','jpeg'].includes(extension)?'jpeg':extension;
+ }
+ function matchingBrowserFiles(){
+  const terms=$('fig-browser-search').value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const type=$('fig-filter-type').value,folder=$('fig-filter-folder').value,subfolders=$('fig-filter-subfolders').checked;
   const visible=files.filter(row=>{
-   if(!(row.name+' '+row.path).toLocaleLowerCase().includes(term))return false;
+   const text=(row.name+' '+(row.relative_path||row.folder||'')).toLocaleLowerCase();
+   if(!terms.every(term=>text.includes(term)))return false;
+   if(type&&(type==='dm4-preview'?!row.dm4_source:browserFileType(row)!==type))return false;
+   const parent=row.folder||'.';
+   if(folder&&parent!==folder&&!(subfolders&&(folder==='.'||parent.startsWith(folder+'/'))))return false;
    const sidecar=$('fig-filter-sidecar').value;
    if(sidecar&&row.has_sidecar!==(sidecar==='yes'))return false;
    const metadata=cachedMetadata(row);
-   return selected.every(([id,key])=>!$(id).value||String(metadata[key]?.value)===$(id).value);
+   return metadataFilters.every(([id,key])=>!$(id).value||String(metadata[key]?.value)===$(id).value);
   });
+  const order=$('fig-browser-sort').value;
+  return visible.sort((a,b)=>{
+   if(order==='date'){
+    const delta=String(cachedMetadata(b).acquisition_date?.value||'').localeCompare(String(cachedMetadata(a).acquisition_date?.value||''));
+    if(delta)return delta;
+   }
+   if(order==='type'){const delta=naturalCompare(browserFileType(a),browserFileType(b));if(delta)return delta}
+   if(order==='folder'){const delta=naturalCompare(a.folder||'.',b.folder||'.');if(delta)return delta}
+   return naturalCompare(a.name,b.name)||naturalCompare(a.path,b.path);
+  });
+ }
+ function saveBrowserSettings(){
+  WorkbenchWorkspace.writeRaw('tem-figures-browser-settings',JSON.stringify({type:$('fig-filter-type').value,sort:$('fig-browser-sort').value,subfolders:$('fig-filter-subfolders').checked}));
+ }
+ function resetBrowserFilters(){
+  $('fig-browser-search').value='';
+  for(const id of ['fig-filter-type','fig-filter-folder','fig-filter-sidecar',...metadataFilters.map(([id])=>id)])$(id).value='';
+  $('fig-filter-subfolders').checked=true;$('fig-browser-sort').value='folder';saveBrowserSettings();renderBrowser();
+ }
+ function renderBrowser(){
+  hideHover();
+  const host=$('fig-browser-list');host.replaceChildren();
+  const visible=matchingBrowserFiles();
   $('fig-browser-count').textContent=`${visible.length} of ${files.length} images`;
   for(const row of visible){
    const tile=document.createElement('button');tile.type='button';tile.className='image-browser-tile';tile.title=row.path;
-   tile.setAttribute('aria-label',`Use ${row.name} in panel ${selectedPanel+1} · ${row.has_sidecar?'TXT sidecar available':'no TXT sidecar'}`);
+   tile.setAttribute('aria-label',`Use ${row.name} in panel ${selectedPanel+1}${row.dm4_source?' · DM4 preview':''} · ${row.has_sidecar?'TXT sidecar available':'no TXT sidecar'}`);
    const picture=document.createElement('span');picture.className='image-browser-preview';
    const placeholder=document.createElement('span');placeholder.className='muted';placeholder.textContent='Loading preview…';picture.append(placeholder);
    const image=document.createElement('img');image.alt='';image.loading='lazy';image.decoding='async';image.src=previewUrl(row);
@@ -831,7 +912,7 @@
    if(match){const number=document.createElement('span');number.className='image-browser-number';number.textContent='#'+match[2];name.append(number)}
    const group=document.createElement('small');group.textContent=row.folder&&row.folder!=='.'?row.folder:row.sample||'Selected folder';group.title=row.relative_path||row.path;
    const metadata=document.createElement('small');metadata.className='fig-browser-metadata';
-   metadata.textContent=['magnification','voltage_kv','probe','working_distance','acquisition_date'].map(key=>formatMetadata(key,cachedMetadata(row)[key])).filter(Boolean).join(' · ')||(indexRecords[row.path]?'No acquisition metadata':'Not preprocessed');
+   metadata.textContent=(row.dm4_source?'DM4 preview · ':'')+(['magnification','voltage_kv','probe','working_distance','acquisition_date'].map(key=>formatMetadata(key,cachedMetadata(row)[key])).filter(Boolean).join(' · ')||(indexRecords[row.path]?'No acquisition metadata':'Not preprocessed'));
    tile.append(picture,name,group,metadata);
    tile.onmouseenter=event=>showHover(row,event.clientX,event.clientY);
    tile.onmousemove=event=>{if(!$('fig-browser-hover').hidden)positionHover(event.clientX,event.clientY)};
@@ -840,24 +921,32 @@
    tile.onblur=hideHover;
    tile.onclick=async()=>{hideHover();if(await add(row.path))$('fig-browser-dialog').close()};host.append(tile);
   }
-  if(!visible.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No matching images.';host.append(empty)}
+  if(!visible.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='No matching images. Try Reset filters or Rescan images.';host.append(empty)}
   refreshBrowserSize();
  }
  function openImageBrowser(){
   $('fig-browser-title').textContent=`Choose image for panel ${selectedPanel+1}`;
-  $('fig-browser-search').value='';
   refreshFilters();
   renderBrowser();$('fig-browser-dialog').showModal();refreshBrowserSize();$('fig-browser-search').focus();
  }
  async function scan(){
+  const version=++scanVersion,selection=sourceSelection();
   $('fig-folder-status').textContent='Scanning…';
+  $('fig-dm4-status').textContent='';
+  files=[];sync();
+  $('fig-preprocess').disabled=true;$('fig-reprocess-ocr').disabled=true;
   try{
-   const project=$('fig-project').value;
-   if(project){files=(config.files||[]).filter(row=>row.source_id===project&&/\.(tif|tiff|png|jpe?g)$/i.test(row.path||'')).map(row=>({path:row.path,name:row.name+(row.extension||''),extension:row.extension,id:row.id,has_preview:row.has_preview,has_sidecar:row.has_sidecar,sample:row.sample,folder:row.folder,image_kind:row.image_kind}));}
-   else{const result=await api('figures/list',{folder:$('fig-folder').value});files=result.images;$('fig-folder').value=result.folder;WorkbenchWorkspace.writeRaw('tem-figures-folder',result.folder)}
-   sync();$('fig-folder-status').textContent=`${files.length} images found${project?' in this project':' in folder and subfolders'}`;
+   const result=await api('figures/list',selection);if(version!==scanVersion)return;
+   const known=new Map();for(const row of config.files||[])for(const path of row.locations||[row.path])known.set(path,row);
+   files=result.images.map(row=>({...row,image_kind:known.get(row.dm4_source||row.path)?.image_kind}));
+   if(browserRoot!==result.folder){$('fig-filter-folder').value='';browserRoot=result.folder;indexRecords={}}
+   if(!selection.project){$('fig-folder').value=result.folder;WorkbenchWorkspace.writeRaw('tem-figures-folder',result.folder)}
+   refreshFilters();if($('fig-browser-dialog').open)renderBrowser();
+   sync();$('fig-folder-status').textContent=`${files.length} images · TIFF, PNG, JPEG`;
+   $('fig-dm4-status').textContent=result.dm4_count?`${result.dm4_count} DM4 files · ${result.dm4_missing_previews} missing PNG previews`:'';
+   showPreviewStatus(previewJob);
    await refreshIndex();
-  }catch(error){$('fig-folder-status').textContent=error.message}
+  }catch(error){if(version!==scanVersion)return;$('fig-folder-status').textContent=error.message;if($('fig-browser-dialog').open)renderBrowser()}
  }
  async function add(path){
   if(!path||selectedPanel<0||!recipe.slots[selectedPanel])return;
@@ -870,7 +959,7 @@
  }
  function loadRecipe(next){recipe=normaliseRecipe(next);selectedPanel=0;renderCards();draft();schedulePreview();scheduleEstimate();refreshLegacySlots()}
  async function refreshLegacySlots(){
-  const current=recipe,pending=current.slots.filter(slot=>slot.path&&Number(slot.inspection_version||0)<7);
+  const current=recipe,pending=current.slots.filter(slot=>slot.path&&Number(slot.inspection_version||0)<9);
   if(!pending.length)return;
   status(`Reading footer metadata for ${pending.length} images…`);
   let updated=false;
@@ -878,20 +967,24 @@
    try{
     const info=await api('figures/inspect',{path:slot.path});
     if(recipe!==current)return;
-    if(!current.slots.includes(slot)||Number(slot.inspection_version||0)>=7)continue;
+    if(!current.slots.includes(slot)||Number(slot.inspection_version||0)>=9)continue;
     if(info.sha256!==slot.sha256)continue;
     const manual=Object.fromEntries(Object.entries(slot.metadata||{}).filter(([,entry])=>entry?.source==='Manual'));
     slot.metadata={...info.metadata,...manual};slot.metadata_sidecar=info.metadata_sidecar;
     slot.footer_ocr_text=info.footer_ocr_text;slot.footer_ocr_raw_text=info.footer_ocr_raw_text;
     slot.scale_ocr_text=info.scale_ocr_text;slot.ocr_available=info.ocr_available;
     if(!slot.footer_detected&&slot.content_height===slot.height&&info.footer_detected){
-     slot.content_height=info.content_height;slot.footer_detected=true;slot.bar=info.bar;slot.bar_px=info.bar_px;
-     slot.scale_nm=info.scale_nm;slot.scale_source=info.scale_source;slot.scale_mode=info.scale_mode;
+     slot.content_height=info.content_height;slot.footer_detected=true;
+     if(slot.bar_px==null||slot.bar_px===slot.bar?.w)slot.bar_px=info.bar_px;
+     slot.bar=info.bar;
+     if(slot.scale_source!=='Manual'){slot.scale_nm=info.scale_nm;slot.scale_source=info.scale_source;slot.scale_mode=info.scale_mode}
     }else if(/sidecar/i.test(slot.scale_source||'')){
      slot.scale_nm=info.scale_nm;slot.scale_source=info.scale_source;
     }
-    slot.detected_content_height=info.content_height;
-    slot.inspection_version=7;updated=true;
+    slot.detected_content_height=info.content_height;slot.content_height_source=info.content_height_source;
+    slot.pixel_size_nm=info.pixel_size_nm;slot.pixel_size_source=info.pixel_size_source;
+    if(info.pixel_size_nm&&slot.scale_source!=='Manual')slot.scale_mode='metadata';
+    slot.inspection_version=info.inspection_version;updated=true;
    }catch(error){status(error.message,true)}
   }
   if(updated&&recipe===current)changed(true);
@@ -919,6 +1012,10 @@
     .slice(0,500).map(row=>({label:row.label,colour:typeof row.colour==='string'?row.colour:''})):[];
    if(!tagRows.length)tagRows=[{label:'',colour:''}];
    browserPreferred=Math.max(80,Math.min(240,Number(WorkbenchWorkspace.readRaw('tem-figures-preview-size'))||160));
+   const browserSettings=parse(WorkbenchWorkspace.readRaw('tem-figures-browser-settings'),{});
+   $('fig-filter-type').value=['tiff','png','jpeg','dm4-preview'].includes(browserSettings.type)?browserSettings.type:'';
+   $('fig-browser-sort').value=['name','type','date'].includes(browserSettings.sort)?browserSettings.sort:'folder';
+   $('fig-filter-subfolders').checked=browserSettings.subfolders!==false;
    hoverEnabled=WorkbenchWorkspace.readRaw('tem-figures-hover-detail')!=='off';
    const savedWorkers=Number(WorkbenchWorkspace.readRaw('tem-figures-ocr-workers'));
    $('fig-ocr-workers').value=String(Number.isInteger(savedWorkers)&&savedWorkers>0?savedWorkers:4);
@@ -935,9 +1032,13 @@
    $('fig-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('fig-project-dialog'));
    $('fig-project-close').onclick=()=>$('fig-project-dialog').close();
    $('fig-open-browser').onclick=openImageBrowser;
-   $('fig-preprocess').onclick=async()=>{try{showIndexStatus(await api('figures/index/start',{folder:selectedRoot(),workers:Number($('fig-ocr-workers').value)}));refreshIndex()}
+   $('fig-generate-previews').onclick=generatePreviews;
+   $('fig-cancel-previews').onclick=async()=>{try{showPreviewStatus(await api('previews/cancel',{}));pollPreviews()}
+    catch(error){$('fig-preview-status').textContent=error.message}};
+   showPreviewStatus(config.preview_job);if(config.preview_job?.state==='running')pollPreviews();
+   $('fig-preprocess').onclick=async()=>{try{showIndexStatus(await api('figures/index/start',{...sourceSelection(),workers:Number($('fig-ocr-workers').value)}));refreshIndex()}
     catch(error){$('fig-preprocess-status').textContent=error.message}};
-   $('fig-reprocess-ocr').onclick=async()=>{try{showIndexStatus(await api('figures/index/start',{folder:selectedRoot(),force:true,workers:Number($('fig-ocr-workers').value)}));refreshIndex()}
+   $('fig-reprocess-ocr').onclick=async()=>{try{showIndexStatus(await api('figures/index/start',{...sourceSelection(),force:true,workers:Number($('fig-ocr-workers').value)}));refreshIndex()}
     catch(error){$('fig-preprocess-status').textContent=error.message}};
    $('fig-preprocess-cancel').onclick=async()=>{try{await api('figures/index/cancel',{});refreshIndex()}
     catch(error){$('fig-preprocess-status').textContent=error.message}};
@@ -945,7 +1046,8 @@
    $('fig-browser-dialog').onclose=hideHover;
    $('fig-browser-search').oninput=renderBrowser;
    $('fig-browser-size').oninput=()=>refreshBrowserSize(true);
-   for(const id of ['fig-filter-mag','fig-filter-kv','fig-filter-probe','fig-filter-wd','fig-filter-date','fig-filter-sidecar'])$(id).onchange=renderBrowser;
+   for(const id of ['fig-filter-type','fig-filter-folder','fig-filter-subfolders','fig-browser-sort','fig-filter-sidecar',...metadataFilters.map(([id])=>id)])$(id).onchange=()=>{saveBrowserSettings();renderBrowser()};
+   $('fig-filter-reset').onclick=resetBrowserFilters;
    new ResizeObserver(()=>{if($('fig-browser-dialog').open)refreshBrowserSize()}).observe($('fig-browser-list'));
    $('fig-slot-close').onclick=()=>$('fig-slot-dialog').close();
    $('fig-original-close').onclick=()=>$('fig-original-dialog').close();

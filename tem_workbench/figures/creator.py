@@ -20,8 +20,12 @@ from scipy import ndimage
 
 from tem_workbench.paths import RESOURCES
 from tem_workbench.storage.folder_paths import atomic_json, output_folder
+from tem_workbench.storage.mode_folders import scan_folders
+from tem_workbench.storage.preview_files import sidecar_path
+from tem_workbench.figures import instrument_metadata
 
 EXTENSIONS = {'.tif', '.tiff', '.png', '.jpg', '.jpeg'}
+INSPECTION_VERSION = 9
 MAX_PANELS = 24
 MAX_SOURCE_PIXELS = 150_000_000
 MAX_FIGURE_PIXELS = 120_000_000
@@ -50,21 +54,27 @@ def _digest(path):
     return value.hexdigest()
 
 
-def list_images(folder):
+def list_images(folder, outputs=()):
     root = Path(folder).expanduser().resolve()
     if not root.is_dir():
         raise ValueError('Choose an available image folder.')
-    images = []
-    for directory, subfolders, filenames in os.walk(root, followlinks=False):
-        subfolders[:] = sorted((name for name in subfolders if not name.startswith('.')), key=str.casefold)
-        relative_folder = Path(directory).relative_to(root).as_posix()
+    images, dm4_files = [], []
+    for directory, filenames in scan_folders(root, outputs):
+        relative_folder = directory.relative_to(root).as_posix()
+        previews = {str((directory / name).with_suffix('.png')): str(directory / name)
+                    for name in filenames if Path(name).suffix.lower() == '.dm4'}
         for name in sorted(filenames, key=str.casefold):
-            path = Path(directory) / name
+            path = directory / name
+            if path.suffix.lower() == '.dm4' and path.is_file():
+                dm4_files.append(path)
             if path.suffix.lower() in EXTENSIONS and path.is_file():
                 images.append(dict(path=str(path), name=name, folder=relative_folder,
+                                   extension=path.suffix.lower(),
+                                   dm4_source=previews.get(str(path.with_suffix('.png'))) if path.suffix.lower() == '.png' else None,
                                    has_sidecar=path.with_suffix('.txt').is_file(),
                                    relative_path=path.relative_to(root).as_posix()))
-    return {'folder': str(root), 'images': images}
+    return {'folder': str(root), 'images': images, 'dm4_count': len(dm4_files),
+            'dm4_missing_previews': sum(not sidecar_path(path).is_file() for path in dm4_files)}
 
 
 def thumbnail(path, size=512):
@@ -142,10 +152,12 @@ def _acquisition_metadata(source, sidecar_text='', description='', footer_text='
         if 'probe' in metadata:
             metadata['probe']['kind'] = 'current'
 
-    magnification = re.search(r'(?i)[x×]\s*(\d{1,3}(?:\s*,\s*\d{3})+|\d{3,7})', footer_text)
+    magnification = re.search(r'(?i)(?:[x×]\s*|\bmag(?:nification)?\s*[:=]?\s*)(\d+(?:\s*,\s*\d{3})*(?:\.\d+)?\s*[kM]?)', footer_text)
+    if not magnification:
+        magnification = re.search(r'(?i)\b(\d+(?:,\d{3})*(?:\.\d+)?\s*[kM]?)\s*[x×]\b', footer_text)
     if magnification:
-        put('magnification', re.sub(r'[^\d]', '', magnification[1]), '×', 'Footer OCR')
-    voltage = re.search(r'(?i)\b(\d+(?:\.\d+)?)\s*kV\b', footer_text)
+        put('magnification', re.sub(r'[,\s]', '', magnification[1]), '×', 'Footer OCR')
+    voltage = re.search(r'(?i)\b(\d+(?:\.\d+)?)\s*k(?:V\b|¥)', footer_text)
     if voltage:
         put('voltage_kv', voltage[1], 'kV', 'Footer OCR')
     distance = re.search(r'(?i)\bWD\s*(\d+(?:\.\d+)?)\s*(mm|µm|um)?', footer_text)
@@ -244,17 +256,21 @@ def _footer_ocr(image, footer, bar):
     if footer >= image.height or not _tesseract_path():
         return '', None, ''
     band = image.crop((0, footer, image.width, image.height)).convert('RGB')
+    background = int(np.median(np.asarray(band.convert('L'))))
     if bar:
         # The bar is a graphic. Its white edges otherwise become stray OCR letters.
         ImageDraw.Draw(band).rectangle((bar['x'] - 4, bar['y'] - footer - 4,
                                         bar['x'] + bar['w'] + 4, bar['y'] - footer + bar['h'] + 4),
-                                       fill='black')
-    enlarged = band.resize((band.width * 2, band.height * 2))
+                                       fill=(background,) * 3)
+    if background < 128:
+        band = ImageOps.invert(band)
+    factor = 4 if band.height < 60 else 2
+    enlarged = band.resize((band.width * factor, band.height * factor))
     line_text = _ocr_image(enlarged, psm=6)
     sparse_text = _ocr_image(enlarged, psm=11)
     def score(candidate):
         return sum(bool(re.search(pattern, candidate, re.I)) for pattern in (
-            r'[x×]\s*\d[\d, ]{2,}', r'\d+(?:\.\d+)?\s*kV\b',
+            r'[x×]\s*\d[\d,. ]*(?:k|M)?', r'\d+(?:\.\d+)?\s*k(?:V\b|¥)',
             r'\bWD\s*\d', r'\d{1,4}/\d{1,2}/\d{2,4}'))
     text = sparse_text if score(sparse_text) > score(line_text) else line_text or sparse_text
     if not bar:
@@ -269,13 +285,36 @@ def _footer_ocr(image, footer, bar):
             break
     standalone_scale = _printed_scale(re.sub(r'^[Il|](?=\s*[uµμ]m\b)', '1', standalone)) if standalone else None
 
+    # Scale labels may sit above, below or to either side of a bar/ruler.
+    # Read nearby text from the masked footer, never the specimen or filename.
+    span = max(bar['w'], round(image.width * .25))
+    x, y, w, h = bar['x'], bar['y'] - footer, bar['w'], bar['h']
+    nearby = [(x - span, y - h, x, y + 2 * h + 20),
+              (x + w, y - h, x + w + span, y + 2 * h + 20),
+              (x - 20, 0, x + w + 20, y),
+              (x - 20, y + h, x + w + 20, band.height)]
+    for box in nearby:
+        left, top, right, bottom = (max(0, int(box[0])), max(0, int(box[1])),
+                                    min(band.width, int(box[2])), min(band.height, int(box[3])))
+        if right - left < 8 or bottom - top < 6:
+            continue
+        region = band.crop((left, top, right, bottom))
+        if np.asarray(region.convert('L')).std() < 2:
+            continue
+        focused = region.resize((region.width * 4, region.height * 4))
+        label = _ocr_image(focused, psm=6)
+        for line in label.splitlines():
+            candidate = re.sub(r'^[Il|](?=\s*[uµμ]m\b)', '1', line.strip())
+            if re.fullmatch(r'\d+(?:\.\d+)?\s*(?:nm|[uµμ]m|mm)', candidate, re.I):
+                return text, _printed_scale(candidate), candidate
+
     # The short scale label sits on the upper footer row, often well right of the bar.
     gray = np.asarray(image.convert('L'))
     left = min(image.width, bar['x'] + bar['w'] + 5)
     right = min(image.width, left + round(image.width * .3))
     top = max(footer, bar['y'] - 5)
     bottom = min(image.height, bar['y'] + bar['h'] + 20)
-    labels, _ = ndimage.label(gray[top:bottom, left:right] > 180)
+    labels, _ = ndimage.label(gray[top:bottom, left:right] > 180 if background < 128 else gray[top:bottom, left:right] < 75)
     glyphs = []
     for slices in ndimage.find_objects(labels):
         if slices is None:
@@ -297,7 +336,7 @@ def _footer_ocr(image, footer, bar):
     y1 = min(image.height, max(g[3] for g in group) + 10)
     focused = image.crop((x0, y0, x1, y1))
     focused = focused.resize((focused.width * 4, focused.height * 4))
-    label = _ocr_image(focused, psm=7, whitelist='0123456789.umµμ')
+    label = _ocr_image(focused, psm=7, whitelist='0123456789.numµμ')
     scale_nm = _printed_scale(label)
     scale_text = label
     if scale_nm is None:
@@ -325,27 +364,39 @@ def _correct_footer_scale(text, scale_nm):
     return 'Scale label: ' + label + '\n' + text
 
 
-def _footer_and_bar(image):
+def _footer_and_bar(image, recorded_footer=None):
     gray = np.asarray(image.convert('L'))
     height, width = gray.shape
     dark = np.mean(gray < 35, axis=1)
-    footer = next((y for y in range(max(1, int(height * .65)), int(height * .98))
+    footer = recorded_footer if recorded_footer is not None else next((y for y in range(max(1, int(height * .65)), int(height * .98))
                    if dark[y] > .96 and dark[y - 1] < .75
                    and np.mean(dark[y:y + 6]) > .96), None)
     if footer is None:
+        # Short TEM footers and light-background strips need not start with six
+        # empty black rows. Require a sharp boundary and a sustained flat band.
+        sample = gray[-max(4, min(32, round(height * .01))):]
+        background = int(np.bincount(sample.ravel(), minlength=256).argmax())
+        flat = np.mean((gray >= max(0, background - 20)) & (gray <= min(255, background + 20)), axis=1)
+        for y in range(max(1, int(height * .65)), height - 11):
+            if (flat[y] >= .85 and flat[y] - flat[y - 1] > .2
+                    and np.median(flat[y:]) >= .85 and np.mean(flat[y:]) >= .8):
+                footer = y
+                break
+    if footer is None or footer >= height:
         return height, None
-    region = gray[footer:footer + min(height - footer, max(40, (height - footer) * 2 // 3))]
-    labels, _ = ndimage.label(region > 220)
+    region = gray[footer:]
+    background = int(np.median(region))
+    labels, _ = ndimage.label(region > 180 if background < 128 else region < 75)
     candidates = []
     for index, slices in enumerate(ndimage.find_objects(labels), 1):
         if slices is None:
             continue
         ys, xs = slices
         bar_width, bar_height = xs.stop - xs.start, ys.stop - ys.start
+        fill = np.mean(labels[slices] == index)
         if not (width * .01 <= bar_width <= width * .4 and 2 <= bar_height <= max(45, height * .025)
                 and bar_width / bar_height >= 4):
             continue
-        fill = np.mean(labels[slices] == index)
         if fill > .85:
             candidates.append((bar_width * fill, dict(x=xs.start, y=footer + ys.start,
                                                        w=bar_width, h=bar_height)))
@@ -359,17 +410,22 @@ def inspect_image(path):
             raise ValueError('This image is too large for the figure editor.')
         image = ImageOps.exif_transpose(raw)
         width, height = image.size
-        footer, bar = _footer_and_bar(image)
         description = raw.tag_v2.get(270) if hasattr(raw, 'tag_v2') else raw.info.get('description')
+        sidecar = source.with_suffix('.txt')
+        sidecar_text = ''
+        if sidecar.is_file():
+            data = sidecar.read_bytes()
+            sidecar_text = data.decode('utf-16' if data.startswith((b'\xff\xfe', b'\xfe\xff')) else 'utf-8-sig', errors='replace')
+        recorded = instrument_metadata.read(description, sidecar_text, source, width, height)
+        if raw.getexif().get(274, 1) != 1:
+            recorded = {'metadata': recorded['metadata']}
+        footer, bar = _footer_and_bar(image, recorded.get('content_height'))
         footer_raw_text, scale_nm, scale_text = _footer_ocr(image, footer, bar)
         footer_text = _correct_footer_scale(footer_raw_text, scale_nm)
         scale_source = 'Footer OCR; verify against original' if scale_nm else None
         sidecar_bar_px = None
-        sidecar = source.with_suffix('.txt')
-        sidecar_text = ''
         metadata_sidecar = None
         if sidecar.is_file():
-            sidecar_text = sidecar.read_text(encoding='utf-8', errors='replace')
             checks, warnings = _sidecar_match(source, sidecar_text, width, height, footer,
                                               bar['w'] if bar else None)
             metadata_sidecar = dict(path=str(sidecar), sha256=_digest(sidecar),
@@ -391,13 +447,15 @@ def inspect_image(path):
         return dict(path=str(source), name=source.name, sha256=_digest(source), width=width,
                     height=height, content_height=footer, detected_content_height=footer,
                     footer_detected=footer < height,
+                    content_height_source=recorded.get('content_height_source', 'Image pixels'),
+                    pixel_size_nm=recorded.get('pixel_size_nm'), pixel_size_source=recorded.get('pixel_size_source'),
                     bar=bar, bar_px=bar['w'] if bar else None, scale_nm=scale_nm,
                     scale_source=scale_source, sidecar_bar_px=sidecar_bar_px, analysis=analysis,
-                    metadata=_acquisition_metadata(source, sidecar_text, description, footer_raw_text),
+                    metadata={**_acquisition_metadata(source, sidecar_text, description, footer_raw_text), **recorded['metadata']},
                     metadata_sidecar=metadata_sidecar,
                     footer_ocr_text=footer_text, footer_ocr_raw_text=footer_raw_text,
-                    scale_ocr_text=scale_text, ocr_available=bool(_tesseract_path()), inspection_version=7,
-                    scale_mode='replace' if footer < height and bar else 'keep')
+                    scale_ocr_text=scale_text, ocr_available=bool(_tesseract_path()), inspection_version=INSPECTION_VERSION,
+                    scale_mode='metadata' if recorded.get('pixel_size_nm') else 'replace' if footer < height and bar else 'keep')
 
 
 def original_preview(path):
@@ -866,7 +924,7 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
             raise ValueError('This image is too large for the figure editor.')
         image = ImageOps.exif_transpose(raw).convert('RGB')
     scale_mode = slot.get('scale_mode', 'replace')
-    if scale_mode not in ('replace', 'keep'):
+    if scale_mode not in ('replace', 'metadata', 'keep'):
         raise ValueError('Choose a supported scale display mode.')
     saved_content_height = int(slot.get('content_height', image.height))
     if not 1 <= saved_content_height <= image.height:
@@ -898,9 +956,11 @@ def _panel(slot, width, aspect, strict, tone_target=None, raw_only=False, figure
         image = ImageEnhance.Sharpness(image).enhance(sharpness)
     if not figure_scale_bar_overlay or scale_mode == 'keep':
         return image
-    bar_px, scale_nm = slot.get('bar_px'), slot.get('scale_nm')
+    bar_px, scale_nm = (1, slot.get('pixel_size_nm')) if scale_mode == 'metadata' else (slot.get('bar_px'), slot.get('scale_nm'))
     if not bar_px or not scale_nm:
         if strict:
+            if scale_mode == 'metadata':
+                raise ValueError(f'Reinspect the recorded pixel size for {source.name} before export.')
             raise ValueError(f'Confirm the printed scale value and bar width for {source.name} before export.')
         return image
     bar_px, scale_nm = float(bar_px), float(scale_nm)

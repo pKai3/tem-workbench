@@ -253,16 +253,38 @@ class Workbench:
     def preview_status(self):
         return self.preview_batch.status() if self.preview_batch else None
 
-    def generate_previews(self):
+    def figure_source(self, body):
+        """Figures scans all raster images, independently of TEM discovery rules."""
+        if body.get('project'):
+            source = next((s for s in self.engine.sources if s['id'] == body['project']), None)
+            if source is None:
+                raise ValueError('Choose an available project.')
+            return source['path'], folder_paths.output_folders(self.engine.sources, self.config['output_root'])
+        return body['folder'], ()
+
+    def generate_previews(self, selection=None):
         with self.lock:
             if self.preview_batch and self.preview_status()['state'] == 'running':
                 return self.preview_status()
             engine = self.engine
-            engine.catalog()
+            if selection is None:
+                engine.catalog()
+                files = {k: v for k, v in engine.files.items() if v.suffix.lower() == '.dm4'}
+                root = engine.data_root
+            else:
+                from tem_workbench.storage.mode_folders import scan_folders
+                folder, outputs = self.figure_source(selection)
+                root = Path(folder).expanduser().resolve()
+                if not root.is_dir():
+                    raise ValueError('Choose an available image folder.')
+                files = {path.relative_to(root).as_posix(): path
+                         for directory, names in scan_folders(root, outputs)
+                         for name in sorted(names) if (path := directory / name).suffix.lower() == '.dm4'
+                         and path.is_file()}
             def render(file_id):
                 with self.lock:
-                    return engine.file_preview(file_id)
-            self.preview_batch = PreviewBatch({k:v for k,v in engine.files.items() if v.suffix.lower()=='.dm4'}, render, engine.data_root)
+                    return engine.dm4_preview(files[file_id])
+            self.preview_batch = PreviewBatch(files, render, root)
             self.preview_batch.start()
             return self.preview_status()
 
@@ -1026,12 +1048,16 @@ def make_handler(app):
                     self.send(app.aztec.browse(body.get('path'), app.root, app.engine.sources, body.get('project'),
                                               outputs=folder_paths.output_folders(app.engine.sources, app.config['output_root'])))
                 elif self.path == '/api/figures/list':
-                    self.send(figure_creator.list_images(body['folder']))
+                    folder, outputs = app.figure_source(body)
+                    self.send(figure_creator.list_images(folder, outputs=outputs))
+                elif self.path == '/api/figures/previews':
+                    self.send(app.generate_previews(body))
                 elif self.path == '/api/figures/index/status':
                     self.send(app.figure_index.status(body.get('folder')))
                 elif self.path == '/api/figures/index/start':
-                    self.send(app.figure_index.start(body['folder'], force=body.get('force') is True,
-                                                     workers=body.get('workers', 4)))
+                    folder, outputs = app.figure_source(body)
+                    self.send(app.figure_index.start(folder, force=body.get('force') is True,
+                                                     workers=body.get('workers', 4), outputs=outputs))
                 elif self.path == '/api/figures/index/cancel':
                     self.send(app.figure_index.stop())
                 elif self.path == '/api/figures/inspect':
