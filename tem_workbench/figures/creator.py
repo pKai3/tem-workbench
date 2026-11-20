@@ -30,6 +30,7 @@ MAX_PANELS = 24
 MAX_SOURCE_PIXELS = dm4_source.MAX_SOURCE_PIXELS
 MAX_FIGURE_PIXELS = 120_000_000
 MAX_EXACT_ESTIMATE_PIXELS = 8_000_000
+MAX_PREVIEW_PIXELS = 16_000_000
 
 
 def _source(path):
@@ -1045,7 +1046,7 @@ def _source_analysis(path):
     return source
 
 
-def render(recipe, preview=False, *, dm_reader=None):
+def _render(recipe, preview=False, *, dm_reader=None, preview_width=None):
     if not isinstance(recipe, dict):
         raise ValueError('Expected a saved figure recipe.')
     slots = recipe.get('slots')
@@ -1075,9 +1076,24 @@ def render(recipe, preview=False, *, dm_reader=None):
         raise ValueError('Export size must be between 25% and 100%.')
     export_width = math.ceil(_export_panel_width(slots, aspect, figure_crop_metadata) * scale_percent / 100)
     width = 420 if preview else export_width
+    rows = math.ceil(len(slots) / columns)
+    if preview and preview_width is not None:
+        if (isinstance(preview_width, bool) or not isinstance(preview_width, (int, float))
+                or not math.isfinite(preview_width) or not 320 <= preview_width <= 6000):
+            raise ValueError('Choose a preview width from 320 to 6000 pixels.')
+        width = math.ceil(preview_width / (columns + (columns + 1) * padding / export_width))
+    if preview:
+        # Bound the whole preview, including tall Auto panels and large grids.
+        while True:
+            gap = round(padding * width / export_width)
+            pixels = (columns * width + (columns + 1) * gap) * (rows * math.ceil(width / aspect) + (rows + 1) * gap)
+            if pixels <= MAX_PREVIEW_PIXELS:
+                break
+            if width <= 1:
+                raise ValueError('The selected panel shape is too tall to preview.')
+            width = max(1, min(width - 1, math.floor(width * math.sqrt(MAX_PREVIEW_PIXELS / pixels))))
     margin = round(padding * width / export_width)
     gap = margin
-    rows = math.ceil(len(slots) / columns)
     tile_height = math.ceil(width / aspect)
     color = 'white' if recipe.get('background', 'white') == 'white' else '#101820'
     tone_target = _tone_target(slots, aspect, figure_crop_metadata, dm_reader) if recipe.get('match_tone') else None
@@ -1097,9 +1113,12 @@ def render(recipe, preview=False, *, dm_reader=None):
                 raise ValueError(f'Choose an image for slot {index + 1} before export.')
             panel = Image.new('RGB', (width, tile_height), '#e8edf2' if color == 'white' else '#263746')
             placeholder = ImageDraw.Draw(panel)
-            placeholder.rounded_rectangle((16, 16, width - 16, tile_height - 16), radius=8,
-                                          outline='#94a5b8', width=2)
-            placeholder.text((28, 28), f'Slot {index + 1} · choose image', font=_font(22),
+            inset = min(round(16 * width / 420), (min(width, tile_height) - 1) // 2)
+            placeholder.rounded_rectangle((inset, inset, width - 1 - inset, tile_height - 1 - inset),
+                                          radius=round(8 * width / 420),
+                                          outline='#94a5b8', width=max(1, round(2 * width / 420)))
+            placeholder.text((round(28 * width / 420), round(28 * width / 420)),
+                             f'Slot {index + 1} · choose image', font=_font(max(1, round(22 * width / 420))),
                              fill='#263445' if color == 'white' else '#edf5fc')
             figure.paste(panel, (x, y))
         else:
@@ -1115,11 +1134,22 @@ def render(recipe, preview=False, *, dm_reader=None):
             figure.paste(_annotations(_metadata_badge(panel, lines), slot), (x, y))
     stream = BytesIO()
     figure.save(stream, format='PNG', dpi=(300, 300))
-    return stream.getvalue()
+    return stream.getvalue(), dict(width=figure_width, height=figure_height,
+                                   panel_width=width, panel_height=tile_height,
+                                   margin=margin, columns=columns, rows=rows)
+
+
+def render(recipe, preview=False, *, dm_reader=None):
+    return _render(recipe, preview, dm_reader=dm_reader)[0]
+
+
+def preview_result(recipe, *, width=None, dm_reader=None):
+    data, layout = _render(recipe, preview=True, preview_width=width, dm_reader=dm_reader)
+    return dict(image='data:image/png;base64,' + base64.b64encode(data).decode('ascii'), layout=layout)
 
 
 def preview(recipe, *, dm_reader=None):
-    return 'data:image/png;base64,' + base64.b64encode(render(recipe, preview=True, dm_reader=dm_reader)).decode('ascii')
+    return preview_result(recipe, dm_reader=dm_reader)['image']
 
 
 def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=1000, *, dm_reader=None):

@@ -36,6 +36,7 @@
  const normaliseHex=value=>{const raw=String(value||'').trim().replace(/^#/,'');return /^(?:[\da-fA-F]{3}|[\da-fA-F]{6})$/.test(raw)?'#'+(raw.length===3?[...raw].map(c=>c+c).join(''):raw).toLowerCase():null};
  let recipe=blank();
  let outputHover,hoveredPanel=-1,hoveredSource='',hoverEnabled=true,hoverPoint=null;
+ let previewLayout=null,requestedPreviewWidth=0;
  let detailCache=new Map(),detailPending=new Map(),dragState=null,dropTarget,panelHighlight,suppressOutputClick=false;
  let panelPreviewTimer=0,panelPreviewRevision=0;
  let annotationTool='select',selectedAnnotation=-1,annotationDrag=null;
@@ -591,15 +592,14 @@
  }
  function previewPanelHit(event){
   const image=event.currentTarget,rect=image.getBoundingClientRect();
-  if(!image.naturalWidth||!rect.width)return null;
-  const scale=image.naturalWidth/rect.width,width=420;
-  const margin=Math.round((image.naturalWidth-recipe.columns*width)/(recipe.columns+1)),gap=margin;
-  const height=Math.round((image.naturalHeight-(recipe.rows+1)*gap)/recipe.rows);
+  if(!rect.width||!previewLayout||image.naturalWidth!==previewLayout.width||image.naturalHeight!==previewLayout.height)return null;
+  const {panel_width:width,panel_height:height,margin,columns,rows}=previewLayout;
+  const scale=image.naturalWidth/rect.width,gap=margin;
   const x=(event.clientX-rect.left)*scale-margin,y=(event.clientY-rect.top)*scale-margin;
   const column=Math.floor(x/(width+gap)),row=Math.floor(y/(height+gap));
-  if(x<0||y<0||column>=recipe.columns||row>=recipe.rows||
+  if(x<0||y<0||column>=columns||row>=rows||
      x%(width+gap)>=width||y%(height+gap)>=height)return null;
-  return {index:row*recipe.columns+column,x:margin+column*(width+gap),
+  return {index:row*columns+column,x:margin+column*(width+gap),
    y:margin+row*(height+gap),width,height,localX:x% (width+gap),localY:y%(height+gap)};
  }
  function highlightPanel(event){
@@ -643,7 +643,7 @@
   drawDetailZoom(detail||image,hit,!detail);
   outputHover.querySelector('span').textContent=`Panel ${hit.index+1} · 5× detail · ${slot.label||slot.name}`;
   hoveredPanel=hit.index;hoveredSource=image.src;
-  if(!detail&&!detailPending.has(key)){
+  if(!detail&&hit.width<1600&&!detailPending.has(key)){
    const request=api('figures/panel',{slot,aspect:recipe.aspect,metadata_overlay:recipe.metadata_overlay,
     recipe,width:1600}).then(result=>new Promise((resolve,reject)=>{
      const full=new Image();full.onload=()=>resolve(full);full.onerror=reject;full.src=result.image;
@@ -695,12 +695,29 @@
    if(!dialog.open)return;$('fig-original-image').src=original.image;$('fig-panel-image').src=panel.image;
   }catch(error){$('fig-original-note').textContent=error.message}
  }
+ function figurePreviewWidth(){
+  const width=document.querySelector('.fig-preview-content').getBoundingClientRect().width;
+  const density=Math.max(1,Math.min(4,window.devicePixelRatio||1));
+  return Math.max(320,Math.min(6000,Math.ceil(width*density/64)*64));
+ }
+ function refreshPreviewSize(){if(figurePreviewWidth()!==requestedPreviewWidth)schedulePreview()}
+ function watchPreviewDensity(){
+  matchMedia(`(resolution: ${window.devicePixelRatio||1}dppx)`).addEventListener('change',()=>{
+   refreshPreviewSize();watchPreviewDensity();
+  },{once:true});
+ }
  function schedulePreview(){
   clearTimeout(timer);const revision=++renderVersion;detailCache.clear();hideOutputHover();updateExportEstimate();
+  previewLayout=null;if(panelHighlight)panelHighlight.hidden=true;
+  status('Updating preview…');
+  const width=figurePreviewWidth();requestedPreviewWidth=width;
   timer=setTimeout(async()=>{
-   try{const value=await api('figures/render',{recipe});if(revision!==renderVersion)return;
-    const image=$('fig-preview');image.src=value.image;image.hidden=false;status('Preview updated.');}
-   catch(error){if(revision!==renderVersion)return;$('fig-preview').hidden=true;status(error.message,true)}
+   try{
+    const value=await api('figures/render',{recipe,width});if(revision!==renderVersion)return;
+    const ready=new Image();ready.src=value.image;await ready.decode();if(revision!==renderVersion)return;
+    const image=$('fig-preview');image.src=value.image;previewLayout=value.layout;
+    image.hidden=false;status('Preview updated.');
+   }catch(error){if(revision!==renderVersion)return;$('fig-preview').hidden=true;status(error.message,true)}
   },160);
  }
  function changed(cards=false){draft();if(cards)renderCards();else sync();schedulePreview();scheduleEstimate();schedulePanelPreview()}
@@ -1090,6 +1107,8 @@
    for(const id of ['fig-filter-type','fig-filter-folder','fig-filter-subfolders','fig-browser-sort','fig-filter-sidecar',...metadataFilters.map(([id])=>id)])$(id).onchange=()=>{saveBrowserSettings();renderBrowser()};
    $('fig-filter-reset').onclick=resetBrowserFilters;
    new ResizeObserver(()=>{if($('fig-browser-dialog').open)refreshBrowserSize()}).observe($('fig-browser-list'));
+   new ResizeObserver(refreshPreviewSize).observe(document.querySelector('.fig-preview-content'));
+   window.addEventListener('resize',refreshPreviewSize);watchPreviewDensity();
    $('fig-slot-close').onclick=()=>$('fig-slot-dialog').close();
    $('fig-original-close').onclick=()=>$('fig-original-dialog').close();
    $('fig-original-size').oninput=()=>{$('fig-original-image').style.width=$('fig-original-size').value+'%'};

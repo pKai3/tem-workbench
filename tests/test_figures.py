@@ -148,6 +148,39 @@ class FiguresTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Choose an image for slot 1'):
             creator.render(recipe)
 
+    def test_display_sized_preview_reports_exact_panel_geometry(self):
+        slot = {**creator.inspect_image(self.path), 'scale_nm': 500}
+        recipe = dict(slots=[slot, {}], columns=2, aspect=1, image_padding=36)
+        result = creator.preview_result(recipe, width=3000)
+        layout = result['layout']
+        with Image.open(BytesIO(base64.b64decode(result['image'].split(',')[1]))) as image:
+            self.assertEqual(image.size, (layout['width'], layout['height']))
+        self.assertGreater(layout['panel_width'], 1400)
+        self.assertEqual(layout['panel_height'], layout['panel_width'])
+        self.assertEqual(layout['width'], 2 * layout['panel_width'] + 3 * layout['margin'])
+        self.assertEqual(layout['height'], layout['panel_height'] + 2 * layout['margin'])
+        self.assertLessEqual(abs(layout['width'] - 3000), 3)
+        self.assertEqual((layout['columns'], layout['rows']), (2, 1))
+        full = {**recipe, 'slots': [slot, slot]}
+        exported = creator.render(full)
+        creator.preview_result(full, width=640)
+        self.assertEqual(creator.render(full), exported)
+        for invalid in (True, 0, float('nan'), 6001, '3000'):
+            with self.assertRaisesRegex(ValueError, 'preview width'):
+                creator.preview_result(recipe, width=invalid)
+
+    def test_large_tall_preview_stays_within_pixel_budget(self):
+        path = self.root / 'tall.png'
+        Image.new('RGB', (100, 1000), '#777777').save(path)
+        slot = dict(path=str(path), sha256=creator._digest(path), width=100, height=1000,
+                    scale_mode='keep', label_visible=False)
+        result = creator.preview_result(dict(slots=[slot] * 24, columns=4, aspect='auto',
+                                             crop_metadata=False, scale_bar_overlay=False), width=6000)
+        layout = result['layout']
+        self.assertLessEqual(layout['width'] * layout['height'], creator.MAX_PREVIEW_PIXELS)
+        self.assertGreater(layout['width'] * layout['height'], creator.MAX_PREVIEW_PIXELS * .9)
+        self.assertEqual((layout['columns'], layout['rows']), (4, 6))
+
     def test_existing_rendered_image_can_keep_its_original_scale_display(self):
         path=self.root/'saved-analysis.png'
         Image.new('RGB',(200,150),'#808080').save(path)

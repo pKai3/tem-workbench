@@ -1065,7 +1065,7 @@ def make_handler(app):
                 elif self.path == '/api/figures/original':
                     self.send({'image': figure_creator.original_preview(body['path'], dm_reader=app.engine.dm_reader)})
                 elif self.path == '/api/figures/render':
-                    self.send({'image': figure_creator.preview(body['recipe'], dm_reader=app.engine.dm_reader)})
+                    self.send(figure_creator.preview_result(body['recipe'], width=body.get('width'), dm_reader=app.engine.dm_reader))
                 elif self.path == '/api/figures/estimate':
                     self.send(figure_creator.estimate_png_size(body['recipe'], dm_reader=app.engine.dm_reader))
                 elif self.path == '/api/figures/panel':
