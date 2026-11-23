@@ -74,3 +74,15 @@ smoothing remains available where calibration permits it. Smoothing and
 ratios operate on full stored arrays before display scaling. Original numerical
 exports retain the stored values and units; processed exports record the selected
 operations. The unverified fields never enter comparison calculations.
+
+## Physical calibration follow-up
+
+The SEM overview’s scale is now decoded from its own 4:3 scan calibration:
+128.60754186269608 mm at unit magnification, divided by the saved 5,000×
+magnification. Its field is 25.721508 × 19.291131 µm, with 25.1186605 nm
+overview pixels (1024 × 768) and 50.2373210 nm map pixels (512 × 384).
+The previous decoder rejected non-square scan frames even when their data was valid.
+The same 4:3 variant at 3,000× agrees with all three AB/ST/STA SEM H5OINA
+electron-image bounding boxes (42.86918 × 32.151886 µm) and pixel steps
+(41.864432 nm). These exports validate calibration only; there is still no
+paired vendor-export validation of this record’s composition values.

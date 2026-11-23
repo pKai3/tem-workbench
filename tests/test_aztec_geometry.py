@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image
 
 from tem_workbench.aztec.browser import AztecBrowser
-from tem_workbench.aztec.geometry import region_geometry
+from tem_workbench.aztec.geometry import region_geometry, field_width_nm
 from tem_workbench.aztec.h5oina import AztecReadError
 from tem_workbench.aztec.native import NativeProjectReader
 from tests.test_aztec_browser import blob, native_fixture
@@ -43,6 +43,26 @@ def core(ident):
 
 
 class AztecGeometryTests(unittest.TestCase):
+    def test_sem_and_tem_physical_scales_and_unknown_frame_fallback(self):
+        def calibrated(aspect, width_mm=128.60754186269608, magnification=5000., version=1):
+            key=b'Magnification'
+            conditions=(struct.pack('<II',1,1)+b'\0'+bytes([len(key)])+key
+                        +struct.pack('<Id',1,magnification))
+            return (element(b'absolutePosition',blob(struct.pack('<I',2)+b'\0'*40))
+                    +element(b'columnConditions',blob(conditions).replace(b'@\x04Blob',b'^\x04Blob'))
+                    +element(b'ScanCalibration',blob(struct.pack('<I2d',version,aspect,width_mm))))
+        expected=25721.508372539218
+        self.assertAlmostEqual(field_width_nm(calibrated(4/3)),expected)
+        self.assertAlmostEqual(field_width_nm(calibrated(1)),expected)
+        # Three independent SEM exports have this 3,000x field size/pixel step.
+        width=field_width_nm(calibrated(4/3,magnification=3000.))
+        self.assertAlmostEqual(width/1000,42.869178771972656,places=5)
+        self.assertAlmostEqual(width/1024,41.86443239450455,places=5)
+        for options in ({'aspect':0},{'aspect':float('nan')},{'aspect':2},
+                        {'aspect':4/3,'width_mm':-1},{'aspect':4/3,'magnification':0},
+                        {'aspect':4/3,'version':99}):
+            self.assertIsNone(field_width_nm(calibrated(**options)))
+
     def setUp(self):
         tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
         self.path=Path(tmp.name)/'Project.oipx';self.ids=native_fixture(self.path)

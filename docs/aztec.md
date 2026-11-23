@@ -26,6 +26,12 @@ PNG, numerical ZIP and catalogue exports save to the source project's configured
 output folder, or the main output folder when that project's output is blank.
 The most specific source folder determines ownership when sources overlap.
 Each export gets a unique filename and shows its saved path in the interface.
+Map and line comparisons offer **Match overview tone**, using the same brightness/contrast
+matching as Figures across selected overview images. The setting is saved with
+comparisons and applies to overview images, line-image backgrounds and PNG exports.
+It leaves elemental values and numerical exports unchanged. Two or more available
+overviews are needed; invalid transparent pixels are ignored.
+
 Map and line PNG exports offer Dark, White and Transparent backgrounds. Transparent
 leaves empty canvas and plot areas clear while retaining the images and labels.
 The background choice does not change numerical ZIP data or the live display.
@@ -91,6 +97,11 @@ that has both raw spectra and saved Kα1 profiles. The new channels are visibly
 marked reconstructed in the line viewer and numerical export, and use no
 H5OINA data. They are approximate for acquisitions without a saved intensity
 profile and retain background and overlapping peaks.
+
+Native physical scale decoding supports the verified square TEM and 4:3 SEM
+scan-calibration layouts. The SEM layout was checked against three independent
+H5OINA electron-image fields and pixel steps. Unknown calibration still uses pixels;
+no physical scale is guessed from the image appearance.
 
 Stored point and sum spectra, and individual H5OINA raw spectrum rows, show
 reference X-ray transition markers for selected elements. The line energies

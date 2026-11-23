@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 from matplotlib import colormaps
+from tem_workbench.image_tone import tone_quantiles, tone_target, match_tone
 
 from .h5oina import AztecReadError
 from .processing import ELEMENT_COLOURS, FWHM_PER_SIGMA, horizontal_crop, signal_view, spatial_structure
@@ -35,6 +36,27 @@ def png(values, *, low=None, high=None, colour=None, diverging=False, opacity=No
 
 def finite_list(values):
     return [float(v) if np.isfinite(v) else None for v in values]
+
+
+def match_overview_tones(rows):
+    """Use Figures' shared P5/P95 target; retain each line crop's overview mapping."""
+    def read(source):
+        with Image.open(BytesIO(base64.b64decode(source.split(',', 1)[1]))) as image:
+            return image.convert('RGBA')
+
+    ranges = [(row, tone_quantiles(read(row['electron']))) for row in rows if row.get('electron')]
+    target = tone_target([limits for _, limits in ranges])
+    if target is None:
+        return
+    for row, limits in ranges:
+        if limits is None:
+            continue
+        for key in ('electron', 'background'):
+            if not row.get(key):
+                continue
+            image = match_tone(read(row[key]), target, source_range=limits)
+            output = BytesIO(); image.save(output, format='PNG')
+            row[key] = 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode()
 
 
 def acquisition_key(source, acquisition):
@@ -299,6 +321,8 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
         item['tile'][item['field']]=png(item['values'],low=floor,high=exposure,
                                       colour=item['colour'],diverging=norm!='none',opacity=item['opacity'])
         item['tile'][item['field']+'_limits']=[floor,exposure]
+    if comparison and options.get('match_overview_tone') and not structure_only:
+        match_overview_tones(rows)
     return dict(rows=rows,mode=mode,normalisation=norm,smoothing=smoothing,low=low,high=high,
                 comparison=comparison,shared_scales=shared_scales,scale_scope=scale_scope,smoothing_unit=smoothing_unit,
                 colour_scale_scope=scale_scope if comparison else 'all',

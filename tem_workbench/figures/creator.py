@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
 from scipy import ndimage
 
 from tem_workbench.paths import RESOURCES
+from tem_workbench.image_tone import tone_quantiles as _tone_quantiles, tone_target, match_tone
 from tem_workbench.storage.folder_paths import atomic_json, output_folder
 from tem_workbench.storage.mode_folders import scan_folders
 from tem_workbench.storage.preview_files import sidecar_path
@@ -770,17 +771,11 @@ def _nice_bar(nm_per_display_px, width):
     return min(candidates, key=lambda value: abs(math.log(value / target)))
 
 
-def _tone_quantiles(image):
-    rgb = np.asarray(image, dtype=np.float32)
-    luminance = rgb[..., 0] * .2126 + rgb[..., 1] * .7152 + rgb[..., 2] * .0722
-    return np.percentile(luminance, [5, 95])
-
-
 def _tone_target(slots, aspect, figure_crop_metadata=True, dm_reader=None):
     ranges = [_tone_quantiles(_panel(slot, 240, aspect, strict=False, raw_only=True,
                                      figure_crop_metadata=figure_crop_metadata, dm_reader=dm_reader))
               for slot in slots if slot.get('path')]
-    return tuple(np.median(ranges, axis=0)) if len(ranges) > 1 else None
+    return tone_target(ranges)
 
 
 def _crop_metadata(slot, figure_crop_metadata):
@@ -912,14 +907,7 @@ def estimate_png_size(recipe, *, dm_reader=None):
 
 
 def _adjust_tone(image, slot, target):
-    if target is not None:
-        low, high = _tone_quantiles(image)
-        rgb = np.asarray(image, dtype=np.float32)
-        if high - low >= 5:
-            rgb = (rgb - low) * ((target[1] - target[0]) / (high - low)) + target[0]
-        else:
-            rgb += (target[0] + target[1]) / 2 - (low + high) / 2
-        image = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8), 'RGB')
+    image = match_tone(image, target)
     brightness, contrast = float(slot.get('brightness', 1)), float(slot.get('contrast', 1))
     if not (math.isfinite(brightness) and math.isfinite(contrast)
             and .25 <= brightness <= 3 and .25 <= contrast <= 3):

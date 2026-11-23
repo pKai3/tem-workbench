@@ -75,7 +75,10 @@ def field_width_nm(data):
         magnification = dict(zip(keys, values))['Magnification']
         calibration = coordinate_frame(data)[1]
         version, aspect, width_mm = struct.unpack('<I2d', calibration)
-        if version == 1 and aspect == 1 and np.isfinite([width_mm, magnification]).all() and width_mm > 0 and magnification > 0:
+        # Both square TEM and 4:3 SEM scan frames use the horizontal field width.
+        # The latter agrees with the SEM H5OINA bounding box and X/Y pixel steps.
+        known_aspect = np.isclose(aspect, 1., rtol=0, atol=1e-9) or np.isclose(aspect, 4/3, rtol=0, atol=1e-9)
+        if version == 1 and known_aspect and np.isfinite([width_mm, magnification]).all() and width_mm > 0 and magnification > 0:
             return width_mm * 1e6 / magnification
     except (AztecReadError, StopIteration, struct.error, IndexError, KeyError):
         pass
