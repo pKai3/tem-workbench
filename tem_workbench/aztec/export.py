@@ -55,7 +55,8 @@ class DataArchive:
                            'Original values retain saved units; reconstructed/ contains native-spectrum Kα1 window '
                            'estimates before display processing, where available. Processed values apply smoothing before division '
                            'and optional per-acquisition normalization; display brightness and colour clipping '
-                           'are not applied. NaN marks unavailable ratios. Recorded-signal ratios are not concentrations.')
+                           'are not applied. NaN marks unavailable ratios. Intensity ratios describe recorded signals; '
+                           'composition ratios divide saved concentrations. Neither is a newly quantified concentration.')
         for row in result['rows']:
             manifest['acquisitions'].append({k:v for k,v in row.items() if k not in ('tiles','electron','background')})
         entries=list(self.entries)

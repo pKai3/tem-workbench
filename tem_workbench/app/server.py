@@ -925,8 +925,8 @@ def make_handler(app):
                                'source_name_autosave': True, 'aztec_output_exports': True})
                 elif url.path == '/project-tools.js':
                     self.send((ROOT/'web/project-tools.js').read_bytes(), 'application/javascript')
-                elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec-export.js', '/aztec.css', '/figures', '/figures.js', '/figures.css'):
-                    name = {'/eds': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec-export.js': 'aztec-export.js', '/aztec.css': 'aztec.css', '/figures': 'figures.html', '/figures.js': 'figures.js', '/figures.css': 'figures.css'}[url.path]
+                elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec-quantification.js', '/aztec-export.js', '/aztec.css', '/figures', '/figures.js', '/figures.css'):
+                    name = {'/eds': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec-quantification.js': 'aztec-quantification.js', '/aztec-export.js': 'aztec-export.js', '/aztec.css': 'aztec.css', '/figures': 'figures.html', '/figures.js': 'figures.js', '/figures.css': 'figures.css'}[url.path]
                     self.send((ROOT / 'web' / name).read_bytes(), mimetypes.guess_type(name)[0] or 'text/plain')
                 elif url.path == '/api/config':
                     LOG.info('Viewer connected: version=%s', APP_VERSION)
@@ -1092,7 +1092,7 @@ def make_handler(app):
                 elif self.path == '/api/aztec/project-overviews':
                     self.send(app.aztec.project_overviews(body['path']))
                 elif self.path == '/api/aztec/preview':
-                    self.send(app.aztec.preview(body['id'], body['dataset'], body.get('row', 0), body.get('unsigned', False), body.get('energy_low'), body.get('energy_high')))
+                    self.send(app.aztec.preview(body['id'], body['dataset'], body.get('row', 0), body.get('unsigned', False), body.get('energy_low'), body.get('energy_high'), body.get('quant_measure')))
                 elif self.path == '/api/aztec/site':
                     self.send(app.aztec.site(body['id'], body['site'], body.get('image')))
                 elif self.path == '/api/aztec/process':

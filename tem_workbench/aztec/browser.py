@@ -259,7 +259,7 @@ class AztecBrowser:
         value = reader.inspect()
         return value if isinstance(value, dict) else value.to_dict()
 
-    def preview(self, key, path, row=0, unsigned=False, energy_low=None, energy_high=None):
+    def preview(self, key, path, row=0, unsigned=False, energy_low=None, energy_high=None, quant_measure=None):
         with self._lock:
             reader = self._readers.get(key)
             if reader is None:
@@ -267,8 +267,23 @@ class AztecBrowser:
             self._readers.move_to_end(key)
         LOG.info('AZtec preview: %s · %s · row=%s · unsigned=%s · energy=%s–%s keV', compact(str(reader.path)), compact(path), row, unsigned, energy_low, energy_high)
         if isinstance(reader, NativeProjectReader):
-            result = reader.preview(path, energy_low=energy_low, energy_high=energy_high)
-            if result['kind'] == 'image':
+            result = reader.preview(path, energy_low=energy_low, energy_high=energy_high, quant_measure=quant_measure)
+            if result['kind'] == 'quantification':
+                from .processing import ELEMENT_COLOURS
+                from .views import png
+                for channel in result['channels']:
+                    values = channel.pop('array', None)
+                    if values is None:
+                        continue
+                    finite = values[np.isfinite(values)]
+                    low, high = (float(finite.min()), float(finite.max())) if finite.size else (0., 0.)
+                    colour = ELEMENT_COLOURS.get(channel['element'], '#65cfff')
+                    channel.update(minimum=low, maximum=high,
+                                   mean=float(finite.mean(dtype=np.float64)) if finite.size else None,
+                                   valid_pixels=int(finite.size), colour=colour,
+                                   image=png(values, low=low, high=high, colour=colour),
+                                   values_base64=base64.b64encode(values.astype('<f4', copy=False).tobytes()).decode())
+            elif result['kind'] == 'image':
                 values = result.pop('array')
                 display_raw = result.pop('display_raw', False)
                 if values.ndim == 3 and values.shape[2] in (3, 4) and values.dtype == np.uint8:

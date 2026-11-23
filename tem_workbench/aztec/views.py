@@ -50,10 +50,11 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
     mode=options.get('mode','signal');norm=options.get('normalisation','none')
     if mode not in ('signal','ratio','both'):
         raise AztecReadError('Choose element signals, ratios, or both.')
-    channel_tables=('XrayMapImages','XrayLinescans','QuantLinescans')
+    map_tables=('XrayMapImages','QuantMapImages','AtomicMapImages')
+    channel_tables=map_tables+('XrayLinescans','QuantLinescans')
     requested_table=options.get('channel_table')
     if requested_table is not None and requested_table not in channel_tables:
-        raise AztecReadError('Choose saved element or composition profiles.')
+        raise AztecReadError('Choose saved intensity or composition maps or profiles.')
     denominator=options.get('denominator','Ti');selected=options.get('signals',[])
     if not isinstance(selected,list) or len(selected)>32:
         raise AztecReadError('Choose up to 32 element channels.')
@@ -88,10 +89,10 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
             raise AztecReadError('No saved channels of this type in this acquisition.')
         order = ['Ti', 'V', 'Fe', 'Al']
         channels.sort(key=lambda r: (order.index(r['Label'].split()[0]) if r['Label'].split()[0] in order else 99, r['Label']))
-        kind='map' if channels[0]['table']=='XrayMapImages' else 'line'
+        kind='map' if channels[0]['table'] in map_tables else 'line'
         if structure_only and kind!='map':
             raise AztecReadError('Choose element maps for this spatial check.')
-        composition=channel_table=='QuantLinescans'
+        composition=channel_table in ('QuantLinescans','QuantMapImages','AtomicMapImages')
         reconstructed=any(r.get('derived') for r in channels)
         # Preserve full line labels in the output; do not silently choose between emission families.
         by_label={r['Label']:r for r in channels}

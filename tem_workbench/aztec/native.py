@@ -20,6 +20,7 @@ NAMES = {'ElectronImages': 'Electron images', 'EDXSpectra': 'Stored spectra',
          'SmartMaps': 'Raw map data', 'SmartLines': 'Raw line data',
          'XrayMapImages': 'Element maps', 'XrayLinescans': 'Element profiles',
          'QuantLinescans': 'Composition profiles', 'QuantMapData': 'Quantification',
+         'QuantMapImages': 'Composition maps · wt%', 'AtomicMapImages': 'Composition maps · at%',
          'LayerMaps': 'Saved composites', 'EdPhaseImages': 'Saved phase images',
          'TEMQuantResults': 'Quantification results', 'EbsdMaps': 'EBSD data container',
          'EbsdMapImages': 'EBSD display maps'}
@@ -94,6 +95,7 @@ class NativeProjectReader:
         self._catalogue = None
         self._records = {}
         self._attachments = {}
+        self._quant_maps = {}
         with self.path.open('rb') as stream:
             if stream.read(16) != b'SQLite format 3\0':
                 raise AztecReadError('This legacy OIP container is not decoded yet. The newer native OIPX project can be opened directly; no H5OINA export is needed.')
@@ -213,6 +215,9 @@ class NativeProjectReader:
                     self._attachments[record['path']] = _source(attachment)
                     attrs['Data file'] = str(attachment)
                     attrs['Data bytes'] = attachment.stat().st_size
+            if record['table'] == 'QuantMapData':
+                from .native_quant import inspect_map
+                self._quant_maps[record['path']] = inspect_map(self, record, attrs)
             descriptor = dict(path=record['path'], shape=None, dtype='native record', storage='native project', attributes=attrs, value=None)
             descriptors.append(descriptor)
             record['site_id'] = site['id'] if site else 'unassigned'
@@ -248,6 +253,14 @@ class NativeProjectReader:
                 records[path] = derived
                 descriptors.append(descriptor)
                 groups[raw['site_id']][1].append((derived, descriptor))
+        from .native_quant import map_channels
+        for raw in tuple(records.values()):
+            if raw['table'] != 'QuantMapData':
+                continue
+            for channel, descriptor in map_channels(raw, self._quant_maps.get(raw['path'])):
+                records[channel['path']] = channel
+                descriptors.append(descriptor)
+                groups[raw['site_id']][1].append((channel, descriptor))
         ebsd_points = {}
         for raw in tuple(records.values()):
             if raw['table'] != 'EbsdMaps' or raw['path'] not in self._attachments:
@@ -316,7 +329,8 @@ class NativeProjectReader:
                         'EBSD data container', 'EBSD preview source',
                         'Raw map data', 'Element maps', 'Raw line data', 'Element profiles',
                         'Reconstructed Kα1 windows', 'Composition profiles', 'Stored spectra', 'Saved composites', 'Saved phase images',
-                        'Quantification', 'Quantification results', 'Other stored records']
+                        'Quantification', 'Composition maps · wt%', 'Composition maps · at%',
+                        'Quantification results', 'Other stored records']
             ordered = sorted(layers.values(), key=lambda l: (priority.index(l['technique'].split(' / ')[-1]), l['technique']))
             acquisitions.append(dict(index=ident, identifier=ident, label=site['Label'], project=project['Label'], specimen=specimen, site=site['Label'], layers=ordered))
         # Lists avoid recursive record chains in the public catalogue.
@@ -508,13 +522,26 @@ class NativeProjectReader:
             raise AztecReadError('The saved composition profiles have inconsistent spacing.')
         return reconstructed_line_profiles(raw['spectra'], raw['live_time'], energy, sizes.pop())
 
-    def preview(self, path, *, energy_low=None, energy_high=None):
+    def preview(self, path, *, energy_low=None, energy_high=None, quant_measure=None):
         self.inspect()
         record = self._records.get(path)
         if record is None:
             raise AztecReadError('Choose an item in this project.')
         base = {'path': path, 'kind': 'metadata', 'note': 'Stored record identified. Numerical preview is not decoded for this record type yet.'}
         table = record['table']
+        if record.get('decoded') == 'quant':
+            from .native_quant import preview_map
+            source = self._records[record['source_path']]
+            result = preview_map(self, source, self._quant_maps[source['path']],
+                                 record['measure'], element=record['element'])
+            channel = result['channels'][0]
+            if channel.get('error'):
+                raise AztecReadError(channel['error'])
+            return dict(path=path, kind='image', array=channel['array'], shape=result['shape'],
+                        dtype='<f4', unit=result['unit'], note=result['note'])
+        if table == 'QuantMapData' and self._quant_maps.get(path):
+            from .native_quant import preview_map
+            return preview_map(self, record, self._quant_maps[path], quant_measure)
         if record.get('derived') == 'ebsd':
             return self.ebsd_field_preview(record)
         if record.get('derived'):

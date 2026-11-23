@@ -61,6 +61,13 @@ analytical maps. The three full maps were checked against
 their H5OINA exports. Workbench does not re-index or clean these fields. Raw
 EBSP patterns and FSD images remain undecoded.
 
+Native `QuantMapData` records with the verified version-2 layout expose saved
+wt% and at% maps, with pixel readouts and CSV downloads. Compare maps has separate
+Intensity, Weight % and Atomic % families; composition maps support the existing
+smoothing, ratio, shared-scale, saved-comparison and export controls. See
+[quantification decoding notes](aztec-quantification.md) for the format evidence,
+source checks and the additional fields whose units remain unverified.
+
 `NativeProjectReader` reads supported OIPX records without deserializing .NET
 objects. Stored spectrum blobs are matched by UUID and label; verified versions
 2 and 3 contain signed 32-bit nonnegative counts and a channel-width/offset pair
