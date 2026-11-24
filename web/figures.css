@@ -83,4 +83,9 @@ dialog.fig-slot-dialog{width:min(96vw,1260px);max-height:calc(100dvh - 20px);ove
 
 #fig-browser-preview-status{overflow-wrap:anywhere;min-width:0}#fig-browser-preview-status:empty{display:none}#fig-browser-preview-progress{max-width:160px;height:10px;accent-color:var(--cyan)}#fig-browser-preview-error-list{overflow-wrap:anywhere;padding-left:18px}
 
+.fig-placeholder-columns{grid-template-columns:minmax(0,1fr) minmax(250px,1fr)}
+.fig-placeholder-columns .fig-live-preview{grid-column:auto}
+.fig-placeholder-columns .fig-panel-fields{margin-top:12px}
+@media(max-width:700px){.fig-placeholder-columns{grid-template-columns:1fr}}
+
 .fig-browser-actions{align-items:end}.fig-browser-actions button{flex:0 1 auto}#fig-browser-preprocess-progress{width:100%;height:10px;accent-color:var(--cyan)}#fig-browser-preprocess-status,#fig-browser-scan-status{overflow-wrap:anywhere;margin:7px 0}#fig-browser-preprocess-error-list{overflow-wrap:anywhere;padding-left:18px}

@@ -8,10 +8,12 @@
  let scanVersion=0,browserRoot='',previewPoll=0,previewStarting=false,previewJob=null;
  const metadataFilters=[['fig-filter-mag','magnification'],['fig-filter-kv','voltage_kv'],['fig-filter-probe','probe'],['fig-filter-wd','working_distance'],['fig-filter-date','acquisition_date']];
  const blank=()=>({schema_version:2,name:'Untitled figure',rows:1,columns:2,aspect:4/3,background:'white',match_tone:false,sharpness:1,crop_metadata:true,scale_bar_overlay:true,scale_bar_position:'left',image_padding:36,export_scale_percent:100,metadata_overlay:[],slots:[{},{}]});
+ const isPlaceholder=slot=>slot?.kind==='placeholder'&&!slot.path;
+ const hasPanel=slot=>Boolean(slot?.path)||isPlaceholder(slot);
  function normaliseRecipe(value){
   if(!value||!Array.isArray(value.slots))return blank();
   const next=structuredClone(value),columns=Number(next.columns)||2;
-  if(columns<1||columns>4||next.slots.length>24)return blank();
+  if(columns<1||columns>6||next.slots.length>24)return blank();
   if(Number(next.schema_version||1)<2){
    for(const slot of next.slots)if(slot.scale_mode==='keep'&&slot.height)slot.content_height=slot.height;
    next.schema_version=2;
@@ -87,7 +89,7 @@
  function scheduleEstimate(){
   clearTimeout(estimateTimer);const revision=++estimateVersion;
   estimatedBytes=null;estimateExact=false;estimateError='';updateExportEstimate();
-  if(!recipe.slots.some(slot=>slot.path))return;
+  if(!recipe.slots.some(hasPanel))return;
   estimateTimer=setTimeout(async()=>{
    try{const result=await api('figures/estimate',{recipe});if(revision!==estimateVersion)return;
     estimatedBytes=result.estimated_size_bytes;estimateExact=Boolean(result.exact);updateExportEstimate()}
@@ -117,10 +119,11 @@
   $('fig-export-scale').value=String(recipe.export_scale_percent);
   $('fig-export-scale-number').value=String(recipe.export_scale_percent);
   for(const input of document.querySelectorAll('[data-figure-meta]'))input.checked=recipe.metadata_overlay.includes(input.dataset.figureMeta);
-  $('fig-count').textContent=`${recipe.slots.filter(slot=>slot.path).length} of ${recipe.slots.length} filled`;
+  const placeholders=recipe.slots.filter(isPlaceholder).length;
+  $('fig-count').textContent=`${recipe.slots.filter(hasPanel).length} of ${recipe.slots.length} filled`+(placeholders?` · ${placeholders} placeholder${placeholders===1?'':'s'}`:'');
   $('fig-open-browser').disabled=!files.length;
-  $('fig-export').disabled=!recipe.slots.length||(exportGeometry()?.pixels||0)>120_000_000||recipe.slots.some(slot=>!slot.path||
-   recipe.scale_bar_overlay&&slot.scale_mode!=='keep'&&(slot.scale_mode==='metadata'?!slot.pixel_size_nm:!slot.scale_nm||!slot.bar_px));
+  $('fig-export').disabled=!recipe.slots.length||(exportGeometry()?.pixels||0)>120_000_000||recipe.slots.some(slot=>!isPlaceholder(slot)&&(!slot.path||
+   recipe.scale_bar_overlay&&slot.scale_mode!=='keep'&&(slot.scale_mode==='metadata'?!slot.pixel_size_nm:!slot.scale_nm||!slot.bar_px)));
   updateExportEstimate();
  }
  function saveTags(){WorkbenchWorkspace.writeRaw('tem-figures-tags-v1',JSON.stringify(tagRows))}
@@ -197,6 +200,7 @@
   return input;
  }
  function panelDisplayName(slot){
+  if(isPlaceholder(slot))return `Placeholder · ${slot.placeholder?.title||'Not acquired'}`;
   if(!slot.path)return 'Empty slot';
   const original=slot.name||slot.path.split(/[\\/]/).at(-1);
   return `${original}${slot.label?` [${slot.label}]`:''}`;
@@ -205,7 +209,7 @@
   clearTimeout(panelPreviewTimer);const revision=++panelPreviewRevision;
   const dialog=$('fig-slot-dialog'),slot=recipe.slots[selectedPanel],image=dialog.querySelector('.fig-live-preview img');
   const note=dialog.querySelector('.fig-live-preview-status');
-  if(!dialog.open||!slot?.path||!image||!note)return;
+  if(!dialog.open||!hasPanel(slot)||!image||!note)return;
   note.textContent='Updating preview…';
   panelPreviewTimer=setTimeout(async()=>{
    try{const result=await api('figures/panel',{slot:{...slot,annotations:[]},aspect:recipe.aspect,
@@ -383,28 +387,54 @@
     button.disabled=index+delta<0||index+delta>=recipe.slots.length;
     button.onclick=()=>{[recipe.slots[index],recipe.slots[index+delta]]=[recipe.slots[index+delta],recipe.slots[index]];selectedPanel=index+delta;changed(true)};head.append(button);
    }
-   const remove=document.createElement('button');remove.type='button';remove.textContent='Clear';remove.title='Clear this slot';remove.disabled=!slot.path;
+   const remove=document.createElement('button');remove.type='button';remove.textContent='Clear';remove.title='Clear this slot';remove.disabled=!hasPanel(slot);
    remove.onclick=()=>{recipe.slots[index]={};changed(true)};head.append(remove);card.append(head);
-   const choose=document.createElement('button');choose.type='button';choose.textContent=slot.path?'Replace image…':'Choose image…';
+   const choose=document.createElement('button');choose.type='button';choose.textContent=hasPanel(slot)?'Replace image…':'Choose image…';
    choose.onclick=openImageBrowser;
    const columns=document.createElement('div');columns.className='fig-popup-columns';
    const sourcePane=document.createElement('section');sourcePane.className='fig-popup-section fig-popup-source';
    const editPane=document.createElement('section');editPane.className='fig-popup-section fig-popup-edit';
-   const sourceTitle=document.createElement('h3');sourceTitle.textContent='Source and calibration';
+   const sourceTitle=document.createElement('h3');sourceTitle.textContent=isPlaceholder(slot)?'Placeholder':'Source and calibration';
    const editTitle=document.createElement('h3');editTitle.textContent='Panel adjustments';
    const sourceButtons=document.createElement('div');sourceButtons.className='fig-source-buttons';sourceButtons.append(choose);
+   if(!hasPanel(slot)){
+    const create=document.createElement('button');create.type='button';create.textContent='Create placeholder';
+    create.onclick=()=>addPlaceholder(index);sourceButtons.append(create);
+   }
    const previewPane=document.createElement('section');previewPane.className='fig-popup-section fig-live-preview';
    const previewTitle=document.createElement('h3');previewTitle.textContent='Live panel';
    const previewImage=document.createElement('img');previewImage.alt=`Preview of ${panelDisplayName(slot)}`;
    const previewStatus=document.createElement('p');previewStatus.className='hint fig-live-preview-status';
    previewStatus.setAttribute('role','status');
-   if(!slot.path)previewStatus.textContent='Choose an image to preview it.';
+   if(!hasPanel(slot))previewStatus.textContent='Choose an image or create a placeholder.';
    previewPane.append(previewTitle);
    if(slot.path)annotationEditor(slot,previewPane,previewImage);
+   if(isPlaceholder(slot))previewPane.append(previewImage);
    previewPane.append(previewStatus);
    sourcePane.append(sourceTitle,sourceButtons);editPane.append(editTitle);
    columns.append(sourcePane,editPane,previewPane);card.append(columns);
-   if(!slot.path){const note=document.createElement('p');note.className='hint';note.textContent='Choose an image for this slot.';sourcePane.append(note);host.append(card);return}
+   if(isPlaceholder(slot)){
+    columns.classList.add('fig-placeholder-columns');editPane.remove();sourceTitle.textContent='Placeholder details';
+    const fields=document.createElement('div');fields.className='fig-panel-fields';
+    const details=slot.placeholder??={title:'Not acquired'};
+    for(const [key,label] of [['title','Heading'],['sample','Sample'],['location','Location']]){
+     inputField(fields,label,'text',details[key]||'',value=>{details[key]=value;
+      title.textContent=`${index+1}. ${panelDisplayName(slot)}`;title.title=title.textContent;
+      previewImage.alt=`Preview of ${panelDisplayName(slot)}`;changed()}, {maxlength:'120'},true);
+    }
+    inputField(fields,'Target magnification ×','number',details.target_magnification_x??'',value=>{
+     if(!value){details.target_magnification_x=null;changed()}
+     else if(Number.isFinite(Number(value))&&Number(value)>0){details.target_magnification_x=Number(value);changed()}
+    },{min:'0.000001',step:'any'},true);
+    sourcePane.append(fields);
+    const help=document.createElement('span');help.className='settings-help';
+    const info=document.createElement('button');info.type='button';info.className='settings-help-button';info.textContent='ⓘ';info.setAttribute('aria-label','About placeholders');
+    const tip=document.createElement('span');tip.className='settings-help-popup';tip.setAttribute('role','tooltip');
+    tip.id='fig-placeholder-help';info.setAttribute('aria-describedby',tip.id);
+    tip.textContent='Keeps this position in the saved grid and exported figure. Target magnification describes the missing acquisition. Placeholders contain no microscope data or scale calibration and are excluded from image tone matching.';
+    help.append(info,tip);sourceButtons.append(help);host.append(card);return;
+   }
+   if(!slot.path){host.append(card);return}
    const native=slot.source_format==='dm4'||/\.dm4$/i.test(slot.path);
    const metadata=document.createElement('div');metadata.className='fig-acquisition-meta';
    const metadataTitle=document.createElement('h3');metadataTitle.textContent='Acquisition metadata';metadata.append(metadataTitle);
@@ -583,6 +613,14 @@
   });
   sync();
  }
+ function addPlaceholder(index){
+  if(index==null)index=!hasPanel(recipe.slots[selectedPanel])?selectedPanel:recipe.slots.findIndex(slot=>!hasPanel(slot));
+  if(index<0||!recipe.slots[index]||hasPanel(recipe.slots[index])){
+   status('Clear a slot or expand the grid before adding a placeholder.',true);return;
+  }
+  recipe.slots[index]={kind:'placeholder',placeholder:{title:'Not acquired',sample:'',location:'',target_magnification_x:null}};
+  selectedPanel=index;changed(true);openSlot(index);
+ }
  function openSlot(index){
   if(index<0||index>=recipe.slots.length)return;
   hideOutputHover();
@@ -660,7 +698,7 @@
  function startOutputDrag(event){
   if(event.button!==0)return;
   const hit=previewPanelHit(event);
-  if(!hit||!recipe.slots[hit.index]?.path)return;
+  if(!hit||!hasPanel(recipe.slots[hit.index]))return;
   dragState={from:hit.index,x:event.clientX,y:event.clientY,dragging:false};
   try{event.currentTarget.setPointerCapture(event.pointerId)}catch{}
  }
@@ -673,7 +711,7 @@
   const image=event.currentTarget,rect=image.getBoundingClientRect(),scale=rect.width/image.naturalWidth;
   dropTarget.style.left=rect.left+hit.x*scale+'px';dropTarget.style.top=rect.top+hit.y*scale+'px';
   dropTarget.style.width=hit.width*scale+'px';dropTarget.style.height=hit.height*scale+'px';
-  dropTarget.textContent=recipe.slots[hit.index]?.path?'Swap panels':'Move panel';
+  dropTarget.textContent=hasPanel(recipe.slots[hit.index])?'Swap panels':'Move panel';
   dropTarget.hidden=false;
  }
  function finishOutputDrag(event){
@@ -1047,8 +1085,9 @@
  }
  function changeLayout(){
   const rows=Number($('fig-rows').value),columns=Number($('fig-columns').value),total=rows*columns;
-  if(recipe.slots.slice(total).some(slot=>slot.path)){
-   status('Clear or move images outside the new layout first.',true);sync();return;
+  if(total>24){status('Use a layout with at most 24 panels.',true);sync();return}
+  if(recipe.slots.slice(total).some(hasPanel)){
+   status('Clear or move panels outside the new layout first.',true);sync();return;
   }
   recipe.rows=rows;recipe.columns=columns;recipe.slots.length=total;
   for(let index=0;index<total;index++)recipe.slots[index]??={};
@@ -1092,6 +1131,7 @@
    $('fig-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('fig-project-dialog'));
    $('fig-project-close').onclick=()=>$('fig-project-dialog').close();
    $('fig-open-browser').onclick=openImageBrowser;
+   $('fig-add-placeholder').onclick=()=>addPlaceholder();
    $('fig-generate-previews').onclick=$('fig-browser-generate-previews').onclick=generatePreviews;
    $('fig-cancel-previews').onclick=$('fig-browser-cancel-previews').onclick=async()=>{try{showPreviewStatus(await api('previews/cancel',{}));pollPreviews()}
     catch(error){previewError(error.message)}};
@@ -1158,7 +1198,7 @@
     recipe.metadata_overlay=[...document.querySelectorAll('[data-figure-meta]:checked')].map(item=>item.dataset.figureMeta);changed()};
    $('fig-new').onclick=()=>{currentId='';loadRecipe(blank());chooseSaved()};
    $('fig-saved').onchange=()=>{currentId=$('fig-saved').value;if(currentId)loadRecipe(saved[currentId]);else loadRecipe(blank());chooseSaved()};
-   $('fig-save').onclick=async()=>{recipe.name=$('fig-name').value.trim()||'Untitled figure';if(!recipe.slots.some(slot=>slot.path)){status('Choose an image before saving.',true);return}
+   $('fig-save').onclick=async()=>{recipe.name=$('fig-name').value.trim()||'Untitled figure';if(!recipe.slots.some(hasPanel)){status('Choose an image or create a placeholder before saving.',true);return}
     currentId=currentId||crypto.randomUUID();saved[currentId]=structuredClone(recipe);WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));draft();chooseSaved();await WorkbenchWorkspace.flush();status(`Saved ${recipe.name}.`)};
    $('fig-delete').onclick=async()=>{if(!currentId)return;delete saved[currentId];currentId='';WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));chooseSaved();await WorkbenchWorkspace.flush();status('Saved figure deleted. Current panels remain open.')};
    $('fig-export').onclick=async()=>{try{status(`Exporting figure at ${recipe.export_scale_percent}%…`);

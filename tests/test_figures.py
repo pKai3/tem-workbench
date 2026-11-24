@@ -145,7 +145,7 @@ class FiguresTests(unittest.TestCase):
     def test_empty_slot_previews_but_blocks_export(self):
         recipe={'slots':[{'empty':True}],'columns':1}
         self.assertTrue(creator.render(recipe, preview=True).startswith(b'\x89PNG'))
-        with self.assertRaisesRegex(ValueError, 'Choose an image for slot 1'):
+        with self.assertRaisesRegex(ValueError, 'image or create a placeholder for slot 1'):
             creator.render(recipe)
 
     def test_display_sized_preview_reports_exact_panel_geometry(self):

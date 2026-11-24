@@ -783,6 +783,56 @@ def _crop_metadata(slot, figure_crop_metadata):
     return override if isinstance(override, bool) else figure_crop_metadata
 
 
+def _is_placeholder(slot):
+    if slot.get('kind') != 'placeholder':
+        return False
+    if slot.get('path'):
+        raise ValueError('A placeholder cannot also contain a source image. Replace or clear the panel.')
+    return True
+
+
+def _placeholder_panel(slot, width, aspect):
+    """Render an intentional missing acquisition, without image metadata or calibration."""
+    fields = slot.get('placeholder', {})
+    if not isinstance(fields, dict):
+        raise ValueError('Expected placeholder details.')
+    values = {}
+    for key in ('title', 'sample', 'location'):
+        value = fields.get(key, 'Not acquired' if key == 'title' else '')
+        if not isinstance(value, str) or len(value) > 120:
+            raise ValueError('Placeholder text must be at most 120 characters per field.')
+        values[key] = ' '.join(value.split())
+    magnification = fields.get('target_magnification_x')
+    if magnification is not None and (isinstance(magnification, bool)
+            or not isinstance(magnification, (int, float))
+            or not math.isfinite(magnification) or magnification <= 0):
+        raise ValueError('Target magnification must be a positive number, or left blank.')
+    details = [values[key] for key in ('sample', 'location') if values[key]]
+    if magnification is not None:
+        details.append(f'Target {magnification:,.8g}×')
+    height = math.ceil(width / aspect)
+    panel = Image.new('RGB', (width, height), 'black')
+    draw = ImageDraw.Draw(panel)
+    # Proportions match the supplied missing-acquisition TIFF; fit extreme Auto shapes too.
+    scale = min(width / 1000, height / 800)
+    lines = [(values['title'] or 'Not acquired', 60, -150),
+             (' | '.join(details), 36, -65),
+             ('PLACEHOLDER - NO MICROSCOPE DATA', 26, 15),
+             ('Acquisition kV: not applicable', 22, 70),
+             ('No specimen scale calibration', 20, 110)]
+    for text, size, offset in lines:
+        if not text:
+            continue
+        font_size = max(1, round(size * scale))
+        font = _font(font_size, system_ui=True)
+        while font_size > 1 and draw.textlength(text, font=font) > width * .88:
+            font_size -= 1
+            font = _font(font_size, system_ui=True)
+        draw.text((width / 2, height / 2 + offset * scale), text,
+                  font=font, anchor='mm', fill='white')
+    return panel
+
+
 def _figure_aspect(recipe):
     selected = recipe.get('aspect', 4 / 3)
     if selected == 'auto':
@@ -866,8 +916,8 @@ def estimate_png_size(recipe, *, dm_reader=None):
     if not 1 <= len(slots) <= MAX_PANELS:
         raise ValueError(f'Choose 1–{MAX_PANELS} image panels.')
     columns = int(recipe.get('columns', 2))
-    if columns not in (1, 2, 3, 4):
-        raise ValueError('Choose 1–4 columns.')
+    if columns not in (1, 2, 3, 4, 5, 6):
+        raise ValueError('Choose 1–6 columns.')
     crop_metadata = recipe.get('crop_metadata', True)
     if not isinstance(crop_metadata, bool):
         raise ValueError('Choose whether to crop metadata bars.')
@@ -884,14 +934,19 @@ def estimate_png_size(recipe, *, dm_reader=None):
     canvas_height = math.ceil(len(slots) / columns) * panel_height + (math.ceil(len(slots) / columns) + 1) * padding
     if canvas_width * canvas_height > MAX_FIGURE_PIXELS:
         raise ValueError('The selected figure is too large. Use fewer panels or a smaller export size.')
-    filled = [slot for slot in slots if slot.get('path')]
+    filled = [slot for slot in slots if _is_placeholder(slot) or slot.get('path')]
     if not filled:
-        raise ValueError('Choose an image to estimate the PNG size.')
+        raise ValueError('Choose an image or placeholder to estimate the PNG size.')
     if canvas_width * canvas_height <= MAX_EXACT_ESTIMATE_PIXELS and len(filled) == len(slots):
         return {'estimated_size_bytes': len(render(recipe, dm_reader=dm_reader)), 'width': canvas_width,
                 'height': canvas_height, 'exact': True}
     rates = []
     for slot in filled:
+        if _is_placeholder(slot):
+            stream = BytesIO()
+            _placeholder_panel(slot, panel_width, aspect).save(stream, format='PNG')
+            rates.append(len(stream.getvalue()) / (panel_width * panel_height))
+            continue
         source = _source(slot['path'])
         if _digest(source) != slot.get('sha256'):
             raise ValueError(f'{source.name} changed since this panel was saved. Replace it explicitly.')
@@ -1041,8 +1096,8 @@ def _render(recipe, preview=False, *, dm_reader=None, preview_width=None):
     if not isinstance(slots, list) or not 1 <= len(slots) <= MAX_PANELS:
         raise ValueError(f'Choose 1–{MAX_PANELS} image panels.')
     columns = int(recipe.get('columns', 2))
-    if columns not in (1, 2, 3, 4):
-        raise ValueError('Choose 1–4 columns.')
+    if columns not in (1, 2, 3, 4, 5, 6):
+        raise ValueError('Choose 1–6 columns.')
     metadata_overlay = recipe.get('metadata_overlay', [])
     if not isinstance(metadata_overlay, list) or any(key not in METADATA_FIELDS for key in metadata_overlay):
         raise ValueError('Choose supported metadata overlay fields.')
@@ -1096,9 +1151,11 @@ def _render(recipe, preview=False, *, dm_reader=None, preview_width=None):
     for index, slot in enumerate(slots):
         x = margin + (index % columns) * (width + gap)
         y = margin + (index // columns) * (tile_height + gap)
-        if not slot.get('path'):
+        if _is_placeholder(slot):
+            figure.paste(_placeholder_panel(slot, width, aspect), (x, y))
+        elif not slot.get('path'):
             if not preview:
-                raise ValueError(f'Choose an image for slot {index + 1} before export.')
+                raise ValueError(f'Choose an image or create a placeholder for slot {index + 1} before export.')
             panel = Image.new('RGB', (width, tile_height), '#e8edf2' if color == 'white' else '#263746')
             placeholder = ImageDraw.Draw(panel)
             inset = min(round(16 * width / 420), (min(width, tile_height) - 1) // 2)
@@ -1147,6 +1204,10 @@ def panel_preview(slot, aspect=4 / 3, metadata_overlay=None, recipe=None, width=
     aspect = _figure_aspect(recipe) if recipe else float(aspect)
     if not recipe and aspect not in (1, 4 / 3, 16 / 9):
         raise ValueError('Choose square, 4:3 or 16:9 panels.')
+    if _is_placeholder(slot):
+        stream = BytesIO()
+        _placeholder_panel(slot, width, aspect).save(stream, format='PNG')
+        return 'data:image/png;base64,' + base64.b64encode(stream.getvalue()).decode('ascii')
     crop_metadata = recipe.get('crop_metadata', True) if recipe else True
     scale_bar_overlay = recipe.get('scale_bar_overlay', True) if recipe else True
     scale_bar_position = recipe.get('scale_bar_position', 'left') if recipe else 'left'
@@ -1219,7 +1280,7 @@ def export_label_tags(tags, recipe, sources, output_root, source_path=None):
 
 def export(recipe, sources, output_root, *, dm_reader=None):
     data = render(recipe, dm_reader=dm_reader)
-    paths = [slot['path'] for slot in recipe['slots']]
+    paths = [slot['path'] for slot in recipe['slots'] if slot.get('path')]
     destinations = {output_folder(sources, output_root, path=path) for path in paths}
     folder = next(iter(destinations)) if len(destinations) == 1 else Path(output_root).resolve()
     folder.mkdir(parents=True, exist_ok=True)
