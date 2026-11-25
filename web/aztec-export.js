@@ -123,7 +123,7 @@ window.aztecExport=(()=>{
  function kamLegend(ctx,bounds,limits,stops,position,topLeft){
   const labels=limits.map(value=>Number(value.toPrecision(3))+'°');
   ctx.save();ctx.font='12px system-ui';
-  const width=Math.max(92,ctx.measureText(labels[0]).width+ctx.measureText(labels[1]).width+12),{x:left,y:top}=window.aztecOverlayPlacement.box(bounds,width+8,34,position,5,topLeft);
+  const width=Math.max(60,ctx.measureText(labels[0]).width+ctx.measureText(labels[1]).width+12),{x:left,y:top}=window.aztecOverlayPlacement.box(bounds,width+8,34,position,5,topLeft);
   ctx.fillStyle='#080e14bf';ctx.beginPath();ctx.roundRect(left,top,width+8,34,3);ctx.fill();
   const gradient=ctx.createLinearGradient(left+4,0,left+4+width,0);stops.forEach((colour,index)=>gradient.addColorStop(index/(stops.length-1),colour));
   ctx.fillStyle=gradient;ctx.fillRect(left+4,top+3,width,8);
