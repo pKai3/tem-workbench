@@ -130,7 +130,7 @@ window.aztecExport=(()=>{
   ctx.fillStyle='#fff';ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillText(labels[0],left+4,top+27);
   ctx.textAlign='right';ctx.fillText(labels[1],left+4+width,top+27);ctx.restore();
  }
- async function maps({result,options,comparison,signals,names,colours={},crops}){
+ async function maps({result,options,comparison,signals,names,colours={},crops,maxSize}){
   const theme=themeFor(options);
   const kamLegends=new Set(window.aztecKamLegend.selected(result,options).map(row=>row.acquisition));
   const ipfLegends=new Map((window.aztecIpfLegend?.selected(result,options)||[]).map(row=>[row.acquisition,window.aztecIpfLegend.svg(row,options)]));
@@ -139,9 +139,10 @@ window.aztecExport=(()=>{
   const mapPixels=result.rows.flatMap(row=>columns.filter(column=>!column.electron).map(column=>window.aztecMapLayout.tile(row,column)?.shape).filter(Boolean).map(shape=>Math.max(shape[1],shape[0]*aspect)));
   // Keep annotations in the original 320 px panel coordinates. Increasing the
   // raster resolution must scale the labels and padding along with the images.
-  const tileSize=320,exportScale=Math.max(2,Math.ceil(Math.max(0,...overviewPixels,...mapPixels))/tileSize),gap=5,margin=8,legend=options.show_colour_scale!==false&&result.normalisation!=='none'&&options.eds_layout!=='layered'&&(!comparison||result.scale_scope==='all');
+  const tileSize=320,nativeScale=Math.max(2,Math.ceil(Math.max(0,...overviewPixels,...mapPixels))/tileSize),gap=5,margin=8,legend=options.show_colour_scale!==false&&result.normalisation!=='none'&&options.eds_layout!=='layered'&&(!comparison||result.scale_scope==='all');
   const tileHeight=tileSize/aspect;
   const mapWidth=margin*2+layout.columns*tileSize+(layout.columns-1)*gap+(legend?100:0),mapHeight=margin*2+layout.rows*tileHeight+(layout.rows-1)*gap;
+  const exportScale=maxSize>0?Math.min(nativeScale,maxSize/Math.max(mapWidth,mapHeight)):nativeScale;
   const [out,ctx]=canvas(Math.ceil(mapWidth*exportScale),Math.ceil(mapHeight*exportScale),theme);ctx.scale(exportScale,exportScale);
   const sizes=new Map(),minimum=new Map();
   for(const r of result.rows)if(r.width&&r.height){sizes.set(r.distance_unit,Math.max(sizes.get(r.distance_unit)||0,r.width));minimum.set(r.distance_unit,Math.min(minimum.get(r.distance_unit)||Infinity,r.width,r.height))}
@@ -320,7 +321,8 @@ window.aztecExport=(()=>{
   return out;
  }
  async function png(settings){
-  const output=await (settings.kind==='map'?maps:settings.kind==='distribution'?distribution:lines)(settings);
+  let output=await (settings.kind==='map'?maps:settings.kind==='distribution'?distribution:lines)(settings);
+  if(settings.maxSize>0&&Math.max(output.width,output.height)>settings.maxSize){const scale=settings.maxSize/Math.max(output.width,output.height),[small,ctx]=canvas(Math.max(1,Math.round(output.width*scale)),Math.max(1,Math.round(output.height*scale)),themes.transparent);ctx.drawImage(output,0,0,small.width,small.height);output=small}
   const blob=await new Promise(resolve=>output.toBlob(resolve,'image/png'));if(!blob)throw new Error('PNG export could not be created.');
   return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('PNG export could not be read.'));reader.readAsDataURL(blob)});
  }

@@ -182,16 +182,69 @@ window.aztecKamSources={
  accepted:(options,ids,result)=>ids.every(id=>window.aztecKamSources.mode(options,id)==='native'||result.kam_sources?.[id]===window.aztecKamSources.mode(options,id)),
  configuration(kam){if(!kam?.kernel_size)return 'Settings unavailable';return `${kam.kernel_size}×${kam.kernel_size} ${(kam.kernel_shape||'square').toLowerCase()} · ${kam.only_periphery?'periphery':'all neighbours'} · max ${kam.maximum_angle_degrees}° · min ${kam.minimum_angle_degrees==null?'not stored':kam.minimum_angle_degrees+'°'}`}
 };
+/* Preview work is serialized, bounded and independent of the active comparison. */
+window.aztecComparisonPreviews={
+ serial:0,
+ create(render){
+  const cache=new Map();let queue=Promise.resolve();
+  return (entry,wanted=()=>true)=>{
+   const snapshot=structuredClone(entry),key=JSON.stringify([snapshot.table,snapshot.item]);
+   const task=queue.then(async()=>{
+    if(!wanted())return null;
+    const hit=cache.get(key);if(hit&&Date.now()-hit.time<60000){cache.delete(key);cache.set(key,hit);return hit.image}
+    const image=await render(snapshot);cache.set(key,{image,time:Date.now()});while(cache.size>8)cache.delete(cache.keys().next().value);return image;
+   });queue=task.catch(()=>{});return task;
+  };
+ }
+};
+window.aztecComparisonPicker={
+ open({anchor,entries,selected,preview,onSelect}){
+  const make=(tag,text,cls)=>{const node=document.createElement(tag);if(text)node.textContent=text;if(cls)node.className=cls;return node};
+  const dialog=make('dialog',null,'eds-comparison-picker'),head=make('div',null,'eds-comparison-picker-head'),close=make('button','×');
+  dialog.setAttribute('aria-label','Saved comparison previews');close.type='button';close.setAttribute('aria-label','Close comparison picker');close.onclick=()=>dialog.close();head.append(make('strong','Saved comparisons'),close);
+  const body=make('div',null,'eds-comparison-picker-body'),list=make('div',null,'eds-comparison-picker-list'),pane=make('div',null,'eds-comparison-picker-preview'),title=make('strong'),stage=make('div',null,'eds-comparison-picker-image'),status=make('p','Hover or focus a comparison to preview it.','hint'),open=make('button','Open comparison');
+  list.setAttribute('aria-label','Comparisons');status.setAttribute('role','status');open.type='button';open.disabled=true;pane.append(title,stage,status,open);body.append(list,pane);dialog.append(head,body);
+  let active=null,timer=null,revision=0;const buttons=[];
+  const choose=()=>{if(!active)return;const value=active.value;dialog.close();onSelect(value)};open.onclick=choose;
+  function show(entry,button){
+   if(active===entry)return;active=entry;clearTimeout(timer);const turn=++revision;
+   for(const item of buttons)item.classList.toggle('eds-preview-active',item===button);
+   title.textContent=entry.item.name;stage.replaceChildren();status.textContent='Loading preview…';open.disabled=false;
+   timer=setTimeout(async()=>{
+    const wanted=()=>dialog.open&&turn===revision;
+    try{const source=await preview(entry,wanted);if(!wanted()||!source)return;const image=make('img');image.alt=entry.item.name+' comparison preview';image.src=source;await image.decode();if(!wanted())return;stage.replaceChildren(image);status.textContent='';}
+    catch(error){if(wanted())status.textContent='Preview unavailable: '+error.message}
+   },160);
+  }
+  let family=null;
+  for(const entry of entries){
+   if(entry.family!==family){family=entry.family;list.append(make('div',family,'eds-comparison-picker-group'))}
+   const button=make('button',entry.item.name);button.type='button';button.setAttribute('aria-current',String(entry.value===selected));buttons.push(button);list.append(button);
+   button.onmouseenter=()=>show(entry,button);button.onfocus=()=>show(entry,button);
+   button.onclick=event=>{show(entry,button);if(event.pointerType!=='touch')choose()};
+   button.onkeydown=event=>{const index=buttons.indexOf(button),next=event.key==='ArrowDown'?Math.min(buttons.length-1,index+1):event.key==='ArrowUp'?Math.max(0,index-1):event.key==='Home'?0:event.key==='End'?buttons.length-1:null;if(next!==null){event.preventDefault();buttons[next].focus()}};
+  }
+  if(!entries.length){list.append(make('p','No saved comparisons yet.','hint'));status.textContent='Save a comparison to preview it here.'}
+  const dismiss=()=>dialog.close();
+  dialog.addEventListener('close',()=>{++revision;clearTimeout(timer);window.removeEventListener('resize',dismiss);anchor.setAttribute('aria-expanded','false');dialog.remove();if(anchor.isConnected)anchor.focus({preventScroll:true})},{once:true});
+  document.body.append(dialog);dialog.showModal();anchor.setAttribute('aria-expanded','true');window.addEventListener('resize',dismiss);
+  const box=anchor.getBoundingClientRect(),size=dialog.getBoundingClientRect();dialog.style.left=Math.max(8,Math.min(box.left,innerWidth-size.width-8))+'px';dialog.style.top=Math.max(8,Math.min(box.bottom+6,innerHeight-size.height-8))+'px';
+  (buttons.find(button=>button.getAttribute('aria-current')==='true')||buttons[0]||close).focus({preventScroll:true});
+ }
+};
 /* Live views of the existing EDX report operations. Inputs stay read-only. */
-window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLineCursor,setMapCursor,remember,projectOverviewStrip,isSourceVisible=()=>true,ensureSourcesVisible=()=>{}})=>{
+window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLineCursor,setMapCursor,remember,projectOverviewStrip,isSourceVisible=()=>true,ensureSourcesVisible=()=>{},previewOnly=false})=>{
+ const workspace=previewOnly?{readRaw:()=>null,writeRaw:()=>{}}:WorkbenchWorkspace;
+ const plotNamespace=previewOnly?'eds-preview-'+(++window.aztecComparisonPreviews.serial):'eds';
  let current=null,version=0,smoothingTimer=null,plotObservers=[],overviewObservers=[],plotSerial=0,referenceCursors=[],linePlotCursors=new Map(),linePanDrag=null,layoutVersion=0,mapHover=null;
- let savedViews={};try{const saved=JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-comparison-v1')||'{}');if(saved&&typeof saved==='object')savedViews=saved}catch{}
- let previousFile='';try{previousFile=JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-browser')||'{}').file||''}catch{}
+ let savedViews={};try{const saved=JSON.parse(workspace.readRaw('tem-eds-comparison-v1')||'{}');if(saved&&typeof saved==='object')savedViews=saved}catch{}
+ let previousFile='';try{previousFile=JSON.parse(workspace.readRaw('tem-eds-browser')||'{}').file||''}catch{}
  const comparisonState=window.aztecComparisonState;savedViews=comparisonState.migrate(savedViews,previousFile);
  const object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
  const preferences=object(savedViews.preferences),selections=object(savedViews.selections),cropCentres=new Map(Object.entries(object(savedViews.crops))),aliases=object(savedViews.aliases),labelColours=object(savedViews.labelColours),presets=object(savedViews.presets),structureCache=new Map();
  const lastTables=object(savedViews.lastTables),activePresets=object(savedViews.activePresets);
- const colourMemory=window.aztecLabelColours.create(WorkbenchWorkspace);
+ const colourMemory=window.aztecLabelColours.create(workspace);
+ const comparisonPreview=window.aztecComparisonPreviews.create(renderSavedComparison);
  let persistTimer=null,openVersion=0;
  const catalogues=new Map(),catalogueRequests=new Map(),sourceErrors=new Map(),thumbnailRequests=new Map();let thumbnailObserver=null;
  const projectKey=()=>state.file?.catalogue.source.path||'';
@@ -716,14 +769,42 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   }
   details.ontoggle=()=>{context.sourcePickerOpen=details.open;if(details.open&&!scanned&&!refresh.disabled)scan()};refresh.onclick=scan;draw();if(scanned)checkAvailability();
  }
+ async function renderSavedComparison({item,table}){
+  if(!item.ids?.length||!item.signals?.length)throw new Error('No acquisitions or quantities selected.');
+  const kind=table.endsWith('Linescans')?'line':'map',options=structuredClone(item.options||{}),signals=item.signals.filter(signal=>options.mode!=='ratio'||signal!==options.denominator);
+  if(kind==='map'&&options.mode==='ratio'&&options.show_denominator)signals.unshift(options.denominator);
+  const result=await api('process',{...options,targets:item.ids.map(id=>comparisonState.target(id)),signals,channel_table:table,comparison:true,map_distributions:false});
+  if(!result.rows?.length)throw new Error('No comparison data available.');
+  const failed=result.rows.filter(row=>row.error);if(failed.length===result.rows.length)throw new Error(failed[0].error);
+  const names=Object.fromEntries(result.rows.map(row=>[row.acquisition,(item.aliases?.[row.acquisition]||row.sample_name||row.short_label||row.label)+(row.data_kind==='reconstructed'?' · window cps':'')]));
+  const settings={kind,result,options,comparison:true,signals,names,colours:item.labelColours||{},crops:item.crops||{},maxSize:1000};
+  if(kind==='map')return window.aztecExport.png(settings);
+  // Use a separate renderer and in-memory settings: no active-view swaps or saves.
+  const root=el('div',undefined,'eds-comparison-preview-render');root.setAttribute('aria-hidden','true');root.inert=true;document.body.append(root);
+  const noop=()=>{},renderer=window.createAztecAnalysis({$:()=>null,el,state:{},api,previewOnly:true,setLineCrop:noop,setLineCursor:noop,setMapCursor:noop});
+  try{return await renderer.linePreview(root,item,settings)}finally{root.remove()}
+ }
+ async function linePreview(root,item,settings){
+  current={kind:'line',comparison:true,all:[],options:settings.options};
+  for(const [id,label]of Object.entries(item.aliases||{}))aliases['compare:'+id]=label;
+  for(const [id,colour]of Object.entries(item.labelColours||{}))labelColours['compare:'+id]=colour;
+  try{
+   renderLineComparison(root,settings.result);
+   redrawLinePlots(root);
+   const snapshot=window.aztecExport.captureLines({...settings,root});
+   return await window.aztecExport.png({...settings,snapshot});
+  }finally{clearPlotObservers();current=null}
+ }
  function presetControls(root){
   const context=current,key=context.preferenceKey,items=Array.isArray(presets[key])?presets[key]:[];presets[key]=items;
   const families=[['XrayMapImages','Maps · intensity'],['QuantMapImages','Maps · wt%'],['AtomicMapImages','Maps · at%'],['KamMapImages','Maps · KAM'],['XrayLinescans','Lines · intensity'],['QuantLinescans','Lines · composition']];
   let entries=[];
   const row=el('div',undefined,'eds-preset-controls'),select=el('select'),name=el('input'),save=el('button'),rename=el('button','Rename'),remove=el('button','Delete'),status=el('span',undefined,'hint eds-comparison-save-status');
-  select.setAttribute('aria-label','Saved comparisons');name.type='text';name.maxLength=80;name.placeholder='Comparison name';name.setAttribute('aria-label','Comparison name');for(const button of [save,rename,remove])button.type='button';status.setAttribute('role','status');
-  const populate=()=>{select.replaceChildren();entries=[];const placeholder=el('option','Unsaved comparison');placeholder.value='';select.append(placeholder);for(const [table,label] of families){const group=el('optgroup');group.label=label;for(const item of presets[viewKey(table)]||[]){const entry={item,table,key:viewKey(table),value:table+':'+item.name};entries.push(entry);const option=el('option',item.name);option.value=entry.value;group.append(option)}if(group.childElementCount)select.append(group)}
-   const active=items.find(item=>item.name===activePresets[key]);select.value=active?context.table+':'+active.name:'';name.value=active?.name||'';rename.disabled=remove.disabled=!active;save.textContent=active?'Save as…':'Save comparison';status.textContent=active?'Autosave on':'';
+  select.setAttribute('aria-label','Saved comparisons');select.hidden=true;select.tabIndex=-1;select.setAttribute('aria-hidden','true');
+  const picker=el('button',undefined,'eds-comparison-picker-trigger');picker.type='button';picker.setAttribute('aria-label','Saved comparisons');picker.setAttribute('aria-haspopup','dialog');picker.setAttribute('aria-expanded','false');picker.onclick=()=>window.aztecComparisonPicker.open({anchor:picker,entries,selected:select.value,preview:comparisonPreview,onSelect:value=>{select.value=value;select.onchange()}});
+  name.type='text';name.maxLength=80;name.placeholder='Comparison name';name.setAttribute('aria-label','Comparison name');for(const button of [save,rename,remove])button.type='button';status.setAttribute('role','status');
+  const populate=()=>{select.replaceChildren();entries=[];const placeholder=el('option','Unsaved comparison');placeholder.value='';select.append(placeholder);for(const [table,label] of families){const group=el('optgroup');group.label=label;for(const item of presets[viewKey(table)]||[]){const entry={item,table,family:label,key:viewKey(table),value:table+':'+item.name};entries.push(entry);const option=el('option',item.name);option.value=entry.value;group.append(option)}if(group.childElementCount)select.append(group)}
+   const active=items.find(item=>item.name===activePresets[key]);select.value=active?context.table+':'+active.name:'';picker.textContent=(active?.name||'Unsaved comparison')+' ▾';name.value=active?.name||'';rename.disabled=remove.disabled=!active;save.textContent=active?'Save as…':'Save comparison';status.textContent=active?'Autosave on':'';
   };populate();
   select.onchange=async()=>{const entry=entries.find(p=>p.value===select.value);if(!entry){populate();return}persist();const {item,table,key:destination}=entry;
    activePresets[destination]=item.name;current=null;restorePreset(item,destination);persist();
@@ -739,7 +820,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   rename.onclick=()=>{try{comparisonState.rename(presets,activePresets,key,name.value);populate();persist()}catch(error){report(error)}};
   remove.className='eds-preset-delete';remove.onclick=()=>{const index=items.findIndex(item=>item.name===activePresets[key]);if(index<0)return;persist();const [removed]=items.splice(index,1);delete activePresets[key];persist();populate();status.replaceChildren(el('span','Deleted '));const undo=el('button','Undo');undo.type='button';undo.onclick=()=>{if(items.some(item=>item.name===removed.name)){status.textContent='That name is now used; rename it before restoring.';return}items.splice(index,0,removed);persist();populate();select.value=context.table+':'+removed.name;select.onchange()};status.append(undo)};
   const fresh=el('button','New comparison');fresh.type='button';fresh.onclick=()=>{persist();delete activePresets[key];context.ids=[];context.files=[];context.all=[];context.signals=[];context.options.overview_images={};context.overviewPickerOpen=false;context.sourcePickerOpen=true;context.acquisitionPickerOpen=true;context.result=null;persist();$('eds-analysis-views').replaceChildren();controls([]);update()};
-  row.append(fresh,select,name,save,rename,remove,status);root.append(row);
+  row.append(fresh,select,picker,name,save,rename,remove,status);root.append(row);
  }
  function normaliseLabelColour(value){const hex=String(value||'').trim().replace(/^#/,'');if(!/^(?:[\da-fA-F]{3}|[\da-fA-F]{6})$/.test(hex))return null;return '#'+(hex.length===3?[...hex].map(c=>c+c).join(''):hex).toLowerCase()}
  function labelInk(hex){const rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722>.179?'#0b1520':'#fff'}
@@ -981,6 +1062,11 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
    const statisticColumns=columns.some(column=>column.layered)?window.aztecMapLayout.columns(result,selectedSignals(),{...current.options,eds_layout:'separate'}):columns;
    mapStatistics(mapDetails(root,result),result,statisticColumns,normalized&&result.scale_scope==='all'&&current.options.eds_layout!=='layered');
   }else{
+   renderLineComparison(root,result);
+  }
+ }
+ function renderLineComparison(root,result){
+  const normalized=result.normalisation!=='none';
    const rows=result.rows.filter(r=>!r.error);
    for(const row of result.rows.filter(r=>r.error))root.append(el('p',`${row.label}: ${row.error}`,'eds-channel-error'));
    const structure=el('details',undefined,'eds-noise-check eds-comparison-structure'),structureBody=el('div');
@@ -1016,7 +1102,6 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
     structure.append(el('p','Full acquisitions: smoothed variation is compared with 256 paired shuffles, excluding 3σ at each end. A larger observed/shuffled ratio can reflect spatial structure, drift, thickness or correlated noise; it is not a segregation test or confidence interval. Display normalization does not change this check.','hint'));
     root.append(structure);
    }
-  }
  }
  function comparisonColourScale(wrap,grid,result){
   const scale=el('div',undefined,'eds-comparison-colour-scale'),ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');scale.append(svg);wrap.append(scale);
@@ -1470,7 +1555,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
      figure.dataset.labelX=x/w;figure.dataset.labelY=y/h;figure.dataset.labelWidth=width/w;figure.dataset.metricRight=(right+6)/w;figure.dataset.labelBounds=JSON.stringify([bounds.left/w,bounds.right/w,bounds.top/h,bounds.bottom/h]);
     }
     const add=(tag,attrs,text,parent=svg)=>{const n=document.createElementNS(ns,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text!==undefined)n.textContent=text;parent.append(n);return n};
-    const clipId=`eds-line-clip-${++plotSerial}`,defs=add('defs',{}),clip=add('clipPath',{id:clipId},undefined,defs);add('rect',{x:row.trimmed?X(0):left,y:top,width:row.trimmed?X(viewLength)-X(0):pw,height:ph},undefined,clip);const plot=add('g',{'clip-path':`url(#${clipId})`});
+    const clipId=`${plotNamespace}-line-clip-${++plotSerial}`,defs=add('defs',{}),clip=add('clipPath',{id:clipId},undefined,defs);add('rect',{x:row.trimmed?X(0):left,y:top,width:row.trimmed?X(viewLength)-X(0):pw,height:ph},undefined,clip);const plot=add('g',{'clip-path':`url(#${clipId})`});
     if(display.background&&row.background){const scale=pw/span*row.length/axisLength;
      // The rotated crop uses equal x/y sampling. Its extent already defines the displayed aspect; an SVG meet fit adds empty side gutters.
      add('image',{href:row.background,x:X(nativeExtent[0]*row.length-viewStart),y:centre+nativeExtent[2]*scale,width:(nativeExtent[1]-nativeExtent[0])*scale,height:(nativeExtent[3]-nativeExtent[2])*scale,preserveAspectRatio:'none'},undefined,plot)}
@@ -1504,6 +1589,6 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   (structureBody||root).append(noise);
  }
 
- window.addEventListener('pagehide',persist);
- return {open,close,groups,relocateSources};
+ if(!previewOnly)window.addEventListener('pagehide',persist);
+ return {open,close,groups,relocateSources,linePreview};
 };
