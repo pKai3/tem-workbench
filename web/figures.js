@@ -51,7 +51,22 @@
   const value=await response.json();if(!response.ok)throw new Error(value.error||'Request failed.');return value;
  }
  function status(text,error=false){$('fig-status').textContent=text;$('fig-error').textContent=error?text:''}
- function draft(){WorkbenchWorkspace.writeRaw('tem-figures-draft-v1',JSON.stringify(recipe));WorkbenchWorkspace.writeRaw('tem-figures-current-v1',currentId)}
+ function draft(saveNamed=false){
+  WorkbenchWorkspace.writeRaw('tem-figures-draft-v1',JSON.stringify(recipe));
+  WorkbenchWorkspace.writeRaw('tem-figures-current-v1',currentId);
+  if(saveNamed&&currentId&&saved[currentId]){
+   const renamed=saved[currentId].name!==recipe.name;
+   saved[currentId]=structuredClone(recipe);
+   WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));
+   if(renamed)chooseSaved();
+  }
+ }
+ function selectFigure(id){
+  // Checkpoint the outgoing draft before a selection can replace it, including
+  // drafts made by versions that did not autosave the named figure.
+  draft(true);currentId=saved[id]?id:'';
+  loadRecipe(currentId?saved[currentId]:blank());chooseSaved();
+ }
  function sourceReference(slot){
   const companion=key=>slot[key]&&typeof slot[key]==='object'?{path:slot[key].path??null,sha256:slot[key].sha256??null}:null;
   return {path:slot.path??null,sha256:slot.sha256??null,source_project:slot.source_project??null,metadata_sidecar:companion('metadata_sidecar'),analysis:companion('analysis')};
@@ -88,7 +103,7 @@
     else if(Object.values(saved).includes(target))savedCount+=applySourceRepairs(target,result.repairs);
    }
    if(savedCount)WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));
-   if(draftCount)changed(true);
+   if(draftCount)changed(true,false);
    if(draftCount||savedCount)await WorkbenchWorkspace.flush();
    if(revision!==reconnectVersion)return;
    const list=$('fig-reconnect-error-list');list.replaceChildren();
@@ -151,6 +166,7 @@
   const select=$('fig-saved');select.replaceChildren(new Option('New figure',''));
   for(const [id,value] of Object.entries(saved).sort((a,b)=>a[1].name.localeCompare(b[1].name)))select.add(new Option(value.name,id));
   select.value=currentId;$('fig-delete').disabled=!currentId;
+  $('fig-save-note').textContent=currentId?'Changes to this figure save automatically.':'Draft saved automatically. Save figure to keep it in the list.';
  }
  function sync(){
   $('fig-name').value=recipe.name;$('fig-rows').value=String(recipe.rows);$('fig-columns').value=String(recipe.columns);$('fig-transpose').checked=!!recipe.transposed;
@@ -256,6 +272,25 @@
   const original=slot.name||slot.path.split(/[\\/]/).at(-1);
   return `${original}${slot.label?` [${slot.label}]`:''}`;
  }
+ function fitPanelPreview(){
+  const dialog=$('fig-slot-dialog'),pane=dialog.querySelector('.fig-live-preview'),frame=pane?.querySelector('.fig-annotation-frame');
+  const image=frame?.querySelector('img');
+  if(!dialog.open||!pane?.clientHeight||!image?.naturalWidth)return;
+  const style=getComputedStyle(pane),number=value=>parseFloat(value)||0;
+  const width=pane.clientWidth-number(style.paddingLeft)-number(style.paddingRight);
+  let height=pane.clientHeight-number(style.paddingTop)-number(style.paddingBottom);
+  for(const child of pane.children){
+   if(child===frame||child.tagName==='DIALOG')continue;
+   const css=getComputedStyle(child);
+   height-=child.getBoundingClientRect().height+number(css.marginTop)+number(css.marginBottom);
+  }
+  frame.style.width=Math.max(0,Math.min(width,(height-2)*image.naturalWidth/image.naturalHeight))+'px';
+ }
+ function panelPreviewWidth(){
+  const dialog=$('fig-slot-dialog'),frame=dialog.querySelector('.fig-annotation-frame')||dialog.querySelector('.fig-live-preview');
+  const width=frame?.getBoundingClientRect().width||800;
+  return Math.min(2000,Math.max(800,Math.ceil(width*(window.devicePixelRatio||1)/64)*64));
+ }
  function schedulePanelPreview(){
   clearTimeout(panelPreviewTimer);const revision=++panelPreviewRevision;
   const dialog=$('fig-slot-dialog'),slot=recipe.slots[selectedPanel],image=dialog.querySelector('.fig-live-preview img');
@@ -264,7 +299,7 @@
   note.textContent='Updating preview…';
   panelPreviewTimer=setTimeout(async()=>{
    try{const result=await api('figures/panel',{slot:{...slot,annotations:[]},aspect:recipe.aspect,
-    metadata_overlay:recipe.metadata_overlay,recipe,width:800});
+    metadata_overlay:recipe.metadata_overlay,recipe,width:panelPreviewWidth()});
     if(revision!==panelPreviewRevision||!dialog.open)return;
     image.src=result.image;note.textContent='';
    }catch(error){if(revision===panelPreviewRevision&&dialog.open)note.textContent=error.message}
@@ -286,7 +321,7 @@
    }else atoms.push({base:char,sub:'',sup:''});
   }return atoms;
  }
- function annotationChanged(){draft();sync();schedulePreview();scheduleEstimate();renderAnnotationOverlay()}
+ function annotationChanged(){draft(true);sync();schedulePreview();scheduleEstimate();renderAnnotationOverlay()}
  function renderAnnotationOverlay(){
   const svg=$('fig-annotation-svg'),image=$('fig-slot-dialog').querySelector('.fig-live-preview img');
   if(!svg||!image)return;
@@ -335,7 +370,7 @@
   const frame=document.createElement('div');frame.className='fig-annotation-frame';
   const svg=svgNode('svg',{id:'fig-annotation-svg',role:'img','aria-label':'Editable annotations on this panel'});
   frame.append(previewImage,svg);previewPane.append(frame);
-  previewImage.onload=renderAnnotationOverlay;
+  previewImage.onload=()=>{fitPanelPreview();renderAnnotationOverlay()};
   const tools=document.createElement('div');tools.className='fig-annotation-tools';
   for(const [mode,label] of [['select','Select'],['arrow','Arrow'],['text','Text']]){
    const button=document.createElement('button');button.type='button';button.textContent=label;
@@ -349,32 +384,44 @@
   const textLabel=document.createElement('label');textLabel.textContent='Text';
   const textInput=document.createElement('input');textInput.type='text';textInput.maxLength=120;
   textInput.placeholder='β or α_p or x^{2+}';textLabel.append(textInput);fields.append(textLabel);
-  const greek=document.createElement('details');greek.className='fig-greek-picker';
-  const summary=document.createElement('summary');summary.textContent='Greek picker';greek.append(summary);
+  const greek=document.createElement('button');greek.type='button';greek.className='fig-greek-picker';greek.textContent='Greek picker…';
+  greek.setAttribute('aria-haspopup','dialog');
+  const greekDialog=document.createElement('dialog');greekDialog.className='fig-greek-dialog';greekDialog.setAttribute('aria-label','Greek letters');
+  const greekHead=document.createElement('div');greekHead.className='panel-head';
+  const greekTitle=document.createElement('strong');greekTitle.textContent='Greek letters';
+  const greekClose=document.createElement('button');greekClose.type='button';greekClose.textContent='×';greekClose.setAttribute('aria-label','Close Greek picker');
+  greekClose.onclick=()=>greekDialog.close();greekHead.append(greekTitle,greekClose);greekDialog.append(greekHead);
+  greek.onclick=()=>{
+   greekDialog.showModal();const anchor=greek.getBoundingClientRect(),box=greekDialog.getBoundingClientRect();
+   greekDialog.style.left=Math.max(8,Math.min(anchor.left,window.innerWidth-box.width-8))+'px';
+   greekDialog.style.top=Math.max(8,Math.min(anchor.bottom+4,window.innerHeight-box.height-8))+'px';
+  };
   const grid=document.createElement('div');grid.className='fig-greek-grid';
   let selectionStart=0,selectionEnd=0;
   const rememberSelection=()=>{selectionStart=textInput.selectionStart;selectionEnd=textInput.selectionEnd};
   for(const letter of 'αβγδεζηθικλμνξοπρστυφχψωΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩµ'){
    const button=document.createElement('button');button.type='button';button.textContent=letter;button.title=`Insert ${letter}`;
    button.onpointerdown=event=>event.preventDefault();
-   button.onclick=()=>{textInput.setRangeText(letter,selectionStart,selectionEnd,'end');textInput.focus();rememberSelection();
+   button.onclick=()=>{greekDialog.close();textInput.setRangeText(letter,selectionStart,selectionEnd,'end');textInput.focus();rememberSelection();
     textInput.dispatchEvent(new Event('input',{bubbles:true}))};grid.append(button);
-  }greek.append(grid);fields.append(greek);
+  }greekDialog.append(grid);
   const colourLabel=document.createElement('label');colourLabel.textContent='Colour';
   const colour=document.createElement('input');colour.type='color';colourLabel.append(colour);fields.append(colourLabel);
   const sizeLabel=document.createElement('label');sizeLabel.textContent='Text size';
   const size=document.createElement('input');size.type='number';size.min='12';size.max='72';size.value='30';sizeLabel.append(size);fields.append(sizeLabel);
   const widthLabel=document.createElement('label');widthLabel.textContent='Arrow width';
   const width=document.createElement('input');width.type='number';width.min='1';width.max='12';width.value='3';widthLabel.append(width);fields.append(widthLabel);
-  previewPane.append(fields);
-  const help=document.createElement('p');help.className='hint fig-annotation-help';help.textContent='Drag to draw an arrow; click to place text. Drag selected items or arrow ends. Use _ and ^ for subscript and superscript; braces group longer text.';previewPane.append(help);
+  fields.replaceChildren(textLabel,sizeLabel,colourLabel,widthLabel);previewPane.append(fields);
+  const extras=document.createElement('div');extras.className='fig-annotation-extras';extras.append(greek);
+  const help=document.createElement('span');help.className='settings-help';help.innerHTML='<button type="button" aria-label="Annotation help">?</button><span class="settings-help-popup" role="tooltip">Drag to draw an arrow; click to place text. Drag selected items or arrow ends. Use _ and ^ for subscript and superscript; braces group longer text.</span>';
+  extras.append(help);previewPane.append(extras,greekDialog);
   function updateControls(){
    for(const button of tools.querySelectorAll('[data-tool]'))button.setAttribute('aria-pressed',String(button.dataset.tool===annotationTool));
    const item=slot.annotations[selectedAnnotation];remove.disabled=!item;
    textInput.value=item?.type==='text'?item.text:annotationDefaults.text;
    colour.value=item?.color||annotationDefaults[annotationTool==='arrow'?'arrowColor':'textColor'];size.value=String(item?.type==='text'?item.size:annotationDefaults.size);
    width.value=String(item?.type==='arrow'?item.width:annotationDefaults.width);
-   textInput.disabled=Boolean(item&&item.type!=='text');size.disabled=Boolean(item&&item.type!=='text');
+   textInput.disabled=Boolean(item&&item.type!=='text');size.disabled=Boolean(item&&item.type!=='text');greek.disabled=textInput.disabled;
    width.disabled=Boolean(item&&item.type!=='arrow');selectionStart=selectionEnd=textInput.value.length;
   }
   textInput.addEventListener('select',rememberSelection);textInput.addEventListener('keyup',rememberSelection);
@@ -383,10 +430,12 @@
   colour.oninput=()=>{const item=slot.annotations[selectedAnnotation];
    annotationDefaults[item?.type==='arrow'||!item&&annotationTool==='arrow'?'arrowColor':'textColor']=colour.value;
    if(item){item.color=colour.value;annotationChanged()}};
-  size.onchange=()=>{const value=Number(size.value);if(!Number.isFinite(value)||value<12||value>72){updateControls();return}
-   annotationDefaults.size=value;const item=slot.annotations[selectedAnnotation];if(item?.type==='text'){item.size=value;annotationChanged()}};
-  width.onchange=()=>{const value=Number(width.value);if(!Number.isFinite(value)||value<1||value>12){updateControls();return}
-   annotationDefaults.width=value;const item=slot.annotations[selectedAnnotation];if(item?.type==='arrow'){item.width=value;annotationChanged()}};
+  size.oninput=()=>{const value=Number(size.value);if(!Number.isFinite(value)||value<12||value>72)return false;
+   annotationDefaults.size=value;const item=slot.annotations[selectedAnnotation];if(item?.type==='text'){item.size=value;annotationChanged()}return true};
+  size.onchange=()=>{if(!size.oninput())updateControls()};
+  width.oninput=()=>{const value=Number(width.value);if(!Number.isFinite(value)||value<1||value>12)return false;
+   annotationDefaults.width=value;const item=slot.annotations[selectedAnnotation];if(item?.type==='arrow'){item.width=value;annotationChanged()}return true};
+  width.onchange=()=>{if(!width.oninput())updateControls()};
   const point=event=>{const box=svg.getBoundingClientRect();return {x:clamp((event.clientX-box.left)/box.width),y:clamp((event.clientY-box.top)/box.height)}};
   svg.onpointerdown=event=>{
    const at=point(event),target=event.target.closest('[data-annotation]');
@@ -415,20 +464,30 @@
   svg.onpointerup=event=>{if(!annotationDrag)return;
    if(svg.hasPointerCapture(event.pointerId))svg.releasePointerCapture(event.pointerId);
    const item=slot.annotations[annotationDrag.index];
-   if(annotationDrag.created&&Math.hypot(item.x2-item.x1,item.y2-item.y)<.005){slot.annotations.splice(annotationDrag.index,1);selectedAnnotation=-1}
+   if(annotationDrag.created&&Math.hypot(item.x2-item.x1,item.y2-item.y1)<.005){slot.annotations.splice(annotationDrag.index,1);selectedAnnotation=-1}
    annotationDrag=null;updateControls();annotationChanged();
   };
-  svg.onpointercancel=()=>{annotationDrag=null;renderAnnotationOverlay()};
+  svg.onpointercancel=()=>{
+   if(annotationDrag){
+    if(annotationDrag.created){slot.annotations.splice(annotationDrag.index,1);selectedAnnotation=-1}
+    else slot.annotations[annotationDrag.index]=annotationDrag.original;
+   }
+   annotationDrag=null;updateControls();renderAnnotationOverlay();
+  };
   updateControls();renderAnnotationOverlay();
  }
  function renderCards(){
   const host=$('fig-slot-content');host.replaceChildren();
+  const heading=$('fig-slot-heading');heading.replaceChildren();
   recipe.slots.forEach((slot,index)=>{
    if(index!==selectedPanel)return;
+   document.querySelector('.fig-section-tabs [data-section=edit]').hidden=!slot.path;
+   if(!slot.path&&$('fig-slot-dialog').dataset.section==='edit')$('fig-slot-dialog').dataset.section='source';
+   for(const tab of document.querySelectorAll('.fig-section-tabs button'))tab.setAttribute('aria-pressed',String(tab.dataset.section===($('fig-slot-dialog').dataset.section||'preview')));
    $('fig-slot-title').textContent=`Panel ${index+1} · row ${Math.floor(index/recipe.columns)+1}, column ${index%recipe.columns+1}`;
    const card=document.createElement('div');card.className='fig-panel'+(index===selectedPanel?' selected':'');
    const head=document.createElement('div');head.className='fig-panel-head';
-   const title=document.createElement('strong');title.textContent=`${index+1}. ${panelDisplayName(slot)}`;
+   const title=document.createElement('strong');title.textContent=panelDisplayName(slot);
    title.title=title.textContent;
    title.tabIndex=0;title.setAttribute('role','button');title.setAttribute('aria-label',`Select panel ${index+1}`);
    const select=()=>{selectedPanel=index;renderCards();sync()};title.onclick=select;title.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select()}};
@@ -439,7 +498,7 @@
     button.onclick=()=>{[recipe.slots[index],recipe.slots[index+delta]]=[recipe.slots[index+delta],recipe.slots[index]];selectedPanel=index+delta;changed(true)};head.append(button);
    }
    const remove=document.createElement('button');remove.type='button';remove.textContent='Clear';remove.title='Clear this slot';remove.disabled=!hasPanel(slot);
-   remove.onclick=()=>{recipe.slots[index]={};changed(true)};head.append(remove);card.append(head);
+   remove.onclick=()=>{recipe.slots[index]={};changed(true)};head.append(remove);heading.append(head);
    const choose=document.createElement('button');choose.type='button';choose.textContent=hasPanel(slot)?'Replace image…':'Choose image…';
    choose.onclick=openImageBrowser;
    const columns=document.createElement('div');columns.className='fig-popup-columns';
@@ -470,7 +529,7 @@
     const details=slot.placeholder??={title:'Not acquired'};
     for(const [key,label] of [['title','Heading'],['sample','Sample'],['location','Location']]){
      inputField(fields,label,'text',details[key]||'',value=>{details[key]=value;
-      title.textContent=`${index+1}. ${panelDisplayName(slot)}`;title.title=title.textContent;
+      title.textContent=panelDisplayName(slot);title.title=title.textContent;
       previewImage.alt=`Preview of ${panelDisplayName(slot)}`;changed()}, {maxlength:'120'},true);
     }
     inputField(fields,'Target magnification ×','number',details.target_magnification_x??'',value=>{
@@ -595,7 +654,7 @@
    viewActions.append(compare,resetZoom,centre);editPane.append(viewActions);
    const fields=document.createElement('div');fields.className='fig-panel-fields';
    inputField(fields,'Export label','text',slot.label,value=>{slot.label=value;
-    title.textContent=`${index+1}. ${panelDisplayName(slot)}`;title.title=title.textContent;
+    title.textContent=panelDisplayName(slot);title.title=title.textContent;
     previewImage.alt=`Preview of ${panelDisplayName(slot)}`;changed()}, {maxlength:'120'},true);
    const labelChoice=document.createElement('label');labelChoice.className='fig-label-choice';
    const labelCheck=document.createElement('input');labelCheck.type='checkbox';labelCheck.checked=slot.label_visible!==false;
@@ -799,7 +858,7 @@
    }catch(error){if(revision!==renderVersion)return;$('fig-preview').hidden=true;status(error.message,true)}
   },160);
  }
- function changed(cards=false){draft();if(cards)renderCards();else sync();schedulePreview();scheduleEstimate();schedulePanelPreview()}
+ function changed(cards=false,saveNamed=true){draft(saveNamed);if(cards)renderCards();else sync();schedulePreview();scheduleEstimate();schedulePanelPreview()}
  function populateProjects(){
   const select=$('fig-project'),remembered=WorkbenchWorkspace.readRaw('tem-figures-scope-v2'),legacy=WorkbenchWorkspace.readRaw('tem-figures-project');
   const previous=select.dataset.populated==='true'?select.value:remembered!==null?remembered:legacy!==null?(legacy||'__custom__'):WorkbenchWorkspace.get('active_project','');
@@ -908,7 +967,7 @@
     slot.footer_ocr_text=record.footer_ocr_text;slot.footer_ocr_raw_text=record.footer_ocr_raw_text;
     slot.scale_ocr_text=record.scale_ocr_text;refreshed=true;
    }
-   if(refreshed)changed(true);
+   if(refreshed)changed(true,false);
   }
   if(!active){refreshFilters();if($('fig-browser-dialog').open)renderBrowser()}
   indexControls();
@@ -1087,9 +1146,15 @@
  }
  async function add(path){
   if(!path||selectedPanel<0||!recipe.slots[selectedPanel])return;
-  const index=selectedPanel;
+  const index=selectedPanel,target=recipe,previous=recipe.slots[index];
   try{status('Reading image and scale bar…');const info=await api('figures/inspect',{path});
-   const slot={...info,source_project:WorkbenchWorkspace.projectForPath(path)||null,label:info.name.replace(/\.[^.]+$/,''),zoom:1,center_x:.5,center_y:.5};
+   if(recipe!==target||recipe.slots[index]!==previous)return false;
+   // Selecting an unchanged source at a new path reconnects the existing panel.
+   // Different source pixels start a new panel; their annotations cannot be reused.
+   const sameSource=Boolean(previous.sha256)&&previous.sha256===info.sha256;
+   const slot=sameSource?{...previous,path:info.path,name:info.name,metadata_sidecar:info.metadata_sidecar,analysis:info.analysis}
+    :{...info,label:info.name.replace(/\.[^.]+$/,''),zoom:1,center_x:.5,center_y:.5};
+   slot.source_project=WorkbenchWorkspace.projectForPath(path)||null;
    recipe.slots[index]=slot;selectedPanel=index;
    changed(true);return true;
   }catch(error){status(error.message,true);return false}
@@ -1124,7 +1189,7 @@
     slot.inspection_version=info.inspection_version;updated=true;
    }catch(error){status(error.message,true)}
   }
-  if(updated&&recipe===current)changed(true);
+  if(updated&&recipe===current)changed(true,false);
  }
  function transposeLayout(){
   const {rows,columns,slots}=recipe;
@@ -1198,8 +1263,13 @@
    $('fig-filter-reset').onclick=resetBrowserFilters;
    new ResizeObserver(()=>{if($('fig-browser-dialog').open)refreshBrowserSize()}).observe($('fig-browser-list'));
    new ResizeObserver(refreshPreviewSize).observe(document.querySelector('.fig-preview-content'));
-   window.addEventListener('resize',refreshPreviewSize);watchPreviewDensity();
+   window.addEventListener('resize',()=>{refreshPreviewSize();fitPanelPreview();schedulePanelPreview()});watchPreviewDensity();
    $('fig-slot-close').onclick=()=>$('fig-slot-dialog').close();
+   for(const button of document.querySelectorAll('.fig-section-tabs button'))button.onclick=()=>{
+    $('fig-slot-dialog').dataset.section=button.dataset.section;
+    for(const tab of document.querySelectorAll('.fig-section-tabs button'))tab.setAttribute('aria-pressed',String(tab===button));
+    fitPanelPreview();schedulePanelPreview();
+   };
    $('fig-original-close').onclick=()=>$('fig-original-dialog').close();
    $('fig-original-size').oninput=()=>{$('fig-original-image').style.width=$('fig-original-size').value+'%'};
    $('fig-folder').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();scan()}};
@@ -1217,7 +1287,7 @@
    $('fig-preview').onpointercancel=()=>{dragState=null;dropTarget.hidden=true;panelHighlight.hidden=true};
    $('fig-preview').onmouseleave=()=>{if(!dragState?.dragging)hideOutputHover();panelHighlight.hidden=true};
    $('fig-preview').onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openSlot(selectedPanel)}};
-   $('fig-name').oninput=()=>{recipe.name=$('fig-name').value;draft()};
+   $('fig-name').oninput=()=>{recipe.name=$('fig-name').value;draft(true)};
    $('fig-transpose').onchange=transposeLayout;$('fig-rows').onchange=changeLayout;$('fig-columns').onchange=changeLayout;
    for(const [id,key,transform] of [['fig-aspect','aspect',value=>value==='auto'?'auto':Number(value)],['fig-background','background',String]])$(id).onchange=()=>{recipe[key]=transform($(id).value);changed()};
    $('fig-match-tone').onchange=()=>{recipe.match_tone=$('fig-match-tone').checked;changed()};
@@ -1246,11 +1316,13 @@
     changed()};
    for(const input of document.querySelectorAll('[data-figure-meta]'))input.onchange=()=>{
     recipe.metadata_overlay=[...document.querySelectorAll('[data-figure-meta]:checked')].map(item=>item.dataset.figureMeta);changed()};
-   $('fig-new').onclick=()=>{currentId='';loadRecipe(blank());chooseSaved()};
-   $('fig-saved').onchange=()=>{currentId=$('fig-saved').value;if(currentId)loadRecipe(saved[currentId]);else loadRecipe(blank());chooseSaved()};
+   $('fig-new').onclick=()=>selectFigure('');
+   $('fig-saved').onchange=()=>selectFigure($('fig-saved').value);
    $('fig-save').onclick=async()=>{recipe.name=$('fig-name').value.trim()||'Untitled figure';if(!recipe.slots.some(hasPanel)){status('Choose an image or create a placeholder before saving.',true);return}
-    currentId=currentId||crypto.randomUUID();saved[currentId]=structuredClone(recipe);WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));draft();chooseSaved();await WorkbenchWorkspace.flush();status(`Saved ${recipe.name}.`)};
-   $('fig-delete').onclick=async()=>{if(!currentId)return;delete saved[currentId];currentId='';WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));chooseSaved();await WorkbenchWorkspace.flush();status('Saved figure deleted. Current panels remain open.')};
+    currentId=currentId||crypto.randomUUID();saved[currentId]=structuredClone(recipe);draft(true);chooseSaved();
+    if(await WorkbenchWorkspace.flush()===false){status('Could not save figure to disk. Click Save failed · retry above.',true);return}status(`Saved ${recipe.name}.`)};
+   $('fig-delete').onclick=async()=>{if(!currentId)return;delete saved[currentId];currentId='';WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));draft();chooseSaved();
+    if(await WorkbenchWorkspace.flush()===false){status('Could not save the deletion to disk. Click Save failed · retry above.',true);return}status('Saved figure deleted. Current panels remain open.')};
    $('fig-export').onclick=async()=>{try{status(`Exporting figure at ${recipe.export_scale_percent}%…`);
     const result=await api('figures/export',{recipe});status(`Saved ${result.png} (${fileSize(result.size_bytes)}) and ${result.recipe}`)}
     catch(error){status(error.message,true)}};

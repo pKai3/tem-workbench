@@ -32,12 +32,12 @@
   const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not save workspace settings.');return data;
  }
  async function flush(){
-  clearTimeout(timer);if(!token)return;
-  if(saving){await saving;if(pending.size&&!error)return flush();return}
-  if(!pending.size){status();return}
+  clearTimeout(timer);if(!token)return false;
+  if(saving){await saving;if(pending.size&&!error)return flush();return !error&&!pending.size}
+  if(!pending.size){status();return !error}
   const changes=Object.fromEntries(pending);pending.clear();
   saving=(async()=>{try{await post(changes);error=''}catch(e){error=e.message;for(const [k,v] of Object.entries(changes))if(!pending.has(k))pending.set(k,v);console.warn('Workspace save failed:',e.message)}})();
-  status();await saving;saving=null;status();if(pending.size&&!error)return flush();
+  status();await saving;saving=null;status();if(pending.size&&!error)return flush();return !error&&!pending.size;
  }
  async function configure(config){
   token=config.token;sources=config.sources||[];
