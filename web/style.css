@@ -1189,3 +1189,47 @@ input.path-input{direction:ltr}
 @media(max-width:600px){.project-dialog .source-row{grid-template-columns:1fr}}
 
 #repeat-review .signal-toggle{margin:0}#repeat-review .signal-toggle button{min-height:30px;font-size:12px;padding:5px 9px}
+
+/* Shared project folder scopes. */
+/* Shared project folder selection, used by TEM, AZtec and Figures. */
+.source-row{grid-template-columns:minmax(130px,.8fr) minmax(220px,1.5fr) auto}
+.project-source-folders{grid-column:1/-1;display:grid;gap:10px;min-width:0}
+.project-source-folders>button{justify-self:start}
+.source-folder-rules{border-top:1px solid var(--line);margin-top:0;padding-top:4px;overflow-x:auto}
+.source-folder-rules summary{cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
+.source-mode-table{width:100%;border-collapse:collapse;margin-top:2px;font-size:12px}
+.source-mode-table th,.source-mode-table td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:center}
+.source-mode-table th[scope=row],.source-mode-table .source-group-name{text-align:left;overflow-wrap:anywhere}
+.source-mode-table .source-group-name{vertical-align:top;width:20%;border-right:1px solid var(--line)}
+.source-mode-table tbody+tbody{border-top:4px solid var(--muted)}
+.source-mode-table input[type=checkbox]{width:17px;height:17px;min-height:0;margin:0;accent-color:var(--cyan);cursor:pointer}
+.source-mode-table input:disabled{cursor:default}
+.source-mode-table .folder-expand{display:block;width:100%;text-align:left;border:1px solid #39495c;background:#172332;padding:4px 8px;min-height:28px;font-weight:500;white-space:normal}
+.source-mode-table .folder-expand:hover{border-color:var(--cyan);background:#223447}
+.source-mode-table .folder-expand[aria-expanded=true]{border-color:#587888}
+.source-scope-status{display:block;margin-top:7px;font-size:12px}
+@media(max-width:600px){.project-dialog .source-row{grid-template-columns:1fr}.project-source-folders .folder-input{flex-wrap:wrap}.source-mode-table th,.source-mode-table td{padding:6px 4px}}
+
+.project-dialog .fallback-output{margin-top:0;margin-bottom:10px}
+.source-editor-controls{display:flex;align-items:end;gap:10px}
+.source-editor-controls label{flex:1;min-width:0;max-width:400px}
+.project-dialog .source-actions{margin-top:10px}
+.project-dialog .source-row{margin:10px 0 0}
+.source-folder-rules .settings-help-button{min-height:22px;height:22px;width:22px;padding:0}
+.source-mode-table .folder-name-heading{text-align:left}
+.source-scope-status:empty{display:none}
+
+.settings-help[hidden]{display:none}
+
+/* Keep the page still until the last popup closes, including nested dialogs. */
+html:has(dialog[open]),html:has(dialog[open]) body{overflow:hidden;overscroll-behavior:none}
+dialog[open]{overscroll-behavior:contain}
+
+/* Export folders are selectable, with a persistent marker and a brief notice. */
+.source-mode-table th[scope=row]{position:relative}.source-mode-table th[scope=row]:has(.source-output-marker){padding-right:34px}.source-output-marker{position:absolute;right:5px;top:50%;transform:translateY(-50%);color:#ffb454;background:transparent;border:0;min-height:24px;padding:2px 4px;font-size:17px;line-height:1}.source-output-warning{display:block;color:#ffbd66;padding:6px 8px;background:#5a361c80;border-radius:4px;animation:source-warning-flash .5s ease-in-out 2}@keyframes source-warning-flash{50%{background:#87531dbb}}
+/* Folder navigation stays put while folder counts and loading states change. */
+#folder-picker[open]{display:flex;flex-direction:column;height:min(640px,calc(100dvh - 48px));max-height:calc(100dvh - 48px);box-sizing:border-box;overflow:hidden}
+#folder-picker>.panel-head,#folder-picker>.folder-nav,#folder-picker>.folder-filter,#folder-picker>.dialog-actions{flex:none}
+#folder-picker #folder-status{flex:none;min-height:18px;margin:10px 0 0;max-height:44px;overflow:auto}
+#folder-picker #folder-list{flex:1 1 0;min-height:0;max-height:none;scrollbar-gutter:stable}
+#folder-picker #folder-list>button{flex:none}

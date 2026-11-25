@@ -10,6 +10,27 @@ from tem_workbench.aztec.browser import AztecBrowser
 
 
 class WorkspaceTests(unittest.TestCase):
+    def test_project_consolidation_preserves_per_mode_bookmarks_and_named_records(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);state=WorkspaceState(root/'config.json')
+            comparisons='{"presets":{"maps":[{"name":"Keep comparison","files":["/paper/SEM/source.oipx"]}]}}'
+            draft=json.dumps({'slots':[{'path':'/paper/SEM/image.tif','source_project':'sem','label':'Edited'}]})
+            state.patch({'active_project':'sem','bookmark:tem:diffraction':{'file':'stable-image-id'},
+                         'bookmark:tem:aztec':{'file':'/paper/TEM/source.oipx'},
+                         'bookmark:sem:aztec':{'file':'/paper/SEM/source.oipx','comparison':'map'},
+                         'preference:tem-figures-project':'sem','preference:tem-aztec-project-filter':'["sem","tem"]',
+                         'preference:tem-eds-comparison-v1':comparisons,'preference:tem-figures-draft-v1':draft})
+            result=state.reconcile_sources([{'id':'tem','path':str(root/'paper/TEM')},{'id':'sem','path':str(root/'paper/SEM')}],
+                                           [{'id':'tem','path':str(root/'paper')}])
+            saved=state.read()['records'];self.assertEqual(result['redirects'],{'sem':'tem'})
+            self.assertEqual(saved['active_project'],'tem')
+            self.assertEqual(saved['bookmark:tem:diffraction']['file'],'stable-image-id')
+            self.assertEqual(saved['bookmark:tem:aztec'],saved['bookmark:sem:aztec'])
+            self.assertEqual(saved['preference:tem-eds-comparison-v1'],comparisons)
+            self.assertEqual(json.loads(saved['preference:tem-aztec-project-filter']),['tem'])
+            self.assertEqual(json.loads(saved['preference:tem-figures-draft-v1'])['slots'][0],
+                             {'path':'/paper/SEM/image.tif','source_project':'tem','label':'Edited'})
+
     def test_restart_migration_and_independent_patches(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp)/'folders.json'

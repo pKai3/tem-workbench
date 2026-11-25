@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const window={};vm.runInNewContext(fs.readFileSync('web/aztec-export.js','utf8'),{window});
+const colours=window.aztecMapColours,plain={normalisation:'median',rows:[{tiles:[{colour:'#db65ed'},{colour:'#49dba2'}]},{tiles:[{colour:'#db65ed'}]}]};
+const black={...plain,map_palette:'black'},diverging={...plain,map_palette:'diverging'};
+assert.equal(colours.black(plain),true,'Unspecified palettes default to black-to-colour');
+assert.equal(JSON.stringify(colours.bands(black)),JSON.stringify([['#000','#db65ed'],['#000','#49dba2']]),'Live and PNG legends share one black-to-colour band per element');
+assert.equal(colours.bands(diverging)[0].length,11);
+assert.match(colours.label(black),/black = minimum/);
+assert.match(colours.label(diverging),/shared limits/);
+assert.equal(colours.black({...black,normalisation:'none'}),false);
+assert.equal(JSON.stringify(colours.bands({...black,rows:[{tiles:[{error:'Unavailable',colour:'#db65ed'}]}]})),JSON.stringify([['#000','#fff']]));
+console.log('Normalized map legends default to black-to-colour and match black-to-element-colour display and PNG palettes.');

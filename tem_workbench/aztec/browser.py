@@ -13,10 +13,11 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from tem_workbench.storage import folder_paths
-from tem_workbench.storage.mode_folders import aztec_folders, scan_folders
+from tem_workbench.storage.mode_folders import aztec_folders, scan_folders, scope_allows, output_scope_allows
 from tem_workbench.runtime.diagnostics import compact
 from .h5oina import H5OinaReader, AztecReadError, SourceChangedError, MAX_READ_BYTES
 from .native import NativeProjectReader
+from .file_groups import link_h5oina_exports
 from .spectral_windows import measured_windows, peak_catalogue
 
 LOG = logging.getLogger('tem_workbench.aztec')
@@ -30,16 +31,17 @@ class AztecBrowser:
 
     def files(self, sources, project=None, *, outputs=()):
         """List supported files throughout the project without decoding every dataset."""
-        selected = [s for s in sources if not project or s['id'] == project]
-        if project and not selected:
-            raise AztecReadError('Choose a configured project.')
+        try:
+            selected = folder_paths.source_roots(folder_paths.selected_sources(sources, project))
+        except ValueError as error:
+            raise AztecReadError(str(error)) from error
         files, errors, seen = [], [], set()
         outputs = folder_paths.output_folders(sources) | frozenset(outputs)
         for source in sorted(selected, key=lambda s: len(Path(s['path']).parts), reverse=True):
             root = Path(source['path']).expanduser().resolve()
             def failed(error):
                 errors.append(f'{error.filename}: {error.strerror}')
-            for directory, names in scan_folders(root, outputs, onerror=failed):
+            for directory, names in scan_folders(root, outputs, onerror=failed, scope=folder_paths.folder_scope(source, 'aztec')):
                 for name in names:
                     path = Path(directory)/name
                     if path.suffix.lower() not in ('.oipx', '.h5oina') or path.is_symlink():
@@ -61,6 +63,7 @@ class AztecBrowser:
                     files.append(dict(name=name, path=str(path), relative_path=str(path.relative_to(root)),
                                       source_id=source['id'], project=source['name'], size=info.st_size,
                                       kind=path.suffix[1:].upper(), supported=True, project_id=project_id))
+        link_h5oina_exports(files)
         files.sort(key=lambda f: (f['project'].casefold(), f['kind'] == 'H5OINA', f['relative_path'].casefold()))
         LOG.info('AZtec project scan: %s · %s files · %s folder errors', project or 'all', len(files), len(errors))
         return dict(files=files, errors=errors)
@@ -68,24 +71,29 @@ class AztecBrowser:
     def browse(self, path, root, sources=None, project=None, *, outputs=()):
         sources = sources or []
         outputs = folder_paths.output_folders(sources) | frozenset(Path(p).resolve() for p in outputs)
-        selected = next((s for s in sources if s['id'] == project), None)
+        sources = folder_paths.source_roots(sources)
+        selected_roots = [s for s in sources if s['id'] == project]
+        selected = selected_roots[0] if len(selected_roots) == 1 else None
         if not path and sources:
             if selected:
                 path = selected['path']
             else:
-                directories = [dict(name=s['name'], path=s['path']) for s in sources if aztec_folders(s['path'], outputs)]
+                directories = [dict(name=s['name'], path=s['path']) for s in (selected_roots or sources)
+                               if aztec_folders(s['path'], outputs, folder_paths.folder_scope(s, 'aztec'))]
                 return dict(path='', parent='', home='', directories=directories, files=[], drives=[])
         listing = folder_paths.browse(path, root)
         location = Path(listing['path'])
-        scope = next((Path(s['path']).resolve() for s in sources if location.is_relative_to(Path(s['path']).resolve())), location)
-        identified = aztec_folders(scope, outputs)
+        owner = next((s for s in sources if location.is_relative_to(Path(s['path']).resolve())), None)
+        scope = Path(owner['path']).resolve() if owner else location
+        rules = folder_paths.folder_scope(owner, 'aztec') if owner else None
+        identified = aztec_folders(scope, outputs, rules)
         listing['directories'] = [d for d in listing['directories'] if Path(d['path']) in identified]
         if location == scope:
             listing['parent'] = str(scope) if selected else ''
         listing['home'] = selected['path'] if selected else ''
         files = []
         for child in Path(listing['path']).iterdir():
-            if child.is_symlink() or any(child.resolve().is_relative_to(output) for output in outputs):
+            if child.is_symlink() or not output_scope_allows(child.resolve(), outputs, rules) or not scope_allows(child, rules):
                 continue
             if child.suffix.lower() not in ('.h5oina', '.oip', '.oipx'):
                 continue
@@ -152,7 +160,31 @@ class AztecBrowser:
             reader = self.comparison_reader(path)
             catalogue = reader.inspect()
         LOG.info('AZtec comparison source: %s', compact(str(reader.path)))
-        return catalogue
+        return {**catalogue, 'acquisition_dimensions': self.comparison_dimensions(reader)}
+
+    @staticmethod
+    def comparison_dimensions(reader):
+        from .geometry import region_dimensions
+        sites, dimensions = {}, {}
+        candidates = [record for record in reader._records.values()
+                      if record['table'] in ('SmartMaps', 'SmartLines', 'EbsdMaps')
+                      and record.get('acquisition_id') and not record.get('derived')
+                      and not record.get('ebsd_preview_of')]
+        for record in candidates:
+            ident, site_id = record['acquisition_id'], record['site_id']
+            try:
+                if site_id not in sites:
+                    sites[site_id] = reader.site(site_id)
+                site = sites[site_id]
+                region = next((item for item in site.get('regions', [])
+                               if record['path'] in item.get('paths', [])), None)
+                measurement = region_dimensions(site, region)
+                if measurement:
+                    dimensions[ident] = measurement
+            except AztecReadError:
+                # Undecoded geometry must not prevent selecting an acquisition.
+                continue
+        return dimensions
 
     def project_overviews(self, path):
         """Choose the largest decodable electron image per sample."""
@@ -203,7 +235,7 @@ class AztecBrowser:
                              'image': 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode()})
         return {'previews': previews}
 
-    def comparison_thumbnail(self, path, acquisition, kind):
+    def comparison_thumbnail(self, path, acquisition, kind, image_path=None):
         """Small registered electron image with the selected map or line marked."""
         if kind not in ('map', 'line'):
             raise AztecReadError('Choose a map or line for its reference preview.')
@@ -211,9 +243,12 @@ class AztecBrowser:
         records = [r for r in reader._records.values() if r.get('acquisition_id') == acquisition]
         table = 'SmartMaps' if kind == 'map' else 'SmartLines'
         record = next((r for r in records if r['table'] == table), None)
+        if record is None and kind == 'map':
+            record = next((r for r in records if r['table'] == 'EbsdMaps' and not r.get('derived')
+                           and not r.get('ebsd_preview_of')), None)
         if record is None:
             raise AztecReadError('This acquisition has no native ' + kind + ' region.')
-        site = reader.site(record['site_id'])
+        site = reader.site(record['site_id'], image_path)
         region = next((r for r in site['regions'] if record['path'] in r['paths']
                        and r['kind'] == ('rectangle' if kind == 'map' else 'line')), None)
         if region is None or not site.get('image_path'):
@@ -222,6 +257,11 @@ class AztecBrowser:
         finite = values[np.isfinite(values)]
         if not finite.size:
             return {'image': None, 'note': 'Reference image has no finite pixels.'}
+        if image_path:
+            from .views import png
+            return dict(image=png(values, resize=False), full_resolution=True,
+                        source_shape=list(values.shape), crop_points=region['points'],
+                        note='Full-resolution reference image; the map outline is a display overlay.')
         low, high = np.percentile(finite, [1, 99])
         shade = np.uint8(np.clip((values - low) / (high - low or 1), 0, 1) * 255)
         image = Image.fromarray(shade).convert('RGBA')
@@ -286,7 +326,16 @@ class AztecBrowser:
             elif result['kind'] == 'image':
                 values = result.pop('array')
                 display_raw = result.pop('display_raw', False)
-                if values.ndim == 3 and values.shape[2] in (3, 4) and values.dtype == np.uint8:
+                if result.get('kam'):
+                    from .kam import colour_map
+                    rendered = colour_map(values, [0, 5], ['#0000ff', '#00ffff', '#00ff00', '#ffff00', '#ff0000'])
+                    image = Image.open(BytesIO(base64.b64decode(rendered.split(',')[1])))
+                    finite = values[np.isfinite(values)]
+                    result.update(minimum=float(finite.min()) if finite.size else None,
+                                  maximum=float(finite.max()) if finite.size else None,
+                                  image_limits=[0, 5],
+                                  note=result['note']+' Display: 0–5°; white means no data.')
+                elif values.ndim == 3 and values.shape[2] in (3, 4) and values.dtype == np.uint8:
                     image = Image.fromarray(values)
                 elif display_raw and values.ndim == 2 and values.dtype == np.uint8:
                     image = Image.fromarray(values)

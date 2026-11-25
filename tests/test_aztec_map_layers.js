@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const window={};vm.runInNewContext(fs.readFileSync('web/aztec-export.js','utf8'),{window});
+const layout=window.aztecMapLayout,signals=['Ti','V'],row={tiles:[{channel:'Ti'},{channel:'V'}],layered:{signal:{image:'composite'},ratio:{image:'ratios'}}};
+const result={rows:[row],mode:'both'},options={denominator:'Ti',eds_layout:'layered'};
+const columns=layout.columns(result,signals,options);
+assert.equal(columns.map(column=>column.label).join(','),'Electron image,Layered elements,Layered ratios');
+assert.equal(layout.tile(row,columns[1]).image,'composite');assert.equal(layout.tile(row,columns[2]).image,'ratios');
+const both=layout.columns(result,signals,{...options,eds_layout:'both'});
+assert.equal(both.map(column=>column.label).join(','),'Electron image,Layered elements,Layered ratios,Ti,V,V / Ti');
+assert.equal(layout.tile(row,both[3]).channel,'Ti');
+assert.equal(layout.columns({...result,mode:'ratio'},signals,options).map(column=>column.label).join(','),'Electron image,Layered ratios');
+assert.equal(layout.columns({...result,mode:'signal'},signals,options).map(column=>column.label).join(','),'Electron image,Layered elements');
+assert.equal(layout.columns(result,signals,{denominator:'Ti'}).length,4,'Existing separate layout remains the default');
+assert.equal(layout.grid(2,columns.length,true).rows,3,'Composites transpose alongside overviews');
+assert.equal(layout.layerLabel({label:'V',strength:.5}),'V 50%');
+assert.equal(layout.layerLabel({label:'Ti',strength:1}),'Ti');
+assert.equal(layout.columns({...result,kam:{}},signals,options).some(column=>column.layered),false,'EDS settings never change KAM/IPF');
+console.log('EDS layer columns retain signal/ratio separation, native tiles, legends and transpose.');

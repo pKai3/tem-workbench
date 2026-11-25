@@ -44,11 +44,12 @@ class FigureMetadataIndex:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         atomic_json(self.path, dict(schema_version=3, records=self.records))
 
-    def status(self, folder=None):
+    def status(self, folder=None, *, folders=None, source_scopes=None, outputs=()):
+        from tem_workbench.storage.mode_folders import scope_allows
         with self.lock:
             job = {**self.job, 'errors': list(self.job['errors']), 'index_path': str(self.path)}
-            if folder:
-                root = Path(folder).expanduser().resolve()
+            if folder or folders is not None:
+                roots = [Path(path).expanduser().resolve() for path in (folders if folders is not None else [folder])]
                 job['records'] = {path: {key: value for key, value in record.items()
                                          if key in ('sha256', 'metadata', 'metadata_sidecar', 'footer_ocr_text',
                                                     'footer_ocr_raw_text',
@@ -56,12 +57,15 @@ class FigureMetadataIndex:
                                                     'content_height', 'content_height_source', 'pixel_size_nm',
                                                     'pixel_size_source', 'scale_nm', 'inspection_version', 'error')}
                                   for path, record in self.records.items()
-                                  if Path(path).is_relative_to(root)}
+                                  if any(Path(path).is_relative_to(root) for root in roots)
+                                  and not any(Path(path).is_relative_to(output) for output in outputs)
+                                  and (source_scopes is None or any(Path(path).is_relative_to(root) and scope_allows(path, scope)
+                                                                 for root, scope in source_scopes))}
             return job
 
-    def start(self, folder, force=False, workers=4, outputs=()):
-        root = Path(folder).expanduser().resolve()
-        if not root.is_dir():
+    def start(self, folder, force=False, workers=4, outputs=(), image_loader=None):
+        root = Path(folder).expanduser().resolve() if folder else None
+        if image_loader is None and (root is None or not root.is_dir()):
             raise ValueError('Choose an available image folder.')
         try:
             count = int(workers)
@@ -73,20 +77,20 @@ class FigureMetadataIndex:
             if self.thread and self.thread.is_alive():
                 raise ValueError('Finish or cancel the current image preprocessing first.')
             self.cancel.clear()
-            self.job = dict(state='running', folder=str(root), force=bool(force), workers=count,
+            self.job = dict(state='running', folder=str(root) if root else '', force=bool(force), workers=count,
                             done=0, total=0, reused=0, failed=0, current='', errors=[])
-            self.thread = threading.Thread(target=self._work, args=(root, bool(force), count, tuple(outputs)), daemon=True,
+            self.thread = threading.Thread(target=self._work, args=(root, bool(force), count, tuple(outputs), image_loader), daemon=True,
                                            name='figure-metadata-index')
             self.thread.start()
-            return self.status(str(root))
+            return self.status(str(root) if root else None)
 
     def stop(self):
         self.cancel.set()
         return self.status()
 
-    def _work(self, root, force, workers, outputs=()):
+    def _work(self, root, force, workers, outputs=(), image_loader=None):
         try:
-            images = creator.list_images(root, outputs=outputs)['images']
+            images = image_loader() if image_loader else creator.list_images(root, outputs=outputs)['images']
             with self.lock:
                 self.job['total'] = len(images)
             changed = False

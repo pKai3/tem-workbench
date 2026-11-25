@@ -77,6 +77,10 @@ class AztecProjectTests(unittest.TestCase):
             sources[1]['output']=str(root/'comparison-output')
             independent=Path(Workbench.export_aztec(app,{**body,'id':None,'targets':[dict(source=str(source),acquisition='map') ]})['path'])
             self.assertEqual(independent.parent,root/'comparison-output')
+            chart=Path(Workbench.export_aztec(app,{**body,'kind':'distribution','id':None,'targets':[dict(source=str(source),acquisition='map')]})['path'])
+            self.assertEqual(chart.parent,root/'comparison-output')
+            self.assertIn('_pixel-distribution-comparison_',chart.name)
+            self.assertEqual(chart.read_bytes(),png.getvalue())
             sources[1]['output']=''
             for kind, extension in [('data','.zip'), ('catalogue','.json')]:
                 saved = Path(Workbench.export_aztec(app, dict(id='opened', format=kind))['path'])

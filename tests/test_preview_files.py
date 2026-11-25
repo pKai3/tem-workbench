@@ -42,7 +42,7 @@ class PreviewChecks(unittest.TestCase):
                 self.assertEqual(status['created'], 1)
                 self.assertEqual(creator.list_images(other)['images'][0]['name'], 'three.dm4')
                 self.assertEqual(creator.list_images(other)['images'][0]['thumbnail_path'], str(other / 'three.png'))
-                with self.assertRaisesRegex(ValueError, 'available project'):
+                with self.assertRaisesRegex(ValueError, 'configured project'):
                     app.generate_previews({'project': 'missing'})
                 with self.assertRaisesRegex(ValueError, 'available image folder'):
                     app.generate_previews({'folder': str(root / 'missing')})

@@ -20,15 +20,16 @@ class ToneReader(Reader):
     def __init__(self, line=False):
         super().__init__(); self.line = line
         gradient = np.tile(np.linspace(0, 1, 32), (32, 1))
-        self.arrays['electron-a'] = gradient
-        self.arrays['electron-b'] = gradient**4
+        self.arrays['/ElectronImages/a'] = gradient
+        self.arrays['/ElectronImages/b'] = gradient**4
         if line:
             for record in self._records.values():
+                if record['table'] == 'ElectronImages':continue
                 record['table'] = 'XrayLinescans'
                 self.arrays[record['path']] = np.arange(32, dtype=float) + 1
 
-    def site(self, index):
-        site = super().site(index); site['image_path'] = 'electron-' + index
+    def site(self, index, image_path=None):
+        site = super().site(index, image_path)
         if self.line:
             for region in site['regions']:
                 region.update(kind='line', points=[[0, 16], [31, 16]])
@@ -51,8 +52,10 @@ class OverviewToneTests(unittest.TestCase):
                 self.assertGreater(np.linalg.norm(ranges[0] - ranges[1]), 10)
                 self.assertLess(np.linalg.norm(adjusted[0] - adjusted[1]), 2)
                 for before, after in zip(plain['rows'], matched['rows']):
-                    for key in before.keys() - {'electron', 'background'}:
+                    for key in before.keys() - {'electron', 'background', 'overviews'}:
                         self.assertEqual(before[key], after[key], key)
+                    self.assertEqual([{k:v for k,v in item.items() if k!='image'} for item in before.get('overviews',[])],
+                                     [{k:v for k,v in item.items() if k!='image'} for item in after.get('overviews',[])])
                     if line:
                         self.assertNotEqual(before['background'], after['background'])
                 for (before_meta, before), (after_meta, after) in zip(plain_archive.entries, matched_archive.entries):

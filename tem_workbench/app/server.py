@@ -54,6 +54,7 @@ from tem_workbench.storage.workbench_project import Project
 from tem_workbench.aztec.browser import AztecBrowser
 from tem_workbench.figures import creator as figure_creator
 from tem_workbench.figures.index import FigureMetadataIndex
+from tem_workbench.figures.relocation import FigureSourceResolver
 
 from tem_workbench.paths import APP_ROOT as ROOT, RESOURCES
 # Capture at import: updating files must not relabel an already running backend.
@@ -88,6 +89,7 @@ class Workbench:
         self.config = folder_paths.resolve_config(config, self.root)
         self.engine = Engine(self.config)
         self.figure_index = FigureMetadataIndex(Path(self.config['output_root']) / 'figures' / 'image-metadata-index.json', self.engine.dm_reader)
+        self.figure_resolver = FigureSourceResolver()
         self.repeat_regions = RepeatRegions(self.config_path.with_name('.tem-repeat-regions.json'))
         self.project = Project(self.root)
         self.last_preview_log = 0.
@@ -143,12 +145,14 @@ class Workbench:
                 raise ValueError('Finish or cancel the current analysis job before changing sources.')
             if self.preview_batch and self.preview_status()['state']=='running':
                 raise ValueError('Finish PNG preview generation before changing sources.')
+            self.workspace.read()  # Reject malformed state before changing project definitions.
             saved = folder_paths.save_sources(self.config_path, self.root, self.config, sources, output)
+            migration = self.workspace.reconcile_sources(self.engine.sources, saved['sources'])
             self.config = folder_paths.resolve_config(saved, self.root)
             self.engine = Engine(self.config)
             self.engine.catalog()
             self.jobs.clear()
-            return self.config_info()
+            return {**self.config_info(), 'workspace_patch': migration['records']}
 
     def rename_source(self, source_id, name):
         with self.lock:
@@ -186,6 +190,7 @@ class Workbench:
         return {'sources': self.engine.sources, 'file_tracking': True, 'repeat_region_review': True, 'state_namespace': self.engine.catalogue.namespace, 'catalogue_revision': self.engine.catalogue.revision, 'file_events': self.engine.catalogue.events, 'app_version': APP_VERSION, 'window_size_probe': True, 'shared_spectra_pca': True, 'component_workers': True, 'component_batch': True, 'component_grid': True, 'reciprocal_peak_edit_radii': True, 'overlap_maps': True, 'overlap_preview': True, 'image_relative_overlap': True, 'independent_overlap_spacing': True, 'batch_png_views': True, 'overlap_max_windows': overlap_maps.MAX_WINDOWS, 'manual_diffraction_peaks': True, 'batch_grids': True, 'batch_unified_output': True, 'batch_overlap_maps': True, 'batch_folder_summaries': True, 'fft_auto_geometry': True, 'diffraction_workers': True, 'diffraction_workers_default': min(2, worker_limit()), 'diffraction_workers_max': min(16, os.cpu_count() or 1), 'acquisition_map': True, 'acquisition_comparison': True, 'demo_download': True, 'demo_job': self.demo_download.status(), 'token': self.token, 'data_root': str(self.engine.data_root),
                 'output_root': self.config['output_root'], 'app_root': str(self.root),
                 'project_path': str(self.project.path), 'folder_picker': True, 'source_name_autosave': True, 'saved_regions': True,
+                'figure_source_reconnect': True,
                 'delete_regions': True, 'fft_detection_controls': True, 'fft_auto_strength': True, 'fft_detector_view': True, 'diffraction_processed_view': True, 'sidecar_previews': True, 'preview_job': self.preview_status(),
                 'files': files, 'default_file': self.config.get('default_file'),
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
@@ -253,14 +258,72 @@ class Workbench:
     def preview_status(self):
         return self.preview_batch.status() if self.preview_batch else None
 
-    def figure_source(self, body):
-        """Figures scans all raster images, independently of TEM discovery rules."""
-        if body.get('project'):
-            source = next((s for s in self.engine.sources if s['id'] == body['project']), None)
-            if source is None:
-                raise ValueError('Choose an available project.')
-            return source['path'], folder_paths.output_folders(self.engine.sources, self.config['output_root'])
-        return body['folder'], ()
+    def figure_sources(self, body):
+        """Shared configured-project scope; a custom folder is explicitly selected."""
+        if 'folder' in body:
+            if not isinstance(body['folder'], str) or not body['folder'].strip():
+                raise ValueError('Choose an available image folder.')
+            return [dict(path=body['folder'], name='', id='')], ()
+        return (folder_paths.source_roots(folder_paths.selected_sources(self.engine.sources, body.get('project'))),
+                folder_paths.output_folders(self.engine.sources, self.config['output_root']))
+
+    def figure_listing(self, body):
+        sources, outputs = self.figure_sources(body)
+        images, seen, dm4_count, missing = [], set(), 0, 0
+        for source in sorted(sources, key=lambda source: len(Path(source['path']).parts), reverse=True):
+            listing = figure_creator.list_images(source['path'], outputs, scope=folder_paths.folder_scope(source, 'figures'))
+            for item in listing['images']:
+                path = Path(item['path']).resolve()
+                if path in seen:
+                    continue
+                seen.add(path)
+                row = {**item, 'source_id': source['id'], 'project': source['name']}
+                if len(sources) > 1:
+                    row['folder'] = source['name'] + ('/' + item['folder'] if item['folder'] != '.' else '')
+                    row['relative_path'] = source['name'] + '/' + item['relative_path']
+                images.append(row)
+                if item['extension'] == '.dm4':
+                    dm4_count += 1
+                    missing += item['thumbnail_path'] is None
+        return dict(folder=str(Path(sources[0]['path']).expanduser().resolve()) if len(sources) == 1 else '',
+                    images=images, dm4_count=dm4_count, dm4_missing_previews=missing)
+
+    def reconnect_figure_sources(self, body):
+        slots = body.get('slots')
+        folder = body.get('search_folder')
+        if folder:
+            # An explicit folder narrows a previously ambiguous search and may
+            # contain rendered exports, just like the custom Figures browser.
+            if not isinstance(folder, str) or not Path(folder).expanduser().is_dir():
+                raise ValueError('Choose an available source folder.')
+            roots = [(folder, ())]
+        else:
+            outputs = folder_paths.output_folders(self.engine.sources, self.config['output_root'])
+            roots = [(source['path'], outputs, folder_paths.folder_scope(source, 'figures')) for source in folder_paths.source_roots(self.engine.sources)]
+            if body.get('folder'):
+                if not isinstance(body['folder'], str):
+                    raise ValueError('Choose an available source folder.')
+                roots.append((body['folder'], ()))
+        result = self.figure_resolver.resolve(slots, roots)
+        def project_for(path):
+            if not isinstance(path, str):
+                return None
+            location = Path(path).expanduser().resolve()
+            matches = [source for source in folder_paths.source_roots(self.engine.sources)
+                       if location.is_relative_to(Path(source['path']).expanduser().resolve())]
+            return max(matches, key=lambda source: len(Path(source['path']).parts))['id'] if matches else None
+        for issue in result['issues']:
+            ref = issue['source']
+            issue['custom_folder'] = not ref.get('source_project') and not project_for(ref['path'])
+            if issue['kind'] == 'missing':
+                issue['message'] = (f"{Path(ref['path']).name} is missing. " +
+                    ('Use Find moved files… to choose its new folder.' if issue['custom_folder'] else
+                     'Check its project source folder and rescan images.'))
+            elif issue['kind'] == 'ambiguous' and not issue['custom_folder']:
+                issue['message'] = f"{Path(ref['path']).name}: multiple identical files found. Ignore unwanted duplicate folders in project settings, then rescan."
+        for repair in result['repairs']:
+            repair['after']['source_project'] = project_for(repair['after']['path'])
+        return result
 
     def generate_previews(self, selection=None):
         with self.lock:
@@ -272,15 +335,9 @@ class Workbench:
                 files = {k: v for k, v in engine.files.items() if v.suffix.lower() == '.dm4'}
                 root = engine.data_root
             else:
-                from tem_workbench.storage.mode_folders import scan_folders
-                folder, outputs = self.figure_source(selection)
-                root = Path(folder).expanduser().resolve()
-                if not root.is_dir():
-                    raise ValueError('Choose an available image folder.')
-                files = {path.relative_to(root).as_posix(): path
-                         for directory, names in scan_folders(root, outputs)
-                         for name in sorted(names) if (path := directory / name).suffix.lower() == '.dm4'
-                         and path.is_file()}
+                listing = self.figure_listing(selection)
+                root = listing['folder'] or 'All projects'
+                files = {item['path']: Path(item['path']) for item in listing['images'] if item['extension'] == '.dm4'}
             def render(file_id):
                 with self.lock:
                     return engine.dm4_preview(files[file_id])
@@ -762,7 +819,7 @@ class Workbench:
                     raise ValueError('PNG export exceeds the supported image size.')
                 image.verify()
             suffix = 'png'
-            label = 'map' if body.get('kind') == 'map' else 'line'
+            label = {'map': 'map', 'distribution': 'pixel-distribution'}.get(body.get('kind'), 'line')
             if body.get('comparison'):
                 label += '-comparison'
                 if body.get('kind') == 'line' and body.get('individual'):
@@ -925,8 +982,17 @@ def make_handler(app):
                                'source_name_autosave': True, 'aztec_output_exports': True})
                 elif url.path == '/project-tools.js':
                     self.send((ROOT/'web/project-tools.js').read_bytes(), 'application/javascript')
-                elif url.path in ('/eds', '/aztec.js', '/aztec-analysis.js', '/aztec-quantification.js', '/aztec-export.js', '/aztec.css', '/figures', '/figures.js', '/figures.css'):
-                    name = {'/eds': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec-quantification.js': 'aztec-quantification.js', '/aztec-export.js': 'aztec-export.js', '/aztec.css': 'aztec.css', '/figures': 'figures.html', '/figures.js': 'figures.js', '/figures.css': 'figures.css'}[url.path]
+                elif url.path == '/aztec-distributions.js':
+                    self.send((ROOT/'web/aztec-distributions.js').read_bytes(), 'application/javascript')
+                elif url.path == '/image-detail.js':
+                    self.send((ROOT/'web/image-detail.js').read_bytes(), 'application/javascript')
+                elif url.path in ('/eds', '/eds/', '/aztec/'):
+                    self.send_response(308)
+                    self.send_header('Location', '/aztec' + ('?' + url.query if url.query else ''))
+                    self.send_header('Content-Length', '0')
+                    self.end_headers()
+                elif url.path in ('/aztec', '/aztec.js', '/aztec-analysis.js', '/aztec-quantification.js', '/aztec-export.js', '/aztec-ipf-legend.js', '/aztec.css', '/figures', '/figures.js', '/figures.css'):
+                    name = {'/aztec': 'aztec.html', '/aztec.js': 'aztec.js', '/aztec-analysis.js': 'aztec-analysis.js', '/aztec-quantification.js': 'aztec-quantification.js', '/aztec-export.js': 'aztec-export.js', '/aztec-ipf-legend.js': 'aztec-ipf-legend.js', '/aztec.css': 'aztec.css', '/figures': 'figures.html', '/figures.js': 'figures.js', '/figures.css': 'figures.css'}[url.path]
                     self.send((ROOT / 'web' / name).read_bytes(), mimetypes.guess_type(name)[0] or 'text/plain')
                 elif url.path == '/api/config':
                     LOG.info('Viewer connected: version=%s', APP_VERSION)
@@ -1005,7 +1071,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/export-notice.js': ROOT/'web/export-notice.js', '/app.js': ROOT/'web/app.js', '/diagnostics.js': ROOT/'web/diagnostics.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/favicon.svg': ROOT/'web/favicon.svg', '/favicon.ico': ROOT/'web/favicon.svg', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/repeat-regions.js': ROOT/'web/repeat-regions.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/component-batch.js': ROOT/'web/component-batch.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/export-notice.js': ROOT/'web/export-notice.js', '/app.js': ROOT/'web/app.js', '/popup-controls.js': ROOT/'web/popup-controls.js', '/diagnostics.js': ROOT/'web/diagnostics.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/favicon.svg': ROOT/'web/favicon.svg', '/favicon.ico': ROOT/'web/favicon.svg', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/repeat-regions.js': ROOT/'web/repeat-regions.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/component-batch.js': ROOT/'web/component-batch.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')
@@ -1021,7 +1087,7 @@ def make_handler(app):
                 if self.headers.get('X-TEM-Token') != app.token:
                     self.send({'error': 'Reload the workbench to reconnect.'}, status=403); return
                 size=int(self.headers.get('Content-Length', 0))
-                limit = 256*1024*1024 if self.path in ('/api/export-spectrum', '/api/aztec/export') else (16*1024*1024 if self.path in ('/api/workspace', '/api/repeat-regions/start') else 65536)
+                limit = 256*1024*1024 if self.path in ('/api/export-spectrum', '/api/aztec/export') else (16*1024*1024 if self.path in ('/api/workspace', '/api/repeat-regions/start', '/api/figures/reconnect') else 65536)
                 if size <= 0 or size > limit or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                     raise ValueError('Expected a small JSON request.')
                 body=json.loads(self.rfile.read(size))
@@ -1048,16 +1114,19 @@ def make_handler(app):
                     self.send(app.aztec.browse(body.get('path'), app.root, app.engine.sources, body.get('project'),
                                               outputs=folder_paths.output_folders(app.engine.sources, app.config['output_root'])))
                 elif self.path == '/api/figures/list':
-                    folder, outputs = app.figure_source(body)
-                    self.send(figure_creator.list_images(folder, outputs=outputs))
+                    self.send(app.figure_listing(body))
+                elif self.path == '/api/figures/reconnect':
+                    self.send(app.reconnect_figure_sources(body))
                 elif self.path == '/api/figures/previews':
                     self.send(app.generate_previews(body))
                 elif self.path == '/api/figures/index/status':
-                    self.send(app.figure_index.status(body.get('folder')))
+                    sources, outputs = app.figure_sources(body)
+                    scopes = [(Path(source['path']).expanduser().resolve(), folder_paths.folder_scope(source, 'figures')) for source in sources]
+                    self.send(app.figure_index.status(folders=[root for root, _ in scopes], source_scopes=scopes, outputs=outputs))
                 elif self.path == '/api/figures/index/start':
-                    folder, outputs = app.figure_source(body)
-                    self.send(app.figure_index.start(folder, force=body.get('force') is True,
-                                                     workers=body.get('workers', 4), outputs=outputs))
+                    self.send(app.figure_index.start(None, force=body.get('force') is True,
+                                                     workers=body.get('workers', 4),
+                                                     image_loader=lambda: app.figure_listing(body)['images']))
                 elif self.path == '/api/figures/index/cancel':
                     self.send(app.figure_index.stop())
                 elif self.path == '/api/figures/inspect':
@@ -1088,7 +1157,7 @@ def make_handler(app):
                 elif self.path == '/api/aztec/comparison-catalogue':
                     self.send(app.aztec.comparison_catalogue(body['path']))
                 elif self.path == '/api/aztec/comparison-thumbnail':
-                    self.send(app.aztec.comparison_thumbnail(body['path'], body['acquisition'], body['kind']))
+                    self.send(app.aztec.comparison_thumbnail(body['path'], body['acquisition'], body['kind'], body.get('image')))
                 elif self.path == '/api/aztec/project-overviews':
                     self.send(app.aztec.project_overviews(body['path']))
                 elif self.path == '/api/aztec/preview':

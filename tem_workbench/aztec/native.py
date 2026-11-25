@@ -21,6 +21,7 @@ NAMES = {'ElectronImages': 'Electron images', 'EDXSpectra': 'Stored spectra',
          'XrayMapImages': 'Element maps', 'XrayLinescans': 'Element profiles',
          'QuantLinescans': 'Composition profiles', 'QuantMapData': 'Quantification',
          'QuantMapImages': 'Composition maps · wt%', 'AtomicMapImages': 'Composition maps · at%',
+         'KamMapImages': 'Recalculated KAM',
          'LayerMaps': 'Saved composites', 'EdPhaseImages': 'Saved phase images',
          'TEMQuantResults': 'Quantification results', 'EbsdMaps': 'EBSD data container',
          'EbsdMapImages': 'EBSD display maps'}
@@ -309,6 +310,18 @@ class NativeProjectReader:
                 records[path] = derived
                 descriptors.append(descriptor)
                 groups[raw['site_id']][1].append((derived, descriptor))
+            path = '/KamMapImages/' + raw['id']
+            derived = dict(table='KamMapImages', id=raw['id'], path=path, Label='KAM',
+                           acquisition_id=raw['acquisition_id'], acquisition_label=raw['acquisition_label'],
+                           site_id=raw['site_id'], source_path=raw['path'], derived='kam')
+            descriptor = dict(path=path, shape=None, dtype='derived float64',
+                              storage='computed from acquired native EBSD orientations', value=None,
+                              attributes={'Label': 'KAM', 'Acquisition': raw['acquisition_label'],
+                                          'Acquisition ID': raw['acquisition_id'], 'Unit': 'degrees',
+                                          'Record type': 'Recalculated KAM', 'Source': raw['path']})
+            records[path] = derived
+            descriptors.append(descriptor)
+            groups[raw['site_id']][1].append((derived, descriptor))
         acquisitions = []
         for ident, (site, items) in groups.items():
             if not items:
@@ -325,7 +338,7 @@ class NativeProjectReader:
                 name = (parent + ' / ' if parent else '') + category
                 layer = layers.setdefault(name, dict(path=name, technique=name, state='stored', header={}, signals=[], grid_shape=None, geometry_header=None, notes=[]))
                 layer['signals'].append(descriptor)
-            priority = ['Electron images', 'EBSD display maps', 'EBSD fields', 'EBSD previews',
+            priority = ['Electron images', 'EBSD display maps', 'EBSD fields', 'Recalculated KAM', 'EBSD previews',
                         'EBSD data container', 'EBSD preview source',
                         'Raw map data', 'Element maps', 'Raw line data', 'Element profiles',
                         'Reconstructed Kα1 windows', 'Composition profiles', 'Stored spectra', 'Saved composites', 'Saved phase images',
@@ -453,6 +466,19 @@ class NativeProjectReader:
         return {'path': record['path'], 'kind': 'image', 'array': values, 'shape': [height, width],
                 'dtype': dtype, 'unit': unit, 'note': note, 'label': label}
 
+    def ebsd_grid_geometry(self, record):
+        """Require all saved display grids to agree before registering native KAM."""
+        from .geometry import image_geometry
+        geometries = []
+        for image in self._records.values():
+            if image['table'] != 'EbsdMapImages' or image.get('acquisition_id') != record['acquisition_id']:
+                continue
+            self.ebsd_display_layout(image['path'])
+            geometries.append(image_geometry(self.record_blob(image), image, kinds=(1, 5)))
+        if not geometries or any(g != geometries[0] for g in geometries):
+            raise AztecReadError('Native EBSD display grids do not have one registered geometry.')
+        return geometries[0]
+
     def raw_line_spectra(self, path):
         """Read the native raw spectra and per-position acquisition times for a SmartLine."""
         from .native_tiles import decode_spectra
@@ -544,6 +570,11 @@ class NativeProjectReader:
             return preview_map(self, record, self._quant_maps[path], quant_measure)
         if record.get('derived') == 'ebsd':
             return self.ebsd_field_preview(record)
+        if record.get('derived') == 'kam':
+            from .kam import native_preview
+            result = native_preview(self, record)
+            result.pop('neighbour_counts')
+            return result
         if record.get('derived'):
             values = self.derived_line_profiles(record['source_path'])[record['Label']]
             return {**base, 'kind': 'plot', 'x': list(range(1, len(values) + 1)),

@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),context={window:{}};
+const source=fs.readFileSync('web/aztec-analysis.js','utf8');
+vm.runInNewContext(source.slice(0,source.indexOf('/* Shared colour memory')),context);
+const text=context.window.aztecAcquisitionDimensions.text;
+assert.equal(text({width:40000,height:30000,distance_unit:'nm'},'map'),'40 × 30 µm');
+assert.equal(text({width:1250,height:625,distance_unit:'nm'},'map'),'1.25 × 0.625 µm');
+assert.equal(text({length:416.045,distance_unit:'nm'},'line'),'416 nm');
+assert.equal(text({length:1500,distance_unit:'nm'},'line'),'1.5 µm');
+assert.equal(text({width:100,height:75,distance_unit:'px'},'map'),'100 × 75 px');
+assert.equal(text(null,'map'),'');assert.equal(text({length:NaN},'line'),'');
+console.log('Acquisition card sizes retain calibrated units, full dimensions and explicit pixel fallback.');

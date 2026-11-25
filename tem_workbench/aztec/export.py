@@ -33,13 +33,13 @@ class DataArchive:
         self.entries=[]
         self.bytes=0
 
-    def add(self, row, label, operation, values, unit, **metadata):
+    def add(self, row, label, operation, values, unit, *, data_source=None, **metadata):
         values=np.asarray(values)
         self.bytes+=values.nbytes
         if self.bytes>256*1024*1024:
             raise AztecReadError('This data export is too large. Select fewer acquisitions or channels.')
         self.entries.append((dict(acquisition=row['acquisition'],label=label,operation=operation,
-                                  source=row.get('source') or str(self.source),native_acquisition=row.get('native_acquisition',row['acquisition']),
+                                  source=data_source or row.get('source') or str(self.source),native_acquisition=row.get('native_acquisition',row['acquisition']),
                                   shape=list(values.shape),unit=unit,**metadata),values))
 
     def finish(self, result):
@@ -47,7 +47,7 @@ class DataArchive:
         rows={row['acquisition']:row for row in result['rows']}
         manifest=dict(format='TEM Workbench acquisition data',format_version=2,
                       created=datetime.now(timezone.utc).isoformat(),source=str(self.source),
-                      sources=list(dict.fromkeys(row.get('source') or str(self.source) for row in result['rows'])),
+                      sources=list(dict.fromkeys([row.get('source') or str(self.source) for row in result['rows']]+[entry['source'] for entry,_ in self.entries])),
                       settings=self.options,acquisitions=[],datasets=[],
                       note='Original and processed folders retain full acquisition arrays. Selected line segments '
                            'are additionally saved in selected/ when equal-length trimming is enabled; these '
@@ -55,10 +55,19 @@ class DataArchive:
                            'Original values retain saved units; reconstructed/ contains native-spectrum Kα1 window '
                            'estimates before display processing, where available. Processed values apply smoothing before division '
                            'and optional per-acquisition normalization; display brightness and colour clipping '
-                           'are not applied. NaN marks unavailable ratios. Intensity ratios describe recorded signals; '
+                           'are not applied. Recalculated KAM is saved in recalculated/ in degrees with eligible-neighbour '
+                           'counts and its kernel, cutoff, phase symmetry and native or H5OINA processed-orientation provenance. '
+                           'Saved H5OINA KAM is in saved/ without KAM recalculation; its exported settings, source file, '
+                           'angular-unit interpretation and missing-value handling are in the manifest. '
+                           'NaN marks unavailable ratios or KAM pixels without eligible indexed neighbours. Intensity ratios describe recorded signals; '
                            'composition ratios divide saved concentrations. Neither is a newly quantified concentration.')
         for row in result['rows']:
-            manifest['acquisitions'].append({k:v for k,v in row.items() if k not in ('tiles','electron','background')})
+            metadata = {k:v for k,v in row.items() if k not in ('tiles','electron','background','overview_choices','overviews','layered')}
+            if 'overviews' in row:
+                metadata['overviews'] = [{k:v for k,v in item.items() if k != 'image'} for item in row['overviews']]
+            if 'layered' in row:
+                metadata['layered'] = {name:{k:v for k,v in item.items() if k != 'image'} for name,item in row['layered'].items()}
+            manifest['acquisitions'].append(metadata)
         entries=list(self.entries)
         for entry,values in self.entries:
             selection=self.options.get('export_line_ranges',{}).get(entry['acquisition'],{})

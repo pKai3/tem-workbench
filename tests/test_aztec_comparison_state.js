@@ -48,6 +48,12 @@ assert.equal(store.relocations({[a]:nativeId,[b]:'other'},[
 assert.equal(Object.keys(store.relocations({[a]:nativeId},[
  {path:moved,kind:'OIPX',project_id:nativeId},{path:'/copy.oipx',kind:'OIPX',project_id:nativeId}
 ])).length,0);
+assert.equal(Object.keys(store.relocations({[a]:nativeId,[b]:nativeId},[
+ {path:moved,kind:'OIPX',project_id:nativeId}
+])).length,2,'Every historical path reconnects to the single current native project');
+assert.equal(Object.keys(store.relocations({[a]:nativeId},[
+ {path:a,kind:'OIPX',project_id:'replacement'},{path:moved,kind:'OIPX',project_id:nativeId}
+])).length,0,'An existing replaced project is not silently redirected');
 const sourceId=store.identity(a,'native-line'),newId=store.identity(moved,'native-line');
 const savedState={preferences:{[a+':XrayLinescans']:{raw:true},[store.key('XrayLinescans')]:{line_offsets:{[sourceId]:14}}},
  selections:{[store.key('XrayLinescans')]:{ids:[sourceId],files:[a],signals:['V']}},
@@ -69,3 +75,36 @@ assert.equal(savedState.selections[store.key('XrayLinescans')].ids[0],sourceId);
 console.log('Comparison migration retains cross-file presets, duplicate names, aliases, crops and trims; direct views stay separate');
 console.log('Removed or stale channels are cleared; new channels and valid deselections are retained');
 console.log('Native project identity reconnects unique moves and preserves saved comparison state');
+const overviewSettings={preferences:{[store.key('KamMapImages')]:{overview_images:{[sourceId]:['/ElectronImages/se','/ElectronImages/bse']}}}};
+const movedOverviews=store.relocate(overviewSettings,{[a]:moved});
+assert.deepEqual(movedOverviews.preferences[store.key('KamMapImages')].overview_images[newId],['/ElectronImages/se','/ElectronImages/bse']);
+const legendOptions={kam_legend:'one',kam_legend_target:sourceId,panel_label_positions:{overview:'bottom-right',ipf:'top-right',kam:'bottom-left',eds:'bottom-right',line:'top-right'},ipf_legend:'one',ipf_legend_target:sourceId,ipf_legend_hexagonal:false,ipf_legend_cubic:true};
+const legendState={preferences:{[store.key('KamMapImages')]:legendOptions},presets:{[store.key('KamMapImages')]:[{name:'IPF',options:legendOptions}]}};
+const movedLegend=store.relocate(legendState,{[a]:moved});
+assert.equal(movedLegend.preferences[store.key('KamMapImages')].ipf_legend_target,newId);
+assert.equal(movedLegend.presets[store.key('KamMapImages')][0].options.ipf_legend_target,newId);
+assert.equal(movedLegend.presets[store.key('KamMapImages')][0].options.ipf_legend_hexagonal,false);
+assert.equal(legendOptions.ipf_legend_target,sourceId,'Relocation cannot mutate the original selection');
+assert.equal(movedLegend.preferences[store.key('KamMapImages')].kam_legend_target,newId);
+assert.equal(movedLegend.presets[store.key('KamMapImages')][0].options.kam_legend_target,newId);
+assert.deepEqual(movedLegend.presets[store.key('KamMapImages')][0].options.panel_label_positions,legendOptions.panel_label_positions);
+
+// Saved comparisons are live snapshots; copies own their complete nested data.
+const active={},saved={},context={options:{kam_sources:{[qa]:'h5_saved'},overview_images:{[qa]:['SE']},eds_layers:{Ti:{strength:.7}}},files:[a],ids:[qa],signals:['KAM']};
+const extras={aliases:{['compare:'+qa]:'AB'},labelColours:{['compare:'+qa]:'#e76f00'},crops:{['compare:'+qa]:[.2,.4]}};
+const original=store.saveAs(saved,active,key,store.snapshot(context,extras),'Original');
+context.ids=[qb,qa];context.files=[b,a];context.options.kam_sources[qb]='native';context.options.overview_images[qa].push('BSE');
+store.saveActive(saved,active,key,store.snapshot(context,extras));
+assert.equal(JSON.stringify(original.ids),JSON.stringify([qb,qa]),'Acquisition selection and display order autosave');
+assert.equal(original.options.overview_images[qa].length,2);assert.equal(original.aliases[qa],'AB');
+const copy=store.saveAs(saved,active,key,store.snapshot(context,extras),'Copy');
+assert.equal(active[key],'Copy');context.ids=[];context.files=[];context.options.eds_layers.Ti.strength=.3;
+store.saveActive(saved,active,key,store.snapshot(context,extras));
+assert.equal(copy.ids.length,0,'Removing every acquisition is also an edit');assert.equal(original.ids.length,2);
+assert.equal(original.options.eds_layers.Ti.strength,.7,'Save as cannot mutate the original nested settings');
+store.rename(saved,active,key,'Renamed');assert.equal(active[key],'Renamed');assert.equal(saved[key].length,2);
+assert.throws(()=>store.rename(saved,active,key,'Original'),/already used/);assert.equal(active[key],'Renamed');
+assert.throws(()=>store.saveAs(saved,active,key,{},'Original'),/already used/);
+const restoredLive=JSON.parse(JSON.stringify({saved,active}));assert.equal(restoredLive.active[key],'Renamed');
+delete active[key];store.saveActive(saved,active,key,{ids:['new draft']});assert.equal(original.ids.length,2);assert.equal(copy.ids.length,0,'New comparison detaches before clearing the current view');
+console.log('Live comparison edits, deep-copy Save as, rename, empty selections and draft isolation passed.');

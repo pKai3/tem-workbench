@@ -47,11 +47,21 @@
  }
  function readRaw(key){try{return localStorage.getItem(key)??records[prefix+key]??null}catch{return records[prefix+key]??null}}
  function writeRaw(key,value){try{localStorage.setItem(key,value);snapshot.set(key,value)}catch{}set(prefix+key,value)}
+ function acceptSavedPatch(values){
+  for(const [key,value] of Object.entries(values||{})){
+   records[key]=value;pending.delete(key);
+   if(key.startsWith(prefix)){
+    const raw=key.slice(prefix.length);
+    try{if(value===null){localStorage.removeItem(raw);snapshot.delete(raw)}else{localStorage.setItem(raw,value);snapshot.set(raw,value)}}catch{}
+   }
+  }
+  status();
+ }
  const bookmarkKey=(project,mode)=>'bookmark:'+encodeURIComponent(project||'all')+':'+mode;
- window.WorkbenchWorkspace={configure,set,get:(key,fallback)=>records[key]??fallback,flush,capture,readRaw,writeRaw,
+ window.WorkbenchWorkspace={configure,set,get:(key,fallback)=>records[key]??fallback,flush,capture,readRaw,writeRaw,acceptSavedPatch,
   bookmark:(project,mode)=>records[bookmarkKey(project,mode)]||{},
   remember:(project,mode,value)=>set(bookmarkKey(project,mode),value),
-  projectForPath(path){const normalized=String(path||'').replaceAll('\\','/');return [...sources].sort((a,b)=>b.path.length-a.path.length).find(s=>normalized===s.path.replaceAll('\\','/')||normalized.startsWith(s.path.replaceAll('\\','/').replace(/\/$/,'')+'/'))?.id||''}
+  projectForPath(path){const normalized=String(path||'').replaceAll('\\','/');return sources.flatMap(source=>(source.folders||[{path:source.path}]).map(folder=>({...source,path:folder.path}))).sort((a,b)=>b.path.length-a.path.length).find(s=>normalized===s.path.replaceAll('\\','/')||normalized.startsWith(s.path.replaceAll('\\','/').replace(/\/$/,'')+'/'))?.id||''}
  };
  document.addEventListener('DOMContentLoaded',status);
  for(const name of ['input','change','click'])document.addEventListener(name,()=>setTimeout(capture,0),true);

@@ -1,6 +1,6 @@
 # AZtec reader foundation
 
-The `/eds` workspace browses native OIPX projects and optional H5OINA files,
+The `/aztec` workspace browses native OIPX projects and optional H5OINA files,
 with stored point spectra, element/ratio maps and line/image overlays. It retains
 original values and lets users choose signals and processing explicitly. Planned work and
 priorities live in [the implementation plan](implementation-plan.md).
@@ -38,7 +38,34 @@ The background choice does not change numerical ZIP data or the live display.
 Each acquisition's export label has a colour picker and editable hex value beside
 its name. The chosen colour appears on the reference-image label in the live view
 and PNG, and identifies the corresponding trace in Overlay scans. Reset restores
-the original dark label.
+the original dark label. Clicking the colour swatch or hex field offers remembered colours: exact
+export-label or sample-name matches first, then colours in use and recent choices.
+Matching ignores case and repeated spaces; ST and STA remain distinct. Choices
+are remembered across map/line comparisons and restarts in the workspace. Custom
+colours and hex entry remain available; the hex field keeps typing focus when its
+suggestions open. Suggestions never assign colours automatically.
+
+Map overlays use compact segmented controls: **Off / Overviews only / All images**
+for physical bars, matching the IPF legend’s **Off / One map / All maps** pattern.
+Left/Right and Top/Bottom choose a corner independently for physical scale bars,
+IPF colour keys and KAM scales. The chosen positions and scale-bar scope are saved
+with comparisons and used by PNG exports. Existing defaults are retained: physical
+bars bottom-left (overview-only for KAM/IPF), IPF keys top-right and KAM scales
+bottom-right. An overlay sharing a corner with a panel label leaves space for that label. KAM scales also offer Off / One map / All maps, retaining the chosen acquisition when switching scopes.
+
+Map settings are grouped into a left **General & overview** column followed by
+**IPF** and **KAM**, shown only when that map type is enabled. EDS uses a general
+column and an **EDS maps** column. Comparable controls share aligned rows, starting with inputs and computation, then labels, scale/key settings, colours and positions. KAM colours sit to the right of the KAM scale position on the final row; its scale scope, map target, shared scales and colour limits share one wrapping row. The general column stays left;
+a single IPF or KAM type uses the middle slot, while combined mode keeps IPF
+in the middle and KAM on the right without resizing IPF. Columns wrap to fit
+narrow windows. Each group
+contains its own panel-label and relevant legend controls. Independent panel-label
+switches and Left/Right plus Top/Bottom controls set the visibility and corner of labels on overview, EDS, IPF and KAM images; Line
+comparison has separate reference-image and plot-label controls. These apply to
+both preview and PNG, without hiding physical bars, colour keys or numerical data.
+The map/profile type selector sits above Project files. File catalogues are checked for that type: matching files sort first, and files without relevant acquisitions are greyed out and cannot be newly selected. Selected files remain selected across map-type changes. Those without matching data appear amber and can still be deselected; incompatible unselected files remain grey and disabled. Previews remain visible. Checking/read errors are shown. Project and acquisition selections use matching highlighted cards. EBSD source
+controls appear only on selected acquisitions, and retain their choices when an
+acquisition is deselected and re-selected.
 
 Viewer preferences, comparison selections, aliases and named map/line presets
 autosave to `tem-workbench.workspace.json` beside the folder configuration.
@@ -53,6 +80,16 @@ and site. Small registered reference-image previews mark the map or line and
 enlarge on hover, focus or tap. Below the choices, each selected card combines
 its export label with Move earlier/later controls; saved comparisons retain
 the resulting row, overlay-reference and export order.
+Maps also has an **Overview images** chooser with previews for each acquisition.
+Its button shows the selected-image count and opens a popup over a dimmed page. Done, Escape or clicking outside closes it.
+Choose none, one or multiple saved site images and reorder them with the arrows.
+Each image becomes its own registered overview column, including in transposed
+layouts and PNGs; named comparisons retain the selected image paths and order.
+Overview images keep their full source resolution in compressed PNGs. The chooser
+shows the whole source image enlarged on hover, focus/Enter or touch; map-grid hover keeps the 5× detail view. Hover detail sits beside the PNG exports because it changes only the viewer.
+Registered crops are applied when drawing, without first resizing the source
+to the acquisition grid; PNG panel sizes retain the overview crop's resolution.
+Missing or incompatible saved images stay explicitly unavailable.
 The site cards have a fixed width and larger reference previews. Map and line
 channel choices follow the currently selected acquisitions, removing channels
 that none of those acquisitions contain.
@@ -73,6 +110,23 @@ Intensity, Weight % and Atomic % families; composition maps support the existing
 smoothing, ratio, shared-scale, saved-comparison and export controls. See
 [quantification decoding notes](aztec-quantification.md) for the format evidence,
 source checks and the additional fields whose units remain unverified.
+
+Maps offers **EDS layout → Separate / Layered / Both** for intensity, wt% and
+at% maps. Select elements using the channel checkboxes, then choose each layer's
+colour and strength (0–100%). Colours also identify the separate channel maps;
+strength affects only the composite. The composite adds black-to-element colour
+ramps using the current channel exposures, smoothing and normalization. Signal
+and ratio composites stay separate, and the denominator reference is excluded
+from the ratio composite. Overlap can saturate displayed RGB values; the result
+is a visual overlay, not a concentration or a new numerical quantity.
+
+Composites retain every native map pixel in compressed PNGs, including the
+linked detail preview. Missing channels are listed. Transpose, scale bars,
+saved comparisons and PNG export include layered images and their colour keys.
+Numerical exports retain the original and processed arrays, with layer colours,
+strengths and exposure limits in the manifest. Statistics and distributions do
+not change when layer colours or strengths change. Electron overviews remain
+separate registered panels.
 
 `NativeProjectReader` reads supported OIPX records without deserializing .NET
 objects. Stored spectrum blobs are matched by UUID and label; verified versions
@@ -204,14 +258,36 @@ until exposure, background/deconvolution and covariance are established; see
 
 ## EBSD inspection and remaining analysis
 
-The native browser now shows full-map EBSD fields and paired saved previews;
-EBSD processing and re-indexing remain separate future work. H5OINA reader
+The native browser now shows full-map EBSD fields and paired saved previews.
+Maps comparison offers [KAM with a source choice per acquisition](aztec-kam.md):
+recalculate native OIPX, recalculate matching processed H5OINA, or read saved
+H5OINA KAM directly. Recalculation supports validated hexagonal/cubic symmetry
+and editable square kernel, neighbour ring and angular bounds. Saved mode shows
+recorded settings without calculating KAM. Mixed comparisons, histograms and
+exceedance curves retain source identity, degree units and missing-pixel semantics
+in their tables and exports. The selector is labelled **EBSD source**, because
+both H5OINA choices also use saved processed IPF colours. Each acquisition shows
+the exported IPF directions (Z only in the supplied exports); other directions
+remain explicitly unavailable. Missing IPF pixels are white. IPF/KAM enlargement
+preserves discrete source pixels, without blending neighbouring colours.
+Maps and distributions have separate PNG export buttons. **Export PNG** sits
+beneath the distribution and produces four times the previous width and height.
+Map exports omit source
+qualifiers and overview-image names; labels and padding retain their original
+proportions when the raster resolution grows. Named comparisons autosave every
+subsequent edit, including selected acquisitions; **Save as…** creates and opens
+an independent copy, and **Rename** updates its name. **New comparison** detaches
+the saved comparison before clearing selections. The active comparison restores
+after reload. Browse/Compare and Map/Line controls scroll normally with the page.
+Other EBSD processing
+and re-indexing remain separate future work. H5OINA reader
 support keeps acquired EBSD arrays and Data Processing results
 as separate layers with their own phase definitions. When processed data lacks
 grid dimensions, the catalogue explicitly identifies the acquired EBSD header
 used for geometry. It does not infer cleanliness from filenames or folder names,
 choose a preferred state, change orientations, fill unindexed pixels, or recompute
-grains/KAM. Stored derived analyses and display layers are catalogued separately.
+grains. KAM recalculation from processed H5OINA occurs only when explicitly
+selected in Maps. Stored derived analyses and display layers are catalogued separately.
 
 ## Validation and remaining work
 
@@ -229,3 +305,25 @@ validation of quantification or phase interpretation.
 Remaining EDS work includes raw-to-binned coordinate mapping, raw region spectra,
 processing recipes and data/image export; priorities remain in the implementation
 plan. No EBSD re-indexing or live instrument control is provisioned.
+
+The **Live / As Exported** control beside Hover detail switches the whole map grid.
+As Exported uses the same renderer as Export maps PNG, including its background,
+label proportions, scale overlays, cropping and layout. It does not save a file.
+The EDS **Colour scale** switch controls range overlays and shared colour bars in
+both views and PNGs; range overlays have a translucent dark backing.
+Rectangular acquired fields retain their aspect ratio in the live grid and PNG;
+equal-distance mode preserves relative field sizes without square-cell padding.
+Acquisition cards show full map width × height or full line length, before crop
+or trim. Missing physical calibration is shown explicitly in pixels.
+
+Project settings save source, folder-scope and output changes automatically.
+**Revert changes** restores values from when the current popup was opened.
+Save errors keep the draft visible and offer Retry save. Export folders start
+excluded; explicitly selecting one enables it for that mode. An orange marker
+identifies the export folder or its nearest visible parent, and enabling it warns
+that generated images can reappear as sources.
+
+Selected acquisition cards use **sample / site / acquisition** as their main
+heading and put the project filename below. Revert changes appears only after
+an edit in the current project-settings popup. The folder chooser keeps a fixed
+size and stationary navigation controls as folder counts change.

@@ -4,6 +4,7 @@
  const $=id=>document.getElementById(id);
  let config,folderBrowser,projectSettings,files=[],selectedPanel=0,currentId='',timer=0,renderVersion=0,hoverTimer=0,browserPreferred=160,indexPoll=0,indexRecords={};
  let saved={};
+ let reconnectVersion=0;
  let indexStarting=false,indexJob=null;
  let scanVersion=0,browserRoot='',previewPoll=0,previewStarting=false,previewJob=null;
  const metadataFilters=[['fig-filter-mag','magnification'],['fig-filter-kv','voltage_kv'],['fig-filter-probe','probe'],['fig-filter-wd','working_distance'],['fig-filter-date','acquisition_date']];
@@ -51,6 +52,56 @@
  }
  function status(text,error=false){$('fig-status').textContent=text;$('fig-error').textContent=error?text:''}
  function draft(){WorkbenchWorkspace.writeRaw('tem-figures-draft-v1',JSON.stringify(recipe));WorkbenchWorkspace.writeRaw('tem-figures-current-v1',currentId)}
+ function sourceReference(slot){
+  const companion=key=>slot[key]&&typeof slot[key]==='object'?{path:slot[key].path??null,sha256:slot[key].sha256??null}:null;
+  return {path:slot.path??null,sha256:slot.sha256??null,source_project:slot.source_project??null,metadata_sidecar:companion('metadata_sidecar'),analysis:companion('analysis')};
+ }
+ function applySourceRepairs(target,repairs){
+  const updates=new Map(repairs.map(repair=>[JSON.stringify(sourceReference(repair.before)),repair.after]));
+  let count=0;
+  for(const slot of target.slots||[]){
+   const next=updates.get(JSON.stringify(sourceReference(slot)));if(!next)continue;
+   slot.path=next.path;slot.name=next.name;
+   if(Object.hasOwn(next,'source_project'))slot.source_project=next.source_project;
+   for(const key of ['metadata_sidecar','analysis'])if(slot[key]&&next[key])slot[key].path=next[key].path;
+   count++;
+  }
+  return count;
+ }
+ async function reconnectSources(searchFolder=''){
+  if(!config.figure_source_reconnect){
+   if(searchFolder)$('fig-reconnect-status').textContent='Restart Workbench to enable source recovery.';
+   return;
+  }
+  const revision=++reconnectVersion,targets=[recipe,...Object.values(saved)].filter(target=>Array.isArray(target?.slots));
+  const slots=[...new Map(targets.flatMap(target=>target.slots.filter(slot=>slot.path)
+   .map(slot=>{const ref=sourceReference(slot);return [JSON.stringify(ref),ref]}))).values()];
+  $('fig-reconnect').hidden=true;$('fig-reconnect-help').hidden=true;
+  if(!slots.length){$('fig-reconnect-status').textContent='';$('fig-reconnect-errors').hidden=true;return}
+  $('fig-reconnect-status').textContent='Checking saved sources…';$('fig-reconnect-errors').hidden=true;
+  try{
+   const result=await api('figures/reconnect',{slots,folder:sourceSelection().folder,search_folder:searchFolder||undefined});
+   if(revision!==reconnectVersion)return;
+   let draftCount=0,savedCount=0;
+   for(const target of new Set(targets)){
+    if(target===recipe)draftCount+=applySourceRepairs(target,result.repairs);
+    else if(Object.values(saved).includes(target))savedCount+=applySourceRepairs(target,result.repairs);
+   }
+   if(savedCount)WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));
+   if(draftCount)changed(true);
+   if(draftCount||savedCount)await WorkbenchWorkspace.flush();
+   if(revision!==reconnectVersion)return;
+   const list=$('fig-reconnect-error-list');list.replaceChildren();
+   for(const issue of result.issues){const item=document.createElement('li');item.textContent=issue.message;list.append(item)}
+   $('fig-reconnect-errors').hidden=!result.issues.length;
+   const missingCustom=result.issues.some(issue=>issue.custom_folder&&['missing','ambiguous'].includes(issue.kind));
+   $('fig-reconnect').hidden=$('fig-reconnect-help').hidden=!missingCustom;
+   const count=result.repairs.length;
+   $('fig-reconnect-status').textContent=(count?`Reconnected ${count} source${count===1?'':'s'}. `:'')+
+    (result.issues.length?result.issues[0].message:'All saved sources are available.');
+   return result;
+  }catch(error){if(revision===reconnectVersion)$('fig-reconnect-status').textContent=error.message}
+ }
  function exportGeometry(){
   const ratios=recipe.slots.filter(slot=>slot.path).map(slot=>{
    const height=(typeof slot.crop_metadata==='boolean'?slot.crop_metadata:recipe.crop_metadata)
@@ -102,7 +153,7 @@
   select.value=currentId;$('fig-delete').disabled=!currentId;
  }
  function sync(){
-  $('fig-name').value=recipe.name;$('fig-rows').value=String(recipe.rows);$('fig-columns').value=String(recipe.columns);
+  $('fig-name').value=recipe.name;$('fig-rows').value=String(recipe.rows);$('fig-columns').value=String(recipe.columns);$('fig-transpose').checked=!!recipe.transposed;
   $('fig-aspect').value=String(recipe.aspect);$('fig-background').value=recipe.background;
   $('fig-match-tone').checked=recipe.match_tone;
   $('fig-sharpness').value=String(recipe.sharpness);
@@ -653,22 +704,12 @@
  }
  function hideOutputHover(){if(outputHover)outputHover.hidden=true;hoveredPanel=-1;hoverPoint=null}
  function positionOutputHover(x,y){
-  const box=outputHover.getBoundingClientRect(),gap=14;
-  let left=x+gap;if(left+box.width>innerWidth-8)left=x-box.width-gap;
-  outputHover.style.left=Math.max(8,Math.min(left,innerWidth-box.width-8))+'px';
-  outputHover.style.top=Math.max(8,Math.min(y+gap,innerHeight-box.height-8))+'px';
+  window.WorkbenchImageDetail.position(outputHover,x,y);
  }
  function drawDetailZoom(source,hit,wholeFigure=false){
-  const zoom=5,fullWidth=wholeFigure?hit.width:source.naturalWidth;
-  const fullHeight=wholeFigure?hit.height:source.naturalHeight;
-  const cropWidth=fullWidth/zoom,cropHeight=fullHeight/zoom;
-  const left=Math.max(0,Math.min(fullWidth-cropWidth,hit.localX/hit.width*fullWidth-cropWidth/2));
-  const top=Math.max(0,Math.min(fullHeight-cropHeight,hit.localY/hit.height*fullHeight-cropHeight/2));
-  const canvas=document.createElement('canvas');canvas.width=560;
-  canvas.height=Math.round(canvas.width*cropHeight/cropWidth);
-  canvas.getContext('2d').drawImage(source,(wholeFigure?hit.x:0)+left,(wholeFigure?hit.y:0)+top,
-   cropWidth,cropHeight,0,0,canvas.width,canvas.height);
-  outputHover.querySelector('img').src=canvas.toDataURL('image/png');
+  outputHover.querySelector('img').src=window.WorkbenchImageDetail.draw(source,{
+   x:wholeFigure?hit.x:0,y:wholeFigure?hit.y:0,width:wholeFigure?hit.width:source.naturalWidth,
+   height:wholeFigure?hit.height:source.naturalHeight,u:hit.localX/hit.width,v:hit.localY/hit.height});
  }
  function showOutputHover(event){
   highlightPanel(event);
@@ -760,17 +801,18 @@
  }
  function changed(cards=false){draft();if(cards)renderCards();else sync();schedulePreview();scheduleEstimate();schedulePanelPreview()}
  function populateProjects(){
-  const select=$('fig-project'),remembered=WorkbenchWorkspace.readRaw('tem-figures-project');
-  const previous=select.dataset.populated==='true'?select.value:remembered!==null?remembered:WorkbenchWorkspace.get('active_project','');
-  select.replaceChildren(new Option('Custom folder',''),...(config.sources||[]).map(source=>new Option(source.name||source.path,source.id)));
-  select.value=(config.sources||[]).some(source=>source.id===previous)?previous:'';select.dataset.populated='true';
-  $('fig-folder-controls').hidden=Boolean(select.value);
+  const select=$('fig-project'),remembered=WorkbenchWorkspace.readRaw('tem-figures-scope-v2'),legacy=WorkbenchWorkspace.readRaw('tem-figures-project');
+  const previous=select.dataset.populated==='true'?select.value:remembered!==null?remembered:legacy!==null?(legacy||'__custom__'):WorkbenchWorkspace.get('active_project','');
+  const choices=WorkbenchProjectTools.projectChoices(config.sources,{customFolder:true});
+  select.replaceChildren(...choices.map(option=>new Option(option.label,option.value)));
+  select.value=choices.some(option=>option.value===previous)?previous:'';select.dataset.populated='true';
+  $('fig-folder-controls').hidden=select.value!=='__custom__';
  }
  function selectedRoot(){
   const project=$('fig-project').value;
-  return project?(config.sources||[]).find(source=>source.id===project)?.path||'':$('fig-folder').value;
+  return project==='__custom__'?$('fig-folder').value:project?(config.sources||[]).find(source=>source.id===project)?.path||'':'';
  }
- function sourceSelection(){return $('fig-project').value?{project:$('fig-project').value}:{folder:$('fig-folder').value}}
+ function sourceSelection(){const project=$('fig-project').value;return project==='__custom__'?{folder:$('fig-folder').value}:{project}}
  function previewError(message){
   for(const prefix of ['fig-','fig-browser-'])$(prefix+'preview-status').textContent=message;
  }
@@ -778,7 +820,7 @@
   previewJob=job;
   const running=job?.state==='running';
   for(const prefix of ['fig-','fig-browser-']){
-   $(prefix+'generate-previews').disabled=!config.sidecar_previews||running||previewStarting||!selectedRoot();
+   $(prefix+'generate-previews').disabled=!config.sidecar_previews||running||previewStarting||!files.length;
    $(prefix+'cancel-previews').hidden=!running;
    const progress=$(prefix+'preview-progress');progress.hidden=!running;
    progress.max=Math.max(1,job?.total||1);progress.value=job?.processed||0;
@@ -886,9 +928,9 @@
  }
  async function refreshIndex(){
   clearTimeout(indexPoll);
-  const root=selectedRoot();
+  const selection=sourceSelection(),scope=JSON.stringify(selection);
   try{
-   const result=await api('figures/index/status',{folder:root});if(root!==selectedRoot())return;showIndexStatus(result);
+   const result=await api('figures/index/status',selection);if(scope!==JSON.stringify(sourceSelection()))return;showIndexStatus(result);
    if(result.state==='running')indexPoll=setTimeout(refreshIndex,750);
   }catch(error){indexMessage(error.message)}
  }
@@ -1034,24 +1076,25 @@
    const known=new Map();for(const row of config.files||[])for(const path of row.locations||[row.path])known.set(path,row);
    files=result.images.map(row=>({...row,image_kind:known.get(row.path)?.image_kind}));
    if(browserRoot!==result.folder){$('fig-filter-folder').value='';browserRoot=result.folder;indexRecords={}}
-   if(!selection.project){$('fig-folder').value=result.folder;WorkbenchWorkspace.writeRaw('tem-figures-folder',result.folder)}
+   if(Object.hasOwn(selection,'folder')){$('fig-folder').value=result.folder;WorkbenchWorkspace.writeRaw('tem-figures-folder',result.folder)}
    refreshFilters();if($('fig-browser-dialog').open)renderBrowser();
    sync();$('fig-folder-status').textContent=$('fig-browser-scan-status').textContent=`${files.length} images · DM4, TIFF, PNG, JPEG`;
    $('fig-dm4-status').textContent=result.dm4_count?`${result.dm4_count} DM4 files · ${result.dm4_missing_previews} missing PNG previews`:'';
    showPreviewStatus(previewJob);
    await refreshIndex();
   }catch(error){if(version!==scanVersion)return;$('fig-folder-status').textContent=$('fig-browser-scan-status').textContent=error.message;if($('fig-browser-dialog').open)renderBrowser()}
+  if(version===scanVersion){await reconnectSources();refreshLegacySlots()}
  }
  async function add(path){
   if(!path||selectedPanel<0||!recipe.slots[selectedPanel])return;
   const index=selectedPanel;
   try{status('Reading image and scale bar…');const info=await api('figures/inspect',{path});
-   const slot={...info,label:info.name.replace(/\.[^.]+$/,''),zoom:1,center_x:.5,center_y:.5};
+   const slot={...info,source_project:WorkbenchWorkspace.projectForPath(path)||null,label:info.name.replace(/\.[^.]+$/,''),zoom:1,center_x:.5,center_y:.5};
    recipe.slots[index]=slot;selectedPanel=index;
    changed(true);return true;
   }catch(error){status(error.message,true);return false}
  }
- function loadRecipe(next){recipe=normaliseRecipe(next);selectedPanel=0;renderCards();draft();schedulePreview();scheduleEstimate();refreshLegacySlots()}
+ function loadRecipe(next){recipe=normaliseRecipe(next);selectedPanel=0;renderCards();draft();schedulePreview();scheduleEstimate();reconnectSources().then(()=>refreshLegacySlots())}
  async function refreshLegacySlots(){
   const current=recipe,pending=current.slots.filter(slot=>slot.path&&Number(slot.inspection_version||0)<10);
   if(!pending.length)return;
@@ -1083,13 +1126,19 @@
   }
   if(updated&&recipe===current)changed(true);
  }
+ function transposeLayout(){
+  const {rows,columns,slots}=recipe;
+  recipe.slots=Array.from({length:rows*columns},(_,index)=>slots[(index%rows)*columns+Math.floor(index/rows)]||{});
+  selectedPanel=(selectedPanel%columns)*rows+Math.floor(selectedPanel/columns);
+  recipe.rows=columns;recipe.columns=rows;recipe.transposed=!recipe.transposed;changed(true);
+ }
  function changeLayout(){
   const rows=Number($('fig-rows').value),columns=Number($('fig-columns').value),total=rows*columns;
   if(total>24){status('Use a layout with at most 24 panels.',true);sync();return}
   if(recipe.slots.slice(total).some(hasPanel)){
    status('Clear or move panels outside the new layout first.',true);sync();return;
   }
-  recipe.rows=rows;recipe.columns=columns;recipe.slots.length=total;
+  recipe.rows=rows;recipe.columns=columns;recipe.transposed=false;recipe.slots.length=total;
   for(let index=0;index<total;index++)recipe.slots[index]??={};
   selectedPanel=Math.min(selectedPanel,total-1);changed(true);
  }
@@ -1098,7 +1147,7 @@
    config=await (await fetch('/api/config')).json();if(!config.token)throw new Error(config.error||'Could not connect to Workbench.');
    await WorkbenchWorkspace.configure(config);$('fig-version').textContent=config.app_version==='development'?'Development':'v'+config.app_version;
    folderBrowser=WorkbenchProjectTools.browser(api);
-   projectSettings=WorkbenchProjectTools.sources({api,getConfig:()=>config,chooseFolder:target=>folderBrowser.choose(target),
+   projectSettings=WorkbenchProjectTools.sources({api,getConfig:()=>config,chooseFolder:target=>folderBrowser.choose(target),browseFolder:options=>folderBrowser.open(options),
     onRename:async data=>{config={...config,...data};populateProjects();scan()},
     onSave:async data=>{config={...config,...data};populateProjects();projectSettings.render();scan()}});
    saved=parse(WorkbenchWorkspace.readRaw('tem-figures-saved-v1'),{});
@@ -1127,7 +1176,8 @@
    populateProjects();projectSettings.render();
    chooseSaved();renderCards();schedulePreview();scheduleEstimate();
    $('fig-browse').onclick=()=>folderBrowser.open({path:$('fig-folder').value,title:'Choose image folder',onSelect:path=>{$('fig-folder').value=path;scan()}});$('fig-scan').onclick=$('fig-browser-scan').onclick=scan;
-   $('fig-project').onchange=()=>{const value=$('fig-project').value;WorkbenchWorkspace.writeRaw('tem-figures-project',value);if(value)WorkbenchWorkspace.set('active_project',value);$('fig-folder-controls').hidden=Boolean(value);scan()};
+   $('fig-reconnect').onclick=()=>folderBrowser.open({path:selectedRoot(),title:'Find moved figure sources',onSelect:path=>reconnectSources(path)});
+   $('fig-project').onchange=()=>{const value=$('fig-project').value;WorkbenchWorkspace.writeRaw('tem-figures-scope-v2',value);if(value!=='__custom__')WorkbenchWorkspace.set('active_project',value);$('fig-folder-controls').hidden=value!=='__custom__';scan()};
    $('fig-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('fig-project-dialog'));
    $('fig-project-close').onclick=()=>$('fig-project-dialog').close();
    $('fig-open-browser').onclick=openImageBrowser;
@@ -1168,7 +1218,7 @@
    $('fig-preview').onmouseleave=()=>{if(!dragState?.dragging)hideOutputHover();panelHighlight.hidden=true};
    $('fig-preview').onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openSlot(selectedPanel)}};
    $('fig-name').oninput=()=>{recipe.name=$('fig-name').value;draft()};
-   $('fig-rows').onchange=changeLayout;$('fig-columns').onchange=changeLayout;
+   $('fig-transpose').onchange=transposeLayout;$('fig-rows').onchange=changeLayout;$('fig-columns').onchange=changeLayout;
    for(const [id,key,transform] of [['fig-aspect','aspect',value=>value==='auto'?'auto':Number(value)],['fig-background','background',String]])$(id).onchange=()=>{recipe[key]=transform($(id).value);changed()};
    $('fig-match-tone').onchange=()=>{recipe.match_tone=$('fig-match-tone').checked;changed()};
    $('fig-crop-on').onclick=()=>{recipe.crop_metadata=true;changed(true)};
@@ -1220,7 +1270,7 @@
      tagError(`Saved ${result.files.length} tags to ${result.folder}`,false)}
     catch(error){tagError(error.message)}finally{$('fig-tags-export').disabled=false}
    };
-   if($('fig-folder').value)scan();refreshLegacySlots();
+   scan();
   }catch(error){status(error.message,true)}
  }
  document.addEventListener('DOMContentLoaded',start);

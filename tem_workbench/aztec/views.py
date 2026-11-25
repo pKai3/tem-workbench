@@ -12,9 +12,10 @@ from tem_workbench.image_tone import tone_quantiles, tone_target, match_tone
 from .h5oina import AztecReadError
 from .processing import ELEMENT_COLOURS, FWHM_PER_SIGMA, horizontal_crop, signal_view, spatial_structure
 from .map_statistics import map_statistics, map_structure
+from .map_distributions import map_distributions
 
 
-def png(values, *, low=None, high=None, colour=None, diverging=False, opacity=None):
+def png(values, *, low=None, high=None, colour=None, diverging=False, opacity=None, resize=True):
     values=np.asarray(values,float);finite=values[np.isfinite(values)]
     low=float(np.percentile(finite,1)) if low is None and finite.size else float(low or 0)
     high=float(np.percentile(finite,99)) if high is None and finite.size else float(high or 1)
@@ -29,8 +30,9 @@ def png(values, *, low=None, high=None, colour=None, diverging=False, opacity=No
     alpha=np.isfinite(values).astype(float)
     if opacity is not None:alpha*=np.nan_to_num(np.clip(opacity,0,1))
     rgba=np.dstack([rgb,np.uint8(alpha*255)])
-    image=Image.fromarray(rgba);image.thumbnail((1200,1200),Image.Resampling.BILINEAR)
-    out=BytesIO();image.save(out,format='PNG')
+    image=Image.fromarray(rgba)
+    if resize:image.thumbnail((1200,1200),Image.Resampling.BILINEAR)
+    out=BytesIO();image.save(out,format='PNG',compress_level=9 if not resize else 6)
     return 'data:image/png;base64,'+base64.b64encode(out.getvalue()).decode()
 
 
@@ -44,19 +46,24 @@ def match_overview_tones(rows):
         with Image.open(BytesIO(base64.b64decode(source.split(',', 1)[1]))) as image:
             return image.convert('RGBA')
 
-    ranges = [(row, tone_quantiles(read(row['electron']))) for row in rows if row.get('electron')]
-    target = tone_target([limits for _, limits in ranges])
+    renderings = [(item, ('image',)) for row in rows for item in row.get('overviews', []) if item.get('image')]
+    renderings += [(row, ('electron', 'background')) for row in rows if 'overviews' not in row and row.get('electron')]
+    ranges = [(item, keys, tone_quantiles(read(item[keys[0]]))) for item, keys in renderings]
+    target = tone_target([limits for _, _, limits in ranges])
     if target is None:
         return
-    for row, limits in ranges:
+    for row, keys, limits in ranges:
         if limits is None:
             continue
-        for key in ('electron', 'background'):
+        for key in keys:
             if not row.get(key):
                 continue
             image = match_tone(read(row[key]), target, source_range=limits)
             output = BytesIO(); image.save(output, format='PNG')
             row[key] = 'data:image/png;base64,' + base64.b64encode(output.getvalue()).decode()
+    for row in rows:
+        if row.get('overviews') and row['overviews'][0].get('image'):
+            row['electron'] = row['overviews'][0]['image']
 
 
 def acquisition_key(source, acquisition):
@@ -66,10 +73,20 @@ def acquisition_key(source, acquisition):
 
 def acquisition_views(reader, options, *, structure_only=False, export_arrays=None, sources=None):
     reader.inspect()
+    if options.get('channel_table') == 'KamMapImages':
+        if structure_only:
+            raise AztecReadError('Elemental spatial checks do not apply to KAM.')
+        from .kam import comparison_views
+        return comparison_views(reader, options, export_arrays=export_arrays, sources=sources)
+    from . import map_layers
+    eds_layout, eds_layers = map_layers.settings(options)
     ids=options.get('acquisitions',[]) if sources is None else sources
     if not isinstance(ids,list) or not 1 <= len(ids) <= 32:
         raise AztecReadError('Select one or more acquisitions (up to 32).')
     mode=options.get('mode','signal');norm=options.get('normalisation','none')
+    map_palette=options.get('map_palette','black')
+    if map_palette not in ('diverging','black'):
+        raise AztecReadError('Choose Diverging or Black–colour for normalized maps.')
     if mode not in ('signal','ratio','both'):
         raise AztecReadError('Choose element signals, ratios, or both.')
     map_tables=('XrayMapImages','QuantMapImages','AtomicMapImages')
@@ -91,6 +108,9 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
     if scale_scope not in ('all','element','off'):
         raise AztecReadError('Choose All, Per element, or Off for shared scales.')
     shared_scales=scale_scope!='off'
+    distribution_percentile=float(options.get('distribution_percentile',10))
+    if not np.isfinite(distribution_percentile) or not 0 <= distribution_percentile < 50:
+        raise AztecReadError('Choose a lower percentile from 0 up to (but not including) 50.')
     smoothing_unit=options.get('smoothing_unit','px')
     if smoothing_unit not in ('px','nm'):
         raise AztecReadError('Choose pixels or nm for map smoothing.')
@@ -143,7 +163,7 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
             return cache[record['path']]
         site=reader.site(channels[0]['site_id'])
         region=next((r for r in site['regions'] if channels[0]['path'] in r['paths']),None)
-        electron=reader.preview(site['image_path'])['array'] if site.get('image_path') and not structure_only else None
+        electron=reader.preview(site['image_path'])['array'] if kind=='line' and site.get('image_path') and not structure_only else None
         row=dict(label=channels[0]['acquisition_label'],kind=kind,tiles=[],acquisition=identity,
                  source=source,native_acquisition=acquisition_id,
                  channel_table=channel_table,data_kind='reconstructed' if reconstructed else 'composition' if composition else 'signal')
@@ -172,11 +192,6 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
                                distance_unit='nm' if nm_per_px else 'px')
                     if comparison and smoothing_unit=='nm' and nm_per_px:
                         sigma=(smoothing/(row['height']/shape[0]),smoothing/(row['width']/shape[1]))
-                    if electron is not None:
-                        from scipy.ndimage import map_coordinates
-                        yy,xx=np.meshgrid(np.linspace(start[1],end[1],shape[0],endpoint=False),
-                                          np.linspace(start[0],end[0],shape[1],endpoint=False),indexing='ij')
-                        electron=map_coordinates(electron,[yy,xx],order=1,mode='constant',cval=np.nan)
             if comparison and smoothing_unit=='nm' and smoothing and (not nm_per_px or 'width' not in row):
                 row['error']='Physical map calibration unavailable; choose pixel smoothing.'
                 rows.append(row);continue
@@ -190,7 +205,8 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
                     row.update(map_structure(selected_channels, denominator=values(den_record) if mode!='signal' else None,
                                              denominator_label=den_record['Label'] if mode!='signal' else None, sigma=sigma))
                 rows.append(row);continue
-            if electron is not None:row['electron']=png(electron)
+            from .map_overviews import attach
+            attach(reader, row, channels[0], shape, options)
         else:
             if not region or region['kind']!='line' or electron is None:
                 if comparison:
@@ -242,8 +258,12 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
                 export_arrays.add(row,tile.get('ratio_label',tile['label']) if ratio else tile['label'],
                                   'processed',result['values'],unit if norm=='none' else 'Relative to '+norm,
                                   path=record['path'],baseline=result['baseline'])
-            pending_images.append(dict(tile=tile,field=field,values=result['values'],colour=colour,
-                                       key=key,high=reference_high,opacity=ratio_opacity if ratio else None))
+            pending_images.append(dict(tile=tile,field=field,values=result['values'],mask=result['mask'],colour=colour,
+                                       key=key,high=reference_high,opacity=ratio_opacity if ratio else None,
+                                       acquisition=identity,ratio=ratio,
+                                       distribution_key=(record['Label'], den_record['Label'] if ratio else '', unit),
+                                       distribution_label=tile.get('ratio_label',tile['label']) if ratio else tile['label'],
+                                       distribution_unit=unit if norm=='none' else 'Relative to '+norm))
             tile['ratio_unit' if field=='ratio_image' else 'unit']=unit
         for i,record in enumerate(channels):
             element=record['Label'].split()[0]
@@ -251,8 +271,10 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
             if kind=='line' and mode=='ratio' and record is den_record:continue
             den=values(den_record) if mode=='ratio' and den_record and record is not den_record else None
             colour=ELEMENT_COLOURS.get(element,['#65cfff','#fa7d8b','#c8a4ff'][i%3])
+            if kind=='map':colour=eds_layers.get(record['Label'],{}).get('colour',colour)
             label=record['Label']+(' / '+den_record['Label'] if den is not None else '')
             tile=dict(label=label,channel=record['Label'],colour=colour,path=record['path'])
+            if kind=='map':tile.update(shape=list(values(record).shape),denominator_reference=record is den_record)
             result,error=process_channel(record,den)
             if mode=='ratio' and den_record is None:error=f'{denominator} unavailable in this acquisition.'
             if error:tile['error']=error
@@ -319,11 +341,13 @@ def acquisition_views(reader, options, *, structure_only=False, export_arrays=No
                 delta=max(.01,float(np.max(np.abs(np.percentile(finite,[1,99])-1))))
                 floor,exposure=1-delta,1+delta
         item['tile'][item['field']]=png(item['values'],low=floor,high=exposure,
-                                      colour=item['colour'],diverging=norm!='none',opacity=item['opacity'])
+                                      colour=item['colour'],diverging=norm!='none' and map_palette=='diverging',opacity=item['opacity'],resize=False)
         item['tile'][item['field']+'_limits']=[floor,exposure]
+    if not structure_only:map_layers.attach(rows,pending_images,options,eds_layout,eds_layers)
     if comparison and options.get('match_overview_tone') and not structure_only:
         match_overview_tones(rows)
-    return dict(rows=rows,mode=mode,normalisation=norm,smoothing=smoothing,low=low,high=high,
+    return dict(rows=rows,mode=mode,normalisation=norm,map_palette=map_palette,eds_layout=eds_layout,smoothing=smoothing,low=low,high=high,
+                distributions=map_distributions(pending_images,percentile=distribution_percentile) if options.get('map_distributions') and not structure_only else None,
                 comparison=comparison,shared_scales=shared_scales,scale_scope=scale_scope,smoothing_unit=smoothing_unit,
                 colour_scale_scope=scale_scope if comparison else 'all',
                 structure_only=structure_only,

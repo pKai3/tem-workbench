@@ -16,7 +16,7 @@ from .h5oina import AztecReadError
 from .native import blob_payloads, native_string
 
 
-def image_geometry(data, record):
+def image_geometry(data, record, *, kinds=(2,)):
     for payload in blob_payloads(data):
         if len(payload) < 60 or payload[:5] != b'\x06\0\0\0\0':
             continue
@@ -25,7 +25,7 @@ def image_geometry(data, record):
             continue
         kind, width, height, step, x, y = struct.unpack_from('<III3d', payload, offset)
         ident = str(uuid.UUID(bytes_le=payload[offset+36:offset+52]))
-        if kind != 2 or ident != record['id']:
+        if kind not in kinds or ident != record['id']:
             continue
         if not width or not height or not np.isfinite([step, x, y]).all() or step <= 0:
             break
@@ -133,10 +133,11 @@ def site_geometry(reader, site_id, image_path=None):
     frame = coordinate_frame(image_area)
     geometry['field_width_nm'] = field_width_nm(image_area)
     regions, unpositioned, seen = [], [], set()
-    candidates = sorted((r for r in records if r['table'] in ('SmartMaps', 'SmartLines', 'EDXSpectra')),
+    candidates = sorted((r for r in records if r['table'] in ('SmartMaps', 'SmartLines', 'EDXSpectra')
+                         or r['table'] == 'EbsdMaps' and not r.get('derived') and not r.get('ebsd_preview_of')),
                         key=lambda r: (r['table'] == 'EDXSpectra', r.get('acquisition_label') or r['Label']))
     for record in candidates:
-        label = record.get('acquisition_label') if record['table'] in ('SmartMaps', 'SmartLines') else record['Label']
+        label = record.get('acquisition_label') if record['table'] in ('SmartMaps', 'SmartLines', 'EbsdMaps') else record['Label']
         try:
             ident = area_id(reader.record_blob(record))
             if ident in seen:
@@ -148,10 +149,15 @@ def site_geometry(reader, site_id, image_path=None):
             stored = area(ident)
             if coordinate_frame(stored) != frame:
                 raise AztecReadError('Different stored coordinate frame; overlay withheld.')
-            shape = region_geometry(stored)
+            if record['table'] == 'EbsdMaps':
+                grid = reader.ebsd_grid_geometry(record)
+                origin = np.asarray(grid['origin'])
+                shape = dict(kind='rectangle', points=[origin, origin+grid['step']*np.array([grid['width'], grid['height']])])
+            else:
+                shape = region_geometry(stored)
             points = (np.asarray(shape['points']) - geometry['origin']) / geometry['step']
             paths = [record['path']]
-            if record.get('acquisition_id') and record['table'] in ('SmartMaps', 'SmartLines'):
+            if record.get('acquisition_id') and record['table'] in ('SmartMaps', 'SmartLines', 'EbsdMaps'):
                 paths = [r['path'] for r in records if r.get('acquisition_id') == record['acquisition_id']]
             regions.append(dict(id=ident, label=label or record['Label'], path=record['path'], paths=paths,
                                 kind=shape['kind'], points=points.tolist(),
@@ -161,3 +167,22 @@ def site_geometry(reader, site_id, image_path=None):
     return dict(images=[dict(path=r['path'], label=r['Label']) for r in images],
                 image_path=image['path'], geometry=geometry, regions=regions, unpositioned=unpositioned,
                 note='Stored acquisition positions. Circle = line start; arrow = line end.')
+
+
+def region_dimensions(site, region):
+    """Full acquired field/scan extent, independent of display crops and resizing."""
+    if not region or region.get('kind') not in ('rectangle', 'line'):
+        return None
+    points = np.asarray(region.get('points'), dtype=float)
+    if points.shape != (2, 2) or not np.isfinite(points).all():
+        return None
+    geometry = site.get('geometry', {})
+    scale = (geometry.get('field_width_nm') or 0) * geometry.get('step', 0)
+    calibrated = bool(np.isfinite(scale) and scale > 0)
+    delta = (points[1] - points[0]) * (scale if calibrated else 1)
+    result = {'distance_unit': 'nm' if calibrated else 'px'}
+    if region['kind'] == 'line':
+        length = float(np.linalg.norm(delta))
+        return dict(result, length=length) if length > 0 else None
+    width, height = map(float, np.abs(delta))
+    return dict(result, width=width, height=height) if min(width, height) > 0 else None

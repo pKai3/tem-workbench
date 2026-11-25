@@ -3,10 +3,11 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const state={token:'',listing:null,file:null,acquisition:null,dataset:null,site:null,analysisGroup:null,lineCrop:null,folderVersion:0,files:[],fileVersion:0,previewVersion:0,siteVersion:0};
-let project='',sources=[],restoring=false,projectVersion=0,config;
+let project='',sources=[],restoring=false,projectVersion=0,config,projectFilter=[],filterVersion=0,filterComparison=null;
 const saved=()=>{try{return JSON.parse(WorkbenchWorkspace.readRaw('tem-eds-browser')||'{}')}catch{return {}}};
 let sourceIds={};try{const stored=JSON.parse(WorkbenchWorkspace.readRaw('tem-aztec-source-ids')||'{}');if(stored&&typeof stored==='object'&&!Array.isArray(stored))sourceIds=stored}catch{}
 function remember(){
+ renderFileChoice();
  if(restoring)return;
  const previous=WorkbenchWorkspace.bookmark(project,'aztec');
  if(!state.file&&previous.file&&!state.comparisonKind)return; // Keep unavailable-file bookmarks for reconnection.
@@ -26,8 +27,8 @@ function dimensions(shape){return shape===null?'Stored record':shape.length?shap
 function valueText(value){return typeof value==='object'?JSON.stringify(value):String(value??'—')}
 function pointLabel(label){return label.replace(/^Spectrum\b/,'Point').replace(/^Preview spectrum$/i,'Preview').replace(/ Sum Spectrum$/i,' sum')}
 function isSavedPreview(d){return d.path.startsWith('/EDXSpectra/')&&/^Preview spectrum$/i.test(d.attributes.Label||'')}
-function siteContents(a){
- if(state.file.catalogue.file_type!=='OIPX')return [];
+function siteContents(a,catalogue=state.file.catalogue){
+ if(catalogue.file_type!=='OIPX')return [];
  const datasets=a.layers.flatMap(l=>l.signals),items=[],seen=new Set();
  for(const d of datasets){const kind=d.path.split('/')[1],label=d.attributes.Label||'',acquisition=d.attributes.Acquisition;
   if(kind==='ElectronImages')items.push(label.replace(/^Electron Image /,'Image '));
@@ -39,8 +40,8 @@ function siteContents(a){
 }
 function table(entries){const node=el('table',undefined,'eds-metadata-table');const body=el('tbody');for(const [key,value] of entries){const row=el('tr');row.append(el('th',key),el('td',valueText(value)));body.append(row)}node.append(body);return node}
 async function api(action,body){const response=await fetch(`/api/aztec/${action}`,body?{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body)}:{});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
-const overviewRequests=new Map();
-const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions,setLineCrop,setLineCursor,setMapCursor,remember,projectOverviewStrip});
+const overviewRequests=new Map(),sitePreviewRequests=new Map();
+const analysis=window.createAztecAnalysis({$,el,state,api,highlightRegions,setLineCrop,setLineCursor,setMapCursor,remember,projectOverviewStrip,isSourceVisible,ensureSourcesVisible});
 function openAnalysis(id,comparison=false,channelTable){clearPreview();analysis.open(id,comparison,channelTable);remember()}
 async function sharedApi(action,body){const response=await fetch(`/api/${action}`,{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':state.token},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
 const folderBrowser=WorkbenchProjectTools.browser(sharedApi);
@@ -72,28 +73,73 @@ function projectOverviewStrip(path){
  });
  return strip;
 }
-const projectSettings=WorkbenchProjectTools.sources({api:sharedApi,getConfig:()=>config,chooseFolder:target=>folderBrowser.choose(target),
+const projectSettings=WorkbenchProjectTools.sources({api:sharedApi,getConfig:()=>config,chooseFolder:target=>folderBrowser.choose(target),browseFolder:options=>folderBrowser.open(options),
  onRename:async data=>{config.sources=data.sources;await updateProjects();await scanFiles()},
  onSave:async data=>{remember();config={...config,...data};await updateProjects();projectSettings.render();await changeProject(project)}});
+function isSourceVisible(path){return !projectFilter.length||sources.some(source=>projectFilter.includes(source.id)&&WorkbenchProjectTools.sourceFolders(source).some(folder=>path===folder.path||path.startsWith(folder.path.replace(/[\\/]$/,'')+'/')))}
+function ensureSourcesVisible(paths){
+ if(paths.every(isSourceVisible))return;
+ remember();projectFilter=[];project='';filterComparison=null;
+ WorkbenchWorkspace.set('active_project',project);WorkbenchWorkspace.writeRaw('tem-aztec-project-filter','[]');renderProjectFilter();$('eds-project-filter').open=false;
+ // Filtering is only a browsing convenience; a saved comparison owns its sources.
+ scanFiles();
+}
+function renderProjectFilter(){
+ const root=$('eds-sources');root.replaceChildren();
+ $('eds-project-filter-title').textContent=projectFilter.length===1?(sources.find(source=>source.id===projectFilter[0])?.name||'1 project'):projectFilter.length?`${projectFilter.length} projects`:'All projects';
+ const choice=(name,checked,change)=>{const label=el('label',undefined,'check'),input=el('input');input.type='checkbox';input.checked=checked;input.onchange=()=>change(input.checked);label.append(input,el('span',name));root.append(label)};
+ for(const option of WorkbenchProjectTools.projectChoices(sources)){
+  if(!option.value)choice(option.label,!projectFilter.length,()=>setProjectFilter([]));
+  else choice(option.label,projectFilter.includes(option.value),checked=>setProjectFilter(checked?[...projectFilter,option.value]:projectFilter.filter(id=>id!==option.value)));
+ }
+}
+async function setProjectFilter(ids){
+ const turn=++filterVersion;if(state.comparisonKind)filterComparison={kind:state.comparisonKind,table:state.comparisonTable};
+ projectFilter=[...new Set(ids)];WorkbenchWorkspace.writeRaw('tem-aztec-project-filter',JSON.stringify(projectFilter));renderProjectFilter();
+ await changeProject(projectFilter.length===1?projectFilter[0]:'');
+ if(turn===filterVersion){const mode=filterComparison;filterComparison=null;if(mode)await analysis.open(null,mode.kind,mode.table)}
+}
 async function updateProjects(){
  sources=config.sources||[];await WorkbenchWorkspace.configure(config);
- $('eds-sources').replaceChildren(new Option('All projects',''));for(const source of sources)$('eds-sources').add(new Option(source.name||source.path,source.id));
- if(!sources.some(s=>s.id===project))project='';$('eds-sources').value=project;
+ projectFilter=projectFilter.filter(id=>sources.some(source=>source.id===id));
+ if(!sources.some(s=>s.id===project))project='';renderProjectFilter();
 }
 function renderFileChoice(){
- const path=state.file?.catalogue.source.path;$('eds-current-file').textContent=path?path.split(/[\\/]/).at(-1):'Choose file…';$('eds-current-file').title=path||'';$('eds-sites-empty').hidden=!!state.file;
+ const path=state.file?.catalogue.source.path,site=state.acquisition,attributes=state.dataset?.attributes||{};
+ const parts=[path?.split(/[\\/]/).at(-1),site?.specimen,site?.label,attributes.Acquisition,attributes.Label];
+ const text=parts.filter((value,index)=>value&&value!==parts[index-1]).join(' / ');
+ $('eds-current-file').textContent=text||'Choose a project';$('eds-current-file').title=text;$('eds-sites-empty').hidden=!!state.file;
+}
+const expandedExports=new Set();
+function fileGroups(files,query){
+ const natives=new Set(files.filter(f=>f.kind==='OIPX').map(f=>f.path)),children=new Map();
+ for(const file of files)if(file.kind==='H5OINA'&&natives.has(file.parent_path)){
+  if(!children.has(file.parent_path))children.set(file.parent_path,[]);
+  children.get(file.parent_path).push(file);
+ }
+ const matches=file=>(file.relative_path+' '+file.project).toLowerCase().includes(query);
+ return files.filter(file=>!(file.kind==='H5OINA'&&natives.has(file.parent_path))).flatMap(file=>{
+  const exports=children.get(file.path)||[],found=matches(file),visible=found?exports:exports.filter(matches);
+  return found||visible.length?[{file,exports:visible,total:exports.length}]:[];
+ });
+}
+function navigationFile(){
+ const active=state.file?.catalogue.source.path,native=state.nativeFile;
+ return native&&(native.catalogue.source.path===active||state.files.some(file=>file.path===active&&file.parent_path===native.catalogue.source.path))?native:state.file;
 }
 function renderFiles(){
- const host=$('eds-files'),query=$('eds-filter').value.toLowerCase();closeOverviewZoom();host.replaceChildren();
- const matches=state.files.filter(f=>(f.relative_path+' '+f.project).toLowerCase().includes(query));
- $('eds-file-count').textContent=String(state.files.length);
- for(const file of matches){
+ const host=$('eds-files'),query=$('eds-filter').value.trim().toLowerCase();closeOverviewZoom();host.replaceChildren();
+ const groups=fileGroups(state.files,query),active=navigationFile()?.catalogue.source.path;
+ $('eds-file-count').textContent=String(fileGroups(state.files,'').length);
+ $('eds-file-count').title=`${state.files.length} files including project exports`;
+ for(const {file,exports} of groups){
   const button=el('button',undefined,'eds-entry'),name=el('span',file.name,'eds-file-name');button.type='button';button.append(name);
-  const folder=file.relative_path.split(/[\\/]/).slice(0,-1).join(' / '),context=[project?'':file.project,folder].filter(Boolean).join(' / ');
-  if(context)button.append(WorkbenchProjectTools.pathText(el('small'),context));name.title=file.path;button.setAttribute('aria-current',String(file.path===state.file?.catalogue.source.path));button.onclick=()=>openFile(file.path);host.append(button);
+  const folder=file.relative_path.split(/[\\/]/).slice(0,-1).join('/'),context=[project?'':file.project,folder].filter(Boolean).join('/');
+  if(context)button.append(WorkbenchProjectTools.pathText(el('small'),context));button.title=file.path;name.title=file.path;button.setAttribute('aria-label',file.name);button.setAttribute('aria-current',String(file.path===active));button.onclick=()=>openFile(file.path);host.append(button);
+  if(query&&exports.length)button.append(el('small',`${exports.length} matching project export${exports.length===1?'':'s'}`));
   if(file.kind==='OIPX'&&file.project_id)button.append(projectOverviewStrip(file.path));
  }
- if(!matches.length)host.append(el('p',query?'No matching files.':'No supported AZtec files found. Choose another project or check its source folder in Project settings.','hint'));
+ if(!groups.length)host.append(el('p',query?'No matching files.':'No supported AZtec files found. Choose another project or check its source folder in Project settings.','hint'));
 }
 async function scanFiles(){
  const version=++state.folderVersion;$('eds-rescan').disabled=true;$('eds-scan-status').textContent='Scanning configured files…';
@@ -116,7 +162,7 @@ async function scanFiles(){
   for(const oldPath of Object.keys(moves))delete sourceIds[oldPath];
   for(const file of listing.files)if(file.kind==='OIPX'&&file.project_id)sourceIds[file.path]=file.project_id;
   WorkbenchWorkspace.writeRaw('tem-aztec-source-ids',JSON.stringify(sourceIds));
-  overviewRequests.clear();state.files=project?listing.files.filter(file=>file.source_id===project):listing.files;renderFiles();
+  overviewRequests.clear();state.files=listing.files.filter(file=>!projectFilter.length||projectFilter.includes(file.source_id));renderFiles();if(state.file)renderAcquisitions();
   $('eds-scan-status').textContent=listing.errors.join(' · ');$('eds-scan-status').classList.toggle('eds-warning',!!listing.errors.length);
   const oldPath=state.file?.catalogue.source.path;
   if(oldPath&&moves[oldPath]){const bookmark=WorkbenchWorkspace.bookmark(project,'aztec');state.file=null;await openFile(moves[oldPath],bookmark.dataset,bookmark.acquisition,bookmark.comparison,bookmark.comparisonTable,bookmark)}
@@ -126,33 +172,64 @@ async function scanFiles(){
  finally{if(version===state.folderVersion)$('eds-rescan').disabled=false}
 }
 async function openFile(path,restoreDataset,restoreAcquisition,restoreComparison,restoreTable,bookmark={}){
- const owner=WorkbenchWorkspace.projectForPath(path);if(project&&owner!==project){remember();project=owner;$('eds-sources').value=project;WorkbenchWorkspace.set('active_project',project)}
+ const owner=WorkbenchWorkspace.projectForPath(path);if(project&&owner!==project){remember();project=owner;renderProjectFilter();WorkbenchWorkspace.set('active_project',project)}
  const version=++state.fileVersion;++state.previewVersion;status('Reading file contents…');
- try{const file=await api('open',{path});if(version!==state.fileVersion)return;state.file=file;const c=file.catalogue;$('eds-empty').hidden=true;$('eds-file').hidden=false;$('eds-file-info').textContent=`${c.source.path.split(/[\\/]/).at(-1)} · ${size(c.source.size)} · ${c.file_type} ${c.format_version}${c.software_version?' · AZtec '+c.software_version:''}`;
+ try{
+  const parent=state.files.find(file=>file.path===path)?.parent_path;let nativeFile=null,navigationError='';
+  if(parent){
+   if(state.nativeFile?.catalogue.source.path===parent)nativeFile=state.nativeFile;
+   else try{nativeFile=await api('open',{path:parent})}catch(error){navigationError=error.message}
+   if(version!==state.fileVersion)return;
+  }
+  const file=await api('open',{path});if(version!==state.fileVersion)return;state.file=file;const c=file.catalogue;state.nativeFile=c.file_type==='OIPX'?file:nativeFile;$('eds-empty').hidden=true;$('eds-file').hidden=false;$('eds-file-info').textContent=`${c.source.path.split(/[\\/]/).at(-1)} · ${size(c.source.size)} · ${c.file_type} ${c.format_version}${c.software_version?' · AZtec '+c.software_version:''}`;
   const restored=c.acquisitions.find(a=>a.index===restoreAcquisition)||c.acquisitions.find(a=>a.layers.some(l=>l.signals.some(d=>d.path===restoreDataset)));
   renderAcquisition((restored||c.acquisitions[0])?.index);renderAcquisitions();state.listing={path:file.folder};renderFileChoice();renderFiles();remember();status(c.inventory?`${c.inventory.Samples||0} specimens · ${c.inventory.Analyses||0} sites · ${c.inventory.SmartMaps||0} EDS maps${c.inventory.EbsdMaps?` · ${c.ebsd_map_counts?.full??c.inventory.EbsdMaps} EBSD maps${c.ebsd_map_counts?.previews?` · ${c.ebsd_map_counts.previews} previews`:''}`:''} · ${c.inventory.SmartLines||0} line scans · ${c.inventory.EDXSpectra||0} stored spectra · ${c.inventory.ElectronImages||0} electron images`:`${c.acquisitions.length} acquisitions · ${c.datasets.length} datasets · previews load when selected`);
-  const target=state.acquisition?.layers.flatMap(l=>l.signals).find(d=>d.path===restoreDataset);if(['map','line'].includes(restoreComparison)){analysis.open(null,restoreComparison,restoreTable);remember()}else if(bookmark.analysisGroup){const [id,table]=bookmark.analysisGroup.split(':');openAnalysis(id,false,table)}else if(target)selectDataset(target);
+  const target=state.acquisition?.layers.flatMap(l=>l.signals).find(d=>d.path===restoreDataset);if(['map','line'].includes(restoreComparison)){await analysis.open(null,restoreComparison,restoreTable);remember()}else if(bookmark.analysisGroup){const [id,table]=bookmark.analysisGroup.split(':');openAnalysis(id,false,table)}else if(target)selectDataset(target);
   if(bookmark.image)await loadSite(bookmark.image);
+  if(navigationError)status('Export opened; native project navigation unavailable: '+navigationError,true);
  }catch(error){if(version===state.fileVersion)status(error.message,true)}
 }
 function renderAcquisitions(){
  const root=$('eds-acquisitions');root.replaceChildren();root.hidden=false;
- const groups=new Map();for(const a of state.file.catalogue.acquisitions){const name=a.specimen||'Project';if(!groups.has(name))groups.set(name,[]);groups.get(name).push(a)}
+ const navigation=navigationFile(),catalogue=navigation.catalogue,active=state.file.catalogue.source.path,nativePath=catalogue.source.path;
+ const groups=new Map();for(const a of [...catalogue.acquisitions].sort((a,b)=>(a.index==='unassigned')-(b.index==='unassigned'))){const name=a.specimen||'Project';if(!groups.has(name))groups.set(name,[]);groups.get(name).push(a)}
+ let projectList;
  for(const [name,items] of groups){const group=el('section');group.append(el('h3',name));const list=el('ul');for(const a of items){
-  const item=el('li'),label=[a.site===a.label?null:a.site,a.label].filter(Boolean).join(' / '),button=el('button',undefined,'eds-site'),contents=siteContents(a);
+  const item=el('li'),label=[a.site===a.label?null:a.site,a.label].filter(Boolean).join(' / '),button=el('button',undefined,'eds-site'),contents=siteContents(a,catalogue);
   const title=el('span',label,'eds-site-name');title.title=label;button.append(title);for(const text of contents){const note=el('small',text,'eds-site-summary');note.title=text;button.append(note)}
-  button.type='button';button.title=[label,...contents].join('\n');button.setAttribute('aria-label',label);button.dataset.index=a.index;button.setAttribute('aria-current',String(!state.comparisonKind&&a.index===state.acquisition?.index));button.onclick=()=>{if(state.comparisonKind||a.index!==state.acquisition?.index)renderAcquisition(a.index)};item.append(button);list.append(item)
+  if(a.index!=='unassigned'){
+   const preview=el('span','Loading preview…','eds-site-preview'),key=navigation.id+':'+a.index;button.append(preview);
+   if(!sitePreviewRequests.has(key))sitePreviewRequests.set(key,api('site',{id:navigation.id,site:a.index}).catch(()=>({})));
+   sitePreviewRequests.get(key).then(result=>{if(!preview.isConnected)return;result={...result,image:result.preview?.image};preview.replaceChildren();if(result.image){const image=el('img');image.src=result.image;image.alt=[a.specimen,label,'site image'].filter(Boolean).join(' · ');preview.append(image);button.addEventListener('mouseenter',()=>showOverviewZoom(result.image,preview,image.alt));button.addEventListener('mouseleave',closeOverviewZoom);button.addEventListener('focus',()=>showOverviewZoom(result.image,preview,image.alt));button.addEventListener('blur',closeOverviewZoom)}else preview.textContent='No site image'});
+  }
+  button.type='button';button.title=[label,...contents].join('\n');button.setAttribute('aria-label',label);button.dataset.index=a.index;button.dataset.source=nativePath;button.setAttribute('aria-current',String(active===nativePath&&!state.comparisonKind&&a.index===state.acquisition?.index));button.onclick=()=>{if(active!==nativePath)openFile(nativePath,undefined,a.index);else if(state.comparisonKind||a.index!==state.acquisition?.index)renderAcquisition(a.index)};item.append(button);list.append(item);
+  if(a.index==='unassigned'){projectList=list;group.classList.add('eds-project-section')}
  }group.append(list);root.append(group)}
+ const exports=catalogue.file_type==='OIPX'?state.files.filter(file=>file.kind==='H5OINA'&&file.parent_path===nativePath):[];
+ if(!exports.length)return;
+ if(!projectList){const group=el('section',undefined,'eds-project-section');group.append(el('h3','Project'));projectList=el('ul');group.append(projectList);root.append(group)}
+ const item=el('li'),details=el('details',undefined,'eds-project-exports'),summary=el('summary',`Project exports · ${exports.length}`,'eds-site'),list=el('ul');
+ details.open=expandedExports.has(nativePath)||exports.some(file=>file.path===active)||!!$('eds-filter').value.trim();
+ summary.title='H5OINA files in this native project’s h5oina folder';details.append(summary,list);item.append(details);projectList.append(item);
+ for(const file of exports){
+  const row=el('li'),button=el('button',undefined,'eds-entry eds-export-entry');button.type='button';button.append(el('span',file.export_name||file.name,'eds-file-name'));
+  const mismatch='Filename differs from the native project; associated by its h5oina folder.';
+  button.title=file.path+(file.filename_mismatch?'\n'+mismatch:'');button.dataset.source=file.path;button.setAttribute('aria-label',file.name+(file.filename_mismatch?' · Name differs':''));button.setAttribute('aria-current',String(file.path===active&&!state.comparisonKind));button.onclick=()=>openFile(file.path);
+  if(file.filename_mismatch){const note=el('small','Name differs','eds-export-warning');note.title=mismatch;button.append(note)}
+  row.append(button);list.append(row);
+  if(file.path===active&&state.file.catalogue.acquisitions.length>1){const acquisitions=el('ul');for(const a of state.file.catalogue.acquisitions){const li=el('li'),select=el('button',a.label,'eds-site');select.type='button';select.dataset.index=a.index;select.dataset.source=active;select.setAttribute('aria-current',String(!state.comparisonKind&&a.index===state.acquisition?.index));select.onclick=()=>renderAcquisition(a.index);li.append(select);acquisitions.append(li)}row.append(acquisitions)}
+ }
+ details.ontoggle=()=>{if(!details.isConnected)return;if(details.open)expandedExports.add(nativePath);else expandedExports.delete(nativePath)};
 }
 function renderAcquisition(index){
- ++state.previewVersion;state.dataset=null;state.acquisition=state.file.catalogue.acquisitions.find(a=>a.index===index);for(const button of $('eds-acquisitions').querySelectorAll('.eds-site'))button.setAttribute('aria-current',String(button.dataset.index===String(index)));
+ ++state.previewVersion;state.dataset=null;state.acquisition=state.file.catalogue.acquisitions.find(a=>a.index===index);for(const button of $('eds-acquisitions').querySelectorAll('.eds-site'))button.setAttribute('aria-current',String(button.dataset.source===state.file.catalogue.source.path&&button.dataset.index===String(index)));
  loadSite();
  const a=state.acquisition,c=state.file.catalogue;$('eds-context').textContent=[a?.project,a?.specimen,a?.site===a?.label?null:a?.site].filter(Boolean).join(' / ');$('eds-title').textContent=a?.label||'File contents';
  const notes=[...(c.notes||[]),...c.warnings];$('eds-warnings').textContent=notes.join(' ');$('eds-warnings').hidden=!notes.length;
  const root=$('eds-contents');root.replaceChildren();clearPreview();$('eds-metadata').open=false;$('eds-metadata-body').replaceChildren();
- const native=c.file_type==='OIPX',previewable=d=>!isSavedPreview(d)&&(/^\/(ElectronImages|XrayMapImages|QuantMapImages|AtomicMapImages|XrayLinescans|QuantLinescans|SmartLines|EDXSpectra|EbsdMapImages)\//.test(d.path)||d.attributes['Record type']==='Decoded EBSD field'||d.attributes['Preview available']===true);
+ const native=c.file_type==='OIPX',previewable=d=>!isSavedPreview(d)&&(/^\/(ElectronImages|XrayMapImages|QuantMapImages|AtomicMapImages|KamMapImages|XrayLinescans|QuantLinescans|SmartLines|EDXSpectra|EbsdMapImages)\//.test(d.path)||d.attributes['Record type']==='Decoded EBSD field'||d.attributes['Preview available']===true);
  const layers=(a?.layers||[]).flatMap(l=>{const previews=l.signals.filter(isSavedPreview);return previews.length?[{...l,signals:l.signals.filter(d=>!isSavedPreview(d))},{...l,path:'Saved preview spectra',technique:'Saved preview spectra',signals:previews}]:[l]});if(native)layers.sort((x,y)=>Number(!x.signals.some(previewable))-Number(!y.signals.some(previewable)));
- const channelsByAcquisition=new Set(layers.flatMap(l=>l.signals).filter(d=>/^\/(XrayMapImages|QuantMapImages|AtomicMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)).map(d=>d.attributes['Acquisition ID']));
+ const channelsByAcquisition=new Set(layers.flatMap(l=>l.signals).filter(d=>/^\/(XrayMapImages|QuantMapImages|AtomicMapImages|KamMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)).map(d=>d.attributes['Acquisition ID']));
  const sums=new Map(layers.flatMap(l=>l.signals).filter(d=>d.path.startsWith('/EDXSpectra/')&&/^(Line|Map) Sum Spectrum$/i.test(d.attributes.Label||'')&&channelsByAcquisition.has(d.attributes['Acquisition ID'])).map(d=>[d.attributes['Acquisition ID'],d]));
  const inlineSums=new Set([...sums.values()].map(d=>d.path));
  const unavailable=el('details',undefined,'eds-unavailable'),unavailableCount=layers.flatMap(l=>l.signals).filter(d=>!previewable(d)).length;
@@ -166,8 +243,8 @@ function renderAcquisition(index){
   if(!native)section.append(el('p',`${layer.state}${layer.grid_shape?` · ${dimensions(layer.grid_shape)} grid`:''}`,'hint'));
   for(const note of layer.notes)section.append(el('p',note,'eds-warning'));
   const buttonRow=compact||points,buttons=buttonRow?el('div',undefined,'eds-data-buttons'):section;if(buttonRow){buttons.setAttribute('role','group');buttons.setAttribute('aria-label',name);section.append(buttons)}
-  const channel=layer.signals.find(d=>/^\/(XrayMapImages|QuantMapImages|AtomicMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)),acquisitionId=channel?.attributes['Acquisition ID'];
-  if(acquisitionId){const all=el('button','All','eds-item');all.type='button';all.title='View all elements';all.setAttribute('aria-label','View all elements');all.setAttribute('aria-pressed','false');all.dataset.analysisGroup=acquisitionId+':'+channel.path.split('/')[1];all.onclick=()=>openAnalysis(acquisitionId,false,channel.path.split('/')[1]);buttons.append(all)}
+  const channel=layer.signals.find(d=>/^\/(XrayMapImages|QuantMapImages|AtomicMapImages|KamMapImages|XrayLinescans|QuantLinescans)\//.test(d.path)),acquisitionId=channel?.attributes['Acquisition ID'];
+  if(acquisitionId){const all=el('button','All','eds-item');all.type='button';all.title=channel.path.startsWith('/KamMapImages/')?'View recalculated KAM':'View all elements';all.setAttribute('aria-label',all.title);all.setAttribute('aria-pressed','false');all.dataset.analysisGroup=acquisitionId+':'+channel.path.split('/')[1];all.onclick=()=>openAnalysis(acquisitionId,false,channel.path.split('/')[1]);buttons.append(all)}
   let lastGroup='';for(const d of layer.signals){
    const relative=native?(d.attributes.Label||d.attributes['Record type']):d.path.slice(layer.path.length+'/Data/'.length),parts=relative.split('/'),group=parts.length>1?parts.slice(0,-1).join('/'):'Data',label=parts.at(-1);
    if(group!==lastGroup&&!native){section.append(el('p',group,'eds-group-label'));lastGroup=group}
@@ -290,7 +367,7 @@ function drawPlot(root,data){
   const guide=el('div',undefined,'eds-peak-guide'),control=el('label','Elements','eds-peak-elements'),input=el('input'),help=el('button','ⓘ','eds-peak-help'),explanation=el('p','Reference energies show possible X-ray transitions, not confirmed elements. Kα1 window counts use approximate AZtec bounds verified for Al, Ti, V and Fe; they include background and overlapping peaks.','hint');
   input.type='search';input.placeholder='e.g. Al Ti V Fe';input.setAttribute('aria-label','Element symbols for peak markers');const credit=el('a','xraylib');credit.href='https://github.com/tschoonj/xraylib';credit.target='_blank';credit.rel='noopener noreferrer';explanation.append(' Reference energies: ',credit,' (BSD license).');
   const known=new Set(peaks.map(p=>p.element)),acquisition=state.dataset?.attributes?.['Acquisition ID'];
-  const saved=(state.file?.catalogue?.datasets||[]).filter(d=>/(XrayMapImages|QuantMapImages|AtomicMapImages|XrayLinescans|QuantLinescans|\/Data\/(?:Window Integral|Peak Area|Composition)\/)/.test(d.path)&&(!acquisition||d.attributes?.['Acquisition ID']===acquisition)).map(d=>(d.attributes?.Label||d.path.split('/').at(-1)).match(/^([A-Z][a-z]?)\b/)?.[1]).filter(symbol=>known.has(symbol));
+  const saved=(state.file?.catalogue?.datasets||[]).filter(d=>/(XrayMapImages|QuantMapImages|AtomicMapImages|KamMapImages|XrayLinescans|QuantLinescans|\/Data\/(?:Window Integral|Peak Area|Composition)\/)/.test(d.path)&&(!acquisition||d.attributes?.['Acquisition ID']===acquisition)).map(d=>(d.attributes?.Label||d.path.split('/').at(-1)).match(/^([A-Z][a-z]?)\b/)?.[1]).filter(symbol=>known.has(symbol));
   input.value=[...new Set(saved)].join(' ');control.append(input);help.type='button';help.setAttribute('aria-label','About spectrum peak markers and windows');help.setAttribute('aria-expanded','false');explanation.hidden=true;help.onclick=()=>{explanation.hidden=!explanation.hidden;help.setAttribute('aria-expanded',String(!explanation.hidden))};guide.append(control,help,explanation);wrap.insertBefore(guide,svg);
   input.oninput=render;
   if(data.spectral_windows?.length){const results=el('div',undefined,'eds-window-results');for(const window of data.spectral_windows){const item=el('span',`${window.label} window: ${number(window.counts)} counts${window.cps===null?'':` · ${number(window.cps)} cps`}${window.overlap?' · Ti Kβ overlaps':''}`,'eds-window-result');item.title=`${window.low_kev}–${window.high_kev} keV · fractional edge channels · includes background and any overlapping lines${window.overlap?` · ${window.overlap}`:''}`;results.append(item)}wrap.append(results)}
@@ -311,8 +388,10 @@ function metadata(){
  for(const layer of state.acquisition?.layers||[]){root.append(el('h3',layer.path),table(Object.entries(layer.header).map(([key,d])=>[key,`${d.value===null?dimensions(d.shape):valueText(d.value)}${d.attributes.Unit?' '+d.attributes.Unit:''}`])))}
  const all=el('details');all.append(el('summary',`All datasets (${c.datasets.length})`));all.addEventListener('toggle',()=>{if(!all.open||all.childElementCount>1)return;for(const d of c.datasets){const b=el('button',`${d.path} · ${dimensions(d.shape)}`,'eds-item');b.type='button';b.onclick=()=>{selectDataset(d);$('eds-dataset-title').scrollIntoView({block:'nearest'})};all.append(b)}});root.append(all);
 }
+document.addEventListener('click',event=>{const picker=$('eds-project-filter');if(picker.open&&!picker.contains(event.target))picker.open=false});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&$('eds-project-filter').open){$('eds-project-filter').open=false;$('eds-project-filter-title').focus({preventScroll:true})}});
 $('eds-rescan').onclick=scanFiles;
-$('eds-filter').oninput=renderFiles;
+$('eds-filter').oninput=()=>{renderFiles();if(state.file)renderAcquisitions()};
 $('eds-row').onchange=preview;
 $('eds-unsigned').onchange=preview;
 $('eds-energy-low').onchange=preview;
@@ -321,16 +400,17 @@ $('eds-quant-measure').onchange=preview;
 $('eds-metadata').ontoggle=()=>{if($('eds-metadata').open)metadata()};
 $('eds-project-settings').onclick=()=>WorkbenchProjectTools.showSources($('eds-project-dialog'));
 $('eds-project-close').onclick=()=>$('eds-project-dialog').close();
-$('eds-sources').onchange=e=>changeProject(e.target.value);
+$('eds-mode-browse').onclick=()=>{filterComparison=null;if(state.acquisition)renderAcquisition(state.acquisition.index);else{analysis.close();$('eds-file').hidden=!state.file;$('eds-empty').hidden=!!state.file}remember()};
+$('eds-mode-compare').onclick=()=>{if(!state.comparisonKind)openAnalysis(null,'map')};
 $('eds-compare').onclick=()=>openAnalysis(null,'map');
 $('eds-compare-lines').onclick=()=>openAnalysis(null,'line');
 $('eds-site-image').onchange=e=>loadSite(e.target.value);
 $('eds-catalogue').onclick=async()=>{if(!state.file)return;const button=$('eds-catalogue'),notice=WorkbenchExportNotice.show;button.disabled=true;notice('Saving catalogue…','Preparing the file…');try{const saved=await api('export',{id:state.file.id,format:'catalogue'});notice('✓ Export saved · '+saved.path.split(/[\\/]/).at(-1),saved.path,'saved')}catch(error){notice('Export failed',error.message,'error')}finally{button.disabled=false}};
 async function changeProject(id){
- const version=++projectVersion;remember();project=id;WorkbenchWorkspace.set('active_project',project);$('eds-sources').value=project;
+ const version=++projectVersion;remember();project=id;WorkbenchWorkspace.set('active_project',project);renderProjectFilter();
  let bookmark=WorkbenchWorkspace.bookmark(project,'aztec');restoring=true;
  ++state.fileVersion;++state.folderVersion;++state.siteVersion;++state.previewVersion;
- analysis.close();state.file=null;state.acquisition=null;state.dataset=null;state.site=null;state.listing=null;
+ analysis.close();state.file=null;state.nativeFile=null;state.acquisition=null;state.dataset=null;state.site=null;state.listing=null;
  $('eds-file').hidden=true;$('eds-empty').hidden=false;$('eds-acquisitions').replaceChildren();state.files=[];$('eds-files').replaceChildren();$('eds-filter').value='';renderFileChoice();
  try{
   state.listing={path:bookmark.folder||sources.find(s=>s.id===project)?.path||''};status('Choose an AZtec file.');
@@ -347,11 +427,13 @@ async function init(){try{
  $('eds-version').textContent=config.app_version;
  const previous=saved(),owner=WorkbenchWorkspace.projectForPath(previous.file||previous.folder);
  if(previous.file&&!WorkbenchWorkspace.bookmark(owner,'aztec').file)WorkbenchWorkspace.remember(owner,'aztec',previous);
- const active=WorkbenchWorkspace.get('active_project',owner),id=sources.some(s=>s.id===active)?active:'';
+ const active=WorkbenchWorkspace.get('active_project',owner);let id=sources.some(s=>s.id===active)?active:'';
+ try{const filter=JSON.parse(WorkbenchWorkspace.readRaw('tem-aztec-project-filter')||'null');projectFilter=Array.isArray(filter)?filter.filter(value=>sources.some(source=>source.id===value)):(id?[id]:[])}catch{projectFilter=id?[id]:[]}
+ id=projectFilter.length===1?projectFilter[0]:'';
  await updateProjects();projectSettings.render();
  // Do not replace a remembered project with the initial empty viewer.
  project=id;restoring=true;await changeProject(id);
- }catch(error){restoring=false;status(error.message,true)}}
+ }catch(error){restoring=false;status(error.message,true)}finally{$('eds-mode-browse').disabled=false;$('eds-mode-compare').disabled=false}}
 
 init();
 })();

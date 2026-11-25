@@ -1,0 +1,58 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const context={structuredClone,window:{addEventListener(){}},document:{addEventListener(){}}};
+vm.createContext(context);vm.runInContext(fs.readFileSync('web/project-tools.js','utf8'),context);
+const sources=[{id:'a',name:'Paper',path:'/paper'},{id:'b',name:'Examples',path:'/examples'}];
+const tools=context.window.WorkbenchProjectTools;
+assert.equal(tools.relativeProjectFolder('/paper','/paper/TEM/ST'),'TEM/ST');
+assert.equal(tools.relativeProjectFolder('/paper','/paper'),'.');
+assert.equal(tools.relativeProjectFolder('C:\\Paper','c:\\Paper\\TEM'),'TEM');
+assert.throws(()=>tools.relativeProjectFolder('/paper','/paper-copy/TEM'),/inside this project/);
+assert.deepEqual(JSON.parse(JSON.stringify(tools.projectChoices(sources))),[
+ {value:'',label:'All projects'},{value:'a',label:'Paper'},{value:'b',label:'Examples'}]);
+assert.equal(tools.projectChoices(sources,{customFolder:true}).at(-1).value,'__custom__');
+const fields={'fig-project':{value:'',dataset:{},replaceChildren(...options){this.options=options}},'fig-folder':{value:'/custom'},'fig-folder-controls':{hidden:true}};
+const values={'tem-figures-project':''};
+Object.assign(context,{$:id=>fields[id],config:{sources},WorkbenchProjectTools:tools,
+ WorkbenchWorkspace:{readRaw:key=>values[key]??null,get:()=>''},Option:function(label,value){return {label,value}}});
+const app=fs.readFileSync('web/figures.js','utf8');
+vm.runInContext(app.slice(app.indexOf(' function populateProjects(){'),app.indexOf(' function previewError(')),context);
+context.populateProjects();assert.equal(fields['fig-project'].value,'__custom__','Legacy custom folders do not become All projects');
+assert.equal(fields['fig-folder-controls'].hidden,false);assert.equal(context.sourceSelection().folder,'/custom');
+fields['fig-project'].value='';context.populateProjects();
+assert.equal(context.sourceSelection().project,'');assert.equal(fields['fig-folder-controls'].hidden,true);
+fields['fig-project'].value='a';assert.equal(context.sourceSelection().project,'a');assert.equal(context.selectedRoot(),'/paper');
+for(const name of ['web/app.js','web/aztec.js','web/figures.js'])assert.match(fs.readFileSync(name,'utf8'),/WorkbenchProjectTools.projectChoices/);
+console.log('TEM, AZtec and Figures share All projects choices; Figures retains explicit custom-folder scope and legacy selection.');
+
+const legacy={path:'/paper',folder_rules:{all:{ignore:['TEM/rejected']},tem:{include:['TEM']},aztec:{include:['AZtec']}}};
+const migrated={folder_modes:tools.folderModes(legacy)};
+assert.equal(tools.folderEnabled(migrated,'TEM/ST','tem'),true);
+assert.equal(tools.folderEnabled(migrated,'TEM/rejected/a','tem'),false);
+assert.equal(tools.folderEnabled(migrated,'TEM/ST','aztec'),false);
+assert.equal(tools.folderEnabled(migrated,'new','figures'),true);
+const folder={folder_modes:{}};
+assert.equal(tools.folderEnabled(folder,'new/child','tem'),true);
+tools.setFolderEnabled(folder,'new','tem',false);
+assert.equal(tools.folderEnabled(folder,'new/child','tem'),false);
+assert.equal(tools.folderEnabled(folder,'new/child','aztec'),true);
+tools.setFolderEnabled(folder,'new/child','tem',true);
+assert.equal(tools.folderEnabled(folder,'new/child/grandchild','tem'),true);
+tools.setFolderEnabled(folder,'new','tem',false);
+assert.equal(tools.folderEnabled(folder,'new/child','tem'),false,'Ignoring a parent clears descendant exceptions');
+tools.setFolderEnabled(folder,'new','tem',true);
+assert.equal(tools.folderEnabled(folder,'new/unseen','tem'),true);
+assert.equal(tools.sourceFolders({path:'/a',folders:[{path:'/a'},{path:'/b'}]}).length,2);
+console.log('Multiple folders default to included; per-mode subtree changes and existing scopes are preserved.');
+
+const exportRoot={path:'/paper',folder_modes:{}},outputDirs=['/paper/results/export'];
+assert.equal(tools.sourceFolderEnabled(exportRoot,'results/export','figures',outputDirs),false);
+tools.setSourceFolderEnabled(exportRoot,'results/export','figures',true,outputDirs);
+assert.equal(tools.sourceFolderEnabled(exportRoot,'results/export','figures',outputDirs),true);
+assert.equal(tools.sourceFolderEnabled(exportRoot,'results/export/nested','figures',outputDirs),true);
+assert.equal(tools.sourceFolderEnabled(exportRoot,'results/export','tem',outputDirs),false);
+tools.setSourceFolderEnabled(exportRoot,'results/export','figures',false,outputDirs);
+assert.equal(tools.sourceFolderEnabled(exportRoot,'results/export','figures',outputDirs),false);
+tools.setSourceFolderEnabled(exportRoot,'results/export/chosen','figures',true,outputDirs);
+assert.equal(tools.sourceFolderEnabled(exportRoot,'results/export','figures',outputDirs),false);
+assert.equal(tools.sourceFolderEnabled(exportRoot,'results/export/chosen','figures',outputDirs),true);
+console.log('Export folders require explicit per-mode inclusion and support child exceptions.');

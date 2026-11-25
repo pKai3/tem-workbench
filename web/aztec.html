@@ -1,19 +1,22 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AZtec Analyzer · TEM Workbench</title><link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/aztec.css"><script src="/workspace-state.js"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AZtec Analyzer · TEM Workbench</title><link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/aztec.css"><script src="/workspace-state.js"></script><script src="/popup-controls.js"></script></head>
 <body class="aztec-browser">
-<header class="workbench-header"><div><span class="eyebrow">TEM WORKBENCH</span><h1>AZtec Analyzer</h1></div><nav class="signal-toggle workspace-switch" aria-label="Analysis workspace"><a href="/">TEM</a><a href="/eds" aria-current="page">AZtec</a><a href="/figures">Figures</a></nav><div class="header-status"><button id="workspace-save-status" type="button" class="workspace-save-status" aria-live="polite">Saved</button><span id="eds-version" class="muted"></span><span class="pill">Read-only</span></div></header>
+<header class="workbench-header"><div><span class="eyebrow">TEM WORKBENCH</span><h1>AZtec Analyzer</h1></div><nav class="signal-toggle workspace-switch" aria-label="Analysis workspace"><a href="/">TEM</a><a href="/aztec" aria-current="page">AZtec</a><a href="/figures">Figures</a></nav><div class="header-status"><button id="workspace-save-status" type="button" class="workspace-save-status" aria-live="polite">Saved</button><span id="eds-version" class="muted"></span><span class="pill">Read-only</span></div></header>
 <main>
+ <div class="eds-mode-bar">
+  <div class="eds-project-controls"><details id="eds-project-filter" class="eds-project-filter"><summary id="eds-project-filter-title">All projects</summary><div id="eds-sources" role="group" aria-label="Filter projects"></div></details><button id="eds-project-settings" type="button">Project settings…</button></div>
+  <div class="eds-mode-top"><div class="signal-toggle eds-workspace-mode" role="group" aria-label="AZtec mode"><button id="eds-mode-browse" type="button" disabled aria-pressed="true">Browse</button><button id="eds-mode-compare" type="button" disabled aria-pressed="false">Compare</button></div></div>
+  <div class="eds-compare-kind-slot"><div id="eds-compare-kinds" class="signal-toggle" role="group" aria-label="Comparison type" hidden><button id="eds-compare" type="button">Map</button><button id="eds-compare-lines" type="button">Line</button></div></div>
+ </div>
  <div class="eds-location">
-  <label>Project<select id="eds-sources"><option value="">All projects</option></select></label>
-  <button id="eds-project-settings" type="button">Project settings…</button>
-  <div class="eds-compare-actions"><button id="eds-compare" type="button">Compare maps</button><button id="eds-compare-lines" type="button">Compare lines</button></div>
-  <div class="eds-file-choice"><span class="hint">Open file</span><strong id="eds-current-file">Choose a file from the list</strong></div><button id="eds-rescan" type="button">Rescan files</button>
+  <div class="eds-file-choice" aria-label="Current selection"><strong id="eds-current-file">Choose a project</strong></div><button id="eds-rescan" type="button">Rescan files</button>
  </div>
  <dialog id="eds-project-dialog" class="project-dialog" aria-labelledby="eds-project-title"><div class="panel-head"><h2 id="eds-project-title">Project sources and outputs</h2><button id="eds-project-close" type="button" aria-label="Close project settings">×</button></div><div id="project-settings"></div></dialog>
  <p id="eds-status" class="hint" role="status" aria-live="polite">Connecting…</p>
  <div class="eds-layout">
-  <aside class="panel eds-files" aria-label="Project files and sites"><h2 class="eds-sites-heading">Files <small id="eds-file-count"></small></h2><input id="eds-filter" type="search" aria-label="Search AZtec files" placeholder="Search files or subfolders"><p id="eds-scan-status" class="hint" role="status"></p><div id="eds-files"></div><h2 class="eds-sites-heading eds-sites-divider">Sites</h2><p id="eds-sites-empty" class="hint">Choose an AZtec file to see its sites.</p><nav id="eds-acquisitions" aria-label="Sites and acquisitions" hidden></nav></aside>
+  <aside class="panel eds-files" aria-label="Projects"><h2 class="eds-sites-heading">Projects <small id="eds-file-count"></small></h2><input id="eds-filter" type="search" aria-label="Search AZtec files" placeholder="Search projects"><p id="eds-scan-status" class="hint" role="status"></p><div id="eds-files"></div></aside>
+  <aside class="panel eds-sites" aria-label="Sites"><h2 class="eds-sites-heading">Sites</h2><p id="eds-sites-empty" class="hint">Choose a project to see its sites.</p><nav id="eds-acquisitions" aria-label="Sites and acquisitions" hidden></nav></aside>
   <section class="panel eds-file" aria-label="File contents">
    <div id="eds-empty"><h2>Choose a file to see what it contains</h2><p class="hint">Open your native OIPX project with its data folder. Browse specimens, sites and stored data before choosing what to process.</p></div>
    <div id="eds-file" hidden>
@@ -41,5 +44,5 @@
  </div>
 </main>
 <aside id="export-notice" popover="manual" hidden role="status" aria-live="polite"><button id="export-notice-close" type="button" aria-label="Dismiss notification">×</button><strong id="export-notice-title"></strong><div id="export-notice-detail"></div></aside>
-<script src="/diagnostics.js"></script><script src="/export-notice.js"></script><script src="/aztec-export.js"></script><script src="/aztec-analysis.js"></script><script src="/project-tools.js"></script><script src="/aztec-quantification.js"></script><script src="/aztec.js"></script>
+<script src="/diagnostics.js"></script><script src="/export-notice.js"></script><script src="/image-detail.js"></script><script src="/aztec-distributions.js"></script><script src="/aztec-ipf-legend.js"></script><script src="/aztec-export.js"></script><script src="/aztec-analysis.js"></script><script src="/project-tools.js"></script><script src="/aztec-quantification.js"></script><script src="/aztec.js"></script>
 </body></html>

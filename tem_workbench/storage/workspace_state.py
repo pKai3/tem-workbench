@@ -8,7 +8,7 @@ import logging
 import threading
 from pathlib import Path
 
-from .folder_paths import atomic_json
+from .folder_paths import atomic_json, source_roots
 
 LOG = logging.getLogger('tem_workbench')
 MAX_BYTES = 16 * 1024 * 1024
@@ -32,6 +32,64 @@ class WorkspaceState:
     def read(self):
         with self.lock:
             return {'path': str(self.path), 'records': self._read()}
+
+    def reconcile_sources(self, previous, current):
+        """Retain project selections when child projects are merged into a parent.
+
+        Old bookmark keys remain as history. File paths, content identities and
+        named analysis/comparison records are not renamed or recomputed.
+        """
+        redirects = {}
+        current_ids = {source['id'] for source in current}
+        for old in previous:
+            if old['id'] in current_ids:
+                continue
+            matches = [source for source in current
+                       if all(any(Path(folder['path']).resolve().is_relative_to(Path(candidate['path']).resolve())
+                                  for candidate in source_roots([source])) for folder in source_roots([old]))]
+            if len(matches) == 1:
+                redirects[old['id']] = matches[0]['id']
+        if not redirects:
+            return {'redirects': {}, 'records': {}}
+        with self.lock:
+            records = self._read()
+            changes = {}
+            active = records.get('active_project')
+            if active in redirects:
+                changes['active_project'] = redirects[active]
+            for key, value in records.items():
+                if key.startswith('bookmark:'):
+                    _, identity, mode = key.split(':', 2)
+                    if identity in redirects:
+                        destination = f'bookmark:{redirects[identity]}:{mode}'
+                        if identity == active or destination not in records and destination not in changes:
+                            changes[destination] = value
+                if key in ('preference:tem-figures-project', 'preference:tem-figures-scope-v2') or key.startswith('preference:tem-source-filter:'):
+                    if value in redirects:
+                        changes[key] = redirects[value]
+                if key == 'preference:tem-aztec-project-filter' and isinstance(value, str):
+                    try:
+                        ids = json.loads(value)
+                        if isinstance(ids, list) and any(identity in redirects for identity in ids):
+                            changes[key] = json.dumps(list(dict.fromkeys(redirects.get(identity, identity) for identity in ids)))
+                    except (ValueError, TypeError):
+                        pass
+                if key in ('preference:tem-figures-saved-v1', 'preference:tem-figures-draft-v1') and isinstance(value, str):
+                    try:
+                        figures = json.loads(value)
+                        recipes = [figures] if key.endswith('draft-v1') else figures.values()
+                        changed = False
+                        for recipe in recipes:
+                            for slot in recipe.get('slots', []):
+                                if slot.get('source_project') in redirects:
+                                    slot['source_project'] = redirects[slot['source_project']]
+                                    changed = True
+                        if changed:
+                            changes[key] = json.dumps(figures)
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+            self.patch(changes)
+            return {'redirects': redirects, 'records': changes}
 
     def patch(self, records, only_missing=False):
         if not isinstance(records, dict) or len(records) > 10000:

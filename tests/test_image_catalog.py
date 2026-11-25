@@ -122,6 +122,28 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual({r['name'] for r in engine.file_rows.values()}, {'original', 'second'})
         self.assertEqual(engine.output_for(next(iter(engine.file_rows))), custom.resolve())
 
+    def test_consolidating_projects_preserves_identities_calibration_and_old_exports(self):
+        paper = self.root/'paper'; tem = paper/'TEM'; sem = paper/'SEM'
+        tem.mkdir(parents=True); sem.mkdir()
+        pixels = np.arange(4096, dtype=np.uint16).reshape(64,64)
+        Image.fromarray(pixels).save(tem/'original.tif')
+        Image.fromarray(pixels+1).save(sem/'second.tif')
+        path = self.root/'config.json'
+        config = save_sources(path, self.root, {}, [
+            dict(id='tem',name='TEM',path=str(tem),output=str(tem/'Analysis')),
+            dict(id='sem',name='SEM',path=str(sem),output='')], self.root/'out')
+        resolved = resolve_config(config,self.root)
+        engine=Engine(resolved);engine.catalog()
+        ids=set(engine.file_rows);first=next(row for row in engine.file_rows.values() if row['source_id']=='tem')
+        engine.calibrate_raster(first['id'],dict(image_kind='real_space',units='nm',value=5,points=[[0,0],[50,0]]))
+        Image.fromarray(pixels+2).save(tem/'Analysis'/'export.tif')
+        merged=save_sources(path,self.root,resolved,[dict(id='tem',name='Paper',path=str(paper),output=str(paper/'Analysis'))],self.root/'out')
+        restarted=Engine(resolve_config(merged,self.root));restarted.catalog()
+        self.assertEqual(set(restarted.file_rows),ids)
+        self.assertEqual({row['source_id'] for row in restarted.file_rows.values()},{'tem'})
+        self.assertTrue(restarted.file_rows[first['id']]['calibrated'])
+        self.assertEqual(restarted.output_for(first['id']),(paper/'Analysis').resolve())
+
     def test_source_overlap_and_output_containing_source_still_rejected(self):
         source = self.root/'project'; nested = source/'child'; nested.mkdir(parents=True)
         config_path = self.root/'config.json'

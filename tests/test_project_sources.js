@@ -1,7 +1,7 @@
 // Name-only saves keep unsaved folder edits and do not restart the current view.
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const app=fs.readFileSync('web/project-tools.js','utf8'),requests=[];
-const context={config:{source_name_autosave:true,sources:[{id:'a',name:'Original'},{id:'b',name:'Second'}]},WeakMap,Promise,
+const context={config:{source_name_autosave:true,sources:[{id:'a',name:'Original'},{id:'b',name:'Second'}]},WeakMap,Promise,updateRevert(){},queueSourceSave(){context.fullSave=true;return Promise.resolve()},
  api(path,body){return new Promise((resolve,reject)=>requests.push({path,body,resolve,reject}))},renderProjectFilter(){},applyCatalogue(data){context.catalogue=data}};
 context.getConfig=()=>context.config;context.onRename=async data=>{context.config.sources=data.sources;context.applyCatalogue(data)};
 vm.createContext(context);vm.runInContext(app.slice(app.indexOf('let sourceNameSaveQueue='),app.indexOf('function renderSources()')),context);
@@ -17,7 +17,7 @@ const status=()=>({textContent:'',classList:{add(){},remove(){}}}),tick=()=>new 
  input.value='Second';const duplicate=context.saveSourceName(source,input,notice);await tick();requests[2].reject(new Error('Another project already uses that name.'));await duplicate;
  assert.match(notice.textContent,/already uses/);assert.equal(context.config.sources[0].name,'Newer');assert.equal(input.value,'Second');
  input.value='Newer';await context.saveSourceName(source,input,notice);assert.equal(requests.length,3,'Unchanged names do not write');
- await context.saveSourceName({name:'Unsaved'},input,notice);assert.equal(notice.textContent,'Use Save source changes');
+ await context.saveSourceName({name:'Unsaved'},input,notice);assert.equal(context.fullSave,true);
  input.value='Queued';const skipped=context.saveSourceName(source,input,notice);input.value='Still typing';await skipped;
  input.value='Queued';const retry=context.saveSourceName(source,input,notice);await tick();
  assert.equal(requests.length,4,'A coalesced edit can be saved again later');

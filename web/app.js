@@ -247,7 +247,7 @@ function updateRasterStatus(id,calibrated){
 function projectFiles(){const id=$('source-filter').value;return config.files.filter(f=>!id||(f.source_id||'demo')===id)}
 function renderProjectFilter(){
  const select=$('source-filter'),saved=WorkbenchWorkspace.get('active_project',readPreference('tem-source-filter:'+config.state_namespace,''));
- select.replaceChildren(new Option('All projects',''),...(config.sources||[]).map(s=>new Option(s.name,s.id)));
+ select.replaceChildren(...WorkbenchProjectTools.projectChoices(config.sources).map(option=>new Option(option.label,option.value)));
  if(config.files.some(f=>!f.source_id))select.append(new Option('Demo','demo'));
  select.value=[...select.options].some(o=>o.value===saved)?saved:'';
 }
@@ -2820,7 +2820,7 @@ let catalogueRevision=null, cataloguePolling=false;
 const seenFileEvents=new Set();
 const folderBrowser=WorkbenchProjectTools.browser(api);
 const chooseFolder=target=>{if(config?.folder_picker)folderBrowser.choose(target)};
-const projectSettings=WorkbenchProjectTools.sources({api,getConfig:()=>config,chooseFolder,
+const projectSettings=WorkbenchProjectTools.sources({api,getConfig:()=>config,chooseFolder,browseFolder:options=>folderBrowser.open(options),
  onRename:async data=>{config.sources=data.sources;await WorkbenchWorkspace.configure(config);renderProjectFilter();populateBatchProjects();populateBatchFolders();applyCatalogue(data)},
  onSave:async()=>{await start();message('Project sources and outputs saved.')}});
 const openProjectSettings=()=>WorkbenchProjectTools.showSources($('folders-panel'));
@@ -2942,6 +2942,7 @@ function imageBrowserFormatIcon(file){
  text.textContent=extension;badge.append(svg,text);return badge;
 }
 function imageBrowserSidecarIcon(file){
+ if((file.extension||file.id.match(/\.[^/.]+$/)?.[0]||'').toLowerCase()==='.dm4')return null;
  const badge=document.createElement('span');badge.className='image-browser-sidecar '+(file.has_sidecar?'available':'missing');
  badge.textContent='TXT';badge.title=file.has_sidecar?'Matching TXT sidecar available':'No matching TXT sidecar';
  badge.setAttribute('aria-hidden','true');return badge;
@@ -2994,14 +2995,15 @@ function renderImageBrowser(){
  $('image-browser-count').textContent=`${files.length} image${files.length===1?'':'s'}`;
  for(const sample of new Set(files.map(f=>f.sample)))for(const file of sortedFiles(files.filter(f=>f.sample===sample))){
   const tile=document.createElement('button');tile.type='button';tile.className='image-browser-tile';tile.title=file.id;
-  tile.setAttribute('aria-label','Open '+fileDisplayName(file)+(favorites.has(file.id)?' · Favourite':'')+(file.has_sidecar?' · TXT sidecar available':' · no TXT sidecar'));if(file.id===fileId)tile.setAttribute('aria-current','true');
+  const sidecar=imageBrowserSidecarIcon(file);
+  tile.setAttribute('aria-label','Open '+fileDisplayName(file)+(favorites.has(file.id)?' · Favourite':'')+(sidecar?file.has_sidecar?' · TXT sidecar available':' · no TXT sidecar':''));if(file.id===fileId)tile.setAttribute('aria-current','true');
   const preview=document.createElement('span');preview.className='image-browser-preview';
   const placeholder=document.createElement('span');placeholder.className='muted';placeholder.textContent=file.id.startsWith('demo/')?'Bundled demo':'No PNG preview';preview.append(placeholder);
   if(file.has_preview){
    const img=document.createElement('img');img.alt='';img.loading='lazy';img.decoding='async';
    img.src='/api/file-preview?id='+encodeURIComponent(file.id);img.onload=()=>placeholder.hidden=true;img.onerror=()=>img.remove();preview.append(img);
   }
-  preview.append(imageBrowserTypeIcon(file));const format=imageBrowserFormatIcon(file);if(format)preview.append(format);preview.append(imageBrowserSidecarIcon(file));
+  preview.append(imageBrowserTypeIcon(file));const format=imageBrowserFormatIcon(file);if(format)preview.append(format);if(sidecar)preview.append(sidecar);
   const name=document.createElement('strong'),parts=imageBrowserNameParts(file),description=document.createElement('span');name.className='image-browser-name';description.className='image-browser-name-text';description.textContent=parts.description;name.append(description);
   if(parts.number){const number=document.createElement('span');number.className='image-browser-number';number.textContent='#'+parts.number;name.append(number)}
   if(favorites.has(file.id)){const star=document.createElement('span');star.className='favorite-star';star.textContent='★ ';star.title='Favourite';star.setAttribute('aria-hidden','true');name.prepend(star)}

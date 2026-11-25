@@ -48,6 +48,7 @@ class CrossFileTests(unittest.TestCase):
             def __init__(self,length,level):
                 super().__init__();self.length=length
                 for r in self._records.values():
+                    if r['table']=='ElectronImages':continue
                     r['table']='XrayLinescans';self.arrays[r['path']]=np.full(32,level)
             def site(self,index):
                 site=super().site(index);site['geometry']['field_width_nm']=self.length

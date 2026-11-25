@@ -14,13 +14,18 @@ class Reader:
                 self._records[path]=dict(acquisition_id=index,site_id=index,table='XrayMapImages',
                                          Label=channel,path=path,acquisition_label=index)
                 self.arrays[path]=np.full((32,32),level*(10 if channel=='Ti' else 2))
+            path=f'/ElectronImages/{index}'
+            self._records[path]=dict(site_id=index,table='ElectronImages',Label='Image '+index,path=path)
+            self.arrays[path]=np.zeros((32,32))
     def inspect(self):
         return {'acquisitions':[dict(index=i,specimen='Sample',label=i) for i in ('a','b')]}
     def preview(self,path):
         array=self.arrays.get(path,np.zeros((32,32)))
         return dict(array=array,shape=array.shape,unit='cps')
-    def site(self,index):
-        return dict(image_path='image',geometry=dict(step=1/32,field_width_nm=64),
+    def site(self,index,image_path=None):
+        path=f'/ElectronImages/{index}'
+        if image_path is not None and image_path != path:raise ValueError('Wrong site image')
+        return dict(image_path=path,images=[dict(path=path,label='Image '+index)],geometry=dict(step=1/32,field_width_nm=64),
                     regions=[dict(kind='rectangle',points=[[0,0],[32,32]],
                                   paths=[p for p,r in self._records.items() if r['site_id']==index])])
 

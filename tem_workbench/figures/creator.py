@@ -36,8 +36,10 @@ MAX_PREVIEW_PIXELS = 16_000_000
 
 def _source(path):
     source = Path(path).expanduser().resolve()
-    if source.suffix.lower() not in EXTENSIONS or not source.is_file():
+    if source.suffix.lower() not in EXTENSIONS:
         raise ValueError('Choose an available DM4, TIFF, PNG or JPEG image.')
+    if not source.is_file():
+        raise ValueError(f'{source.name} is missing. Rescan images to reconnect its source.')
     return source
 
 
@@ -60,12 +62,12 @@ def _digest(path):
     return value.hexdigest()
 
 
-def list_images(folder, outputs=()):
+def list_images(folder, outputs=(), *, scope=None):
     root = Path(folder).expanduser().resolve()
     if not root.is_dir():
         raise ValueError('Choose an available image folder.')
     images, dm4_files = [], []
-    for directory, filenames in scan_folders(root, outputs):
+    for directory, filenames in scan_folders(root, outputs, scope=scope):
         relative_folder = directory.relative_to(root).as_posix()
         native_stems = {Path(name).stem for name in filenames
                         if Path(name).suffix.lower() == '.dm4' and (directory / name).is_file()}

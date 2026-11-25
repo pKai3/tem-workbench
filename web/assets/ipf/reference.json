@@ -1,0 +1,25 @@
+{
+  "source": "G9 HT Figures.pptx",
+  "member": "ppt/media/image57.png",
+  "source_sha256": "bddff2f4ec033da09b51687b338aba2c710b303767a499cdd394b86be839010e",
+  "convention": "AZtec IPF colour keys supplied by the user",
+  "crops": {
+    "hexagonal": [
+      1078,
+      54,
+      1152,
+      94
+    ],
+    "cubic": [
+      1093,
+      148,
+      1136,
+      198
+    ]
+  },
+  "processing": "Original colour-field samples are retained inside a one-pixel erosion of the cropped silhouette (RGB minimum <245, holes filled), excluding dark outline pixels (RGB maximum <240). Border/exterior pixels use the nearest retained colour sample to remove baked white/black matting before interpolation. Smooth SVG paths clip this padded RGB artwork to the original key outlines at preview/export resolution. Phase labels, Miller indices and overbars are rendered separately. This replaces the earlier binary alpha edge; no orientation-colouring algorithm is inferred.",
+  "outlines": {
+    "hexagonal": "M1.7 2.2 H71.8 A70.1 70.1 0 0 1 62.408 37.25 Z",
+    "cubic": "M2.2 3 L39.4 40.1 A100 100 0 0 1 2.2 47.3 Z"
+  }
+}

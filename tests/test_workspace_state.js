@@ -26,6 +26,10 @@ async function main(){
  assert.equal(disk['preference:tem-comparisons'],'{"presets":["Updated"]}');
  local.delete('tem-display');workspace.capture();await workspace.flush();
  assert.equal(disk['preference:tem-display'],null);
+ await workspace.configure({token:'local',sources:[{id:'paper',path:'/first',folders:[{path:'/first'},{path:'/second'}]}]});
+ assert.equal(workspace.projectForPath('/second/image.dm4'),'paper');
+ assert.equal(workspace.projectForPath('/second-copy/image.dm4'),'');
+ assert.equal(workspace.projectForPath('/first/deep/file.oipx'),'paper');
 
  // Project changes must not save the previous image over the target project's location.
  const app=fs.readFileSync('web/app.js','utf8'),start=app.indexOf('let diffractionBookmarkProject='),end=app.indexOf("$('source-filter').onchange=",start);
