@@ -1,5 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const window={addEventListener(){}};
+const shared=fs.readFileSync('web/popup-controls.js','utf8');vm.runInNewContext(shared.slice(shared.indexOf('/* Saved-item previews')),{window,structuredClone});
 vm.runInNewContext(fs.readFileSync('web/aztec-analysis.js','utf8'),{
  window,WorkbenchWorkspace:{readRaw:()=>null},console,structuredClone
 });

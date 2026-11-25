@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const listeners={},dialogs=[];
 const document={addEventListener(name,fn){listeners[name]=fn},querySelectorAll(){return dialogs.filter(dialog=>dialog.open)}};
-vm.runInNewContext(fs.readFileSync('web/popup-controls.js','utf8'),{document,Event});
+vm.runInNewContext(fs.readFileSync('web/popup-controls.js','utf8'),{document,Event,window:{}});
 function dialog(modal=true){const value={tagName:'DIALOG',open:true,closed:0,cancels:0,blocked:false,matches:()=>modal,contains:target=>target?.parent===value,getBoundingClientRect:()=>({left:10,top:10,right:100,bottom:100}),dispatchEvent(){value.cancels++;return !value.blocked},close(){value.closed++;value.open=false}};dialogs.push(value);listeners.beforetoggle({target:value,newState:'open'});return value}
 function event(values={}){return {key:'Escape',button:0,preventDefault(){this.prevented=true},stopImmediatePropagation(){this.stopped=true},...values}}
 const outer=dialog(),inner=dialog();const escape=event();listeners.keydown(escape);

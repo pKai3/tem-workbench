@@ -2,10 +2,11 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync('web/aztec-analysis.js','utf8');
 const context={window:{},structuredClone,Date,console};vm.createContext(context);
+const shared=fs.readFileSync('web/popup-controls.js','utf8');vm.runInContext(shared.slice(shared.indexOf('/* Saved-item previews')),context);
 vm.runInContext(source.slice(0,source.indexOf('window.createAztecAnalysis=')),context);
 const entry={table:'KamMapImages',item:{name:'AB / ST',ids:['["/project.oipx","a"]'],signals:['KAM'],options:{mode:'signal',brightness:1,transpose:true,kam_sources:{}},aliases:{'["/project.oipx","a"]':'AB'},labelColours:{'["/project.oipx","a"]':'#aa5500'},crops:{'["/project.oipx","a"]':[.2,.7]}}};
 const pending=[],calls=[];
-const preview=context.window.aztecComparisonPreviews.create(snapshot=>{calls.push(snapshot);return new Promise((resolve,reject)=>pending.push({resolve,reject}))});
+const preview=context.window.WorkbenchPreviewPicker.createCache(snapshot=>{calls.push(snapshot);return new Promise((resolve,reject)=>pending.push({resolve,reject}))});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 (async()=>{
  const original=structuredClone(entry),first=preview(entry);entry.item.options.brightness=2;await tick();
@@ -15,7 +16,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
  pending.shift().resolve('latest');assert.equal(await latest,'latest');assert.equal(await preview(original),'first','Identical saved settings reuse their thumbnail');
  const changed=preview(entry);await tick();assert.equal(calls.length,3,'Changed settings invalidate the thumbnail');pending.shift().reject(new Error('Source unavailable'));await assert.rejects(changed,/Source unavailable/);
  const retry=preview(entry);await tick();pending.shift().resolve('retried');assert.equal(await retry,'retried','Failures neither cache nor block following requests');
- let renders=0;const bounded=context.window.aztecComparisonPreviews.create(async()=>String(++renders));for(let i=0;i<9;i++)await bounded({...entry,table:String(i)});await bounded({...entry,table:'0'});assert.equal(renders,10,'Old previews are evicted');
+ let renders=0;const bounded=context.window.WorkbenchPreviewPicker.createCache(async()=>String(++renders));for(let i=0;i<9;i++)await bounded({...entry,table:String(i)});await bounded({...entry,table:'0'});assert.equal(renders,10,'Old previews are evicted');
 
  const requests=[],exports=[],before=JSON.stringify(entry),id=entry.item.ids[0];
  Object.assign(context,{comparisonState:context.window.aztecComparisonState,api:async(action,body)=>{requests.push({action,body});return {rows:[{acquisition:id,sample_name:'fallback'}]}}});

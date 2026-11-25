@@ -4,6 +4,7 @@
  const $=id=>document.getElementById(id);
  let config,folderBrowser,projectSettings,files=[],selectedPanel=0,currentId='',timer=0,renderVersion=0,hoverTimer=0,browserPreferred=160,indexPoll=0,indexRecords={};
  let saved={};
+ const savedFigurePreview=window.WorkbenchPreviewPicker.createCache(renderSavedFigure);
  let reconnectVersion=0;
  let indexStarting=false,indexJob=null;
  let scanVersion=0,browserRoot='',previewPoll=0,previewStarting=false,previewJob=null;
@@ -162,10 +163,22 @@
    catch(error){if(revision!==estimateVersion)return;estimateError=error.message;updateExportEstimate()}
   },450);
  }
+ async function renderSavedFigure({item}){
+  const snapshot=normaliseRecipe(item);
+  const result=await api('figures/render',{recipe:snapshot,width:1000});
+  return result.image;
+ }
+ function openSavedFigures(){
+  const entries=Object.entries(saved).sort((a,b)=>a[1].name.localeCompare(b[1].name))
+   .map(([id,item])=>({value:id,item}));
+  window.WorkbenchPreviewPicker.open({anchor:$('fig-saved-picker'),entries,selected:currentId,
+   title:'Saved figures',noun:'figure',plural:'figures',preview:savedFigurePreview,onSelect:selectFigure});
+ }
  function chooseSaved(){
   const select=$('fig-saved');select.replaceChildren(new Option('New figure',''));
   for(const [id,value] of Object.entries(saved).sort((a,b)=>a[1].name.localeCompare(b[1].name)))select.add(new Option(value.name,id));
   select.value=currentId;$('fig-delete').disabled=!currentId;
+  $('fig-saved-picker').textContent=(saved[currentId]?.name||'New figure')+' ▾';
   $('fig-save-note').textContent=currentId?'Changes to this figure save automatically.':'Draft saved automatically. Save figure to keep it in the list.';
  }
  function sync(){
@@ -1318,6 +1331,7 @@
     recipe.metadata_overlay=[...document.querySelectorAll('[data-figure-meta]:checked')].map(item=>item.dataset.figureMeta);changed()};
    $('fig-new').onclick=()=>selectFigure('');
    $('fig-saved').onchange=()=>selectFigure($('fig-saved').value);
+   $('fig-saved-picker').onclick=()=>openSavedFigures();
    $('fig-save').onclick=async()=>{recipe.name=$('fig-name').value.trim()||'Untitled figure';if(!recipe.slots.some(hasPanel)){status('Choose an image or create a placeholder before saving.',true);return}
     currentId=currentId||crypto.randomUUID();saved[currentId]=structuredClone(recipe);draft(true);chooseSaved();
     if(await WorkbenchWorkspace.flush()===false){status('Could not save figure to disk. Click Save failed · retry above.',true);return}status(`Saved ${recipe.name}.`)};
