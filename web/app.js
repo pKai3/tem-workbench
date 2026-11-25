@@ -1505,16 +1505,23 @@ $('contrast').oninput=()=>{rememberFFTDisplay();drawFFT()};$('peak-marker').onch
 const oldPalette=readPreference('tem-palette',null),savedPalette=({ice:'viridis',violet:'plasma',green:'viridis'})[oldPalette]||oldPalette;if(Object.hasOwn(SPECTRUM_PALETTES,savedPalette))$('palette').value=savedPalette;
 const BATCH_PNG_VIEWS={standard:[['classification','Classification + zone labels']],overlap:[['support_all','Match frequency · all phases'],['support_phases','Match frequency · each phase'],['strength_all','Match score · all phases'],['strength_phases','Match score · each phase'],['hex','Best match · averaged hex grid'],['hex_support','Match frequency · hex grid'],['hex_strength','Match score · hex grid'],['spread_phases','Placement sensitivity · each phase'],['samples','Sampling density'],['separate','Multiple-structure support'],['raw','Individual windows · classification circles']]};
 function componentGridMode(){return ['pca','nmf'].includes($('grid-mode').value)?$('grid-mode').value:null}
-const COMPONENT_FIELDS={'pca-count':'components','pca-normalization':'normalization','pca-combination-mode':'combination_mode','nmf-cutoff':'peak_fraction','pca-angle':'angular_sigma_deg','pca-scale':'spacing_sigma_percent'};
+const COMPONENT_FIELDS={'pca-count':'components','pca-normalization':'normalization','pca-combination-mode':'combination_mode','nmf-cutoff':'peak_fraction','pca-angle':'angular_sigma_deg','pca-scale':'spacing_sigma_percent','nmf-iterations':'nmf_max_iterations'};
+function nmfIterationOptions(method,value){
+ if(method!=='nmf')return {};
+ const limit=Number(value);
+ if(!Number.isInteger(limit)||limit<1||limit>10000)throw new Error('NMF iteration limit must be a whole number between 1 and 10,000.');
+ if(!config?.nmf_iteration_limit&&limit!==300)throw new Error('Restart Workbench to use a different NMF iteration limit.');
+ return {nmf_max_iterations:limit};
+}
 function componentRequest(){
  const method=componentGridMode();if(!method)return null;
  const values=Object.fromEntries(Object.entries(COMPONENT_FIELDS).map(([id,key])=>{const input=$('grid-'+id)||$(id);return [key,input.tagName==='SELECT'?input.value:Number(input.value)]}));
- const {combination_mode,peak_fraction,...options}=values;
- return {method,options,fit_options:{combination_mode,peak_fraction}};
+ const {combination_mode,peak_fraction,nmf_max_iterations,...options}=values;
+ return {method,options:{...options,...nmfIterationOptions(method,nmf_max_iterations)},fit_options:{combination_mode,peak_fraction}};
 }
 function restoreComponentControls(component){
  if(!component)return;
- const values={...component.options,...component.fit_options};
+ const values={nmf_max_iterations:300,...component.options,...component.fit_options};
  for(const [id,key]of Object.entries(COMPONENT_FIELDS))if(values[key]!=null){$(id).value=values[key];if($('grid-'+id))$('grid-'+id).value=values[key]}
 }
 function syncComponentGridControls(){
@@ -1522,6 +1529,7 @@ function syncComponentGridControls(){
  $('open-pca').hidden=!method;
  $('window-size-smoothing').closest('label').hidden=Boolean(method);$('window-size-check').hidden=Boolean(method);
  if($('grid-pca-combination-mode'))$('grid-pca-combination-mode').closest('label').hidden=method!=='pca';
+ if($('grid-nmf-iterations')){$('grid-nmf-iterations').closest('label').hidden=method!=='nmf';$('grid-nmf-iterations').disabled=method!=='nmf'}
  if(!trackedGrid&&!gridStarting)$('grid-status').textContent=method?'Run grid to discover hypotheses and check original windows.':overlapRequest()?'Run grid to analyse overlapping windows.':'Run grid to analyse image regions.';
 }
 document.addEventListener('DOMContentLoaded',()=>{
@@ -1529,10 +1537,10 @@ document.addEventListener('DOMContentLoaded',()=>{
  for(const [id,key]of Object.entries(COMPONENT_FIELDS)){
   const original=$(id),label=document.createElement('label'),input=original.cloneNode(true);
   if(saved[key]!=null)original.value=saved[key];input.id='grid-'+id;input.value=original.value;
-  const titles={'pca-count':'Components','pca-normalization':'Normalize spectra','pca-combination-mode':'PCA combinations','nmf-cutoff':'Peak cutoff','pca-angle':'Rotation σ, °','pca-scale':'Spacing σ, %'};
+  const titles={'pca-count':'Components','pca-normalization':'Normalize spectra','pca-combination-mode':'PCA combinations','nmf-cutoff':'Peak cutoff','pca-angle':'Rotation σ, °','pca-scale':'Spacing σ, %','nmf-iterations':'NMF iterations'};
   const heading=document.createElement('span');heading.className='settings-heading-label';heading.textContent=titles[id];
   label.append(heading,input);$('component-grid-fields').append(label);
-  const help=id==='pca-count'?$('component-grid-help').textContent:original.closest('label').title||original.title||(id==='pca-combination-mode'?'Fit individual signed features, plus selected PCs together or all their combinations. All combinations can take much longer.':'');
+  const help=id==='nmf-iterations'?$('nmf-iterations-help').textContent:id==='pca-count'?$('component-grid-help').textContent:original.closest('label').title||original.title||(id==='pca-combination-mode'?'Fit individual signed features, plus selected PCs together or all their combinations. All combinations can take much longer.':'');
   if(help){const h=elHTML('span','');h.className='settings-help';h.innerHTML='<button type="button" class="settings-help-button" aria-label="About '+titles[id]+'">ⓘ</button><span class="settings-help-popup" role="tooltip"></span>';h.lastChild.textContent=help;heading.append(h)}
   const remember=()=>writePreference('tem-component-grid-options',Object.fromEntries(Object.entries(COMPONENT_FIELDS).map(([field,k])=>[k,$(field).value])));
   input.addEventListener('input',()=>{original.value=input.value;remember()});

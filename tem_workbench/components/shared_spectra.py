@@ -31,6 +31,8 @@ from tem_workbench.components.component_execution import selected_workers
 VERSION = 'local-fft-components-v3'
 RADIAL_BINS, ANGULAR_BINS = 96, 180
 RESIDUAL_BLOCK_BYTES = 8 * 1024**2
+NMF_DEFAULT_ITERATIONS = 300
+NMF_MAX_ITERATIONS = 10000
 LOG = logging.getLogger('tem_workbench')
 
 
@@ -44,6 +46,16 @@ def number(options, key, default, lo, hi):
     if not math.isfinite(value) or not lo <= value <= hi:
         raise ValueError(f'{key.replace("_", " ")} must be between {lo:g} and {hi:g}.')
     return value
+
+
+def nmf_iteration_limit(value=NMF_DEFAULT_ITERATIONS):
+    try:
+        limit = float(value)
+    except (TypeError, ValueError, OverflowError):
+        limit = float('nan')
+    if isinstance(value, (bool, np.bool_)) or not math.isfinite(limit) or not limit.is_integer() or not 1 <= limit <= NMF_MAX_ITERATIONS:
+        raise ValueError(f'NMF iteration limit must be a whole number between 1 and {NMF_MAX_ITERATIONS:,}.')
+    return int(limit)
 
 
 def plan(info, settings, options):
@@ -90,7 +102,8 @@ def plan(info, settings, options):
     normalization = options.get('normalization', 'unit_norm')
     if normalization not in ('unit_norm', 'none'):
         raise ValueError('Choose unit norm or no spectral normalization.')
-    return dict(method=method,workers=workers,window_pixels=[w,h], window_nm=[w*sx,h*sy], spacing_nm=[dx*sx,dy*sy],
+    nmf_options = dict(nmf_max_iterations=nmf_iteration_limit(options.get('nmf_max_iterations', NMF_DEFAULT_ITERATIONS))) if method == 'nmf' else {}
+    return dict(method=method,workers=workers,**nmf_options,window_pixels=[w,h], window_nm=[w*sx,h*sy], spacing_nm=[dx*sx,dy*sy],
                 xs=xs.tolist(), ys=ys.tolist(), map_shape=[1,count] if sampling else [ny,nx], count=count, **sampling,
                 pixel_nm=[sx,sy], image_shape=[height,width], g_min=inner,g_max=outer,
                 components=min(int(n_components),count-1),
@@ -197,13 +210,14 @@ def decompose(matrix, components, cancel=None):
 
 
 
-def decompose_nmf(matrix, components, cancel=None, progress=None, iterations=300):
+def decompose_nmf(matrix, components, cancel=None, progress=None, iterations=NMF_DEFAULT_ITERATIONS):
     """Seeded Euclidean multiplicative NMF (Lee & Seung); local optimum only.
 
     L1-normalized spectral rows make W additive component contributions, rather
     than scale-ambiguous coefficients. No mean subtraction or phase labels.
     """
     check_cancel(cancel)
+    iterations=nmf_iteration_limit(iterations)
     x=np.asarray(matrix,dtype=np.float32)
     if not np.isfinite(x).all() or np.any(x<0) or not np.any(x>0):
         raise ValueError('NMF needs finite nonnegative spectra with some signal.')
@@ -220,7 +234,7 @@ def decompose_nmf(matrix, components, cancel=None, progress=None, iterations=300
         if step%10==0 or step==iterations:
             error=float(reconstruction_errors(x,w,h,cancel).sum())
             if progress:progress(step,iterations,'NMF iterations')
-            if previous is not None and step>=50 and 0 <= (previous-error)/max(previous,1e-20)<1e-5:
+            if previous is not None and step>=50 and step%10==0 and 0 <= (previous-error)/max(previous,1e-20)<1e-5:
                 converged=True;break
             previous=error
     check_cancel(cancel)
@@ -231,7 +245,7 @@ def decompose_nmf(matrix, components, cancel=None, progress=None, iterations=300
     return dict(mean=np.zeros(x.shape[1],np.float32),components=h,scores=w,
                 explained_variance_ratio=np.zeros(k),contribution_share=shares,
                 residual=residual,algorithm='euclidean_multiplicative_nmf_seed0',
-                total_energy=energy,iterations=step,converged=converged,
+                total_energy=energy,iterations=step,iteration_limit=iterations,converged=converged,
                 relative_reconstruction_error=float(np.linalg.norm(residual)/np.sqrt(energy)))
 
 
@@ -257,7 +271,7 @@ def compute(array, info, settings, options, cancel=None, progress=None):
         positions.append([x,y,w,h])
         if progress:progress(i+1,p['count'],'Sampling local FFTs')
     if progress:progress(p['count'],p['count'],'Decomposing spectra')
-    result=(decompose_nmf(matrix,p['components'],cancel,progress) if p['method']=='nmf' else decompose(matrix,p['components'],cancel))
+    result=(decompose_nmf(matrix,p['components'],cancel,progress,iterations=p['nmf_max_iterations']) if p['method']=='nmf' else decompose(matrix,p['components'],cancel))
     result.update(plan=p,raw_spectra=raw,normalizations=norms,positions=np.asarray(positions),
                   radii=r,angles=a,area_weights=weights,source=copy.deepcopy(info),settings=copy.deepcopy(settings),
                   method_version=VERSION, _source_image=np.asarray(array).copy())
@@ -325,7 +339,7 @@ def summary(result):
                 source_hash=result['source'].get('sha256_pixels'),method=result.get('method_version','local-fft-components-v2'),
                 algorithm=result['algorithm'],components=components,decomposition=p.get('method','pca'),
                 execution=result.get('execution'),fit_status=result.get('fit_status'),fits=result.get('fits'),phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'),
-                iterations=result.get('iterations'),converged=result.get('converged'),
+                iterations=result.get('iterations'),iteration_limit=result.get('iteration_limit',p.get('nmf_max_iterations',NMF_DEFAULT_ITERATIONS)) if nmf else None,converged=result.get('converged'),
                 relative_reconstruction_error=result.get('relative_reconstruction_error'),
                 mean=spectrum_image((result['scores'].mean(axis=0)@result['components'] if nmf else result['mean'])/w,p),
                 raw_mean=spectrum_image(result['raw_spectra'].mean(axis=0),p),
@@ -400,6 +414,7 @@ def export(result, folder):
     if (result.get('phase_support') or {}).get('scoring_version')=='native-fft-window-v1':
         meta['conventions']['original_window_validation']='Native pixels use ordinary FFT detection, weights, refinement, scale bounds and full ranking/pass rules. Feature cutoff applies only to proposal discovery.'
     if result['plan'].get('method')=='nmf':
+        meta['iteration_limit']=result.get('iteration_limit',result['plan'].get('nmf_max_iterations',NMF_DEFAULT_ITERATIONS))
         meta.update(contribution_share=result['contribution_share'].tolist(),iterations=result['iterations'],converged=result['converged'],relative_reconstruction_error=result['relative_reconstruction_error'],fits=result.get('fits'),fit_status=result.get('fit_status'),phase_support=result.get('phase_support'),phase_support_status=result.get('phase_support_status'))
         meta['conventions'].update(normalization='Per-window weighted norm, no centering; H rows have unit L1 sum',reconstruction='scores @ components; divide by area_weights and multiply window normalization',components='Nonnegative spectral factors; contribution shares are not phase fractions or explained variance',source_settings='Decomposition uses taper, mean removal and fitting band. Optional indexing uses captured material/phase/scale settings; see fits provenance.')
         meta['nmf_reference']='Lee & Seung, Algorithms for Non-negative Matrix Factorization, NIPS 2000 (2001), https://proceedings.neurips.cc/paper/2000/file/f9d1152547c0bde01830b7e8bd60024c-Paper.pdf'

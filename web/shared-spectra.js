@@ -1,5 +1,6 @@
 /* Source-bound exploratory PCA/NMF; component activity is not phase abundance. */
 const PcaView={
+ nmfStatus(r){return `NMF ${r.iterations} / ${r.iteration_limit??r.plan?.nmf_max_iterations??300} iterations · ${r.converged?'converged':'iteration limit reached'} · reconstruction error ${(100*r.relative_reconstruction_error).toFixed(2)}%`},
  mergeLive(previous,update){
   if(!update)return null;
   const offset=update.window_offset??0,prior=previous?.generation===update.generation?previous.windows:[];
@@ -374,8 +375,9 @@ if(typeof document!=='undefined'){
   function closeInspector(){groupEpoch++;inspectorRender=null;if(inspector.open)inspector.close()}
   inspector.addEventListener('close',()=>{groupEpoch++});
   $('pca-batch-open').onclick=()=>{
+   let requested;try{requested=options()}catch(error){notify(error.message,true);return}
    $('grid-mode').value=$('pca-method').value;
-   restoreComponentControls({options:options(),fit_options:{combination_mode:$('pca-combination-mode').value,peak_fraction:Number($('nmf-cutoff').value)}});
+   restoreComponentControls({options:requested,fit_options:{combination_mode:$('pca-combination-mode').value,peak_fraction:Number($('nmf-cutoff').value)}});
    const dimensions=meta?overlapDimensions(overlapRequest(),meta):null;
    // Retain image/window-relative batch sizing when the inspector still shows
    // that source's resolved dimensions. An intentional edit becomes fixed nm.
@@ -395,7 +397,9 @@ if(typeof document!=='undefined'){
    $('nmf-build-map').disabled=!data?.fits||data.fits.completed!==data.fits.total||blocked||exporting;
    $('nmf-fit').disabled=!data||blocked||exporting;$('nmf-cutoff').disabled=blocked||exporting;
    $('pca-cancel').disabled=!running();$('pca-export').disabled=!data||blocked||exporting;
-   const pca=$('pca-method').value==='pca';for(const id of ['pca-combination-scope','pca-combination-help'])$(id).hidden=!pca;
+   const pca=$('pca-method').value==='pca';
+   $('nmf-iterations-label').hidden=pca;$('nmf-iterations').disabled=pca||blocked||exporting;
+   $('nmf-iteration-status').hidden=!data||data.decomposition!=='nmf';for(const id of ['pca-combination-scope','pca-combination-help'])$(id).hidden=!pca;
    for(const check of dialog.querySelectorAll('.pca-fit-check input'))check.disabled=blocked||exporting;
    $('pca-refit-selected').hidden=!data||!isPca();$('pca-refit-selected').disabled=blocked||exporting||!fitComponents?.size;
    if(data&&isPca()&&!running()&&fitComponents){const fitted=data.fits?.feature_components||data.components.map(c=>c.index);$('pca-fit-selection-note').textContent=!fitComponents.size?'Select at least one PC for fitting.':fitted.length!==fitComponents.size||fitted.some(i=>!fitComponents.has(i))?'Selection changed · refit to update crystal fits and mapping.':''}
@@ -409,7 +413,7 @@ if(typeof document!=='undefined'){
    return {combination_mode:$('pca-combination-mode').value,combination_components:ids,feature_components:ids};
   }
   function clearResults(){aggregateEpoch++;aggregateView=null;aggregateKey=aggregateFamily=aggregatePending=aggregateError="";mapHit=null;fitComponents=null;closeInspector();liveRevision=0;spectrumEpoch++;groupPreviews.clear();data=null;selected.clear();$('pca-results').hidden=true;$('pca-navigation').hidden=true;$('pca-setup').open=true;sampleEpoch++;groupEpoch++;sourceImage=null;controls()}
-  function options(){return {...workerOptions(),method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),layout:$('pca-sampling').value,passes:Number($('pca-passes').value),sample_edges:$('pca-rim').checked,components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value}}
+  function options(){return {...workerOptions(),method:$('pca-method').value,window_nm:Number($('pca-window').value),spacing_nm:Number($('pca-spacing').value),layout:$('pca-sampling').value,passes:Number($('pca-passes').value),sample_edges:$('pca-rim').checked,components:Number($('pca-count').value),angular_sigma_deg:Number($('pca-angle').value),spacing_sigma_percent:Number($('pca-scale').value),normalization:$('pca-normalization').value,...nmfIterationOptions($('pca-method').value,$('nmf-iterations').value)}}
   const palette=signed=>$('pca-palette').value==='auto'?(signed?'rdbu':$('palette').value):$('pca-palette').value;
   const sharedPca=()=>data?.decomposition!=='nmf'&&$('pca-scale-shared').getAttribute('aria-pressed')==='true';
   let sharedRanges=null;
@@ -550,6 +554,7 @@ if(typeof document!=='undefined'){
    if(r.phase_support?.scoring_version==='native-fft-window-v1')$('nmf-map-help').textContent='Ticked hypotheses form the map pool. Each is checked against every original image window with the ordinary FFT peak detection, measured-peak weights, refinement, scale bounds and all ranking/screening terms. Component scores or factor activity do not gate acceptance. Best local match shows the highest passing rank; all locally supported shows every passing member. White corners and separate-pattern labels use the ordinary phase comparison. Features only provide starting geometries; discovery can still miss an orientation. Colours are not phase fractions.';
    $('pca-mean-help').textContent=pca?'Average of the inputs after optional smoothing and per-window normalization. PCA subtracts this baseline before finding components and adds it back during reconstruction. It can differ from the original average even when smoothing is zero. The display reverses reciprocal-area weighting, but does not restore each window’s original brightness. The two mean images use independent display ranges.':'Average spectrum reconstructed by all NMF factors, in the normalized input representation. NMF does not subtract a mean. This can differ from the original average because of normalization, optional smoothing and reconstruction error. The two images use independent display ranges.';
    $('pca-band').textContent=`${r.plan.g_min}–${r.plan.g_max} nm⁻¹ · +qx right, +qy up · centre excluded`;
+   $('nmf-iteration-status').textContent=r.decomposition==='nmf'?PcaView.nmfStatus(r):'';
    notify(r.decomposition==='nmf'?`${r.plan.count} windows · NMF ${r.iterations} iterations · relative reconstruction error ${(100*r.relative_reconstruction_error).toFixed(1)}%${r.converged?'':' · iteration limit reached'}. Bars show signal shares, not phase fractions.`:`${r.plan.count} windows · ${(r.explained*100).toFixed(1)}% of variance retained. Components are not phases.`);
    $('nmf-fitting').hidden=false;showFits();showPhaseMaps();
    sourceImage=new Image();sourceImage.onload=drawMap;sourceImage.src='/api/file-preview?id='+encodeURIComponent(snapshot.file_id);
@@ -653,6 +658,7 @@ if(typeof document!=='undefined'){
     pendingView=view;
     const fields={method:'pca-method',window_nm:'pca-window',spacing_nm:'pca-spacing',components:'pca-count',angular_sigma_deg:'pca-angle',spacing_sigma_percent:'pca-scale',normalization:'pca-normalization',layout:'pca-sampling',passes:'pca-passes'};
     for(const [key,id] of Object.entries(fields))if(snapshot.options[key]!==undefined)$(id).value=snapshot.options[key];
+    $('nmf-iterations').value=String(snapshot.options.nmf_max_iterations??300);
     $('nmf-cutoff').value=snapshot.fit_options.peak_fraction??.35;
     $('pca-workers').value=String(snapshot.fit_options.workers??snapshot.options.workers??1);
     $('pca-combination-mode').value=snapshot.fit_options.combination_mode??'together';

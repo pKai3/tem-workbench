@@ -55,3 +55,6 @@ assert.deepEqual(pca.visibleWindows(rimPlan,windows,true,false),windows);
 assert.deepEqual(pca.visibleWindows({window_pixels:[10,10],xs:[0,10],ys:[0,10]},windows,false,false),windows,'legacy samples are not mistaken for rim points');
 assert.equal(pca.neighbour(rimPlan,0,'ArrowRight',[0,2,3]),0,'keyboard selection skips hidden rim markers');
 assert.equal(JSON.stringify(windows),originalWindows,'display filtering never changes sampled data');
+
+assert.match(pca.nmfStatus({iterations:300,converged:false,relative_reconstruction_error:.05}),/300 \/ 300 iterations · iteration limit reached/);
+assert.match(pca.nmfStatus({iterations:2730,iteration_limit:3000,converged:true,relative_reconstruction_error:.03}),/2730 \/ 3000 iterations · converged/);

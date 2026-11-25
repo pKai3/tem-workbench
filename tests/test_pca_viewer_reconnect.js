@@ -17,6 +17,8 @@ function setup(){
  assert.equal(running.c.job.id,'retained');assert.equal(running.c.pipeline.stage,'support');assert.equal(running.c.snapshot.file_id,'source-a');assert.equal(running.c.dialog.open,true);assert.equal(running.c.pendingView.controls['pca-map-top'],'2');assert.equal(running.c.polled,running.c.epoch);
  assert.equal(running.c.$('pca-workers').value,'8','restore the worker choice used by the retained fit/map job');
  const stale=setup();let reply;stale.c.api=()=>new Promise(resolve=>reply=resolve);const promise=stale.run('reconnect({reopen:true})');stale.c.fileId='source-b';reply(stale.retained);await promise;assert.equal(stale.c.job,null);assert.equal(stale.c.dialog.open,false);
+ const custom=setup();custom.retained.viewer.options={method:'nmf',nmf_max_iterations:3000};await custom.run('reconnect()');assert.equal(custom.c.$('nmf-iterations').value,'3000');
+ assert.equal(running.c.$('nmf-iterations').value,'300','legacy snapshots restore the default');
  const completed=setup();completed.retained.job.state='complete';await completed.run('reconnect()');assert.equal(completed.c.pipeline,null);assert.equal(completed.c.dialog.open,false);
  console.log('PCA viewer recovery: retained running/completed runs, saved selection, source binding and stale-response guard passed.');
 })().catch(e=>{console.error(e);process.exitCode=1});
