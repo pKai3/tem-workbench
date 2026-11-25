@@ -1,4 +1,4 @@
-# TEM Workbench 1.0.38
+# TEM Workbench 1.0.39
 
 - Add KAM/IPF map comparisons with per-acquisition native OIPX, processed H5OINA recalculation and saved H5OINA KAM choices. Configure kernels, angle limits, IPF directions, colour palettes and compact phase keys; missing pixels display white.
 - Build publication layouts with chosen full-resolution overview images, transposition, coloured panel labels and configurable scale/key placement. Live / As Exported previews the actual PNG layout; rectangular fields retain their proportions without excess padding.
