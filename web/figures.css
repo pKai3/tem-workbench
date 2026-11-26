@@ -47,6 +47,8 @@ dialog.fig-slot-dialog{width:min(98vw,1800px);max-height:calc(100dvh - 20px);ove
 .fig-tag-row{display:grid;grid-template-columns:minmax(75px,auto) minmax(130px,1fr) 36px 145px 32px;align-items:center;gap:7px;border:1px solid var(--line);border-radius:7px;padding:6px}
 .fig-tag-row.duplicate{border-color:#df6970}.fig-tag-row input{min-width:0;width:100%;min-height:30px;padding:4px 6px}
 .fig-tag-row input[type=color]{height:30px;padding:2px}.fig-tag-row input[aria-invalid=true]{border-color:#df6970}
+.fig-colour-picker{height:30px;min-height:28px;border:3px solid var(--line);border-radius:4px;cursor:pointer}
+.fig-label-colour-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}.fig-label-colour-actions button{min-height:28px;padding:4px 7px;font-size:12px}
 .fig-tag-row button{min-height:30px;padding:2px 7px}.fig-tag-preview{display:inline-block;justify-self:start;border-radius:4px;padding:5px 8px;font:600 14px system-ui;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:660px){.fig-tag-row{grid-template-columns:minmax(0,1fr) 36px 135px 32px}.fig-tag-preview{grid-column:1/-1}}
 .fig-popup-columns{grid-template-columns:minmax(250px,.8fr) minmax(220px,.7fr) minmax(0,2fr)}

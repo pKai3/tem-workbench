@@ -14,8 +14,8 @@
  const hasPanel=slot=>Boolean(slot?.path)||isPlaceholder(slot);
  function normaliseRecipe(value){
   if(!value||!Array.isArray(value.slots))return blank();
-  const next=structuredClone(value),columns=Number(next.columns)||2;
-  if(columns<1||columns>6||next.slots.length>24)return blank();
+  const next=structuredClone(value),columns=Number(next.columns??2);
+  if(!Number.isSafeInteger(columns)||columns<1)return blank();
   if(Number(next.schema_version||1)<2){
    for(const slot of next.slots)if(slot.scale_mode==='keep'&&slot.height)slot.content_height=slot.height;
    next.schema_version=2;
@@ -30,9 +30,10 @@
   next.export_scale_percent=Number.isInteger(Number(next.export_scale_percent))&&Number(next.export_scale_percent)>=25&&Number(next.export_scale_percent)<=100?Number(next.export_scale_percent):100;
   next.sharpness=Number.isFinite(Number(next.sharpness))&&Number(next.sharpness)>=0&&Number(next.sharpness)<=3?Number(next.sharpness):1;
   next.metadata_overlay=Array.isArray(next.metadata_overlay)?next.metadata_overlay.map(key=>key==='probe_current'?'probe':key).filter(key=>['magnification','voltage_kv','probe','working_distance'].includes(key)):[];
-  next.columns=columns;next.rows=Math.max(1,Math.min(6,Number(next.rows)||Math.ceil(next.slots.length/columns)||1));
+  const rows=Number(next.rows??Math.max(1,Math.ceil(next.slots.length/columns)));
+  if(!Number.isSafeInteger(rows)||rows<1||!Number.isSafeInteger(rows*columns))return blank();
+  next.columns=columns;next.rows=rows;
   next.rows=Math.max(next.rows,Math.ceil(next.slots.length/columns));
-  if(next.rows*columns>24)return blank();
   while(next.slots.length<next.rows*columns)next.slots.push({});
   return next;
  }
@@ -47,6 +48,8 @@
  const annotationDefaults={arrowColor:'#ff2020',textColor:'#ffffff',width:3,size:30,text:'β'};
  let estimateTimer=0,estimateVersion=0,estimatedBytes=null,estimateExact=false,estimateError='';
  let tagRows=[];
+ const colourMemory=window.WorkbenchLabelColours.create(WorkbenchWorkspace);
+ const exportNotice=window.WorkbenchExportNotice.show;
  async function api(path,body){
   const response=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-TEM-Token':config.token},body:JSON.stringify(body)});
   const value=await response.json();if(!response.ok)throw new Error(value.error||'Request failed.');return value;
@@ -148,7 +151,6 @@
   const geometry=exportGeometry(),label=$('fig-export-dimensions');
   if(!geometry){label.dataset.error='false';label.textContent='Choose images to estimate size.';return}
   const dimensions=`${geometry.width.toLocaleString()} × ${geometry.height.toLocaleString()} px`;
-  if(geometry.pixels>120_000_000){label.textContent=`${dimensions} · exceeds 120 MP limit`;label.dataset.error='true';return}
   label.dataset.error=String(Boolean(estimateError));
   label.textContent=dimensions+(estimateError?` · ${estimateError}`:
    estimatedBytes!=null?` · ${estimateExact?'':'≈'}${fileSize(estimatedBytes)} PNG`:' · estimating PNG size…');
@@ -202,11 +204,40 @@
   const placeholders=recipe.slots.filter(isPlaceholder).length;
   $('fig-count').textContent=`${recipe.slots.filter(hasPanel).length} of ${recipe.slots.length} filled`+(placeholders?` · ${placeholders} placeholder${placeholders===1?'':'s'}`:'');
   $('fig-open-browser').disabled=!files.length;
-  $('fig-export').disabled=!recipe.slots.length||(exportGeometry()?.pixels||0)>120_000_000||recipe.slots.some(slot=>!isPlaceholder(slot)&&(!slot.path||
+  $('fig-export').disabled=$('fig-export').dataset?.exporting==='true'||!recipe.slots.length||recipe.slots.some(slot=>!isPlaceholder(slot)&&(!slot.path||
    recipe.scale_bar_overlay&&slot.scale_mode!=='keep'&&(slot.scale_mode==='metadata'?!slot.pixel_size_nm:!slot.scale_nm||!slot.bar_px)));
   updateExportEstimate();
  }
  function saveTags(){WorkbenchWorkspace.writeRaw('tem-figures-tags-v1',JSON.stringify(tagRows))}
+ function figureColourContext(item){
+  const source=String(item.name||item.label||'').replace(/\.[^.]+$/,'');
+  return {label:String(item.label||source).trim(),sample:String(item.sample||source.split(/[_\s-]/)[0]||'').trim()};
+ }
+ function inUseFigureColours(){
+  return [...recipe.slots,...Object.values(saved).flatMap(item=>item.slots||[]),...tagRows]
+   .map(item=>({colour:item.label_colour||item.colour,...figureColourContext(item)})).filter(item=>normaliseHex(item.colour));
+ }
+ function rememberFigureColour(item){const colour=normaliseHex(item.label_colour||item.colour);if(colour)colourMemory.remember({colour,...figureColourContext(item)})}
+ function applyFigureColour(index,direction){
+  const source=recipe.slots[index];if(!source?.path||!['row','column'].includes(direction))return;
+  const colour=normaliseHex(source.label_colour),columns=recipe.columns;
+  for(const [targetIndex,target] of recipe.slots.entries()){
+   if(!target.path)continue;
+   const matches=direction==='row'?Math.floor(targetIndex/columns)===Math.floor(index/columns):targetIndex%columns===index%columns;
+   if(matches){target.label_colour=colour;rememberFigureColour(target)}
+  }
+  changed(true);status(`Label shade applied to ${direction}.`);
+ }
+ function bindFigureColourPicker(picker,hex,item){
+  picker.type='button';picker.className='fig-colour-picker';picker.title='Suggested, in-use and recent colours';
+  picker.style.backgroundColor=normaliseHex(item.label_colour||item.colour)||'#0c131c';
+  const open=(anchor,focus=true)=>{const entries=inUseFigureColours();colourMemory.seed(entries);const context=figureColourContext(item);
+   window.WorkbenchLabelColours.open({anchor,focus,title:context.label,colour:item.label_colour||item.colour,
+    choices:colourMemory.suggestions(entries,context),onSelect:colour=>{hex.value=colour;hex.oninput();hex.onchange()}})};
+  for(const node of [picker,hex]){node.setAttribute('aria-haspopup','dialog');node.setAttribute('aria-expanded','false')}
+  picker.onclick=()=>open(picker);hex.onclick=()=>open(hex,false);
+  hex.onkeydown=event=>{if(event.key==='ArrowDown'){event.preventDefault();open(hex)}};
+ }
  function tagError(message,error=true){$('fig-tags-status').textContent=message;$('fig-tags-status').dataset.error=String(error)}
  function validateTags(){
   const seen=new Set();let error='';
@@ -222,7 +253,7 @@
     item.classList.toggle('duplicate',duplicate)}
    if(!error)error=duplicate?`Duplicate tag: ${label}`:invalidColour?'Use a 6-digit hex colour.':invalidLabel?'Enter a label of 1–120 characters.':'';
   }
-  $('fig-tags-export').disabled=!tagRows.length||Boolean(error);
+  $('fig-tags-export').disabled=$('fig-tags-export').dataset?.exporting==='true'||!tagRows.length||Boolean(error);
   tagError(error||`${tagRows.length} tag${tagRows.length===1?'':'s'} ready`,Boolean(error));
  }
  function tagInk(colour){
@@ -241,13 +272,15 @@
    const name=document.createElement('input');name.className='fig-tag-name';name.type='text';name.maxLength=120;
    name.placeholder='Tag text';name.setAttribute('aria-label',`Tag ${index+1} text`);name.value=row.label;
    name.oninput=()=>{row.label=name.value;updatePreview();saveTags();validateTags()};
-   const picker=document.createElement('input');picker.type='color';picker.value=normaliseHex(row.colour)||'#0c131c';
+   name.onchange=()=>rememberFigureColour(row);
+   const picker=document.createElement('button');
    picker.setAttribute('aria-label',`Tag ${index+1} shade picker`);
    const hex=document.createElement('input');hex.className='fig-tag-hex';hex.type='text';hex.placeholder='Default or #RRGGBB';
    hex.setAttribute('aria-label',`Tag ${index+1} shade hex`);hex.value=row.colour||'';
-   picker.oninput=()=>{row.colour=picker.value;hex.value=row.colour;updatePreview();saveTags();validateTags()};
-   hex.oninput=()=>{row.colour=hex.value.trim();if(normaliseHex(row.colour))picker.value=normaliseHex(row.colour);
+   hex.oninput=()=>{row.colour=hex.value.trim();picker.style.backgroundColor=normaliseHex(row.colour)||'#0c131c';
     updatePreview();saveTags();validateTags()};
+   hex.onchange=()=>{const colour=normaliseHex(row.colour);if(colour){row.colour=colour;hex.value=colour;saveTags();rememberFigureColour(row)}};
+   bindFigureColourPicker(picker,hex,row);
    const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.title=`Remove tag ${index+1}`;
    remove.setAttribute('aria-label',`Remove tag ${index+1}`);remove.onclick=()=>{tagRows.splice(index,1);saveTags();renderTags()};
    updatePreview();item.append(preview,name,picker,hex,remove);list.append(item);
@@ -668,20 +701,27 @@
    const fields=document.createElement('div');fields.className='fig-panel-fields';
    inputField(fields,'Export label','text',slot.label,value=>{slot.label=value;
     title.textContent=panelDisplayName(slot);title.title=title.textContent;
-    previewImage.alt=`Preview of ${panelDisplayName(slot)}`;changed()}, {maxlength:'120'},true);
+    previewImage.alt=`Preview of ${panelDisplayName(slot)}`;rememberFigureColour(slot);changed()}, {maxlength:'120'},true);
    const labelChoice=document.createElement('label');labelChoice.className='fig-label-choice';
    const labelCheck=document.createElement('input');labelCheck.type='checkbox';labelCheck.checked=slot.label_visible!==false;
    labelCheck.onchange=()=>{slot.label_visible=labelCheck.checked;changed()};
    labelChoice.append(labelCheck,document.createTextNode('Show panel label'));fields.append(labelChoice);
    const colourLabel=document.createElement('label');colourLabel.textContent='Label shade';const colourRow=document.createElement('span');colourRow.className='fig-colour-row';
-   const picker=document.createElement('input');picker.type='color';picker.value=normaliseHex(slot.label_colour)||'#0c131c';picker.setAttribute('aria-label',`Pick label shade for panel ${index+1}`);
+   const picker=document.createElement('button');picker.setAttribute('aria-label',`Pick label shade for panel ${index+1}`);
    const hex=document.createElement('input');hex.type='text';hex.maxLength=7;hex.placeholder='#RRGGBB';hex.value=normaliseHex(slot.label_colour)||'';hex.setAttribute('aria-label',`Hex label shade for panel ${index+1}`);
    const reset=document.createElement('button');reset.type='button';reset.textContent='↺';reset.title='Use default label shade';
-   picker.oninput=()=>{slot.label_colour=picker.value;hex.value=picker.value;hex.setAttribute('aria-invalid','false');changed()};
-   hex.oninput=()=>{const colour=normaliseHex(hex.value);hex.setAttribute('aria-invalid',String(Boolean(hex.value)&&!colour));if(colour){slot.label_colour=colour;picker.value=colour;changed()}else if(!hex.value){slot.label_colour=null;changed()}};
-   hex.onchange=()=>{const colour=normaliseHex(hex.value);if(colour)hex.value=colour};
-   reset.onclick=()=>{slot.label_colour=null;hex.value='';picker.value='#0c131c';hex.setAttribute('aria-invalid','false');changed()};
+   hex.oninput=()=>{const colour=normaliseHex(hex.value);hex.setAttribute('aria-invalid',String(Boolean(hex.value)&&!colour));if(colour){slot.label_colour=colour;picker.style.backgroundColor=colour;changed()}else if(!hex.value){slot.label_colour=null;picker.style.backgroundColor='#0c131c';changed()}};
+   hex.onchange=()=>{const colour=normaliseHex(hex.value);if(colour){hex.value=colour;rememberFigureColour(slot)}};
+   bindFigureColourPicker(picker,hex,slot);
+   reset.onclick=()=>{slot.label_colour=null;hex.value='';picker.style.backgroundColor='#0c131c';hex.setAttribute('aria-invalid','false');changed()};
    colourRow.append(picker,hex,reset);colourLabel.append(colourRow);fields.append(colourLabel);
+   const colourActions=document.createElement('div');colourActions.className='fig-label-colour-actions';
+   for(const direction of ['row','column']){
+    const button=document.createElement('button');button.type='button';button.textContent=`Apply to ${direction}`;
+    button.title=`Copy this label shade to every image panel in this ${direction}. Placeholders stay unchanged.`;
+    button.onclick=()=>applyFigureColour(index,direction);colourActions.append(button);
+   }
+   colourLabel.append(colourActions);
    inputField(fields,'Zoom ×','number',slot.zoom||1,value=>{const next=Number(value);
     if(value&&next>=1&&next<=20){slot.zoom=next;changed()}}, {min:'1',max:'20',step:'0.1'},true);
    inputField(fields,'Brightness ×','number',slot.brightness??1,value=>{const next=Number(value);
@@ -1212,7 +1252,9 @@
  }
  function changeLayout(){
   const rows=Number($('fig-rows').value),columns=Number($('fig-columns').value),total=rows*columns;
-  if(total>24){status('Use a layout with at most 24 panels.',true);sync();return}
+  if(!Number.isSafeInteger(rows)||!Number.isSafeInteger(columns)||rows<1||columns<1||!Number.isSafeInteger(total)){
+   status('Use positive whole numbers for rows and columns.',true);sync();return;
+  }
   if(recipe.slots.slice(total).some(hasPanel)){
    status('Clear or move panels outside the new layout first.',true);sync();return;
   }
@@ -1332,14 +1374,22 @@
    $('fig-new').onclick=()=>selectFigure('');
    $('fig-saved').onchange=()=>selectFigure($('fig-saved').value);
    $('fig-saved-picker').onclick=()=>openSavedFigures();
-   $('fig-save').onclick=async()=>{recipe.name=$('fig-name').value.trim()||'Untitled figure';if(!recipe.slots.some(hasPanel)){status('Choose an image or create a placeholder before saving.',true);return}
+   $('fig-save').onclick=async()=>{recipe.name=$('fig-name').value.trim()||'Untitled figure';if(!recipe.slots.some(hasPanel)){const message='Choose an image or create a placeholder before saving.';status(message,true);exportNotice('Save failed',message,'error');return}
+    exportNotice('Saving figure…',recipe.name);
     currentId=currentId||crypto.randomUUID();saved[currentId]=structuredClone(recipe);draft(true);chooseSaved();
-    if(await WorkbenchWorkspace.flush()===false){status('Could not save figure to disk. Click Save failed · retry above.',true);return}status(`Saved ${recipe.name}.`)};
+    if(await WorkbenchWorkspace.flush()===false){const message='Could not save figure to disk. Click Save failed · retry above.';status(message,true);exportNotice('Save failed',message,'error');return}status(`Saved ${recipe.name}.`);exportNotice('✓ Figure saved',recipe.name,'saved')};
    $('fig-delete').onclick=async()=>{if(!currentId)return;delete saved[currentId];currentId='';WorkbenchWorkspace.writeRaw('tem-figures-saved-v1',JSON.stringify(saved));draft();chooseSaved();
     if(await WorkbenchWorkspace.flush()===false){status('Could not save the deletion to disk. Click Save failed · retry above.',true);return}status('Saved figure deleted. Current panels remain open.')};
-   $('fig-export').onclick=async()=>{try{status(`Exporting figure at ${recipe.export_scale_percent}%…`);
-    const result=await api('figures/export',{recipe});status(`Saved ${result.png} (${fileSize(result.size_bytes)}) and ${result.recipe}`)}
-    catch(error){status(error.message,true)}};
+   $('fig-export').onclick=async()=>{
+    const button=$('fig-export');if(button.dataset.exporting==='true')return;
+    button.dataset.exporting='true';button.setAttribute('aria-busy','true');sync();
+    const snapshot=structuredClone(recipe);status(`Exporting figure at ${snapshot.export_scale_percent}%…`);
+    exportNotice('Exporting figure…',`${snapshot.name} · ${snapshot.export_scale_percent}%`);
+    try{const result=await api('figures/export',{recipe:snapshot});status('Figure exported.');
+     exportNotice('✓ Figure exported · '+fileSize(result.size_bytes),`${result.png}\n${result.recipe}`,'saved')}
+    catch(error){status(error.message,true);exportNotice('Export failed',error.message,'error')}
+    finally{delete button.dataset.exporting;button.setAttribute('aria-busy','false');sync()}
+   };
    $('fig-tag-open').onclick=()=>{renderTags();$('fig-tags-dialog').showModal()};
    $('fig-tags-close').onclick=()=>$('fig-tags-dialog').close();
    $('fig-tags-add').onclick=()=>{if(tagRows.length>=500){tagError('At most 500 tags can be exported together.');return}
@@ -1349,12 +1399,14 @@
    $('fig-tags-from-project').onclick=()=>addTagSet(projectTags());
    $('fig-tags-export').onclick=async()=>{
     validateTags();if($('fig-tags-export').disabled)return;
-    $('fig-tags-export').disabled=true;tagError('Exporting tags…',false);
+    const button=$('fig-tags-export');button.dataset.exporting='true';button.disabled=true;button.setAttribute('aria-busy','true');tagError('Exporting tags…',false);
+    exportNotice('Exporting label tags…',`${tagRows.length} transparent PNGs`);
     try{const sourcePath=files[0]?.path||recipe.slots.find(slot=>slot.path)?.path;
      const result=await api('figures/tags/export',{tags:tagRows.map(row=>({label:row.label.trim(),
       colour:normaliseHex(row.colour)})),recipe,source_path:sourcePath});
-     tagError(`Saved ${result.files.length} tags to ${result.folder}`,false)}
-    catch(error){tagError(error.message)}finally{$('fig-tags-export').disabled=false}
+     tagError(`Saved ${result.files.length} tags.`,false);exportNotice(`✓ ${result.files.length} label tags exported`,result.folder,'saved')}
+    catch(error){tagError(error.message);exportNotice('Tag export failed',error.message,'error')}
+    finally{delete button.dataset.exporting;button.setAttribute('aria-busy','false');button.disabled=false}
    };
    scan();
   }catch(error){status(error.message,true)}

@@ -3,59 +3,6 @@ window.aztecAcquisitionDimensions={text(value,kind){
  const microns=value.distance_unit==='nm'&&Math.max(...numbers)>=1000,scale=microns?1000:1,unit=microns?'µm':value.distance_unit;
  return numbers.map(n=>Number((n/scale).toPrecision(4)).toString()).join(' × ')+' '+unit;
 }};
-/* Shared colour memory across AZtec map/line comparisons; no automatic assignment. */
-(() => {
- 'use strict';
- const storageKey='tem-aztec-label-colours-v1',limit=128;
- const normalise=value=>{const hex=String(value||'').trim().replace(/^#/,'');return /^(?:[\da-f]{3}|[\da-f]{6})$/i.test(hex)?'#'+(hex.length===3?[...hex].map(c=>c+c).join(''):hex).toLowerCase():null};
- const name=value=>String(value||'').trim().replace(/\s+/g,' ').toLowerCase();
- const clean=entry=>({colour:normalise(entry?.colour),label:String(entry?.label||'').trim().slice(0,120),sample:String(entry?.sample||'').trim().slice(0,120),used:Number(entry?.used)||0});
- const identity=entry=>[entry.colour,name(entry.label),name(entry.sample)].join('|');
- function suggestions(history,inUse,context){
-  const wantedLabel=name(context.label),wantedSample=name(context.sample),colours=new Map();
-  for(const entry of [...history.map(e=>({...e,inUse:false})),...inUse.map(e=>({...e,inUse:true}))]){
-   const item={...clean(entry),inUse:entry.inUse};if(!item.colour)continue;
-   const names=[name(item.label),name(item.sample)].filter(Boolean);
-   const labelMatch=!!wantedLabel&&names.includes(wantedLabel),sampleMatch=!!wantedSample&&names.includes(wantedSample);
-   item.rank=labelMatch?0:sampleMatch?1:item.inUse?2:3;
-   item.reason=labelMatch?'Matches '+context.label:sampleMatch?'Matches '+context.sample:item.inUse?'In use':'Recent';
-   const previous=colours.get(item.colour);
-   if(!previous||item.rank<previous.rank||item.rank===previous.rank&&(item.inUse>previous.inUse||item.inUse===previous.inUse&&item.used>previous.used))colours.set(item.colour,item);
-  }
-  return [...colours.values()].sort((a,b)=>a.rank-b.rank||Number(b.inUse)-Number(a.inUse)||b.used-a.used||a.colour.localeCompare(b.colour)).slice(0,24);
- }
- function create(storage){
-  let history=[];try{const stored=JSON.parse(storage.readRaw(storageKey)||'[]');if(Array.isArray(stored))history=stored.map(clean).filter(e=>e.colour).sort((a,b)=>b.used-a.used).slice(0,limit)}catch{}
-  const save=()=>storage.writeRaw(storageKey,JSON.stringify(history));
-  function remember(entry){const item=clean(entry);if(!item.colour)return;item.used=Math.max(Date.now(),(history[0]?.used||0)+1);history=[item,...history.filter(e=>identity(e)!==identity(item))].slice(0,limit);save()}
-  function seed(entries){let changed=false;for(const entry of entries){const item=clean(entry);if(item.colour&&!history.some(e=>identity(e)===identity(item))){history.push(item);changed=true}}if(changed){history=history.slice(0,limit);save()}}
-  return {remember,seed,suggestions:(inUse,context)=>suggestions(history,inUse,context)};
- }
- let active=null;
- function open({anchor,title,colour,choices,onSelect,focus=true}){
-  if(active){active.close();active=null}
-  const make=(tag,text,cls)=>{const node=document.createElement(tag);if(text)node.textContent=text;if(cls)node.className=cls;return node};
-  const dialog=make('dialog',null,'eds-colour-palette'),head=make('div',null,'eds-colour-palette-head'),heading=make('strong','Label colour'),close=make('button','×');
-  dialog.setAttribute('aria-label','Label colours for '+title);close.type='button';close.setAttribute('aria-label','Close colour suggestions');close.onclick=()=>dialog.close();head.append(heading,close);dialog.append(head);
-  let section=null,grid=null;
-  for(const choice of choices){
-   const group=choice.rank<2?'Suggested':choice.rank===2?'In use':'Recent';
-   if(group!==section){section=group;dialog.append(make('span',group,'eds-colour-palette-heading'));grid=make('div',null,'eds-colour-swatches');dialog.append(grid)}
-   const button=make('button'),swatch=make('span',null,'eds-colour-swatch'),caption=make('span',choice.colour);button.type='button';swatch.style.backgroundColor=choice.colour;
-   button.title=choice.reason+(choice.label?' · '+choice.label:'');button.setAttribute('aria-label',choice.colour+' · '+choice.reason);button.setAttribute('aria-pressed',String(choice.colour===normalise(colour)));button.append(swatch,caption);button.onclick=()=>{onSelect(choice.colour);dialog.close()};grid.append(button);
-  }
-  if(!choices.length)dialog.append(make('p','Your chosen colours will appear here.','hint'));
-  const custom=make('label','Custom colour'),picker=make('input');picker.type='color';picker.value=normalise(colour)||'#0c131c';picker.setAttribute('aria-label','Custom label colour');picker.onchange=()=>{onSelect(picker.value);dialog.close()};custom.append(picker);dialog.append(custom);
-  dialog.addEventListener('close',()=>{if(active===dialog)active=null;anchor.setAttribute('aria-expanded','false');dialog.remove();if(anchor.isConnected)anchor.focus({preventScroll:true})},{once:true});
-  document.body.append(dialog);dialog.show();active=dialog;anchor.setAttribute('aria-expanded','true');
-  const box=anchor.getBoundingClientRect(),size=dialog.getBoundingClientRect();
-  dialog.style.left=Math.max(8,Math.min(box.left,innerWidth-size.width-8))+'px';
-  dialog.style.top=Math.max(8,Math.min(box.bottom+6,innerHeight-size.height-8))+'px';
-  (focus?(dialog.querySelector('.eds-colour-swatches button')||picker):anchor).focus({preventScroll:true});
- }
- window.aztecLabelColours={normalise,create,suggestions,open};
-})();
-
 /* Shared line view geometry; source coordinates and sampled arrays stay unchanged. */
 window.aztecLineGeometry={
  ranges(rows,options){
@@ -194,7 +141,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
  const object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
  const preferences=object(savedViews.preferences),selections=object(savedViews.selections),cropCentres=new Map(Object.entries(object(savedViews.crops))),aliases=object(savedViews.aliases),labelColours=object(savedViews.labelColours),presets=object(savedViews.presets),structureCache=new Map();
  const lastTables=object(savedViews.lastTables),activePresets=object(savedViews.activePresets);
- const colourMemory=window.aztecLabelColours.create(workspace);
+ const colourMemory=window.WorkbenchLabelColours.create(workspace);
  const comparisonPreview=window.WorkbenchPreviewPicker.createCache(renderSavedComparison);
  let persistTimer=null,openVersion=0;
  const catalogues=new Map(),catalogueRequests=new Map(),sourceErrors=new Map(),thumbnailRequests=new Map();let thumbnailObserver=null;
@@ -802,7 +749,7 @@ window.createAztecAnalysis=({$,el,state,api,highlightRegions,setLineCrop,setLine
   reset.type='button';reset.title='Reset label colour';reset.setAttribute('aria-label','Reset export label colour for '+group.label);
   const apply=(value,redraw=false)=>{const colour=normaliseLabelColour(value);if(colour)labelColours[key]=colour;else delete labelColours[key];picker.style.backgroundColor=colour||'#0c131c';if(colour&&redraw)colourMemory.remember({colour,...colourContext(group)});persist();updateMapLabels();updateLineLabels();if(redraw&&current?.kind==='line'&&current.result)render(current.result)};
   const validate=()=>{const raw=hex.value.trim(),valid=!raw||!!normaliseLabelColour(raw);hex.setAttribute('aria-invalid',String(!valid));error.textContent=valid?'':'Use #RGB or #RRGGBB';return valid};
-  const openPalette=(anchor,focus=true)=>{const entries=inUseLabelColours();colourMemory.seed(entries);window.aztecLabelColours.open({anchor,focus,title:colourContext(group).label,colour:labelColours[key],choices:colourMemory.suggestions(entries,colourContext(group)),onSelect:colour=>{hex.value=colour;validate();apply(colour,true)}})};
+  const openPalette=(anchor,focus=true)=>{const entries=inUseLabelColours();colourMemory.seed(entries);window.WorkbenchLabelColours.open({anchor,focus,title:colourContext(group).label,colour:labelColours[key],choices:colourMemory.suggestions(entries,colourContext(group)),onSelect:colour=>{hex.value=colour;validate();apply(colour,true)}})};
   picker.onclick=()=>openPalette(picker);hex.setAttribute('aria-haspopup','dialog');hex.setAttribute('aria-expanded','false');hex.onclick=()=>openPalette(hex,false);hex.onkeydown=event=>{if(event.key==='ArrowDown'){event.preventDefault();openPalette(hex)}};
   hex.oninput=()=>{if(validate())apply(hex.value)};hex.onchange=()=>{if(validate()){hex.value=normaliseLabelColour(hex.value)||'';apply(hex.value,true)}};
   reset.onclick=()=>{hex.value='';validate();apply('',true)};

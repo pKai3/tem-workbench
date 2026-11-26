@@ -9,6 +9,9 @@ assert.equal(inner.closed,1);assert.equal(outer.closed,0);assert.equal(inner.can
 const child={parent:outer};listeners.pointerdown(event({target:child,clientX:30,clientY:30}));listeners.click(event({target:outer,clientX:0,clientY:0}));assert.equal(outer.closed,0,'Drag-out does not dismiss');
 listeners.pointerdown(event({target:outer,clientX:0,clientY:0}));listeners.click(event({target:outer,clientX:0,clientY:0}));assert.equal(outer.closed,1);
 const floating=dialog(false);listeners.keydown(event());assert.equal(floating.closed,1,'Non-modal popup also closes');
+const parent=dialog(),palette=dialog(false);palette.parent=parent;
+listeners.keydown(event());assert.equal(palette.closed,1);assert.equal(parent.closed,0,'Nested colour suggestions close before their modal parent');
+listeners.keydown(event());assert.equal(parent.closed,1);
 const blocked=dialog();blocked.blocked=true;listeners.keydown(event());assert.equal(blocked.closed,0,'Existing cancel handlers still apply');blocked.blocked=false;
 const inside=event({target:{parent:blocked},clientX:20,clientY:20});listeners.pointerdown(inside);listeners.click(inside);assert.equal(blocked.closed,0);
 console.log('Nested, modal and floating popups dismiss consistently; inside clicks, drag-out and cancel hooks are preserved.');

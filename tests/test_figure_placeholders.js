@@ -36,14 +36,24 @@ context.recipe.slots[0].pixel_size_nm=2;
 context.sync();assert.equal(fields['fig-export'].disabled,false);
 context.addPlaceholder();assert.match(context.message.message,/Clear a slot/);
 assert.equal(context.recipe.slots[0].path,'/image.tif');
-// Shrinking cannot silently discard a placeholder, and the 24-panel cap still applies.
+// Shrinking cannot silently discard a placeholder; larger layouts have no preset cap.
 fields['fig-rows'].value='2';fields['fig-columns'].value='6';
 context.changeLayout();assert.equal(context.recipe.slots.length,18);
 assert.match(context.message.message,/Clear or move panels/);
-fields['fig-rows'].value='6';fields['fig-columns'].value='6';
-context.changeLayout();assert.equal(context.recipe.slots.length,18);
-assert.match(context.message.message,/at most 24/);
-for(let i=12;i<18;i++)context.recipe.slots[i]={};
+fields['fig-rows'].value='8';fields['fig-columns'].value='7';
+context.changeLayout();assert.equal(context.recipe.slots.length,56);
+context.recipe.slots[55]={kind:'placeholder',placeholder:{sample:'Last'}};
+const large=context.normaliseRecipe(JSON.parse(JSON.stringify(context.recipe)));
+assert.equal(large.rows,8);assert.equal(large.columns,7);assert.equal(large.slots[55].placeholder.sample,'Last');
+extract(' function transposeLayout(){',' function changeLayout(){');
+context.transposeLayout();assert.equal(context.recipe.rows,7);assert.equal(context.recipe.columns,8);
+assert.equal(context.recipe.slots[55].placeholder.sample,'Last');
+context.transposeLayout();assert.equal(context.recipe.rows,8);assert.equal(context.recipe.columns,7);
+for(const invalid of ['', '0','-1','1.5','Infinity']){
+ fields['fig-rows'].value=invalid;fields['fig-columns'].value='7';context.changeLayout();
+ assert.equal(context.recipe.slots.length,56);assert.match(context.message.message,/positive whole numbers/);
+}
+for(let i=12;i<56;i++)context.recipe.slots[i]={};
 fields['fig-rows'].value='2';fields['fig-columns'].value='6';
 context.changeLayout();assert.equal(context.recipe.slots.length,12);
-console.log('Placeholder creation, six-column recipe restoration, export eligibility and layout protection passed.');
+console.log('Placeholder creation, unrestricted grid restoration/transposition, export eligibility and layout protection passed.');

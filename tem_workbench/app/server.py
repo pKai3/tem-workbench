@@ -1087,7 +1087,9 @@ def make_handler(app):
                 if self.headers.get('X-TEM-Token') != app.token:
                     self.send({'error': 'Reload the workbench to reconnect.'}, status=403); return
                 size=int(self.headers.get('Content-Length', 0))
-                limit = 256*1024*1024 if self.path in ('/api/export-spectrum', '/api/aztec/export') else (16*1024*1024 if self.path in ('/api/workspace', '/api/repeat-regions/start', '/api/figures/reconnect') else 65536)
+                figure_recipe_request = self.path in ('/api/figures/render', '/api/figures/panel',
+                                                     '/api/figures/estimate', '/api/figures/export')
+                limit = 256*1024*1024 if self.path in ('/api/export-spectrum', '/api/aztec/export') else (16*1024*1024 if figure_recipe_request or self.path in ('/api/workspace', '/api/repeat-regions/start', '/api/figures/reconnect') else 65536)
                 if size <= 0 or size > limit or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
                     raise ValueError('Expected a small JSON request.')
                 body=json.loads(self.rfile.read(size))

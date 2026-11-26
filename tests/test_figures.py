@@ -73,6 +73,16 @@ class FiguresTests(unittest.TestCase):
         self.assertTrue(Path(output['recipe']).is_file())
         self.assertEqual(output['size_bytes'], Path(output['png']).stat().st_size)
 
+    def test_png_size_estimate_accepts_more_than_120_megapixels(self):
+        slot = creator.inspect_image(self.path)
+        recipe = dict(slots=[slot], columns=1, aspect=1, image_padding=0)
+        with patch.object(creator, '_export_panel_width', return_value=11000), \
+             patch.object(creator, '_sampled_png_bytes_per_pixel', return_value=.1):
+            estimate = creator.estimate_png_size(recipe)
+        self.assertEqual((estimate['width'], estimate['height']), (11000, 11000))
+        self.assertFalse(estimate['exact'])
+        self.assertGreater(estimate['estimated_size_bytes'], 0)
+
     def test_editable_annotations_render_in_preview_and_export(self):
         found = creator.inspect_image(self.path)
         slot = {**found, 'label_visible': False, 'annotations': [
@@ -256,6 +266,40 @@ class FiguresTests(unittest.TestCase):
         self.assertEqual(creator._correct_footer_scale(raw, 1000),
                          '1 µm CMM UQ 21/06/2026\nx15,000 15.0kV WD 9.4mm')
         self.assertEqual(creator._correct_footer_scale('a lpm CMM UQ', 1000), '1 µm CMM UQ')
+
+    def test_short_solid_sem_bars_are_detected_in_both_polarities(self):
+        for background in (0, 255):
+            for bar_width in (64, 172):
+                with self.subTest(background=background, bar_width=bar_width):
+                    image = Image.new('L', (2560, 2048), 128)
+                    draw = ImageDraw.Draw(image)
+                    draw.rectangle((0, 1920, 2559, 2047), fill=background)
+                    draw.rectangle((2100 - bar_width, 1926, 2099, 1955), fill=255 - background)
+                    draw.text((2390, 1935), '1um', fill=255 - background,
+                              font=creator._font(36))
+                    footer, bar = creator._footer_and_bar(image)
+                    self.assertEqual(footer, 1920)
+                    self.assertEqual(bar, dict(x=2100 - bar_width, y=1926, w=bar_width, h=30))
+                    image.save(self.path)
+                    with patch.object(creator, '_tesseract_path', return_value='fake'), \
+                         patch.object(creator, '_ocr_image', return_value='1um'):
+                        found = creator.inspect_image(self.path)
+                    self.assertEqual(found['scale_mode'], 'replace')
+                    self.assertEqual(found['scale_nm'], 1000)
+                    self.assertEqual(found['bar_px'], bar_width)
+                    self.assertTrue(creator.render({'slots': [found], 'columns': 1}).startswith(b'\x89PNG'))
+
+    def test_compact_footer_glyphs_and_square_marks_are_not_scale_bars(self):
+        for background in (0, 255):
+            image = Image.new('L', (2560, 2048), 128)
+            draw = ImageDraw.Draw(image)
+            draw.rectangle((0, 1920, 2559, 2047), fill=background)
+            # A connected, almost-filled text-like shape has the same bounds as
+            # the real short bar, but less than the required compact-bar fill.
+            draw.rectangle((2036, 1926, 2099, 1955), fill=255 - background)
+            draw.rectangle((2046, 1936, 2089, 1939), fill=background)
+            draw.rectangle((1000, 1926, 1029, 1955), fill=255 - background)
+            self.assertEqual(creator._footer_and_bar(image), (1920, None))
 
     def test_thin_footer_fallback_works_in_both_polarities(self):
         for width, footer_height, background in [(1024, 32, 0), (800, 16, 255), (1920, 56, 0)]:

@@ -12,14 +12,14 @@ function setup(seed){
   [draftKey]:JSON.stringify(figure()),'preference:tem-figures-current-v1':'one'});
  const local=new Map(),fields={},requests=[];
  const c={structuredClone,console:{warn(){}},Event,window:{WorkbenchWorkspaceData:{records:disk},addEventListener(){}},
-  document:{getElementById:id=>fields[id]??={value:'',textContent:'',classList:{toggle(){}},setAttribute(){}},addEventListener(){}},
+  document:{getElementById:id=>fields[id]??={value:'',textContent:'',dataset:{},classList:{toggle(){}},setAttribute(){}},addEventListener(){}},
   localStorage:{get length(){return local.size},key:i=>[...local.keys()][i],getItem:k=>local.get(k)??null,
    setItem:(k,v)=>local.set(k,v),removeItem:k=>local.delete(k)},
   setTimeout(){return 1},clearTimeout(){},setInterval(){},
   fetch(url,options){return new Promise((resolve,reject)=>requests.push({body:JSON.parse(options.body),reject,
    finish(){Object.assign(disk,this.body.records);resolve({ok:true,json:async()=>({records:{...disk}})})}}))},
   selectedPanel:0,sync(){},renderCards(){},schedulePreview(){},scheduleEstimate(){},schedulePanelPreview(){},renderAnnotationOverlay(){},
-  chooseSaved(){},reconnectSources:async()=>{},refreshLegacySlots(){},status(message,error){c.notice={message,error}},
+  exportNotices:[],exportNotice(...args){c.exportNotices.push(args)},chooseSaved(){},reconnectSources:async()=>{},refreshLegacySlots(){},status(message,error){c.notice={message,error}},
   api:async()=>{throw Error('Unexpected API request')},crypto:{randomUUID:()=> 'created'}};
  vm.createContext(c);vm.runInContext(fs.readFileSync('web/workspace-state.js','utf8'),c);
  c.WorkbenchWorkspace=c.window.WorkbenchWorkspace;c.$=c.document.getElementById;
@@ -86,6 +86,9 @@ function setup(seed){
  // Failed manual saves must not report success; deletion detaches the draft.
  c.$('fig-name').value='Other figure';const manual=fields['fig-save'].onclick();await tick();requests.at(-1).reject(Error('Disk unavailable'));
  await manual;assert.equal(c.notice.error,true);assert.match(c.notice.message,/Could not save figure/);
+ assert.equal(c.exportNotices.at(-2)[0],'Saving figure…');assert.equal(c.exportNotices.at(-1)[2],'error');
+ const retry=fields['fig-save'].onclick();await tick();requests.at(-1).finish();await retry;
+ assert.deepEqual(c.exportNotices.at(-1),['✓ Figure saved','Other figure','saved']);
  const deletion=fields['fig-delete'].onclick();await tick();requests.at(-1).finish();await deletion;
  assert.equal(c.currentId,'');assert.equal(c.saved.two,undefined);
  c.recipe.slots[0].annotations.push(beta);c.annotationChanged();assert.equal(c.saved.two,undefined,'Editing a detached draft cannot resurrect a deletion');

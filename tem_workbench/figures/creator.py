@@ -26,10 +26,8 @@ from tem_workbench.storage.preview_files import sidecar_path
 from tem_workbench.figures import dm4_source, instrument_metadata
 
 EXTENSIONS = {'.dm4', '.tif', '.tiff', '.png', '.jpg', '.jpeg'}
-INSPECTION_VERSION = 10
-MAX_PANELS = 24
+INSPECTION_VERSION = 11
 MAX_SOURCE_PIXELS = dm4_source.MAX_SOURCE_PIXELS
-MAX_FIGURE_PIXELS = 120_000_000
 MAX_EXACT_ESTIMATE_PIXELS = 8_000_000
 MAX_PREVIEW_PIXELS = 16_000_000
 
@@ -412,10 +410,14 @@ def _footer_and_bar(image, recorded_footer=None):
         ys, xs = slices
         bar_width, bar_height = xs.stop - xs.start, ys.stop - ys.start
         fill = np.mean(labels[slices] == index)
+        aspect = bar_width / bar_height
         if not (width * .01 <= bar_width <= width * .4 and 2 <= bar_height <= max(45, height * .025)
-                and bar_width / bar_height >= 4):
+                and aspect >= 2):
             continue
-        if fill > .85:
+        # Low-magnification SEM bars can be only twice as wide as they are tall.
+        # Require these compact candidates to be nearly solid, so joined footer
+        # letters and ruler ticks do not become calibration measurements.
+        if fill > (.95 if aspect < 4 else .85):
             candidates.append((bar_width * fill, dict(x=xs.start, y=footer + ys.start,
                                                        w=bar_width, h=bar_height)))
     return footer, max(candidates, key=lambda item: item[0])[1] if candidates else None
@@ -910,16 +912,25 @@ def _sampled_png_bytes_per_pixel(path, digest, content_height, crop_metadata, as
     return total_bytes / total_pixels
 
 
+def _figure_columns(recipe):
+    value = recipe.get('columns', 2)
+    try:
+        columns = int(value)
+        if isinstance(value, bool) or columns < 1 or float(value) != columns:
+            raise ValueError
+    except (ValueError, TypeError, OverflowError):
+        raise ValueError('Use a positive whole number of columns.') from None
+    return columns
+
+
 def estimate_png_size(recipe, *, dm_reader=None):
     """Measure small outputs exactly; sample native-detail PNG patches for large ones."""
     if not isinstance(recipe, dict) or not isinstance(recipe.get('slots'), list):
         raise ValueError('Expected a saved figure recipe.')
     slots = recipe['slots']
-    if not 1 <= len(slots) <= MAX_PANELS:
-        raise ValueError(f'Choose 1–{MAX_PANELS} image panels.')
-    columns = int(recipe.get('columns', 2))
-    if columns not in (1, 2, 3, 4, 5, 6):
-        raise ValueError('Choose 1–6 columns.')
+    if not slots:
+        raise ValueError('Choose at least one image panel.')
+    columns = _figure_columns(recipe)
     crop_metadata = recipe.get('crop_metadata', True)
     if not isinstance(crop_metadata, bool):
         raise ValueError('Choose whether to crop metadata bars.')
@@ -934,8 +945,6 @@ def estimate_png_size(recipe, *, dm_reader=None):
     panel_height = math.ceil(panel_width / aspect)
     canvas_width = columns * panel_width + (columns + 1) * padding
     canvas_height = math.ceil(len(slots) / columns) * panel_height + (math.ceil(len(slots) / columns) + 1) * padding
-    if canvas_width * canvas_height > MAX_FIGURE_PIXELS:
-        raise ValueError('The selected figure is too large. Use fewer panels or a smaller export size.')
     filled = [slot for slot in slots if _is_placeholder(slot) or slot.get('path')]
     if not filled:
         raise ValueError('Choose an image or placeholder to estimate the PNG size.')
@@ -1095,11 +1104,9 @@ def _render(recipe, preview=False, *, dm_reader=None, preview_width=None):
     if not isinstance(recipe, dict):
         raise ValueError('Expected a saved figure recipe.')
     slots = recipe.get('slots')
-    if not isinstance(slots, list) or not 1 <= len(slots) <= MAX_PANELS:
-        raise ValueError(f'Choose 1–{MAX_PANELS} image panels.')
-    columns = int(recipe.get('columns', 2))
-    if columns not in (1, 2, 3, 4, 5, 6):
-        raise ValueError('Choose 1–6 columns.')
+    if not isinstance(slots, list) or not slots:
+        raise ValueError('Choose at least one image panel.')
+    columns = _figure_columns(recipe)
     metadata_overlay = recipe.get('metadata_overlay', [])
     if not isinstance(metadata_overlay, list) or any(key not in METADATA_FIELDS for key in metadata_overlay):
         raise ValueError('Choose supported metadata overlay fields.')
@@ -1147,8 +1154,6 @@ def _render(recipe, preview=False, *, dm_reader=None, preview_width=None):
         raise ValueError('Figure sharpness must be between 0 and 3.')
     figure_width = columns * width + (columns + 1) * margin
     figure_height = rows * tile_height + (rows + 1) * margin
-    if not preview and figure_width * figure_height > MAX_FIGURE_PIXELS:
-        raise ValueError('The selected figure is too large. Use fewer panels or a smaller export size.')
     figure = Image.new('RGB', (figure_width, figure_height), color)
     for index, slot in enumerate(slots):
         x = margin + (index % columns) * (width + gap)

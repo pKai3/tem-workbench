@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const window={};vm.runInNewContext(fs.readFileSync('web/aztec-analysis.js','utf8').split('window.aztecComparisonState=')[0],{window,Date});
-const api=window.aztecLabelColours,values=new Map(),storage={readRaw:key=>values.get(key),writeRaw:(key,value)=>values.set(key,value)};
+const window={},shared=fs.readFileSync('web/popup-controls.js','utf8');vm.runInNewContext(shared.slice(shared.indexOf('/* Shared colour memory')),{window,Date});
+const api=window.WorkbenchLabelColours,values=new Map(),storage={readRaw:key=>values.get(key),writeRaw:(key,value)=>values.set(key,value)};
 let memory=api.create(storage);
 memory.remember({colour:'#ABC',label:' ST ',sample:'sample one'});
 memory.remember({colour:'#123456',label:'unrelated'});
@@ -13,6 +13,8 @@ assert.equal(choices[2].colour,'#ff0000','In-use colours precede unrelated recen
 assert.equal(choices[3].colour,'#123456');
 assert.equal(choices.filter(c=>c.colour==='#aabbcc').length,1,'Same colour is suggested only once');
 assert.equal(choices.find(c=>c.colour==='#ff0000').reason,'In use','ST does not loosely match STA');
+const otherMode=api.create(storage);otherMode.remember({colour:'#445566',label:'Cross mode'});
+assert.equal(memory.suggestions([],{label:'Cross mode'})[0].colour,'#445566','Already-open modes read each other’s remembered choices');
 const before=[...values.values()][0];memory.seed([{colour:'#aabbcc',label:'ST',sample:'sample one'}]);assert.equal([...values.values()][0],before,'Opening the picker must not promote existing history');
 memory.remember({colour:'invalid',label:'ST'});assert.equal([...values.values()][0],before);
 memory.seed([{colour:'#fed',label:'Different',sample:'  Sample   One '}]);

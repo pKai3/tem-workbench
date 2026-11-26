@@ -71,6 +71,30 @@ class PlaceholderTests(unittest.TestCase):
         self.assertFalse(estimate['exact'])
         self.assertGreater(estimate['estimated_size_bytes'], 0)
 
+    def test_large_layout_preview_estimate_and_export_preserve_all_panels(self):
+        slots = [self.image] * 56
+        slots[-1] = self.missing
+        recipe = dict(columns=7, rows=8, slots=slots, aspect='auto',
+                      export_scale_percent=25, image_padding=0)
+        preview = creator.preview_result(recipe, width=6000)
+        layout = preview['layout']
+        self.assertEqual((layout['columns'], layout['rows']), (7, 8))
+        self.assertLessEqual(layout['width'] * layout['height'], creator.MAX_PREVIEW_PIXELS)
+        data = creator.render(recipe)
+        exported = Image.open(BytesIO(data))
+        self.assertEqual(exported.size, (1750, 1600))
+        self.assertEqual(exported.getpixel((1625, 1420)), (0, 0, 0))
+        estimate = creator.estimate_png_size(recipe)
+        self.assertTrue(estimate['exact'])
+        self.assertEqual(estimate['estimated_size_bytes'], len(data))
+
+    def test_invalid_grid_dimensions_are_rejected_in_preview_and_estimate(self):
+        for columns in (0, -1, 1.5, True, 'bad', float('inf')):
+            for function in (creator.preview_result, creator.estimate_png_size):
+                with self.subTest(columns=columns, function=function.__name__):
+                    with self.assertRaisesRegex(ValueError, 'positive whole number'):
+                        function(dict(columns=columns, slots=[self.image]))
+
     def test_placeholders_do_not_affect_real_image_tone_or_gain_overlays(self):
         bright = {**self.image, 'brightness': 1.3}
         recipe = dict(columns=3, slots=[self.image, bright, self.missing], match_tone=True,
