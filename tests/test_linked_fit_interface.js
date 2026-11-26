@@ -134,7 +134,7 @@ const twoBCC={...data,models:[bccA,bccB],beta_omega:{...joint,selected:false},
  classification:{primary_model:bccA,secondary_model:bccB,combined_fit:bccPair,label:'ambiguous',ambiguity_reason:'related_pattern_tradeoff'}};
 context.enabledPhases=['BCC','OMEGA'];context.PHASES=['BCC','OMEGA'];$('overlay').value='winner';
 context.renderModels(twoBCC);context.renderFitChoices(twoBCC);
-assert.equal(cells($('models').children[0]).candidate,'BCC [0 0 1] + BCC [0 0 1]');
+assert.equal(cells($('models').children[0]).candidate,'BCC [0 0 1] · 0.0° + BCC [0 0 1] · 70.6°');
 assert.equal(cells($('models').children[0]).rank,'0.795');
 assert.deepEqual(Array.from(context.overlayModels(twoBCC,'winner')),[bccA,bccB]);
 assert.deepEqual(Array.from(context.overlayModels(twoBCC,'winner',{vectors:true})),[bccA,bccB]);

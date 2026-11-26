@@ -55,7 +55,7 @@ function appendBetaOmegaFitCells(row,model,component=null,data=result){
    key==='coverage'?'Unweighted share of all observed profiles assigned to allowed reflections. Shared profiles count once in the combined row.':
    key==='rms'?`RMS in the image reciprocal units${relative==null?'':`; ${(relative*100).toFixed(2)}% of the parent’s shortest reflection`}.`:
    'Not independently fitted for linked components. The combined fit uses the common candidate score and prediction-site evidence.';
-  if(key==='candidate'&&component)cell.style.color=betaOmegaComponentColor(component,model);
+  if(key==='candidate'&&component){cell.style.color=betaOmegaComponentColor(component,model);if(typeof CrystalViewer!=='undefined'&&component.vector_model)CrystalViewer.addButton(cell,component.vector_model,{data})}
   if(key==='candidate'&&!component)renderCandidateLabel(cell,model.fit||{},{data,linked:model});
   row.append(cell);
  }

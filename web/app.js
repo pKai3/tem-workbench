@@ -453,6 +453,7 @@ function repaintFittingLimits(){
  if(result){
   const ex=result.spectrum.extent,qp=(x,y)=>[(x-ex[0])/(ex[1]-ex[0])*420,(ex[3]-y)/(ex[3]-ex[2])*420];
   $('fft-overlay').querySelectorAll('[data-fitting-band]').forEach(n=>n.remove());drawFittingBand(qp);
+  if(typeof syncLiveCrystalScale==='function')syncLiveCrystalScale();
  }
  if(isDiffraction())drawDetector();
  syncFFTZoom();
@@ -775,7 +776,7 @@ function compareRank(a,b){
  return b.score-a.score||b.coverage-a.coverage;
 }
 function candidateName(m,data=result,linked=null){return candidateLabelParts(m,data,linked).map(p=>p.text).join('')}
-function candidateLabelParts(m,data=result,linked=null){
+function candidateLabelParts(m,data=result,linked=null,rotations=false){
  const join=parts=>parts.flatMap((part,i)=>i?[{text:' + '},part]:[part]);
  if(m.related_pattern||linked){
   const model=linked||data?.beta_omega,fit=model?.fit||m,zone=model?.parent?.zone_3index||fit.zone_3index;
@@ -792,7 +793,7 @@ function candidateLabelParts(m,data=result,linked=null){
    const component=[...components,...(data?.models||[])].find(c=>!used.has(c)&&c.phase===phase&&JSON.stringify(c.zone_3index)===JSON.stringify(zone)&&(!Number.isFinite(rotation)||Math.abs(c.rotation_deg-rotation)<1e-6));
    if(component)used.add(component);
    const style=component?independentFitStyle(component,data):{color:phaseColors[phase],colorTarget:'phase:'+phase};
-   return {text:`${phaseLabel(phase)} ${zoneLabel({phase,zone_3index:zone})}`,...style};
+   return {text:`${phaseLabel(phase)} ${zoneLabel({phase,zone_3index:zone})}`+(rotations&&Number.isFinite(rotation)?' · '+fitRotationLabel(rotation):''),...style};
   });
   // A repeated phase can be abbreviated only when its orientations share a colour.
   if($('omega-color-by').value==='phase'&&new Set(parts.map(p=>p.text)).size===1)return [{...parts[0],text:parts.length+' × '+parts[0].text}];
@@ -800,15 +801,16 @@ function candidateLabelParts(m,data=result,linked=null){
  }
  return [{text:`${phaseLabel(m.phase)} ${zoneLabel(m)}`,...independentFitStyle(m,data)}];
 }
-function renderCandidateLabel(host,m,{data=result,linked=null,suffix=''}={}){
+function renderCandidateLabel(host,m,{data=result,linked=null,suffix='',rotations=false}={}){
  host.replaceChildren();
- for(const [i,part] of candidateLabelParts(m,data,linked).entries()){
+ for(const [i,part] of candidateLabelParts(m,data,linked,rotations).entries()){
   const span=document.createElement('span');span.textContent=part.text+(i===0?suffix:'');
   span.className=part.color?'fit-label-part':'fit-label-separator';
   if(part.color)span.style.color=part.color;
   if(part.colorTarget)span.dataset.fitColorTarget=part.colorTarget;
   host.append(span);
  }
+ if(typeof CrystalViewer!=='undefined')CrystalViewer.addButton(host,m,{data,linked});
 }
 function combinedFitComponents(data){return (data.classification?.combined_fit_components||[data.classification?.primary_model,data.classification?.secondary_model]).filter(Boolean)}
 function combinedFitSelected(data){
@@ -910,7 +912,7 @@ function geometryDescription(data){
  return 'Geometry check: pattern count remains unresolved.';
 }
 // Shared column definitions keep both candidate tables aligned.
-const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP/ω use the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index; individual overlays also show rotation."],["rank","Rank ↓","Rank = position + weak-peak bonus + brightness-grouping bonus + DD bonus − scale cost − missing-prediction cost − extra-pattern cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all + DD","Strong + weak matches / allowed prediction positions, followed by additional double-diffraction candidate profiles. DD is separate from the prediction denominator and allowed coverage; weak maxima and DD do not count toward the four-profile screen."],["coverage","Coverage\nAllowed | +DD",COVERAGE_HELP+" The left percentage is allowed-reflection coverage; the right includes additional DD-candidate profiles using the same measured-peak weights. DD counts once per profile, is geometric evidence only, and does not change allowed coverage or the fit screen. A dash means the DD check or its weights are unavailable."],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP/ω a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Cell Δ\n%","Real-space cell change from reference: positive means larger, negative means smaller. Each axis uses 100 × (1 / reciprocal scale − 1). HCP/ω overall + c/a mode also shows the real c/a ratio change, with its sign unchanged. Unconstrained axes are not measurements."]];
+const FIT_COLUMNS=[["candidate","Candidate\nZone axis","Zone axes: HCP/ω use the selected 3-index [U V W] or 4-index [u v t w] notation; BCC/FCC/ORT use [u v w]. A bar means a negative index. The angle is the fitted in-plane rotation, also shown in Individual fit overlays."],["rank","Rank ↓","Rank = position + weak-peak bonus + brightness-grouping bonus + DD bonus − scale cost − missing-prediction cost − extra-pattern cost; heuristic rank, not probability; highest first"],["screen","Screen","Candidate acceptance screen; hover for all rejection reasons"],["peaks","Peaks\nS+W / all + DD","Strong + weak matches / allowed prediction positions, followed by additional double-diffraction candidate profiles. DD is separate from the prediction denominator and allowed coverage; weak maxima and DD do not count toward the four-profile screen."],["coverage","Coverage\nAllowed | +DD",COVERAGE_HELP+" The left percentage is allowed-reflection coverage; the right includes additional DD-candidate profiles using the same measured-peak weights. DD counts once per profile, is geometric evidence only, and does not change allowed coverage or the fit screen. A dash means the DD check or its weights are unavailable."],["rms","RMS\nnm⁻¹","Root-mean-square positional residual"],["position","Position","Position-weighted agreement minus chance-match allowance; before scale and peak-evidence adjustments"],["cost","Scale\ncost","Cost of automatic scale changes, subtracted from the position score"],["dimensions","Cell\nnm","Candidate model dimensions: cubic a; HCP/ω a/c; orthorhombic a/b/c. Unconstrained axes are not measurements."],["scale","Cell Δ\n%","Real-space cell change from reference: positive means larger, negative means smaller. Each axis uses 100 × (1 / reciprocal scale − 1). HCP/ω overall + c/a mode also shows the real c/a ratio change, with its sign unchanged. Unconstrained axes are not measurements."]];
 function renderFitHeader(head, showToggle=false, relative=false){
  const row=document.createElement('tr');
  const columns=showToggle?[['show','Show','Toggle this overlay'],...FIT_COLUMNS]:FIT_COLUMNS;
@@ -929,7 +931,7 @@ function renderFitHeader(head, showToggle=false, relative=false){
  }
  head.replaceChildren(row);
 }
-function appendFitCells(row,m,{name,geometry=false,rotation=false,data=result,linked=null}){
+function appendFitCells(row,m,{name,geometry=false,rotation=true,data=result,linked=null}){
  const values={
   candidate:name+(m&&rotation&&fitRotationLabel(m.rotation_deg)?`\n${fitRotationLabel(m.rotation_deg)}`:''),
   rank:m?m.score.toFixed(3):'—',
@@ -947,7 +949,7 @@ function appendFitCells(row,m,{name,geometry=false,rotation=false,data=result,li
   cell.textContent=values[key];cell.title=help;
   if(m){
    if(key==='candidate')cell.className+=' '+(geometry?'geometry-fit':new Set(m.phase.split('+')).size===1?m.phase.split('+')[0].toLowerCase():m.phase.toLowerCase());
-   if(key==='candidate'&&!geometry)renderCandidateLabel(cell,m,{data,linked,suffix:rotation&&fitRotationLabel(m.rotation_deg)?'\n'+fitRotationLabel(m.rotation_deg):''});
+   if(key==='candidate'&&!geometry)renderCandidateLabel(cell,m,{data,linked,rotations:rotation,suffix:rotation&&fitRotationLabel(m.rotation_deg)?'\n'+fitRotationLabel(m.rotation_deg):''});
    if(key==='candidate'&&m.independent_combination)cell.title=m.phase.split('+').map((phase,i)=>`${phaseLabel(phase)} ${zoneLabel({phase,zone_3index:m.component_zones[i]})}${Number.isFinite(m.component_rotations_deg?.[i])?' · '+fitRotationLabel(m.component_rotations_deg[i]):''}`).join(' + ')+'. Joint score; components are available in Individual fit overlays.';
    if(key==='cost'&&m.scale_mode==='auto_hcp_ratio')cell.title=scaleDetails(m);
    if(key==='rank')cell.title=geometry?'Geometry-only score':rankDescription(m);
@@ -1089,6 +1091,7 @@ function applyPhaseColors(redraw=true){
   const color=phaseColorValue(choice);$(id).style.color=$(id).value==='disabled'?'var(--muted)':color;
   phaseColors[phase]=color;colors[key]=color;document.documentElement.style.setProperty('--'+id,color);
  }
+ if(typeof CrystalViewer!=='undefined')CrystalViewer.refreshColours?.();
  if(redraw){
   if(result)$('phase-label').style.color=colors[result.classification.label]||'#ddd';
   if(result)refreshBetaOmegaDisplay();
@@ -1246,6 +1249,7 @@ for(const f of fits){
  }
 }
 function drawFFT(){
+ if(typeof syncCrystalViewerControl==='function')syncCrystalViewerControl();
  if(!peakEditing())hideSpectrumHover();
  if(!result){drawLiveSpectrumPreview();return}if(!fftRaw)return;
  $('fft-image').setAttribute('href',colourSpectrum(showDetectorSignal&&detectorRaw?detectorRaw:fftRaw,result.image_kind));$('contrast-value').textContent=$('contrast').value+'%';
@@ -1642,7 +1646,7 @@ const PREVIEW_PASS_COLOURS=['#64e2b0','#79bafa','#f4b75e','#ff8ac3','#d692fa','#
 function overlapPlanning(){return !$('overlap-preview-toolbar').hidden}
 function setOverlapPlanning(active){
  $('overlap-preview-toolbar').hidden=!active;
- $('overview').closest('.image-panel').classList.toggle('overlap-planning',active);
+ ($('overview').closest('.image-panel')||$('crystal-source-pane')).classList.toggle('overlap-planning',active);
  syncMapOpacityControl();
  if(active)hideRegionPreview();
 }
@@ -2570,6 +2574,26 @@ $('brightness-grouping-weight').onblur=()=>{$('brightness-grouping-weight').valu
 for(const id of ['scale-penalty','scale-penalty-slider','ca-penalty','ca-penalty-slider','peak-evidence-weight','peak-evidence-slider','missing-peak-weight','missing-peak-slider','brightness-grouping-weight','brightness-grouping-slider','dd-weight','dd-slider','peak-falloff','peak-falloff-slider'])$(id).oninput=()=>penaltyChanged($(id));
 $('scale-penalty').onblur=()=>{$('scale-penalty').value=effectiveScalePenalty().toFixed(2)};
 const REFERENCE_CONTROLS={'hcp-a':'hcp_a','hcp-c':'hcp_c','bcc-a':'bcc_a','fcc-a':'fcc_a','ort-a':'ort_a','ort-b':'ort_b','ort-c':'ort_c','omega-a':'omega_a','omega-c':'omega_c'};
+function spectrumCrystalModels(data=result,choice=$('overlay').value){
+ if(!data)return [];
+ let models=choice==='custom'?[...chosenFits].flatMap(key=>key.startsWith('phase-')?[data.models[Number(key.slice(6))]]:key.startsWith('linked-')?[data.beta_omega?.components?.find(c=>c.id===key.slice(7)&&c.active)?.vector_model]:[]):overlayModels(data,choice,{vectors:true});
+ const seen=new Set();
+ return models.filter(m=>m&&PHASES.includes(m.phase)).map(m=>data.beta_omega?.components?.some(c=>c.id!=='beta'&&c.vector_model===m)?{...m,linked_parent_rotation:true}:m).sort((a,b)=>Number(Boolean(b.valid))-Number(Boolean(a.valid))||(b.score??0)-(a.score??0)).filter(m=>{const key=JSON.stringify([m.phase,m.zone_3index,m.predicted_nodes??m.rotation_deg]);if(seen.has(key))return false;seen.add(key);return true});
+}
+function syncCrystalViewerControl(){
+ if(typeof CrystalViewer==='undefined')return;
+ if(typeof syncLiveCrystal==='function')syncLiveCrystal();
+ const button=$('view-fft-crystal');if(!button)return;
+ const models=currentCrystalModels();button.disabled=busy||pending||!result||!fftRaw||!models.length;
+ button.title=busy||pending?'Waiting for the current fit':models.length?'Open '+models.map(m=>phaseLabel(m.phase)+' '+zoneLabel(m)).join(' / ')+' in the fitted FFT orientation':'Select a crystal pattern overlay to view its structure';
+}
+function currentCrystalModels(){const models=spectrumCrystalModels();return models.length?models:spectrumCrystalModels(result,'all')}
+function openCurrentCrystalViewer(anchor){
+ const available=!busy&&!pending&&result&&fftRaw;
+ CrystalViewer.open(available?{models:currentCrystalModels(),settings:result.settings,anchor}:{anchor});
+}
+$('browse-crystals').onclick=()=>openCurrentCrystalViewer($('browse-crystals'));
+$('view-fft-crystal').onclick=()=>{if(!busy&&!pending&&result&&fftRaw&&currentCrystalModels().length)openCurrentCrystalViewer($('view-fft-crystal'))};
 let materialDefaultPreset=readPreference('tem-reference-preset','titanium');
 function materialView(){
  const selected=$('material').value,preset=config?.material_presets?.[selected];
@@ -3411,6 +3435,7 @@ let spectrumLoadingTimer=null, spectrumLoading=false, spectrumExportBusy=false;
 let hoverTimer=null, hoverKey=null, hoverVersion=0, hoverController=null, hoverPointer={x:0,y:0};
 const hoverCache=new Map();
 function syncSpectrumExportControls(){
+ if(typeof syncCrystalViewerControl==='function')syncCrystalViewerControl();
  if(typeof syncIfftControl==='function')syncIfftControl();
  $('export-crop').disabled=!config?.crop_exports||!result||isDiffraction()||busy||pending||$('export-crop').dataset.exportState==='busy';
  $('export-crop').title=config?.crop_exports?'Save the selected crop at original pixel resolution':'Restart TEM Workbench to enable crop exports';
@@ -3452,6 +3477,7 @@ function spectrumResultArrived(){
 }
 
 function syncLargeSpectrumSize(){
+ if(document.body.classList.contains('crystal-four-view'))return;
  const {width,height}=$('overview').getBoundingClientRect();
  const size=Math.min(width,height);
  if(size>0)document.querySelector('.previews').style.setProperty('--reference-preview-size',`${size}px`);
@@ -3468,10 +3494,14 @@ function syncLargeSpectrumSize(){
  workspace.style.setProperty('--spectrum-image-top-gap',`${spectrumGap}px`);
 }
 function applyInspectorLayout(){
- document.body.classList.toggle('fft-only',!isDiffraction()&&inspectorLayout==='fft');
+ const four=!isDiffraction()&&inspectorLayout==='crystal';
+ document.body.classList.toggle('fft-only',!isDiffraction()&&inspectorLayout!=='paired');
+ document.body.classList.toggle('crystal-four-view',four);
  $('inspector-layout-control').hidden=isDiffraction();
  $('view-real-fft').setAttribute('aria-pressed',String(inspectorLayout==='paired'));
  $('view-fft-only').setAttribute('aria-pressed',String(inspectorLayout==='fft'));
+ $('view-crystal-live')?.setAttribute('aria-pressed',String(four));
+ setLiveCrystalLayout(four);
  syncLargeSpectrumSize();
 }
 if(typeof ResizeObserver!=='undefined'){
@@ -3479,8 +3509,40 @@ if(typeof ResizeObserver!=='undefined'){
  for(const element of [$('overview'),...document.querySelectorAll('.workspace>.panel>.panel-head,.image-caption,.previews figcaption')])previewSizing.observe(element);
 }
 else window.addEventListener('resize',syncLargeSpectrumSize);
-let inspectorLayout=readPreference('tem-inspector-layout','paired')==='fft'?'fft':'paired';
-for(const [id,layout]of [['view-real-fft','paired'],['view-fft-only','fft']])$(id).onclick=()=>{
+let liveCrystal=null,liveCrystalResult=null,liveCrystalChoice='',crystalSurfaceSlots=[];
+function crystalReciprocalView(data=result){
+ if(!data?.spectrum?.extent)return null;
+ const svg=$('fft'),bitmap=$('fft-image'),limits=fittingLimitDrag?currentFittingLimits():null;
+ return {extent:[...data.spectrum.extent],viewBox:svg.getAttribute('viewBox').trim().split(/[\s,]+/).map(Number),imageRect:['x','y','width','height'].map(key=>Number(bitmap.getAttribute(key))),outerRadius:limits?.outer??data.spectrum.g_max??data.settings?.g_max??10,innerRadius:limits?.inner??data.spectrum.g_min??data.settings?.g_min??3,units:data.spectrum.coordinate_units||'nm^-1'};
+}
+function syncLiveCrystalScale(){if(liveCrystal&&result)liveCrystal.setReciprocalView(crystalReciprocalView(result))}
+function setLiveCrystalLayout(enabled){
+ const host=$('crystal-comparison');if(!host||typeof CrystalViewer==='undefined')return;
+ if(enabled&&!liveCrystal){
+  const move=(element,target)=>{const slot=document.createComment('Crystal comparison return position');element.before(slot);crystalSurfaceSlots.push({slot,element});target.append(element)};
+  move(document.querySelector('.inspector>.panel-head'),$('crystal-comparison-toolbar'));
+  move(document.querySelector('.image-panel>.image-wrap'),$('crystal-source-pane'));
+  move(document.querySelector('.inspector>.previews'),$('crystal-fft-pane'));
+  host.hidden=false;host.showModal();liveCrystal=CrystalViewer.open({host:$('crystal-live-view')});
+  for(const selector of ['.image-panel>.panel-head','.image-panel>.image-caption'])move(document.querySelector(selector),host.querySelector('.crystal-comparison-settings'));
+  syncLiveCrystal();
+ }else if(!enabled&&liveCrystal){
+  for(const {slot,element}of crystalSurfaceSlots)slot.replaceWith(element);crystalSurfaceSlots=[];liveCrystal.destroy();liveCrystal=null;liveCrystalResult=null;liveCrystalChoice='';host.close();
+ }
+}
+function syncLiveCrystal(){
+ if(!liveCrystal)return;
+ if(!result||!fftRaw||pending){liveCrystal.setPending(busy||pending?'Updating crystal and diffraction for the selected region…':'No current fit. Select an image or move the region to update the preview.',Boolean(busy||pending));return}
+ const models=currentCrystalModels();if(!models.length){liveCrystal.setPending('No crystal candidate for this region. Move the selection or enable a crystal search.');return}
+ const choice=JSON.stringify(models.map(m=>[m.phase,m.zone_3index,m.rotation_deg,m.predicted_nodes]));
+ if(result!==liveCrystalResult||choice!==liveCrystalChoice){liveCrystal.update({models,settings:result.settings,reciprocalView:crystalReciprocalView(result)});liveCrystalResult=result;liveCrystalChoice=choice}
+ liveCrystal.setPending('');
+}
+const savedInspectorLayout=readPreference('tem-inspector-layout','paired');
+let inspectorLayout=['fft','crystal'].includes(savedInspectorLayout)?savedInspectorLayout:'paired';
+$('crystal-comparison-close').onclick=()=>$('crystal-comparison').close();
+$('crystal-comparison').addEventListener('close',()=>{if(inspectorLayout==='crystal'){inspectorLayout='paired';writePreference('tem-inspector-layout','paired');applyInspectorLayout();$('view-crystal-live').focus({preventScroll:true})}});
+for(const [id,layout]of [['view-real-fft','paired'],['view-fft-only','fft'],['view-crystal-live','crystal']])$(id).onclick=()=>{
  inspectorLayout=layout;writePreference('tem-inspector-layout',layout);applyInspectorLayout();
 };
 function hideRegionPreview(){clearTimeout(hoverTimer);hoverTimer=null;hoverKey=null;hoverVersion++;hoverController?.abort();hoverController=null;$('region-hover').hidden=true;$('region-hover').classList.remove('drag-crop')}

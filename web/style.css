@@ -190,6 +190,9 @@ body.diffraction .fitting-limits .fft-fitting-limit{display:none}
 
 .signal-toggle.inspector-layout{margin:0}
 .signal-toggle.inspector-layout button{min-height:28px;padding:5px 8px;font-size:11px}
+.previews :is(.spectrum-view-controls,.spectrum-actions) button,.signal-toggle.inspector-layout button{height:30px;min-height:30px;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;padding-block:4px}
+.previews .spectrum-view-controls .signal-toggle,.signal-toggle.inspector-layout{height:30px;box-sizing:border-box}
+.previews .spectrum-view-controls .signal-toggle button,.signal-toggle.inspector-layout button{height:100%;min-height:0}
 
 #demo-pack-url{width:100%;min-width:0}#demo-pack-panel{margin-bottom:14px}
 
@@ -497,7 +500,8 @@ body.diffraction .scale-settings{grid-column:1/-1;width:100%;max-width:1000px;ju
 .phase-colors-heading .settings-help-popup{max-width:100%}
 .material-settings .material-bar{display:grid;grid-template-columns:minmax(140px,1.5fr) repeat(4,minmax(0,1fr));align-content:start;align-items:end;gap:12px 10px;padding:12px}
 .material-settings:is([data-material=titanium],[data-material=iron]) .material-bar{grid-template-columns:repeat(3,minmax(0,1fr))}
-.material-heading{grid-column:1/-1;font-size:12px;color:var(--muted)}
+.material-heading{grid-column:1/-1;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.material-heading #browse-crystals{margin-left:auto}
 .material-settings label{min-width:0;gap:6px}
 .material-settings label[hidden]{display:none}
 .material-settings input,.material-settings select{height:32px;min-height:32px;box-sizing:border-box;font-size:12px}
@@ -829,9 +833,15 @@ body.diffraction #diffraction-controls .fitting-override-actions{grid-column:aut
 }
 .inspector>.panel-head{flex-wrap:wrap;gap:6px 10px}
 .inspector #timing{flex:1;min-width:120px;text-align:right}
-.spectrum-view-controls{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px;margin-left:auto;max-width:100%}
+.spectrum-view-controls{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:4px;margin-left:auto;max-width:100%}
 .spectrum-view-controls .signal-toggle{margin:0}
-.previews figcaption{flex-wrap:wrap;gap:6px}
+.previews figcaption{flex-wrap:wrap;gap:4px}
+#spectrum-figure>figcaption{justify-content:flex-end}
+#spectrum-title{margin-right:auto;white-space:nowrap}
+.spectrum-view-controls>button,.previews .spectrum-actions{flex-shrink:0}
+.previews .spectrum-actions{gap:4px}
+.previews :is(.spectrum-view-controls,.spectrum-actions) button{padding-inline:5px}
+.previews .spectrum-view-controls>button{font-size:11px}
 
 /* Match the bitmap areas: the FFT SVG also reserves space for its axes. */
 .previews{grid-template-columns:minmax(0,420fr) minmax(0,464fr);row-gap:0}

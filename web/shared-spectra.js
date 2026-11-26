@@ -766,7 +766,7 @@ if(typeof document!=='undefined'){
    for(const [key,label,help] of componentFitColumns(original)){
     const cell=row.insertCell();cell.className='col-'+key;cell.dataset.column=key;cell.dataset.label=label.replaceAll('\n',' ');cell.textContent=values[key];cell.title=help;
     if(!m)continue;
-    if(key==='candidate')cell.style.color=phaseColors[m.phase]||'#ddd';
+    if(key==='candidate'){cell.style.color=phaseColors[m.phase]||'#ddd';if(typeof CrystalViewer!=='undefined')CrystalViewer.addButton(cell,m,{settings:snapshot?.settings})}
     if(key==='screen')cell.title=m.valid?'Passes the screen':m.rejection_reasons?.join('; ')||'Below screen';
     if(key==='coverage')cell.title=`Observed-profile coverage | ${assigned} of ${total??'unknown'} predicted profiles assigned. Opposite spots count once.${original?(nativeValidation()?' Ordinary weighted observed coverage; displaced assignments lose positional credit.':' Only close assignments are counted.'):' Unassigned predictions do not incur a missing-peak cost in this screen.'}`;
     if(key==='peaks'&&m.position_matching?.distance_scale_nm_inv)cell.title+=` Match ${original?'≤':'<'} ${(m.position_matching.distance_scale_nm_inv*(original&&!nativeValidation()?1:4)).toFixed(3)} nm⁻¹.`;
@@ -934,6 +934,7 @@ if(typeof document!=='undefined'){
     check.onchange=()=>{manualPool=true;if(check.checked)selectedHypotheses.add(model.id);else selectedHypotheses.delete(model.id);drawPhaseMap();rememberViewer()};row.insertCell().append(check);
     const cell=row.insertCell(),button=document.createElement('button');button.type='button';button.className='pca-hypothesis-name';button.title='Show only this hypothesis · '+sourceLabel(model)+' · '+scaleDetails(model);button.setAttribute('aria-label','Show only '+hypothesisLabel(model));
     const symbol=document.createElement('span');symbol.className='pca-hypothesis-symbol';button.append(symbol,document.createTextNode(`${i+1}. ${model.phase==='OMEGA'?'ω':model.phase} ${zoneLabel(model)}\n${model.rotation_deg.toFixed(1)}°`));cell.append(button);
+    if(typeof CrystalViewer!=='undefined')CrystalViewer.addButton(cell,model,{settings:snapshot?.settings});
     button.onclick=()=>{manualPool=true;selectedHypotheses.clear();selectedHypotheses.add(model.id);drawPhaseMap();rememberViewer()};
     const gain=poolSummaries[i];for(const value of [maps.model_passing_counts[model.id]||0,gain.supported,gain.newlySupported,gain.improved])row.insertCell().textContent=PcaView.supportPercent(value,maps.windows.length);
    });box.append(table);updateHypothesisRows(box,maps);box.scrollTop=scroll;if(focused?.id)box.querySelector(`tr[data-hypothesis="${focused.id}"] ${focused.tag}`)?.focus({preventScroll:true});
