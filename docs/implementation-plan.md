@@ -1,6 +1,6 @@
 # TEM Workbench implementation plan
 
-Last updated: 25 November 2026
+Last updated: 26 November 2026
 
 **v1.0.40 release — approved and published 25 November 2026 (`a8c1601`):** the user approved committing and pushing all pending work to main, then publishing v1.0.40. The release includes the Figures annotation/editor fixes (`69948d2`), compact KAM legends (`92d7127`), saved AZtec previews (`d2c7d9e`), shared Figures previews (`5300af8`) and the previously approved NMF iteration controls/study tools (`9b2bfe6`). All 70 JavaScript suites and the recorded isolated browser checks pass. The manual [Publish Workbench release workflow](https://github.com/pKai3/tem-workbench/actions/runs/45598312495) passed the complete analysis/browser suite, Windows/macOS update checks, native launcher checks, packaging and uploaded-asset digest verification. It created the version commit and `v1.0.40` tag after verification and published the 3,448,674-byte update ZIP and SHA-256 file as the latest stable release. The local checkout was fast-forwarded to the released version.
 
@@ -118,6 +118,8 @@ Implementation `50402fc`. Additional verification: all three native Mac shutdown
 
 All 13 reader checks and the focused setup/package checks pass (36 total, five platform skips). Streaming retains every spectrum within a per-read memory budget; the budget does not cap acquisition size. Folderisation on main (`0780330`) passed GitHub's analysis/browser and Windows/macOS desktop checks before AZtec provisioning was committed. No release published.
 
+
+**AZtec lab reference exports — checklist requested and prepared 26 November 2026; collection pending:** [AZtec lab export checklist](aztec-lab-export-checklist.md) records the exact current project filenames, prior names, acquisition paths and exports for a future lab visit. Priority order: independent SEM wt%/at% validation; controlled EBSD before/after processing states with KAM CSV/H5OINA; processed IPF X/Y/Z; one real point spectrum; then controlled map-region spectra if time permits. Native project identities and acquisition ancestry were verified read-only. This is a reference-collection plan, not completed validation or authorization to implement the remaining decoders. On return, agents should use the linked checklist to reconcile supplied files and update status/evidence here. Existing implementation priorities remain unchanged.
 
 **Native workspace — completed 13 November:** `/eds` opens native OIPX projects and optional H5OINA files read-only. Specimen/site lists lead to lazily decoded electron images, saved element maps and line profiles, with inventory/metadata for other records. Native maps, lines and point positions are registered to their site electron image from saved geometry. Every decoded outline remains visible in white; the active acquisition, arrow/point, label and key become purple, including during hover and keyboard focus. Clicking a line or map opens all its element channels together; individual stored-channel previews remain available.
 
