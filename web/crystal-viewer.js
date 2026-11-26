@@ -453,7 +453,7 @@
   const refreshColour=()=>{if(drawing&&scene){drawing.upload(scene,style.value,cell.checked);paint()}};
   function destroy(){closed=true;cancelSnap();colourListeners.delete(refreshColour);helpDialog.removeEventListener('cancel',cancelSnapHelp);if(settingsDialog.open)settingsDialog.close();if(host)settingsButton.onclick=null;cancelAnimationFrame(frame);observer.disconnect();pointers.clear();drawing?.destroy();dialog.remove();if(!host&&anchor?.isConnected)anchor.focus({preventScroll:true})}
   if(!host)dialog.addEventListener('close',destroy,{once:true});
-  const modelHud=make('div',null,'crystal-model-hud'),modelSelectors=make('div',null,'crystal-model-selectors'),modelReadout=make('div',null,'crystal-model-readout'),modelStatus=make('div',null,'crystal-model-status');modelSelectors.append(structure.parentElement,view.parentElement,snapButton);modelStatus.append(snapStatus,snapControls);modelReadout.append(orientationReadout,modelStatus);modelHud.append(modelSelectors,modelReadout);stage.append(modelHud);
+  const modelHud=make('div',null,'crystal-model-hud'),modelSelectors=make('div',null,'crystal-model-selectors'),modelReadout=make('div',null,'crystal-model-readout'),modelStatus=make('div',null,'crystal-model-status'),modelViewport=make('div',null,'crystal-model-viewport');modelSelectors.append(structure.parentElement,view.parentElement,snapButton);modelStatus.append(snapStatus,snapControls);modelReadout.append(orientationReadout,modelStatus);modelViewport.append(canvas,error,triad,zoneGuide);modelHud.append(modelSelectors,modelViewport,modelReadout);stage.append(modelHud);
   modelPane.append(stage);diffStage.append(readout);diffPane.append(diffStage);panes.append(modelPane,diffPane);
   const paneStatuses=[stage,diffStage].map(pane=>{
    const overlay=make('div',null,'crystal-pane-status'),spinner=make('span',null,'fft-spinner'),label=make('span');
@@ -470,7 +470,7 @@
   (host||document.body).append(dialog);if(!host)dialog.showModal();
   try{drawing=renderer(canvas)}catch(e){error.textContent=e.message;error.hidden=false}
   try{plot=diffraction.createPlot(diffCanvas,readout)}catch(e){diffError.textContent=e.message;diffError.hidden=false}
-  setReciprocalView(reciprocalView);rebuild(true);colourListeners.add(refreshColour);observer.observe(stage);observer.observe(diffStage);if(!host)canvas.focus({preventScroll:true});
+  setReciprocalView(reciprocalView);rebuild(true);colourListeners.add(refreshColour);observer.observe(stage);observer.observe(modelViewport);observer.observe(diffStage);if(!host)canvas.focus({preventScroll:true});
   return {destroy,setReciprocalView,setPending(message,loading=false){
    if(message)hideSnapHelp();
    if(message&&(touring||snapAnimation)){cancelSnap();paint()}

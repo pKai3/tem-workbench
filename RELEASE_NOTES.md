@@ -1,7 +1,8 @@
-# TEM Workbench 1.0.42
+# TEM Workbench 1.0.43
 
-- Give the crystal structure selector its own full-width row in compact panes, with zone selection and Return to fit below it. Smaller windows retain a readable orientation selector with a compact return button; hover reveals full control labels.
-- Keep the atomic-model readout on two stable rows: zone and rotation above, snap status and Snap/Align controls below. Removing the redundant blank third row leaves more room for the model. Very narrow panes shorten labels while retaining the zone and angle values.
+- Make the Image + FFT + 3D popup use the available height, with a centred width limit that avoids excessive empty space on wide screens.
+- Keep crystal selectors and readouts outside the atomic-model drawing area so they no longer cover the structure. The readout uses one line where space allows, with a stable compact layout on narrow screens.
+- Preserve matched FFT and simulated diffraction scales, fitting-radius guides and live updates while resizing the popup.
 
 This is a layout update. Fitted orientations, diffraction coordinates, numerical analysis and source microscopy files are unchanged.
 
