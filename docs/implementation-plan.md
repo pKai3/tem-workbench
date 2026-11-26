@@ -2,9 +2,9 @@
 
 Last updated: 26 November 2026
 
-## v1.0.42 layout follow-up — approved 26 November 2026
+## v1.0.42 layout follow-up — approved and published 26 November 2026 (`a123ede`)
 
-While the approved release was running, the user requested cleaning up compressed crystal dropdowns and the three-row lower overlay before the next attempt. v1.0.41 completed successfully before that refinement was ready, so the cleanup proceeds as the next patch release through the same manual **Publish Workbench release** workflow, with all verification gates retained. Publication is pending verification.
+The user-requested cleanup of compressed crystal dropdowns and the three-row lower overlay is included in `6e337be`. v1.0.41 completed before that refinement was ready, so the cleanup was published as the next patch release. The [manual release workflow](https://github.com/pKai3/tem-workbench/actions/runs/45755608590) passed all analysis/JavaScript, Windows/macOS update, native-launcher, packaging and uploaded-asset verification gates. It published v1.0.42 as the latest stable release with a 3,537,260-byte ZIP and checksum. The local checkout was fast-forwarded to the version commit; fitted orientations, diffraction coordinates and numerical analysis are unchanged.
 
 ## v1.0.41 release — approved and published 26 November 2026 (`d8e98dd`)
 
