@@ -2,6 +2,10 @@
 
 Last updated: 26 November 2026
 
+## v1.0.41 release — approved 26 November 2026
+
+The user requested pushing the committed work and publishing the next version. The release includes interactive crystal structures and diffraction (`1d8ec74`), configurable map exports (`314eff1`), figure preview loading (`8ac1ffd`) and the earlier Figures calibration, colour and export changes (`e635031`). Release notes are prepared; publication is pending the manual **Publish Workbench release** workflow, retaining the full analysis/JavaScript, Windows/macOS update, native-launcher, packaging and uploaded-asset verification gates. The workflow will create the version commit and tag after verification; no manual version/tag bypass is approved or required.
+
 
 ## Paper-style TEM map PNGs — approved and completed locally 26 November 2026
 
