@@ -2,9 +2,9 @@
 
 Last updated: 26 November 2026
 
-## v1.0.43 viewer layout release — approved 26 November 2026, publication in progress
+## v1.0.43 viewer layout release — approved and published 26 November 2026 (`2a09dc0`)
 
-The user approved committing and versioning the refined crystal comparison layout: height-filling, width-limited popup, separate atomic-model drawing area and compact readout. Local browser checks cover nine window sizes and independently confirm matched FFT/diffraction coordinates through resizing and radius dragging. Publication will use the manual **Publish Workbench release** workflow with all verification gates retained; the workflow owns the version increment and tag.
+The refined crystal comparison layout is included in `a637737`: height-filling, width-limited popup, separate atomic-model drawing area and compact readout. Local browser checks cover nine window sizes and independently confirm matched FFT/diffraction coordinates through resizing and radius dragging. The [manual release workflow](https://github.com/pKai3/tem-workbench/actions/runs/45784719896) passed all analysis/JavaScript, Windows/macOS update, native-launcher, packaging and uploaded-asset verification gates. It published v1.0.43 with a 3,538,425-byte ZIP and checksum; the local checkout was fast-forwarded to the version commit.
 
 ## v1.0.42 layout follow-up — approved and published 26 November 2026 (`a123ede`)
 
