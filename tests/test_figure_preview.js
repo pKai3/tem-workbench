@@ -32,3 +32,40 @@ for(const panelWidth of [420,1458,258]){
  context.previewLayout=null;assert.equal(hit(20,20),null);
 }
 console.log('Display density, resizing, bounded request width and variable-resolution panel hit coordinates passed.');
+
+// Delayed render/decode responses must never expose an empty image or clear a newer loader.
+const tick=()=>new Promise(resolve=>setImmediate(resolve)),fields={},requests=[],decodes=[],spinner={hidden:false};
+const field=id=>fields[id]??={dataset:{},hidden:false,setAttribute(key,value){this[key]=value},
+ getAttribute(key){return this[key]||null},querySelector:()=>spinner};
+field('fig-preview').hidden=true;
+const pending={timer:0,renderVersion:0,detailCache:new Map(),previewLayout:null,panelHighlight:{hidden:false},
+ recipe:{name:'Montage'},requestedPreviewWidth:0,$:field,clearTimeout(){},setTimeout(fn){pending.run=fn;return 1},
+ hideOutputHover(){},updateExportEstimate(){},figurePreviewWidth:()=>1000,status(message,error){pending.notice={message,error}},
+ api:()=>new Promise((resolve,reject)=>requests.push({resolve,reject})),
+ Image:class{decode(){return new Promise((resolve,reject)=>decodes.push({resolve,reject}))}}};
+vm.createContext(pending);
+vm.runInContext(app.slice(app.indexOf(' function setFigurePreviewState('),app.indexOf(' function changed(')),pending);
+(async()=>{
+ pending.schedulePreview();const first=pending.run();
+ assert.equal(field('fig-preview-content')['aria-busy'],'true');assert.equal(field('fig-preview').hidden,true);
+ assert.equal(field('fig-preview-loading').hidden,false);assert.equal(spinner.hidden,false);
+ assert.equal(field('fig-preview-loading-text').textContent,'Loading preview…');
+ requests[0].resolve({image:'first',layout:{width:1000}});await tick();
+ assert.equal(field('fig-preview').src,undefined,'The image remains hidden until decoding finishes');
+ pending.schedulePreview();const second=pending.run();decodes[0].resolve();await first;
+ assert.equal(field('fig-preview-content').dataset.state,'loading','A stale decode cannot dismiss the spinner');
+ requests[1].resolve({image:'second',layout:{width:1000}});await tick();decodes[1].resolve();await second;
+ assert.equal(field('fig-preview').src,'second');assert.equal(field('fig-preview').hidden,false);
+ assert.equal(field('fig-preview-loading').hidden,true);assert.equal(field('fig-preview-content')['aria-busy'],'false');
+ pending.schedulePreview();const failed=pending.run();
+ assert.equal(field('fig-preview-loading-text').textContent,'Updating preview…');
+ requests[2].reject(Error('Source unavailable'));await failed;
+ assert.equal(field('fig-preview-content').dataset.state,'error');assert.equal(spinner.hidden,true);
+ assert.equal(field('fig-preview').hidden,true);assert.equal(pending.notice.message,'Source unavailable');
+ pending.schedulePreview();const retry=pending.run();requests[3].resolve({image:'retry',layout:{width:1000}});
+ await tick();decodes[2].reject(Error('Invalid image'));await retry;
+ assert.equal(spinner.hidden,true);assert.equal(pending.notice.error,true);
+ const html=fs.readFileSync('web/figures.html','utf8');
+ assert.match(html,/<img id="fig-preview"[^>]*hidden/,'The image must start hidden before scripts run');
+ console.log('Figure loading/decode, stale replies, visible errors and retry spinner states passed.');
+})().catch(error=>{console.error(error);process.exitCode=1});

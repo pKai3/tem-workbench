@@ -897,18 +897,25 @@
    refreshPreviewSize();watchPreviewDensity();
   },{once:true});
  }
+ function setFigurePreviewState(state){
+  const content=$('fig-preview-content'),image=$('fig-preview'),loading=$('fig-preview-loading');
+  content.dataset.state=state;content.setAttribute('aria-busy',String(state==='loading'));
+  loading.hidden=state==='ready';loading.querySelector('.fft-spinner').hidden=state!=='loading';
+  $('fig-preview-loading-text').textContent=state==='error'?'Preview unavailable.':image.getAttribute('src')?'Updating preview…':'Loading preview…';
+  if(state!=='loading')image.hidden=state!=='ready';
+ }
  function schedulePreview(){
   clearTimeout(timer);const revision=++renderVersion;detailCache.clear();hideOutputHover();updateExportEstimate();
   previewLayout=null;if(panelHighlight)panelHighlight.hidden=true;
-  status('Updating preview…');
+  setFigurePreviewState('loading');status('Updating preview…');
   const width=figurePreviewWidth();requestedPreviewWidth=width;
   timer=setTimeout(async()=>{
    try{
     const value=await api('figures/render',{recipe,width});if(revision!==renderVersion)return;
     const ready=new Image();ready.src=value.image;await ready.decode();if(revision!==renderVersion)return;
     const image=$('fig-preview');image.src=value.image;previewLayout=value.layout;
-    image.hidden=false;status('Preview updated.');
-   }catch(error){if(revision!==renderVersion)return;$('fig-preview').hidden=true;status(error.message,true)}
+    setFigurePreviewState('ready');status('Preview updated.');
+   }catch(error){if(revision!==renderVersion)return;setFigurePreviewState('error');status(error.message,true)}
   },160);
  }
  function changed(cards=false,saveNamed=true){draft(saveNamed);if(cards)renderCards();else sync();schedulePreview();scheduleEstimate();schedulePanelPreview()}
@@ -1341,7 +1348,7 @@
    $('fig-preview').onpointerup=finishOutputDrag;
    $('fig-preview').onpointercancel=()=>{dragState=null;dropTarget.hidden=true;panelHighlight.hidden=true};
    $('fig-preview').onmouseleave=()=>{if(!dragState?.dragging)hideOutputHover();panelHighlight.hidden=true};
-   $('fig-preview').onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openSlot(selectedPanel)}};
+   $('fig-preview').onkeydown=event=>{if(previewLayout&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openSlot(selectedPanel)}};
    $('fig-name').oninput=()=>{recipe.name=$('fig-name').value;draft(true)};
    $('fig-transpose').onchange=transposeLayout;$('fig-rows').onchange=changeLayout;$('fig-columns').onchange=changeLayout;
    for(const [id,key,transform] of [['fig-aspect','aspect',value=>value==='auto'?'auto':Number(value)],['fig-background','background',String]])$(id).onchange=()=>{recipe[key]=transform($(id).value);changed()};
@@ -1409,7 +1416,7 @@
     finally{delete button.dataset.exporting;button.setAttribute('aria-busy','false');button.disabled=false}
    };
    scan();
-  }catch(error){status(error.message,true)}
+  }catch(error){setFigurePreviewState('error');status(error.message,true)}
  }
  document.addEventListener('DOMContentLoaded',start);
 })();
