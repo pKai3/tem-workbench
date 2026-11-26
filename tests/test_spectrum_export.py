@@ -14,6 +14,21 @@ from tem_workbench.app.server import Workbench, SPECTRUM_MAX_FRAMES, SPECTRUM_MA
 
 
 class SpectrumExportTests(unittest.TestCase):
+    def test_map_png_preserves_transparent_background_and_opaque_pixels(self):
+        image = Image.new('RGBA', (40, 30), (0, 0, 0, 0))
+        image.putpixel((20, 15), (123, 45, 67, 255))
+        stream = BytesIO()
+        image.save(stream, format='PNG')
+        with TemporaryDirectory() as directory:
+            app = Workbench.__new__(Workbench)
+            app.lock = RLock()
+            app.config = {'output_root': directory}
+            app.engine = SimpleNamespace(output_for=lambda _: Path(directory), files={'test': Path('test.dm4')})
+            saved = app.export_spectrum(dict(file_id='test', image_kind='real_space_map', format='png',
+                frames=['data:image/png;base64,' + base64.b64encode(stream.getvalue()).decode()]))
+            with Image.open(saved['path']) as result:
+                np.testing.assert_array_equal(np.array(result), np.array(image))
+
     def test_native_real_space_crop(self):
         pixels = np.arange(1000 * 1000, dtype=float).reshape(1000, 1000)
         item = {'array': pixels, 'limits': (0, 999999),

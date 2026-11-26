@@ -16,6 +16,7 @@ import logging
 from PIL import Image, ImageDraw, ImageFont
 from tem_workbench.app.engine import Engine
 from tem_workbench.mapping import batch_stability
+from tem_workbench.mapping import png_style
 from tem_workbench.storage import folder_paths
 LOG = logging.getLogger('tem_workbench')
 
@@ -115,6 +116,7 @@ def sample_summaries(images):
 
 def png_exports(options, phases):
     """Validate PNG view rows and expand per-phase views, preserving old callers."""
+    png_style.options(options.get('png_style', 'standard'), options.get('png_background'), options.get('png_settings'))
     overlap = options.get('overlap') is not None
     choices = options.get('png_views', ['support_all'] if overlap else ['classification'])
     allowed = {'support_all','support_phases','strength_all','strength_phases','hex','hex_support','hex_strength','spread_phases','samples','separate','raw'} if overlap else {'classification'}
@@ -151,19 +153,23 @@ def png_exports(options, phases):
     return products
 
 
-def map_png(item, job, target, colors=None, opacity=.2, view='support', phase=None):
+def map_png(item, job, target, colors=None, opacity=.2, view='support', phase=None, style='standard', background=None, export_settings=None):
     """Standalone map of current leaves; labels and zone indices accompany each region."""
+    theme=png_style.options(style, background, export_settings)
     colors={**COLORS,**(colors or {})}
     for value in colors.values():
         if not re.fullmatch(r'#[0-9a-fA-F]{6}',value):raise ValueError('Map colours must be RGB hex values.')
     if job.get('grid',{}).get('mode')=='overlap':
-        return batch_stability.map_png(item,job,target,colors,opacity,view,phase)
-    size=1800; canvas=Image.new('RGB',(size+80,size+260),'#0c121a')
-    source=Image.open(BytesIO(item['preview'])).convert('RGB').resize((size,size))
+        return batch_stability.map_png(item,job,target,colors,opacity,view,phase,style,background,export_settings)
+    size=1800; canvas=Image.new(theme['mode'],(size+80,size+260),theme['fill'])
+    width=round(size*job['source']['width']/max(job['source']['width'],job['source']['height'])) if theme['paper'] or export_settings is not None else size
+    height=round(size*job['source']['height']/max(job['source']['width'],job['source']['height'])) if theme['paper'] or export_settings is not None else size
+    source=Image.open(BytesIO(item['preview'])).convert('RGB').resize((width,height))
     layer=Image.new('RGBA',source.size);draw=ImageDraw.Draw(layer)
     try:font=ImageFont.truetype('DejaVuSans.ttf',18);titlefont=ImageFont.truetype('DejaVuSans.ttf',26)
     except OSError:font=ImageFont.load_default(size=18);titlefont=ImageFont.load_default(size=26)
-    sx=size/job['source']['width'];sy=size/job['source']['height']
+    if theme['paper']:font=png_style.font(44)
+    sx=width/job['source']['width'];sy=height/job['source']['height']
     for r in job['regions']:
         if not r['leaf']:continue
         roi=r['roi'];box=(roi['x']*sx,roi['y']*sy,(roi['x']+roi['w'])*sx,(roi['y']+roi['h'])*sy)
@@ -174,16 +180,24 @@ def map_png(item, job, target, colors=None, opacity=.2, view='support', phase=No
             fits=[m for m in phase_support.models(r) if m['phase']==phase and m['valid']]
             if fits:
                 m=max(fits,key=lambda m:m['score']);lines.append(phase+' ['+' '.join(map(str,m['zone_3index']))+']')
-        if box[2]-box[0]>100 and lines:
+        fits_text=not theme['paper'] or (all(draw.textlength(line,font=font)+8<box[2]-box[0] for line in lines) and len(lines)*58+8<box[3]-box[1])
+        if box[2]-box[0]>100 and lines and fits_text:
             draw.multiline_text((box[0]+4,box[1]+4),'\n'.join(lines),font=font,fill='white',stroke_width=1,stroke_fill='black')
-    canvas.paste(Image.alpha_composite(source.convert('RGBA'),layer).convert('RGB'),(40,70))
-    draw=ImageDraw.Draw(canvas);draw.text((40,20),job['source']['name'],font=titlefont,fill='white')
+    rendered=Image.alpha_composite(source.convert('RGBA'),layer).convert('RGB')
+    if theme['paper'] or export_settings is not None:
+        present=set(r['classification']['label'] for r in job['regions'] if r['leaf'])
+        legend=[(label.replace('_',' '),colors[label]) for label in LABELS if label in present]
+        png_style.paper_map(rendered,job['source'],legend,'Candidate classification',theme).save(target)
+        return
+    canvas.paste(rendered,(40,70))
+    draw=ImageDraw.Draw(canvas);draw.text((40,20),job['source']['name'],font=titlefont,fill=theme['ink'])
     x,y=40,size+90
     for label in LABELS:
         text=label.replace('_',' ');width=draw.textlength(text,font=font)+40
         if x+width>size:x=40;y+=30
-        draw.text((x,y),text,font=font,fill=colors[label]);x+=width
-    draw.text((40,size+190),'Candidate-labelled area, not confirmed phase fractions. Zone indices: three-index notation.',font=font,fill='#a4adba')
+        if theme['background']!='dark':draw.rectangle((x,y+4,x+10,y+14),fill=colors[label])
+        draw.text((x+(15 if theme['background']!='dark' else 0),y),text,font=font,fill=colors[label] if theme['background']=='dark' else theme['ink']);x+=width
+    draw.text((40,size+190),'Candidate-labelled area, not confirmed phase fractions. Zone indices: three-index notation.',font=font,fill=theme['muted'])
     canvas.save(target)
 
 class BatchGrids:
@@ -332,7 +346,7 @@ class BatchGrids:
                                         # Preserve the legacy filename for the single default product.
                                         extra='' if len(products)==1 and suffix in ('classification','support_all') else '_'+suffix
                                         png_target=image_folder/(stem+'_'+kind+extra+'.png')
-                                        map_png(item,job,png_target,options.get('colors'),float(options.get('opacity',.2)),view,phase)
+                                        map_png(item,job,png_target,options.get('colors'),float(options.get('opacity',.2)),view,phase,options.get('png_style','standard'),options.get('png_background'), options.get('png_settings'))
                                         LOG.info('Batch PNG exported: %s; view=%s; phase=%s', png_target, suffix, phase)
                                         with self.lock:
                                             summary.setdefault('png_files',{})[suffix]=os.path.relpath(png_target,folder) if png_target.drive==folder.drive else str(png_target)

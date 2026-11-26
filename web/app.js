@@ -3787,68 +3787,55 @@ function syncMapExportControls(){
  }
 }
 function blobDataURL(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Could not read the image.'));reader.readAsDataURL(blob)})}
-function mapSnapshot(){
+function mapSnapshot(choice=MapPngExport.settings()){
  const original=$('overview'),copy=original.cloneNode(true),nodes=[original,...original.querySelectorAll('*')],copies=[copy,...copy.querySelectorAll('*')];
  const properties=['fill','fill-opacity','stroke','stroke-width','stroke-opacity','stroke-dasharray','stroke-linejoin','opacity','vector-effect','paint-order','font-family','font-size','font-weight','text-anchor','dominant-baseline'];
  nodes.forEach((node,i)=>{const style=getComputedStyle(node);for(const property of properties)copies[i].setAttribute(property,style.getPropertyValue(property))});
- for(const node of copy.querySelectorAll('#roi-box,#roi-handle,#detector-overlay,#overlap-preview,#grid-sampling-progress,#grid-active-windows,title'))node.remove();
+ for(const node of copy.querySelectorAll('#roi-box,#roi-handle,#detector-overlay,#overlap-preview,#grid-sampling-progress,#grid-active-windows,title,#saved-regions-map,#polygon-selection'))node.remove();
  const source=copy.querySelector('#source-image');
  for(const node of [copy,...copy.querySelectorAll('*')])for(const attribute of ['id','class','style','role','tabindex'])if(attribute!=='id'||node.tagName!=='clipPath')node.removeAttribute(attribute);
- copy.setAttribute('x',20);copy.setAttribute('y',78);copy.setAttribute('width',1160);copy.setAttribute('height',1160);
- const svg=el('svg',{xmlns:NS,width:1200,'font-family':'Arial, sans-serif'});
- svg.append(el('rect',{x:0,y:0,width:1200,height:'100%',fill:'#0c121a'}));
- svg.append(el('text',{x:20,y:28,fill:'#dce6ef','font-size':20,'font-weight':600},meta.name));
- svg.append(el('text',{x:20,y:52,fill:'#94a5b8','font-size':13},`${(meta.width*meta.pixel_x_nm).toFixed(2)} × ${(meta.height*meta.pixel_y_nm).toFixed(2)} nm · ${grid.regions.filter(r=>r.leaf).length} regions · overlay ${$('grid-opacity').value}%`),copy);
- const measure=document.createElement('canvas').getContext('2d');measure.font='14px Arial';let y=1267,x=20;
- const legendItem=(text,color)=>{const width=measure.measureText(text).width+27;if(x+width>1180){x=20;y+=25}svg.append(el('text',{x,y,fill:color,'font-size':14},text));x+=width};
- const strength=strengthMapView(selectedMapView());
- if(grid.grid.mode==='overlap'){
-  legendItem(`${grid.grid.window_nm.toFixed(2)} nm windows · ${grid.grid.spacing_nm.toFixed(2)} nm spacing · ${grid.grid.passes} pass${grid.grid.passes===1?'':'es'} · ${grid.grid.layout} centres`,'#94a5b8');x=20;y+=28;
- }
- if(!$('class-legend').hidden)for(const node of $('class-legend').children)if(!node.hidden)legendItem('● '+(node.dataset.caption||node.textContent),colors[node.dataset.label]);
- if(x!==20){x=20;y+=28}
- if(!$('zone-legend').hidden&&$('zone-legend').querySelector('[data-map-legend-entry]')){
-  for(const node of $('zone-legend').querySelectorAll('[data-map-legend-entry]'))legendItem(node.textContent,node.style.color);
-  x=20;y+=28;
- }else if(!$('zone-legend').hidden)for(const group of $('zone-legend').querySelectorAll('.zone-legend-group')){
-  const phase=group.dataset.phase;legendItem(group.querySelector('strong').textContent,phaseColors[phase]);
-  for(const node of group.querySelectorAll('.zone-key'))legendItem([...node.childNodes].map(n=>n.textContent).join(' '),phaseColors[phase]);
-  x=20;y+=28;
- }
- if(!$('map-colour-key').hidden){
-  for(const item of $('map-colour-key').querySelectorAll('[data-phase]'))legendItem(item.textContent,phaseColors[item.dataset.phase]);
-  if(x!==20){x=20;y+=28}
- }
- if(grid.grid.mode==='overlap'&&supportMapView(selectedMapView())){
-  const phases=analysisPhases(grid.settings),all=$('map-phase').value==='all';
-  const opacityScale=mapSupportScale(grid.aggregation,selectedMapView(),all?phases:[$('map-phase').value]);
-  const opacityCaption=$('map-normalize').checked?`Opacity: normalised to ${strength?opacityScale.toFixed(3):(100*opacityScale).toFixed(1)+'%'} maximum displayed ${strength?'passing rank':'passing frequency'}`:strength?'Opacity: fixed 0–1 average passing rank, capped at 1':'Opacity: fixed 0–100% passing frequency';
-  if(all&&phases.length===2){
-   legendItem(`${phases[0]} only → equal support → ${phases[1]} only`,'#dce6ef');x=20;y+=12;
-   for(let i=0;i<300;i++)svg.append(el('rect',{x:20+i,y,width:1,height:12,fill:blendSupport([[phaseColors[phases[0]],1-i/299],[phaseColors[phases[1]],i/299]]).colour}));
-   y+=35;
+  const width=Math.round(1800*meta.width/Math.max(meta.width,meta.height)),height=Math.round(1800*meta.height/Math.max(meta.width,meta.height));
+  copy.setAttribute('xmlns',NS);copy.setAttribute('width',width);copy.setAttribute('height',height);
+  const legend=[];
+  if(!$('class-legend').hidden)for(const node of $('class-legend').children)if(!node.hidden)legend.push({text:node.dataset.caption||node.textContent,colour:colors[node.dataset.label]});
+  if(!$('zone-legend').hidden){
+   const entries=$('zone-legend').querySelectorAll('[data-map-legend-entry]');
+   if(entries.length){const items=MapPngExport.legendEntries(entries);if(items.some(item=>item.phase))legend.length=0;legend.push(...items)}
+   else for(const group of $('zone-legend').querySelectorAll('.zone-legend-group'))for(const node of group.querySelectorAll('.zone-key'))legend.push({text:phaseLabel(group.dataset.phase)+' '+node.textContent,colour:phaseColors[group.dataset.phase]});
   }
-  if(all&&phases.length===3){
-   const triangle=supportTriangleLegend(phases,phaseColors,false,strength,opacityCaption);triangle.setAttribute('x',20);triangle.setAttribute('y',y);svg.append(triangle);y+=240;
-  }else for(const phase of all?phases:[$('map-phase').value])legendItem(phase,phaseColors[phase]);
-  x=20;y+=28;legendItem(opacityCaption,'#94a5b8');x=20;y+=28;
- }
- const height=y+8;svg.setAttribute('viewBox',`0 0 1200 ${height}`);svg.setAttribute('height',height);
- return {svg,source,height,file_id:fileId};
+  const overlap=grid.grid.mode==='overlap',view=selectedMapView(),support=overlap&&supportMapView(view);
+  const phases=analysisPhases(grid.settings),shown=$('map-phase').value==='all'?phases:[$('map-phase').value];
+  const blend=support&&shown.length>1?shown.map(p=>({text:phaseLabel(p),colour:phaseColors[p]})):[];
+  if(support||!legend.length&&overlap)for(const item of $('map-colour-key').querySelectorAll('[data-phase]'))legend.push({text:item.textContent,colour:phaseColors[item.dataset.phase]});
+  if(support&&!legend.length)legend.push(...shown.map(p=>({text:phaseLabel(p),colour:phaseColors[p]})));
+
+  if(overlap&&view==='samples')legend.push({text:`1–${Math.max(1,...(grid.aggregation?.cells||[]).map(c=>c.samples))} windows`,colour:'#00d9e8'});
+  if(overlap&&view==='separate')legend.push({text:'Separate structures',colour:'#d692fa'});
+  if(overlap&&view==='spread')legend.push(...shown.map(p=>({text:phaseLabel(p),colour:phaseColors[p]})));
+  return {svg:copy,source,width,height,file_id:fileId,choice,composition:{width,height,fieldNm:meta.width*meta.pixel_x_nm,legend,blend,hex:overlap&&view.startsWith('hex'),name:meta.name}};
 }
+async function renderMapPng(choice=MapPngExport.settings()){
+ const snapshot=mapSnapshot(choice);
+ const response=await fetch(snapshot.source.getAttribute('href'));if(!response.ok)throw new Error('Source preview unavailable.');
+ snapshot.source.setAttribute('href',await blobDataURL(await response.blob()));
+ const image=new Image();image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(snapshot.svg));await image.decode();
+ const canvas=MapPngExport.compose({...snapshot.composition,map:image,choice:snapshot.choice});
+ return {url:canvas.toDataURL('image/png'),file_id:snapshot.file_id};
+}
+function renderMapPlaceholder(choice=MapPngExport.settings()){
+ if(!meta||isDiffraction())throw new Error('Select a real-space image to preview its export settings.');
+ return MapPngExport.placeholder({source:$('source-image').getAttribute('href'),width:meta.width,height:meta.height,fieldNm:meta.width*meta.pixel_x_nm,name:meta.name,hex:$('map-display').value==='hex',file_id:fileId,choice});
+}
+MapPngExport.register('main',{ready:()=>!$('export-map').disabled,key:()=>[fileId,meta?.sha256_pixels,grid?.id,grid?.state,grid?.processed,selectedMapView(),$('grid-opacity').value].join('|'),render:renderMapPng,placeholder:renderMapPlaceholder,intensity:()=>$('grid-opacity')});
 async function exportMap(buttonId='export-map'){
  if($(buttonId).disabled)return;
  mapExportBusy=true;syncSpectrumExportControls();beginExport(buttonId,'Exporting map PNG…');
  try{
-  const snapshot=mapSnapshot();
-  const response=await fetch(snapshot.source.getAttribute('href'));if(!response.ok)throw new Error('Source preview unavailable.');
-  snapshot.source.setAttribute('href',await blobDataURL(await response.blob()));
-  const width=Math.min(2800,Math.floor(3200*1200/snapshot.height)),height=Math.round(width*snapshot.height/1200);
-  snapshot.svg.setAttribute('width',width);snapshot.svg.setAttribute('height',height);
-  const image=new Image();image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(snapshot.svg));await image.decode();
-  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;canvas.getContext('2d').drawImage(image,0,0);
+  const choice=MapPngExport.settings();
+  if(choice.background==='transparent'&&!config.map_export_styles)throw new Error('Restart TEM Workbench, then reload to save transparent maps.');
+  const rendered=await renderMapPng(choice);
   exportNotice('Saving map PNG…','Writing to the output folder');
-  const data=await api('export-spectrum',{file_id:snapshot.file_id,image_kind:'real_space_map',format:'png',frames:[canvas.toDataURL('image/png')]});finishExport(buttonId,data.path);
+  const data=await api('export-spectrum',{file_id:rendered.file_id,image_kind:'real_space_map',format:'png',frames:[rendered.url]});finishExport(buttonId,data.path);
  }catch(error){finishExport(buttonId,null,'Map export failed: '+error.message)}
  finally{mapExportBusy=false;syncSpectrumExportControls()}
 }
@@ -4549,7 +4536,8 @@ async function pollBatch(){
 $('batch-start').onclick=async()=>{
  try{
   checkOverlapCapability();
-  const exportPng=$('batch-png').value==='on',png_views=exportPng?batchPngViews():[];
+  const exportPng=$('batch-png').value==='on',png_views=exportPng?batchPngViews():[],pngStyle=MapPngExport.settings();
+  if(exportPng&&!config.map_export_overlays)throw new Error('Restart TEM Workbench, then reload to use the new batch PNG styles.');
   if(exportPng&&!png_views.length)throw new Error('Add a PNG view, or choose No PNG maps.');
   if(exportPng&&duplicateBatchPngRows().size)throw new Error('Change or remove the duplicate PNG views.');
   if(exportPng&&invalidBatchPngRows())throw new Error('Resolve the PNG view warnings before running.');
@@ -4561,7 +4549,7 @@ $('batch-start').onclick=async()=>{
   const file_ids=batchFiles.filter(row=>row.eligible&&batchSelected.has(row.id)).map(row=>row.id);
   if(!file_ids.length)throw new Error('Select at least one image.');
   $('batch-start').disabled=true;
-  renderBatch(await api('batch/start',{...batchOptions(),file_ids,summary_folders:batchFolderSelection===null?[]:[...batchFolderSelection],flatten_folders:$('batch-flatten-folders').value==='combined',settings:settings(),overlap:overlapRequest(),component:componentRequest(),count:Number($('grid-count').value),minimum_nm:Number($('grid-min').value),adaptive:$('adaptive').checked,check_passing:$('check-passing').checked,workers:Number($('grid-workers').value),export_png:exportPng,png_views,colors:{...colors},opacity:Number($('grid-opacity').value)/100}));
+  renderBatch(await api('batch/start',{...batchOptions(),file_ids,summary_folders:batchFolderSelection===null?[]:[...batchFolderSelection],flatten_folders:$('batch-flatten-folders').value==='combined',settings:settings(),overlap:overlapRequest(),component:componentRequest(),count:Number($('grid-count').value),minimum_nm:Number($('grid-min').value),adaptive:$('adaptive').checked,check_passing:$('check-passing').checked,workers:Number($('grid-workers').value),export_png:exportPng,png_views,png_style:pngStyle.mode,png_background:pngStyle.background,png_settings:pngStyle,colors:{...colors},opacity:Number($('grid-opacity').value)/100}));
  }catch(e){syncBatchSelection();message(e.message,true)}
 };
 $('batch-cancel').onclick=async()=>{try{renderBatch(await api('batch/cancel',{}))}catch(e){message(e.message,true)}};

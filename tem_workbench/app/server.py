@@ -196,7 +196,7 @@ class Workbench:
                 'engine': self.engine.version[:12], 'phases': list(PHASES), 'phase_selection': True, 'adjustable_fitting_band': True, 'adjustable_inner_limit': True,
                 'material_presets': MATERIAL_PRESETS,
                 'template_count': len(self.engine.templates), 'fcc_reference': True, 'scale_modes': ['fixed', 'auto_uniform', 'auto_hcp_ac', 'auto_hcp_ratio'],
-                'fft_reconstruction': True, 'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'live_spectrum_previews': True, 'fft_log16': True, 'fft_processing': True, 'fft_tukey': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
+                'fft_reconstruction': True, 'crop_exports': True, 'spectrum_exports': True, 'map_exports': True, 'map_export_styles': True, 'map_export_overlays': True, 'spectrum_export_fps': 30, 'spectrum_export_max_frames': SPECTRUM_MAX_FRAMES, 'region_previews': True, 'live_spectrum_previews': True, 'fft_log16': True, 'fft_processing': True, 'fft_tukey': True, 'direct_diffraction': 'direct-spots-v2', 'diffraction_translation': 'shared-center-v1', 'phase_comparison': 'shared-evidence-v1',
                 'scale_penalty': True, 'grid_rescore': True, 'grid_zones': True, 'grid_job': self.grid_summary(), 'overlap_rim_sampling': True, 'overlap_passing_strength': True,
                 'peak_evidence': peak_evidence.VERSION, 'separate_peak_penalties': True, 'double_diffraction_scoring': True, 'brightness_grouping': True, 'fft_brightness_grouping': True, 'omega_positional_falloff': True, 'peak_evidence_falloff': True, 'check_passing': True, 'refinement_policy': adaptive_refinement.VERSION, 'bundled_demo': demo_data.ID}
 
@@ -888,7 +888,7 @@ class Workbench:
                     images.append(indexed)
                     previous_pixels = pixels
                 else:
-                    images.append(rgb)
+                    images.append(image.convert('RGBA') if body.get('image_kind') == 'real_space_map' and ('A' in image.getbands() or 'transparency' in image.info) else rgb)
         safe_name = ''.join(c if c.isalnum() or c in '-_.' else '_' for c in name)[:120]
         kind = {'diffraction': 'diffraction', 'real_space_map': 'map'}.get(body.get('image_kind'), 'fft')
         stamp = datetime.now().astimezone().strftime('%Y%m%d_%H%M%S')
@@ -1071,7 +1071,7 @@ def make_handler(app):
                         preview=app.engine.native_preview(item) if query.get('native') == ['1'] else item['preview']
                     self.send(preview, 'image/png')
                 else:
-                    path = {'/': ROOT/'web/index.html', '/export-notice.js': ROOT/'web/export-notice.js', '/app.js': ROOT/'web/app.js', '/crystal-viewer.js': ROOT/'web/crystal-viewer.js', '/kinematic-diffraction.js': ROOT/'web/kinematic-diffraction.js', '/crystal-viewer.css': ROOT/'web/crystal-viewer.css', '/popup-controls.js': ROOT/'web/popup-controls.js', '/diagnostics.js': ROOT/'web/diagnostics.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/favicon.svg': ROOT/'web/favicon.svg', '/favicon.ico': ROOT/'web/favicon.svg', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/repeat-regions.js': ROOT/'web/repeat-regions.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/component-batch.js': ROOT/'web/component-batch.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
+                    path = {'/': ROOT/'web/index.html', '/export-notice.js': ROOT/'web/export-notice.js', '/app.js': ROOT/'web/app.js', '/map-export.js': ROOT/'web/map-export.js', '/crystal-viewer.js': ROOT/'web/crystal-viewer.js', '/kinematic-diffraction.js': ROOT/'web/kinematic-diffraction.js', '/crystal-viewer.css': ROOT/'web/crystal-viewer.css', '/popup-controls.js': ROOT/'web/popup-controls.js', '/diagnostics.js': ROOT/'web/diagnostics.js', '/region-selection.js': ROOT/'web/region-selection.js', '/fft-masking.js': ROOT/'web/fft-masking.js', '/live-preview.js': ROOT/'web/live-preview.js', '/favicon.svg': ROOT/'web/favicon.svg', '/favicon.ico': ROOT/'web/favicon.svg', '/style.css': ROOT/'web/style.css', '/acquisition-map.js': ROOT/'web/acquisition-map.js', '/repeat-regions.js': ROOT/'web/repeat-regions.js', '/window-size.js': ROOT/'web/window-size.js', '/shared-spectra.js': ROOT/'web/shared-spectra.js', '/component-batch.js': ROOT/'web/component-batch.js', '/phase-blend.js': ROOT/'web/phase-blend.js', '/beta-omega.js': ROOT/'web/beta-omega.js', '/double-diffraction.js': ROOT/'web/double-diffraction.js'}.get(url.path)
                     if not path:
                         self.send({'error':'Not found'}, status=404); return
                     self.send(path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'text/plain')

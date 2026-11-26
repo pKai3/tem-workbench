@@ -4,6 +4,7 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from tem_workbench.mapping.phase_blend import blend_support
 from tem_workbench.mapping import overlap_maps
+from tem_workbench.mapping import png_style
 
 INTERPRETATION = ('Passing frequencies over covered raster area, not phase fractions. '
     'Each placement pass is normalized before equal-pass averaging. Phase support may overlap; linked beta/omega components share one passing union. '
@@ -89,10 +90,11 @@ def write_csv(folder, data, writer):
         writer(folder/(name+'.csv'),rows,keys+['phase','zone_3index','passing_windows','window_percent'])
 
 
-def map_png(item,job,target,colors,opacity,view='support',phase=None):
+def map_png(item,job,target,colors,opacity,view='support',phase=None,style='standard',background=None,export_settings=None):
     """Render completed fields without re-running detection or matching."""
     import math
     from PIL import ImageChops
+    theme = png_style.options(style, background, export_settings)
     source = job['source']; a = job.get('aggregation') or overlap_maps.aggregate(job)
     phases = job['settings'].get('enabled_phases', ['HCP','BCC','FCC'])
     if view not in ('support','strength','top','hex','hex_support','hex_strength','spread','samples','separate','raw'):
@@ -109,7 +111,7 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
         a=overlap_maps.aggregate(job)  # Old exports retain the raw fits; no new fitting is needed.
     blend_key=view in ('support','strength','hex_support','hex_strength') and phase is None and len(phases)==2
     triangle_key=view in ('support','strength','hex_support','hex_strength') and phase is None and len(phases)==3
-    canvas = Image.new('RGB',(w+80,h+320+(60 if blend_key else 240 if triangle_key else 0)),'#0c121a')
+    canvas = Image.new(theme['mode'],(w+80,h+320+(60 if blend_key else 240 if triangle_key else 0)),theme['fill'])
     with Image.open(BytesIO(item['preview'])) as preview:
         background = preview.convert('RGBA').resize((w,h))
     layer = Image.new('RGBA',(w,h)); draw = ImageDraw.Draw(layer)
@@ -158,18 +160,26 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
                 box=(round(cell['x']*w/a['width']),round((cell['y']+i/len(entries))*h/a['height']),
                      round((cell['x']+1)*w/a['width'])-1,round((cell['y']+(i+1)/len(entries))*h/a['height'])-1)
                 draw.rectangle(box,fill=fill(c,value))
-    canvas.paste(Image.alpha_composite(background,layer).convert('RGB'),(40,70))
+    rendered=Image.alpha_composite(background,layer).convert('RGB')
+    if theme['paper'] or export_settings is not None:
+        legend=[(p,color(p)) for p in ([phase] if phase else phases)]
+        if view=='samples':legend=[(f'1–{max_samples} windows','#00d9e8')]
+        if view=='separate':legend=[('Separate structures','#d692fa')]
+        if view=='raw':legend=[(key.replace('_',' '),colors[key]) for key in dict.fromkeys(r['classification']['label'] for r in job['regions'])]
+        png_style.paper_map(rendered,source,legend,'',theme,legend if blend_key or triangle_key else (),view.startswith('hex')).save(target)
+        return
+    canvas.paste(rendered,(40,70))
     draw=ImageDraw.Draw(canvas)
     try: font=ImageFont.truetype('DejaVuSans.ttf',18); title=ImageFont.truetype('DejaVuSans.ttf',26)
     except OSError: font=ImageFont.load_default(size=18); title=ImageFont.load_default(size=26)
-    draw.text((40,20),source['name'],font=title,fill='white')
+    draw.text((40,20),source['name'],font=title,fill=theme['ink'])
     titles=dict(support='Match frequency'+(' · '+phase if phase else ' · all phases'),top='Best match · continuous map',hex='Best match · averaged hex grid',hex_support='Match frequency · hex grid',
         strength='Match score'+(' · '+phase if phase else ' · all phases'),hex_strength='Match score · hex grid'+(' · '+phase if phase else ''),
         spread='Placement sensitivity · '+str(phase),samples='Sampling density',separate='Multiple-structure support',raw='Individual windows · classification circles')
     method=job['grid'].get('component_method')
-    draw.text((40,h+85),(method.upper()+' · ' if method else '')+titles[view],font=title,fill='white')
+    draw.text((40,h+85),(method.upper()+' · ' if method else '')+titles[view],font=title,fill=theme['ink'])
     g=job['grid']
-    draw.text((40,h+120),f"{g['window_nm']:.2f} nm windows · {g['spacing_nm']:.2f} nm spacing · {g['passes']} {'pass' if g['passes']==1 else 'passes'} · {g['layout']} centres",font=font,fill='#a4adba')
+    draw.text((40,h+120),f"{g['window_nm']:.2f} nm windows · {g['spacing_nm']:.2f} nm spacing · {g['passes']} {'pass' if g['passes']==1 else 'passes'} · {g['layout']} centres",font=font,fill=theme['muted'])
     legend=[(p,color(p)) for p in ([phase] if phase else phases)]
     if view=='samples': legend=[(f"1–{max_samples} windows",'#00d9e8')]
     if view=='separate': legend=[('Separate structures','#d692fa')]
@@ -187,24 +197,25 @@ def map_png(item,job,target,colors,opacity,view='support',phase=None):
                 pixels[tx,ty]=(*tuple(int(c[i:i+2],16) for i in (1,3,5)),255)
         canvas.paste(triangle,(x+60,y+24),triangle)
         for p,(tx,ty) in zip(phases,[(150,7),(60,198),(240,198)]):
-            draw.text((x+tx,y+ty),p,font=font,fill=color(p),anchor='mm')
-        draw.text((x+150,y+225),'Relative '+('strength' if strength_view else 'support')+' · colour only',font=font,fill='#a4adba',anchor='mm')
+            draw.text((x+tx,y+ty),p,font=font,fill=color(p) if theme['background']=='dark' else theme['ink'],anchor='mm')
+        draw.text((x+150,y+225),'Relative '+('strength' if strength_view else 'support')+' · colour only',font=font,fill=theme['muted'],anchor='mm')
         y+=240
     for label,c in ([] if triangle_key else legend):
         length=max(220 if view!='raw' else 0,draw.textlength(label,font=font)+30)
         if x+length>w+40:x=40;y+=54 if view!='raw' else 28
-        draw.text((x,y),label,font=font,fill=c)
+        if theme['background']!='dark':draw.rectangle((x,y+4,x+10,y+14),fill=c)
+        draw.text((x+(15 if theme['background']!='dark' else 0),y),label,font=font,fill=c if theme['background']=='dark' else theme['ink'])
         if view!='raw':
             rgb=tuple(int(c[j:j+2],16) for j in (1,3,5))
             for j in range(100):
                 alpha=opacity*(.15+.85*j/99)
                 ramp=tuple(round(12*(1-alpha)+v*alpha) for v in rgb)
                 draw.line((x+j,y+25,x+j,y+38),fill=ramp)
-            draw.text((x+108,y+22),'low to high' if view=='samples' else '0–1 rank' if strength_view else '0–100%',font=font,fill='#a4adba')
+            draw.text((x+108,y+22),'low to high' if view=='samples' else '0–1 rank' if strength_view else '0–100%',font=font,fill=theme['muted'])
         x+=length
     if blend_key:
         y=max(y+55,h+215)
-        draw.text((40,y),f"{phases[0]} only → equal support → {phases[1]} only",font=font,fill='#a4adba')
+        draw.text((40,y),f"{phases[0]} only → equal support → {phases[1]} only",font=font,fill=theme['muted'])
         for j in range(min(300,w)):
             t=j/max(1,min(300,w)-1)
             c,_=blend_support([(color(phases[0]),1-t),(color(phases[1]),t)])
